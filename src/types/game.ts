@@ -21,5 +21,8 @@ export interface Season {
   year: number;
   split: Split;
   currentWeek: number;
+  currentDate: string;   // YYYY-MM-DD (일간 진행 현재 날짜)
+  startDate: string;     // 시즌 시작일
+  endDate: string;       // 시즌 종료일
   isActive: boolean;
 }

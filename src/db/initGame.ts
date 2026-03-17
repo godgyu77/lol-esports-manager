@@ -1,20 +1,25 @@
 /**
  * 게임 초기화 — 새 게임 시작 & store 로딩
  */
-import type { GameMode, GameSave, Position } from '../types';
+import type { GameMode, GameSave, Position, Region } from '../types';
 import type { PlayerBackground } from '../types/player';
-import { getDatabase } from './database';
+import { generateLeagueSchedule } from '../engine/season/scheduleGenerator';
+import { assignMatchDates, SEASON_DATES } from '../engine/season/calendar';
+import { withTransaction } from './database';
 import {
   createSave,
   createSeason,
   getActiveSeason,
+  getAllPlayersGroupedByTeam,
   getAllTeams,
-  getPlayersByTeamId,
+  getTeamsByRegion,
   getSaveById,
+  insertMatch,
   insertPlayer,
 } from './queries';
 import { isSeeded, seedAllData } from './seed';
 import { useGameStore } from '../stores/gameStore';
+import { generateLCKCup } from '../engine/tournament/tournamentEngine';
 
 // ─────────────────────────────────────────
 // 유저 선수 생성용 배경별 스탯
@@ -80,59 +85,100 @@ export async function initializeNewGame(
   teamId: string,
   pendingPlayer?: PendingPlayer | null,
 ): Promise<GameSave> {
-  const db = await getDatabase();
+  // 1. 기존 데이터 정리 (트랜잭션)
+  await withTransaction(async (db) => {
+    await db.execute('DELETE FROM save_metadata');
+    await db.execute('DELETE FROM daily_events');
+    await db.execute('DELETE FROM player_daily_condition');
+    await db.execute('DELETE FROM swiss_records');
+    await db.execute('DELETE FROM tournament_participants');
+    await db.execute('DELETE FROM tournaments');
+    await db.execute('DELETE FROM games');
+    await db.execute('DELETE FROM matches');
+    await db.execute('DELETE FROM champion_stat_modifiers');
+    await db.execute('DELETE FROM champion_patches');
+    await db.execute('DELETE FROM champion_proficiency');
+    await db.execute('DELETE FROM player_traits');
+    await db.execute('DELETE FROM players');
+    await db.execute('DELETE FROM seasons');
+    await db.execute('DELETE FROM champions');
+    await db.execute('DELETE FROM teams');
+  });
 
-  // 1. 기존 데이터 정리 (새 게임이므로 전부 삭제)
-  await db.execute('DELETE FROM save_metadata');
-  await db.execute('DELETE FROM games');
-  await db.execute('DELETE FROM matches');
-  await db.execute('DELETE FROM champion_proficiency');
-  await db.execute('DELETE FROM players');
-  await db.execute('DELETE FROM seasons');
-  await db.execute('DELETE FROM teams');
-
-  // 2. 시딩
+  // 2. 시딩 (자체 트랜잭션 사용)
   await seedAllData();
 
-  // 3. 시즌 생성
-  const seasonId = await createSeason(2026, 'spring');
+  // 3~5. 시즌/스케줄/세이브 생성 (트랜잭션)
+  return await withTransaction(async () => {
+    const seasonId = await createSeason(2026, 'spring');
 
-  // 4. 유저 선수 생성 (선수 모드)
-  let userPlayerId: string | null = null;
-  if (mode === 'player' && pendingPlayer) {
-    userPlayerId = `${teamId}_${pendingPlayer.name}`;
-    const bgStats = BACKGROUND_STATS[pendingPlayer.background];
+    // 리그별 경기 스케줄 생성 + 날짜 배정
+    const regions: Region[] = ['LCK', 'LPL', 'LEC', 'LCS'];
+    const startDate = SEASON_DATES.spring.start;
 
-    await insertPlayer({
-      id: userPlayerId,
-      name: pendingPlayer.name,
-      teamId,
-      position: pendingPlayer.position,
-      age: 18,
-      nationality: 'KR',
-      ...bgStats,
-      mental: 65,
-      stamina: 75,
-      morale: 80,
-      salary: 5000,
-      contractEndSeason: 2028,
-      potential: 85,
-      peakAge: 22,
-      popularity: 5,
-      division: 'main',
-      isUserPlayer: true,
-    });
-  }
+    for (const region of regions) {
+      const teams = await getTeamsByRegion(region);
+      const teamIds = teams.map(t => t.id);
+      const schedule = generateLeagueSchedule(region, teamIds);
 
-  // 5. 세이브 생성
-  const saveId = await createSave(mode, teamId, userPlayerId, seasonId);
-  const save = await getSaveById(saveId);
+      const datedSchedule = assignMatchDates(schedule, startDate);
 
-  if (!save) {
-    throw new Error('세이브 생성 실패');
-  }
+      for (let i = 0; i < datedSchedule.length; i++) {
+        const match = datedSchedule[i];
+        const matchId = `${region.toLowerCase()}_s${seasonId}_w${match.week}_${i}`;
+        await insertMatch({
+          id: matchId,
+          seasonId,
+          week: match.week,
+          teamHomeId: match.homeTeamId,
+          teamAwayId: match.awayTeamId,
+          matchDate: match.date,
+        });
+      }
+    }
 
-  return save;
+    // 유저 선수 생성 (선수 모드)
+    let userPlayerId: string | null = null;
+    if (mode === 'player' && pendingPlayer) {
+      userPlayerId = `${teamId}_${pendingPlayer.name}`;
+      const bgStats = BACKGROUND_STATS[pendingPlayer.background];
+
+      await insertPlayer({
+        id: userPlayerId,
+        name: pendingPlayer.name,
+        teamId,
+        position: pendingPlayer.position,
+        age: 18,
+        nationality: 'KR',
+        ...bgStats,
+        mental: 65,
+        stamina: 75,
+        morale: 80,
+        salary: 5000,
+        contractEndSeason: 2028,
+        potential: 85,
+        peakAge: 22,
+        popularity: 5,
+        division: 'main',
+        isUserPlayer: true,
+      });
+    }
+
+    // LCK Cup (윈터) 자동 생성 — 스프링 시즌 시작 전 1~2월
+    const lckTeams = await getTeamsByRegion('LCK');
+    const lckTeamIds = lckTeams.map(t => t.id);
+    await generateLCKCup(seasonId, 2026, lckTeamIds);
+
+    // 세이브 생성
+    const saveId = await createSave(mode, teamId, userPlayerId, seasonId);
+    const save = await getSaveById(saveId);
+
+    if (!save) {
+      throw new Error('세이브 생성 실패');
+    }
+
+    return save;
+  });
 }
 
 /**
@@ -150,11 +196,11 @@ export async function loadGameIntoStore(saveId: number): Promise<void> {
   const season = await getActiveSeason();
   if (season) store.setSeason(season);
 
-  // 모든 팀 + 로스터 로딩
+  // 모든 팀 + 로스터 일괄 로딩 (N+1 방지)
   const teams = await getAllTeams();
+  const playersByTeam = await getAllPlayersGroupedByTeam();
   for (const team of teams) {
-    const players = await getPlayersByTeamId(team.id);
-    team.roster = players;
+    team.roster = playersByTeam.get(team.id) ?? [];
   }
   store.setTeams(teams);
 }

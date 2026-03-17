@@ -28,7 +28,7 @@ export function MainMenu() {
         <button className="main-menu__btn" disabled>
           불러오기
         </button>
-        <button className="main-menu__btn" disabled>
+        <button className="main-menu__btn" onClick={() => navigate('/settings')}>
           설정
         </button>
       </div>

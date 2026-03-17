@@ -4,7 +4,8 @@ export interface Champion {
   id: string;
   name: string;
   nameKo: string;
-  positions: Position[];  // 주 포지션 (복수 가능)
+  primaryRole: Position;            // 주 포지션 (성능 100%)
+  secondaryRoles: Position[];       // 부 포지션 (성능 감소, 없으면 빈 배열)
   tier: 'S' | 'A' | 'B' | 'C' | 'D';
   tags: ChampionTag[];
   stats: ChampionStats;

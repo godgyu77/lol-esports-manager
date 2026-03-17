@@ -14,12 +14,6 @@ const PRESS_CONFERENCE_RESPONSES = [
   '아쉬운 부분이 있지만 다음 경기에서 보완하겠습니다.',
 ];
 
-const COMMENTARY_TEMPLATES = [
-  '{team}의 {player}가 {event}!',
-  '멋진 플레이! {player}의 활약이 돋보입니다.',
-  '{team}이 {objective}를 획득했습니다!',
-];
-
 export function getFallbackMeetingResponse() {
   return MEETING_RESPONSES[Math.floor(Math.random() * MEETING_RESPONSES.length)];
 }
@@ -30,8 +24,4 @@ export function getFallbackPressResponse() {
   ];
 }
 
-export function getFallbackCommentary(vars: Record<string, string>) {
-  const template =
-    COMMENTARY_TEMPLATES[Math.floor(Math.random() * COMMENTARY_TEMPLATES.length)];
-  return template.replace(/\{(\w+)\}/g, (_, key) => vars[key] ?? key);
-}
+

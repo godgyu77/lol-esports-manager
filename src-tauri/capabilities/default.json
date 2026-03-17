@@ -6,9 +6,6 @@
     "core:default",
     "sql:default",
     "sql:allow-execute",
-    "sql:allow-select",
-    "shell:default",
-    "shell:allow-spawn",
-    "shell:allow-execute"
+    "sql:allow-select"
   ]
 }

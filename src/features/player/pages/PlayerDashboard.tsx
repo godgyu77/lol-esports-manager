@@ -1,29 +1,51 @@
+import { NavLink, Outlet } from 'react-router-dom';
 import { useNavigate } from 'react-router-dom';
+import { ErrorBoundary } from '../../../components/ErrorBoundary';
+import { useAutoSave } from '../../../hooks/useAutoSave';
+
+const NAV_ITEMS = [
+  { to: '/player', label: '대시보드', icon: '\u{1F3E0}', end: true },
+  { to: '/player/day', label: '시즌 진행', icon: '\u25B6', end: false },
+  { to: '/player/training', label: '훈련', icon: '\u{1F3CB}', end: false },
+  { to: '/player/relations', label: '팀원 관계', icon: '\u{1F91D}', end: false },
+  { to: '/player/schedule', label: '일정', icon: '\u{1F4C5}', end: false },
+];
 
 export function PlayerDashboard() {
   const navigate = useNavigate();
+  useAutoSave();
 
   return (
     <div style={styles.container}>
-      <nav style={styles.sidebar}>
-        <h2 style={styles.sidebarTitle}>선수 모드</h2>
+      <nav style={styles.sidebar} className="dashboard-sidebar" aria-label="주 메뉴">
+        <h2 style={styles.sidebarTitle} className="sidebar-title">선수 모드</h2>
         <ul style={styles.nav}>
-          <li style={styles.navItem}>대시보드</li>
-          <li style={styles.navItem}>일과 관리</li>
-          <li style={styles.navItem}>훈련</li>
-          <li style={styles.navItem}>경기 일정</li>
-          <li style={styles.navItem}>면담 요청</li>
-          <li style={styles.navItem}>팀원 관계</li>
-          <li style={styles.navItem}>스트리밍</li>
+          {NAV_ITEMS.map((item) => (
+            <li key={item.to}>
+              <NavLink
+                to={item.to}
+                end={item.end}
+                className="nav-item"
+                style={({ isActive }) => ({
+                  ...styles.navItem,
+                  ...(isActive ? styles.navItemActive : {}),
+                })}
+              >
+                <span className="nav-icon">{item.icon}</span>
+                <span className="sidebar-label"> {item.label}</span>
+              </NavLink>
+            </li>
+          ))}
         </ul>
-        <button style={styles.backBtn} onClick={() => navigate('/')}>
+        <button style={styles.backBtn} className="back-btn" onClick={() => navigate('/')}>
           메인 메뉴
         </button>
       </nav>
 
-      <main style={styles.main}>
-        <h1 style={styles.title}>선수 대시보드</h1>
-        <p style={styles.placeholder}>선수 모드 컨텐츠가 여기에 표시됩니다.</p>
+      <main style={styles.main} className="dashboard-main">
+        <ErrorBoundary inline navigateTo="/player" navigateLabel="대시보드로 돌아가기">
+          <Outlet />
+        </ErrorBoundary>
       </main>
     </div>
   );
@@ -57,12 +79,19 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
   },
   navItem: {
+    display: 'block',
     padding: '10px 12px',
     fontSize: '14px',
     color: '#8a8a9a',
     borderRadius: '6px',
     cursor: 'pointer',
     marginBottom: '4px',
+    textDecoration: 'none',
+    transition: 'all 0.2s',
+  },
+  navItemActive: {
+    color: '#c89b3c',
+    background: 'rgba(200,155,60,0.1)',
   },
   backBtn: {
     padding: '10px',
@@ -76,14 +105,6 @@ const styles: Record<string, React.CSSProperties> = {
   main: {
     flex: 1,
     padding: '32px',
-  },
-  title: {
-    fontSize: '24px',
-    fontWeight: 700,
-    color: '#f0e6d2',
-    marginBottom: '16px',
-  },
-  placeholder: {
-    color: '#6a6a7a',
+    overflowY: 'auto',
   },
 };

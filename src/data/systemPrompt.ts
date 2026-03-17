@@ -132,6 +132,51 @@ export const LEAGUE_CONSTANTS = {
 } as const;
 
 // ───────────────────────────────────────────────────
+// 대회 설정
+// ───────────────────────────────────────────────────
+export const TOURNAMENT_CONFIG = {
+  lck_cup: {
+    name: 'LCK Cup',
+    teams: 10,
+    format: 'Bo3',
+    fearless: true,
+    prestige: 'C',
+  },
+  fst: {
+    name: 'First Stand',
+    teams: 8,
+    format: 'Bo5',
+    fearless: true,
+    prestige: 'B',
+  },
+  msi: {
+    name: 'Mid-Season Invitational',
+    teams: 4,
+    format: 'Bo1/Bo5',
+    fearless: true,
+    prestige: 'S',
+  },
+  ewc: {
+    name: 'Esports World Cup',
+    teams: 8,
+    quarterFormat: 'Bo3',
+    semiFormat: 'Bo5',
+    finalFormat: 'Bo5',
+    fearless: false,
+    fatiguePenalty: -15,
+    prestige: 'A+',
+  },
+  worlds: {
+    name: 'World Championship',
+    swissTeams: 14,
+    knockoutTeams: 8,
+    format: 'Swiss+Bo5',
+    fearless: false,
+    prestige: 'SSS',
+  },
+} as const;
+
+// ───────────────────────────────────────────────────
 // AI 시뮬레이션 시스템 프롬프트
 // ───────────────────────────────────────────────────
 export const SIMULATION_SYSTEM_PROMPT = `당신은 LoL e스포츠 매니저 시뮬레이션 게임의 AI 엔진입니다.

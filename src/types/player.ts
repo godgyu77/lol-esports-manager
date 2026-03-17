@@ -44,26 +44,3 @@ export interface Player {
 
 // 선수 모드 전용 — 유저가 직접 만든 캐릭터
 export type PlayerBackground = 'solorank' | 'academy' | 'overseas';
-
-export interface Personality {
-  competitiveness: number;  // 승부욕
-  mentalStrength: number;   // 멘탈 강도
-  sociability: number;      // 사교성
-}
-
-export interface DailySchedule {
-  morning: 'solorank' | 'vod_review' | 'rest';
-  afternoon: 'team_practice' | 'individual_training' | 'streaming';
-  evening: 'team_dinner' | 'personal_time' | 'request_meeting';
-}
-
-export interface MyPlayer extends Player {
-  isUserControlled: true;
-  background: PlayerBackground;
-  personality: Personality;
-  schedule: DailySchedule;
-  relationships: Record<string, number>; // playerId/coachId → 친밀도 (-100~100)
-  fanPopularity: number;
-  streamingIncome: number;
-  careerGoals: string[];
-}
