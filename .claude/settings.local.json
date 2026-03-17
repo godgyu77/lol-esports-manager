@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /c/Users/user/Desktop/KANG/Study/project/lol-esports-manager/src-tauri/migrations -type f -name *.sql)",
+      "Bash(mkdir -p \"C:/Users/user/Desktop/KANG/Study/project/lol-esports-manager/.claude/rules\")",
+      "Bash(mkdir -p \"C:/Users/user/Desktop/KANG/Study/project/lol-esports-manager/.claude/skills/build-test\")",
+      "Bash(mkdir -p \"C:/Users/user/Desktop/KANG/Study/project/lol-esports-manager/.claude/skills/explain-code\")",
+      "Bash(mkdir -p \"C:/Users/user/Desktop/KANG/Study/project/lol-esports-manager/.claude/skills/final-review/references\")",
+      "Bash(mkdir -p \"C:/Users/user/Desktop/KANG/Study/project/lol-esports-manager/.claude/skills/fix-issue\")",
+      "WebSearch",
+      "WebFetch(domain:www.sheepesports.com)",
+      "Bash(npx tsc:*)",
+      "Bash(cd \"C:\\\\Users\\\\user\\\\Desktop\\\\KANG\\\\Study\\\\project\\\\lol-esports-manager\" && npx vite build 2>&1)",
+      "Bash(cd \"C:\\\\Users\\\\user\\\\Desktop\\\\KANG\\\\Study\\\\project\\\\lol-esports-manager\" && pnpm tauri dev 2>&1)",
+      "Bash(cd \"/c/Users/user/Desktop/KANG/Study/project/lol-esports-manager\" && node -e \"\nconst data = require\\('./src/data/rosterDb.ts'\\);\nconsole.log\\('financialTier 매핑 확인 필요'\\);\n\" 2>&1 | head -20)",
+      "Bash(node -e \"\nconst ovrs = {\n  'S+': 97, 'S': 95, 'S-': 92,\n  'A+': 89, 'A': 86, 'A-': 83,\n  'B+': 79, 'B': 75, 'B-': 71,\n  'C+': 67, 'C': 63, 'C-': 59,\n  'D': 50\n};\nconsole.log\\('등급 | OVR | salary\\(만원\\) | 억원'\\);\nfor \\(const [grade, ovr] of Object.entries\\(ovrs\\)\\) {\n  const salary = Math.round\\(ovr ** 2.5 / 100\\);\n  console.log\\(grade.padEnd\\(4\\), '|', ovr, '|', salary.toString\\(\\).padStart\\(6\\), '|', \\(salary / 10000\\).toFixed\\(2\\) + '억'\\);\n}\n// 5명 로스터 합산 예시 \\(S팀: S+, S, S-, A+, A\\)\nconst topTeam = [97, 95, 92, 89, 86].map\\(o => Math.round\\(o ** 2.5 / 100\\)\\);\nconsole.log\\('\\\\nS급 팀 연봉 합계:', topTeam.reduce\\(\\(a,b\\) => a+b\\), '만원 =', \\(topTeam.reduce\\(\\(a,b\\) => a+b\\) / 10000\\).toFixed\\(2\\) + '억'\\);\n// C팀: B, B-, C+, C, C-\nconst lowTeam = [75, 71, 67, 63, 59].map\\(o => Math.round\\(o ** 2.5 / 100\\)\\);\nconsole.log\\('C급 팀 연봉 합계:', lowTeam.reduce\\(\\(a,b\\) => a+b\\), '만원 =', \\(lowTeam.reduce\\(\\(a,b\\) => a+b\\) / 10000\\).toFixed\\(2\\) + '억'\\);\n\")",
+      "Bash(node -e \"\n// 목표: S+\\(97\\)→8억, S\\(95\\)→7억, A\\(86\\)→4억, B\\(75\\)→2억, C\\(63\\)→1억, D\\(50\\)→0.5억\n// salary\\(만원\\) 기준 → S+: 80000, D: 5000\n// 공식: salary = floor\\( \\(\\(ovr - 40\\) / 57\\)^2.2 * 75000 + 5000 \\)\nconst ovrs = {\n  'S+': 97, 'S': 95, 'S-': 92,\n  'A+': 89, 'A': 86, 'A-': 83,\n  'B+': 79, 'B': 75, 'B-': 71,\n  'C+': 67, 'C': 63, 'C-': 59,\n  'D': 50\n};\nconsole.log\\('등급 | OVR | salary\\(만원\\) | 억원'\\);\nfor \\(const [grade, ovr] of Object.entries\\(ovrs\\)\\) {\n  const ratio = \\(ovr - 40\\) / 57;\n  const salary = Math.round\\(ratio ** 2.2 * 75000 + 5000\\);\n  console.log\\(grade.padEnd\\(4\\), '|', ovr, '|', salary.toString\\(\\).padStart\\(6\\), '|', \\(salary / 10000\\).toFixed\\(2\\) + '억'\\);\n}\n// 팀별 합산 \\(5명 1군\\)\nconst topTeam = [97, 95, 92, 89, 86].map\\(o => Math.round\\(\\(\\(o-40\\)/57\\)**2.2 * 75000 + 5000\\)\\);\nconsole.log\\('\\\\nS급 팀 1군 연봉 합:', topTeam.reduce\\(\\(a,b\\)=>a+b\\), '만원 =', \\(topTeam.reduce\\(\\(a,b\\)=>a+b\\)/10000\\).toFixed\\(1\\)+'억'\\);\nconst midTeam = [86, 83, 83, 79, 75].map\\(o => Math.round\\(\\(\\(o-40\\)/57\\)**2.2 * 75000 + 5000\\)\\);\nconsole.log\\('A급 팀 1군 연봉 합:', midTeam.reduce\\(\\(a,b\\)=>a+b\\), '만원 =', \\(midTeam.reduce\\(\\(a,b\\)=>a+b\\)/10000\\).toFixed\\(1\\)+'억'\\);\nconst lowTeam = [75, 71, 67, 63, 59].map\\(o => Math.round\\(\\(\\(o-40\\)/57\\)**2.2 * 75000 + 5000\\)\\);\nconsole.log\\('C급 팀 1군 연봉 합:', lowTeam.reduce\\(\\(a,b\\)=>a+b\\), '만원 =', \\(lowTeam.reduce\\(\\(a,b\\)=>a+b\\)/10000\\).toFixed\\(1\\)+'억'\\);\nconsole.log\\('\\(salaryCap = 40억\\)'\\);\n\")",
+      "Bash(cd \"C:\\\\Users\\\\user\\\\Desktop\\\\KANG\\\\Study\\\\project\\\\lol-esports-manager\" && npx tsc --noEmit 2>&1 && npx vite build 2>&1)",
+      "Bash(git init:*)",
+      "Bash(git add:*)"
+    ]
+  }
+}
