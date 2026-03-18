@@ -11,7 +11,7 @@ export function ModeSelect() {
     if (mode === 'player') {
       navigate('/player-create');
     } else {
-      navigate('/team-select');
+      navigate('/manager-create');
     }
   };
 

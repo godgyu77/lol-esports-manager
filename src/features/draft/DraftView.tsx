@@ -28,6 +28,7 @@ import { BanSection } from './BanSection';
 import { PickSection } from './PickSection';
 import { ChampionGrid } from './ChampionGrid';
 import { DraftCenterPanel } from './DraftCenterPanel';
+import { soundManager } from '../../audio/soundManager';
 
 export function DraftView() {
   const navigate = useNavigate();
@@ -36,6 +37,9 @@ export function DraftView() {
   const teams = useGameStore((s) => s.teams);
   const setDayPhase = useGameStore((s) => s.setDayPhase);
   const setDraftResult = useGameStore((s) => s.setDraftResult);
+  const fearlessPool = useGameStore((s) => s.fearlessPool);
+  const mode = useGameStore((s) => s.mode);
+  const basePath = mode === 'player' ? '/player' : '/manager';
 
   const [draft, setDraft] = useState<DraftState | null>(null);
   const [blueInfo, setBlueInfo] = useState<DraftTeamInfo | null>(null);
@@ -63,17 +67,20 @@ export function DraftView() {
       const red = buildDraftTeamInfo(awayPlayers);
       setBlueInfo(blue);
       setRedInfo(red);
-      setDraft(createDraftState());
+      const isFearless = pendingMatch.fearlessDraft ?? false;
+      setDraft(createDraftState(isFearless, isFearless ? fearlessPool : undefined));
     };
 
     init();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fearlessPool은 초기화 시점에만 사용. 밴픽 중 변경되지 않으므로 deps 제외
   }, [pendingMatch]);
 
   // AI 턴 자동 처리
   useEffect(() => {
     if (!draft || !blueInfo || !redInfo || draft.isComplete) return;
 
-    const currentIsUser = draft.currentSide === userSide;
+    // 선수 모드: AI가 양쪽 다 밴픽 (유저는 관전)
+    const currentIsUser = mode === 'manager' && draft.currentSide === userSide;
     if (currentIsUser) {
       setIsAiTurn(false);
       return;
@@ -81,16 +88,16 @@ export function DraftView() {
 
     // AI 턴
     setIsAiTurn(true);
-    const timer = setTimeout(() => {
+    const timer = setTimeout(async () => {
       const newDraft = structuredClone(draft);
 
       if (draft.currentActionType === 'ban') {
         const opponentInfo = draft.currentSide === 'blue' ? redInfo : blueInfo;
-        const champId = aiSelectBan(newDraft, opponentInfo, CHAMPION_DB);
+        const champId = await aiSelectBan(newDraft, opponentInfo, CHAMPION_DB);
         executeDraftAction(newDraft, champId);
       } else {
         const teamInfo = draft.currentSide === 'blue' ? blueInfo : redInfo;
-        const { championId, position } = aiSelectPick(
+        const { championId, position } = await aiSelectPick(
           newDraft,
           draft.currentSide,
           teamInfo,
@@ -112,7 +119,7 @@ export function DraftView() {
       setDraftResult(draft);
       const timer = setTimeout(() => {
         setDayPhase('live_match');
-        navigate('/manager/match');
+        navigate(`${basePath}/match`);
       }, 1500);
       return () => clearTimeout(timer);
     }
@@ -147,29 +154,54 @@ export function DraftView() {
     const success = executeDraftAction(newDraft, selectedChampion, pos);
 
     if (success) {
+      soundManager.play('draft_pick');
       setDraft(newDraft);
       setSelectedChampion(null);
     }
   }, [draft, selectedChampion, selectedPosition]);
 
-  // 챔피언 목록 필터링
-  const filteredChampions = useMemo(() => {
-    if (!draft) return [];
-    return CHAMPION_DB.filter((c) => {
-      if (!isChampionAvailable(draft, c.id)) return false;
+  // 챔피언 목록 필터링 (피어리스 제한 챔피언은 비활성으로 표시)
+  const { filteredChampions, fearlessDisabledIds } = useMemo(() => {
+    if (!draft) return { filteredChampions: [], fearlessDisabledIds: new Set<string>() };
+
+    // 피어리스로 인해 사용 불가한 챔피언 ID 수집
+    const disabled = new Set<string>();
+    if (draft.fearlessMode) {
+      for (const id of draft.fearlessPool.blue) disabled.add(id);
+      for (const id of draft.fearlessPool.red) disabled.add(id);
+    }
+
+    const filtered = CHAMPION_DB.filter((c) => {
+      // 밴/픽된 챔피언은 제외 (피어리스 제한은 제외하지 않고 비활성 표시)
+      if (draft.bannedChampions.includes(c.id)) return false;
+      if (draft.pickedChampions.includes(c.id)) return false;
       if (filterPosition !== 'all' && c.primaryRole !== filterPosition) return false;
       return true;
     });
+
+    return { filteredChampions: filtered, fearlessDisabledIds: disabled };
   }, [draft, filterPosition]);
 
   if (!pendingMatch || !draft) {
     return <p style={{ color: '#6a6a7a' }}>밴픽 데이터 로딩 중...</p>;
   }
 
-  const currentIsUser = draft.currentSide === userSide;
+  const currentIsUser = mode === 'manager' && draft.currentSide === userSide;
 
   return (
     <div style={styles.container}>
+      {/* 피어리스 드래프트 표시 */}
+      {draft.fearlessMode && (
+        <div style={styles.fearlessBanner}>
+          FEARLESS DRAFT — 이전 세트에서 사용한 챔피언 재사용 불가
+          {(fearlessPool.blue.length > 0 || fearlessPool.red.length > 0) && (
+            <span style={styles.fearlessCount}>
+              (블루 {fearlessPool.blue.length}챔 / 레드 {fearlessPool.red.length}챔 제한)
+            </span>
+          )}
+        </div>
+      )}
+
       {/* 상단: 팀 표시 */}
       <div style={styles.header}>
         <div style={{ ...styles.teamHeader, borderColor: '#3498db' }}>
@@ -227,6 +259,7 @@ export function DraftView() {
           filteredChampions={filteredChampions}
           selectedChampion={selectedChampion}
           filterPosition={filterPosition}
+          fearlessDisabledIds={fearlessDisabledIds}
           onSelectChampion={setSelectedChampion}
           onFilterChange={setFilterPosition}
         />
@@ -239,6 +272,25 @@ const styles: Record<string, React.CSSProperties> = {
   container: {
     maxWidth: '1000px',
     margin: '0 auto',
+  },
+  fearlessBanner: {
+    textAlign: 'center' as const,
+    padding: '8px 16px',
+    marginBottom: '16px',
+    background: 'linear-gradient(90deg, rgba(200,155,60,0.15), rgba(200,155,60,0.05))',
+    border: '1px solid rgba(200,155,60,0.4)',
+    borderRadius: '6px',
+    color: '#c89b3c',
+    fontSize: '13px',
+    fontWeight: 700,
+    letterSpacing: '1px',
+  },
+  fearlessCount: {
+    display: 'block',
+    fontSize: '11px',
+    fontWeight: 400,
+    color: '#8a8a9a',
+    marginTop: '2px',
   },
   header: {
     display: 'flex',

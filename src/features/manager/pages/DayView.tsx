@@ -6,12 +6,19 @@
  * - 유저 경기 시 밴픽 → 라이브 매치 분기
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGameStore } from '../../../stores/gameStore';
+import { useMatchStore } from '../../../stores/matchStore';
+import { useKeyboardShortcuts } from '../../../hooks/useKeyboardShortcuts';
 import { advanceDay, skipToNextMatchDay } from '../../../engine/season/dayAdvancer';
+import { getTrainingSchedule } from '../../../engine/training/trainingEngine';
+import { TRAINING_TYPE_LABELS } from '../../../types/training';
+import type { TrainingScheduleEntry } from '../../../types/training';
 import type { DayResult } from '../../../engine/season/dayAdvancer';
 import type { DayType } from '../../../engine/season/calendar';
+import { OFFSEASON_PHASE_LABELS } from '../../../engine/season/offseasonEngine';
+import { generateOffseasonEvents, OFFSEASON_EVENT_LABELS, type OffseasonEvent } from '../../../engine/season/offseasonEvents';
 
 type ActivityChoice = 'training' | 'scrim' | 'rest';
 
@@ -36,11 +43,15 @@ export function DayView() {
   const setPendingUserMatch = useGameStore((s) => s.setPendingUserMatch);
   const setCurrentDate = useGameStore((s) => s.setCurrentDate);
   const setDayType = useGameStore((s) => s.setDayType);
+  const setFearlessPool = useGameStore((s) => s.setFearlessPool);
+  const resetSeries = useMatchStore((s) => s.resetSeries);
 
   const [dayResult, setDayResult] = useState<DayResult | null>(null);
   const [skipResults, setSkipResults] = useState<DayResult[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [selectedActivity, setSelectedActivity] = useState<ActivityChoice>('training');
+  const [todayTraining, setTodayTraining] = useState<TrainingScheduleEntry | null>(null);
+  const [offseasonEvents, setOffseasonEvents] = useState<OffseasonEvent[]>([]);
 
   const currentDate = season?.currentDate ?? '2026-01-12';
   const userTeamId = save?.userTeamId ?? '';
@@ -49,6 +60,27 @@ export function DayView() {
   // 현재 날짜의 요일
   const dateObj = new Date(currentDate.replace(/-/g, '/'));
   const dayOfWeek = dateObj.getDay();
+
+  // 훈련 스케줄 로드
+  useEffect(() => {
+    if (!userTeamId) return;
+    getTrainingSchedule(userTeamId)
+      .then((schedule) => {
+        const entry = schedule.find((s) => s.dayOfWeek === dayOfWeek) ?? null;
+        setTodayTraining(entry);
+      })
+      .catch(() => setTodayTraining(null));
+  }, [userTeamId, dayOfWeek]);
+
+  // 오프시즌 이벤트 생성
+  useEffect(() => {
+    if (dayResult?.isOffseason && userTeam) {
+      const events = generateOffseasonEvents(userTeam.reputation);
+      setOffseasonEvents(events);
+    } else {
+      setOffseasonEvents([]);
+    }
+  }, [dayResult?.isOffseason, userTeam]);
 
   const handleNextDay = useCallback(async () => {
     if (!season || !save) return;
@@ -63,6 +95,7 @@ export function DayView() {
         userTeamId,
         save.mode,
         selectedActivity,
+        save.id,
       );
 
       setDayResult(result);
@@ -75,7 +108,9 @@ export function DayView() {
         setSeason({ ...season, currentDate: result.nextDate });
         navigate('/manager/season-end');
       } else if (result.hasUserMatch && result.userMatch) {
-        // 유저 팀 경기 → 밴픽으로 분기
+        // 유저 팀 경기 → 밴픽으로 분기 (시리즈 상태 초기화)
+        resetSeries();
+        setFearlessPool({ blue: [], red: [] });
         setPendingUserMatch(result.userMatch);
         setDayPhase('banpick');
         navigate('/manager/draft');
@@ -90,7 +125,7 @@ export function DayView() {
     } finally {
       setIsProcessing(false);
     }
-  }, [season, save, currentDate, userTeamId, navigate, setDayPhase, setSeason, setPendingUserMatch, setCurrentDate, setDayType, selectedActivity]);
+  }, [season, save, currentDate, userTeamId, navigate, setDayPhase, setSeason, setPendingUserMatch, setCurrentDate, setDayType, selectedActivity, resetSeries, setFearlessPool]);
 
   const handleSkipToMatch = useCallback(async () => {
     if (!season || !save) return;
@@ -123,6 +158,8 @@ export function DayView() {
         }
 
         if (lastResult.hasUserMatch && lastResult.userMatch) {
+          resetSeries();
+          setFearlessPool({ blue: [], red: [] });
           setPendingUserMatch(lastResult.userMatch);
           setDayPhase('banpick');
           navigate('/manager/draft');
@@ -137,10 +174,24 @@ export function DayView() {
     } finally {
       setIsProcessing(false);
     }
-  }, [season, save, currentDate, userTeamId, navigate, setDayPhase, setSeason, setPendingUserMatch, setCurrentDate, setDayType, selectedActivity]);
+  }, [season, save, currentDate, userTeamId, navigate, setDayPhase, setSeason, setPendingUserMatch, setCurrentDate, setDayType, selectedActivity, resetSeries, setFearlessPool]);
+
+  // Space키로 다음 날 진행 (처리 중이 아닐 때만)
+  const handleNextDayRef = useRef(handleNextDay);
+  handleNextDayRef.current = handleNextDay;
+  const isProcessingRef = useRef(isProcessing);
+  isProcessingRef.current = isProcessing;
+
+  useKeyboardShortcuts({
+    onAdvanceDay: useCallback(() => {
+      if (!isProcessingRef.current) {
+        handleNextDayRef.current();
+      }
+    }, []),
+  });
 
   if (!season || !save || !userTeam) {
-    return <p style={{ color: '#6a6a7a' }}>데이터를 불러오는 중...</p>;
+    return <p style={{ color: 'var(--text-muted)' }}>데이터를 불러오는 중...</p>;
   }
 
   return (
@@ -161,6 +212,46 @@ export function DayView() {
           <span style={styles.teamLabel}>{userTeam.shortName}</span>
         </div>
       </div>
+
+      {/* 오프시즌 배너 */}
+      {dayResult?.isOffseason && dayResult.offseasonPhase && (
+        <div style={styles.offseasonBanner}>
+          <span style={styles.offseasonTitle}>
+            {dayResult.offseasonPhase === 'preseason' ? '부트캠프' : '오프시즌'}
+          </span>
+          <span style={styles.offseasonPhase}>
+            {OFFSEASON_PHASE_LABELS[dayResult.offseasonPhase]}
+          </span>
+          <span style={styles.offseasonDays}>
+            잔여 {dayResult.offseasonDaysRemaining ?? 0}일
+          </span>
+        </div>
+      )}
+
+      {/* 오프시즌 이벤트 */}
+      {offseasonEvents.length > 0 && (
+        <div style={styles.card}>
+          <h3 style={styles.subTitle}>오프시즌 이벤트</h3>
+          {offseasonEvents.map((evt, i) => (
+            <div key={i} style={dayViewStyles.offseasonEventRow}>
+              <span style={dayViewStyles.offseasonEventBadge}>
+                {OFFSEASON_EVENT_LABELS[evt.type]}
+              </span>
+              <div style={dayViewStyles.offseasonEventContent}>
+                <span style={dayViewStyles.offseasonEventTitle}>{evt.title}</span>
+                <span style={dayViewStyles.offseasonEventDesc}>{evt.description}</span>
+              </div>
+              {(evt.effects.morale || evt.effects.reputation || evt.effects.fanHappiness) && (
+                <div style={dayViewStyles.offseasonEventEffects}>
+                  {evt.effects.morale && <span style={{ color: '#2ecc71', fontSize: '11px' }}>사기 +{evt.effects.morale}</span>}
+                  {evt.effects.reputation && <span style={{ color: '#3498db', fontSize: '11px' }}>명성 +{evt.effects.reputation}</span>}
+                  {evt.effects.fanHappiness && <span style={{ color: '#f39c12', fontSize: '11px' }}>팬 +{evt.effects.fanHappiness}</span>}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* 활동 선택 (비경기일) */}
       <div style={styles.activityPanel}>
@@ -186,6 +277,29 @@ export function DayView() {
           ))}
         </div>
       </div>
+
+      {/* 훈련 미니 패널 */}
+      {selectedActivity === 'training' && todayTraining && (
+        <div style={styles.trainingMiniPanel}>
+          <div style={styles.trainingMiniHeader}>
+            <span style={styles.trainingMiniTitle}>오늘의 훈련 스케줄</span>
+          </div>
+          <div style={styles.trainingMiniContent}>
+            <span style={styles.trainingMiniType}>
+              {TRAINING_TYPE_LABELS[todayTraining.trainingType]}
+            </span>
+            <span style={styles.trainingMiniIntensity}>
+              강도: {todayTraining.intensity === 'light' ? '가벼운' : todayTraining.intensity === 'normal' ? '보통' : '강도 높은'}
+            </span>
+          </div>
+          <button
+            style={styles.trainingDetailBtn}
+            onClick={() => navigate('/manager/training')}
+          >
+            훈련 상세 설정 →
+          </button>
+        </div>
+      )}
 
       {/* 액션 버튼 */}
       <div style={styles.actionRow}>
@@ -289,7 +403,7 @@ const styles: Record<string, React.CSSProperties> = {
   title: {
     fontSize: '24px',
     fontWeight: 700,
-    color: '#f0e6d2',
+    color: 'var(--text-primary)',
     marginBottom: '24px',
   },
   dateCard: {
@@ -309,16 +423,16 @@ const styles: Record<string, React.CSSProperties> = {
   },
   dateYear: {
     fontSize: '14px',
-    color: '#6a6a7a',
+    color: 'var(--text-muted)',
   },
   dateDay: {
     fontSize: '28px',
     fontWeight: 700,
-    color: '#f0e6d2',
+    color: 'var(--text-primary)',
   },
   dateDow: {
     fontSize: '16px',
-    color: '#8a8a9a',
+    color: 'var(--text-secondary)',
   },
   dateInfo: {
     display: 'flex',
@@ -327,7 +441,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   weekLabel: {
     fontSize: '14px',
-    color: '#8a8a9a',
+    color: 'var(--text-secondary)',
     background: 'rgba(255,255,255,0.05)',
     padding: '4px 10px',
     borderRadius: '4px',
@@ -335,7 +449,7 @@ const styles: Record<string, React.CSSProperties> = {
   teamLabel: {
     fontSize: '14px',
     fontWeight: 600,
-    color: '#c89b3c',
+    color: 'var(--accent)',
   },
   actionRow: {
     display: 'flex',
@@ -352,17 +466,17 @@ const styles: Record<string, React.CSSProperties> = {
     transition: 'all 0.2s',
   },
   btnPrimary: {
-    background: '#c89b3c',
-    color: '#0d0d1a',
+    background: 'var(--accent)',
+    color: 'var(--bg-primary)',
   },
   btnSecondary: {
     background: 'transparent',
     border: '1px solid #3a3a5c',
-    color: '#8a8a9a',
+    color: 'var(--text-secondary)',
   },
   card: {
     background: 'rgba(255,255,255,0.03)',
-    border: '1px solid #2a2a4a',
+    border: '1px solid var(--border)',
     borderRadius: '10px',
     padding: '20px',
     marginBottom: '16px',
@@ -376,7 +490,7 @@ const styles: Record<string, React.CSSProperties> = {
   resultDate: {
     fontSize: '16px',
     fontWeight: 600,
-    color: '#e0e0e0',
+    color: 'var(--text-primary)',
   },
   dayTypeBadge: {
     fontSize: '12px',
@@ -390,18 +504,18 @@ const styles: Record<string, React.CSSProperties> = {
   },
   eventText: {
     fontSize: '13px',
-    color: '#8a8a9a',
+    color: 'var(--text-secondary)',
     marginBottom: '4px',
   },
   matchResults: {
     marginTop: '16px',
-    borderTop: '1px solid #2a2a4a',
+    borderTop: '1px solid var(--border)',
     paddingTop: '12px',
   },
   subTitle: {
     fontSize: '14px',
     fontWeight: 600,
-    color: '#c89b3c',
+    color: 'var(--accent)',
     marginBottom: '10px',
   },
   matchRow: {
@@ -415,14 +529,14 @@ const styles: Record<string, React.CSSProperties> = {
   matchTeam: {
     fontSize: '14px',
     fontWeight: 500,
-    color: '#e0e0e0',
+    color: 'var(--text-primary)',
     minWidth: '60px',
     textAlign: 'center',
   },
   matchScore: {
     fontSize: '18px',
     fontWeight: 700,
-    color: '#f0e6d2',
+    color: 'var(--text-primary)',
     minWidth: '60px',
     textAlign: 'center',
   },
@@ -435,17 +549,17 @@ const styles: Record<string, React.CSSProperties> = {
   },
   skipDate: {
     fontSize: '13px',
-    color: '#8a8a9a',
+    color: 'var(--text-secondary)',
     minWidth: '120px',
   },
   skipExtra: {
     fontSize: '12px',
-    color: '#6a6a7a',
+    color: 'var(--text-muted)',
     marginLeft: 'auto',
   },
   activityPanel: {
     background: 'rgba(255,255,255,0.03)',
-    border: '1px solid #2a2a4a',
+    border: '1px solid var(--border)',
     borderRadius: '10px',
     padding: '16px 20px',
     marginBottom: '16px',
@@ -453,7 +567,7 @@ const styles: Record<string, React.CSSProperties> = {
   activityLabel: {
     fontSize: '13px',
     fontWeight: 600,
-    color: '#8a8a9a',
+    color: 'var(--text-secondary)',
     marginBottom: '10px',
     display: 'block',
   },
@@ -476,15 +590,126 @@ const styles: Record<string, React.CSSProperties> = {
   },
   activityBtnActive: {
     background: 'rgba(200,155,60,0.12)',
-    borderColor: '#c89b3c',
+    borderColor: 'var(--accent)',
   },
   activityBtnLabel: {
     fontSize: '14px',
     fontWeight: 600,
-    color: '#f0e6d2',
+    color: 'var(--text-primary)',
   },
   activityBtnDesc: {
     fontSize: '11px',
-    color: '#6a6a7a',
+    color: 'var(--text-muted)',
+  },
+  trainingMiniPanel: {
+    background: 'rgba(52,152,219,0.06)',
+    border: '1px solid rgba(52,152,219,0.3)',
+    borderRadius: '10px',
+    padding: '16px 20px',
+    marginBottom: '16px',
+  },
+  trainingMiniHeader: {
+    marginBottom: '10px',
+  },
+  trainingMiniTitle: {
+    fontSize: '13px',
+    fontWeight: 600,
+    color: '#3498db',
+  },
+  trainingMiniContent: {
+    display: 'flex',
+    gap: '16px',
+    alignItems: 'center',
+    marginBottom: '12px',
+  },
+  trainingMiniType: {
+    fontSize: '15px',
+    fontWeight: 600,
+    color: 'var(--text-primary)',
+  },
+  trainingMiniIntensity: {
+    fontSize: '13px',
+    color: 'var(--text-secondary)',
+    background: 'rgba(255,255,255,0.05)',
+    padding: '3px 10px',
+    borderRadius: '4px',
+  },
+  trainingDetailBtn: {
+    padding: '8px 16px',
+    fontSize: '13px',
+    fontWeight: 500,
+    color: '#3498db',
+    background: 'transparent',
+    border: '1px solid rgba(52,152,219,0.3)',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+  },
+  offseasonBanner: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '16px',
+    background: 'linear-gradient(135deg, rgba(243,156,18,0.12) 0%, rgba(231,76,60,0.08) 100%)',
+    border: '1px solid rgba(243,156,18,0.3)',
+    borderRadius: '10px',
+    padding: '16px 20px',
+    marginBottom: '16px',
+  },
+  offseasonTitle: {
+    fontSize: '16px',
+    fontWeight: 700,
+    color: 'var(--warning)',
+  },
+  offseasonPhase: {
+    fontSize: '14px',
+    fontWeight: 600,
+    color: 'var(--text-primary)',
+    background: 'rgba(255,255,255,0.08)',
+    padding: '4px 12px',
+    borderRadius: '6px',
+  },
+  offseasonDays: {
+    fontSize: '13px',
+    color: 'var(--text-secondary)',
+    marginLeft: 'auto',
+  },
+};
+
+const dayViewStyles: Record<string, React.CSSProperties> = {
+  offseasonEventRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    padding: '10px 0',
+    borderBottom: '1px solid rgba(255,255,255,0.04)',
+  },
+  offseasonEventBadge: {
+    fontSize: '11px',
+    fontWeight: 600,
+    color: 'var(--warning)',
+    background: 'rgba(243,156,18,0.1)',
+    padding: '3px 8px',
+    borderRadius: '4px',
+    whiteSpace: 'nowrap',
+  },
+  offseasonEventContent: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+    flex: 1,
+  },
+  offseasonEventTitle: {
+    fontSize: '13px',
+    fontWeight: 600,
+    color: 'var(--text-primary)',
+  },
+  offseasonEventDesc: {
+    fontSize: '12px',
+    color: 'var(--text-secondary)',
+  },
+  offseasonEventEffects: {
+    display: 'flex',
+    gap: '8px',
+    flexShrink: 0,
   },
 };

@@ -40,6 +40,7 @@ export interface Match {
   games: Game[];
   matchType: MatchType;
   boFormat: 'Bo1' | 'Bo3' | 'Bo5';
+  fearlessDraft?: boolean;
 }
 
 export interface Game {
@@ -72,6 +73,23 @@ export interface MatchEvent {
   description: string;    // 텍스트 중계용
   goldChange: number;
   position?: { x: number; y: number }; // 미니맵 위치
+}
+
+/** 선수 개별 경기 스탯 (DB 레코드용) */
+export interface PlayerGameStats {
+  id: string;
+  gameId: string;
+  matchId: string;
+  playerId: string;
+  teamId: string;
+  side: 'home' | 'away';
+  position: string;
+  kills: number;
+  deaths: number;
+  assists: number;
+  cs: number;
+  goldEarned: number;
+  damageDealt: number;
 }
 
 // Tick별 게임 상태

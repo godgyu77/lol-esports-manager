@@ -33,6 +33,13 @@ import {
   getWorldsQualifiedTeams,
   getTournamentStandings,
 } from '../tournament/tournamentEngine';
+import { calculateSeasonAwards } from '../award/awardEngine';
+import { saveSeasonRecord, addHallOfFameEntry, checkAndInductHallOfFame } from '../records/recordsEngine';
+import { checkRetirementCandidates } from '../retirement/retirementEngine';
+import { startOffseason } from './offseasonEngine';
+import { checkGoalAchievement } from '../playerGoal/playerGoalEngine';
+import { checkOwnershipChange } from '../board/ownershipEngine';
+import { getBoardExpectations } from '../board/boardEngine';
 
 // ─────────────────────────────────────────
 // 타입
@@ -73,6 +80,8 @@ export interface SeasonEndResult {
   freedPlayerIds?: string[];
   /** 생성된 대회 목록 */
   createdTournaments?: string[];
+  /** 은퇴한 선수 목록 */
+  retiredPlayers?: { playerId: string; playerName: string; reason: string }[];
 }
 
 // ─────────────────────────────────────────
@@ -118,6 +127,7 @@ export async function processRegularSeasonEnd(
 export async function processFullSeasonEnd(
   season: Season,
   championTeamId?: string,
+  saveId?: number,
 ): Promise<SeasonEndResult> {
   const standings = await getStandings(season.id);
 
@@ -219,6 +229,93 @@ export async function processFullSeasonEnd(
     }
   }
 
+  // 은퇴 체크 (서머 시즌 종료 시에만)
+  let retiredPlayers: { playerId: string; playerName: string; reason: string }[] = [];
+  if (season.split === 'summer') {
+    try {
+      const candidates = await checkRetirementCandidates(season.id, season.endDate);
+      retiredPlayers = candidates.map(c => ({
+        playerId: c.playerId,
+        playerName: c.playerName,
+        reason: c.reason,
+      }));
+    } catch (err) {
+      console.error('은퇴 체크 실패:', err);
+    }
+  }
+
+  // 어워드 산출
+  try {
+    await calculateSeasonAwards(season.id);
+  } catch (err) {
+    console.error('어워드 산출 실패:', err);
+  }
+
+  // 시즌 기록 저장
+  try {
+    for (const standing of standings) {
+      const isChampion = standing.teamId === championTeamId;
+      await saveSeasonRecord(
+        season.id, standing.teamId,
+        standings.indexOf(standing) + 1,
+        standing.wins, standing.losses,
+        isChampion ? '우승' : null,
+        isChampion,
+      );
+    }
+    if (championTeamId) {
+      const seasonInfo = `${season.year} ${season.split === 'spring' ? '스프링' : '서머'}`;
+      await addHallOfFameEntry(
+        season.id, 'champion', null, championTeamId, null,
+        `${seasonInfo} 우승`, season.endDate,
+      );
+    }
+  } catch (err) {
+    console.error('시즌 기록 저장 실패:', err);
+  }
+
+  // 은퇴 선수 명예의 전당 자동 심사
+  if (retiredPlayers.length > 0) {
+    try {
+      const retiredIds = retiredPlayers.map(r => r.playerId);
+      await checkAndInductHallOfFame(season.id, retiredIds, season.endDate);
+    } catch (err) {
+      console.error('명예의 전당 심사 실패:', err);
+    }
+  }
+
+  // 선수 목표 달성 확인
+  try {
+    for (const player of allPlayers) {
+      await checkGoalAchievement(player.id, season.id);
+    }
+  } catch (err) {
+    console.error('선수 목표 달성 확인 실패:', err);
+  }
+
+  // 구단주 교체 체크
+  try {
+    const allTeams = [...new Set(standings.map(s => s.teamId))];
+    for (const teamId of allTeams) {
+      const boardExp = await getBoardExpectations(teamId, season.id);
+      if (boardExp) {
+        await checkOwnershipChange(teamId, season.id, boardExp.satisfaction);
+      }
+    }
+  } catch (err) {
+    console.error('구단주 교체 체크 실패:', err);
+  }
+
+  // 오프시즌 시작
+  if (saveId != null) {
+    try {
+      const offseasonStart = addDays(season.endDate, 1);
+      await startOffseason(saveId, offseasonStart);
+    } catch (err) {
+      console.error('오프시즌 시작 실패:', err);
+    }
+  }
+
   return {
     standings,
     growthResults,
@@ -228,6 +325,7 @@ export async function processFullSeasonEnd(
     championTeamId,
     freedPlayerIds: txResult?.freedPlayerIds ?? [],
     createdTournaments,
+    retiredPlayers,
   };
 }
 

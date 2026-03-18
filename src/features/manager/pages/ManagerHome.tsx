@@ -1,13 +1,23 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useGameStore } from '../../../stores/gameStore';
 import { useSettingsStore } from '../../../stores/settingsStore';
-import { getMatchesByTeam, getTeamTotalSalary, getTeamConditions, getRecentDailyEvents } from '../../../db/queries';
+import { getMatchesByTeam, getTeamTotalSalary, getTeamConditions, getRecentDailyEvents, getExpiringContracts } from '../../../db/queries';
 import { TutorialOverlay } from '../../tutorial/TutorialOverlay';
 import { MeetingModal } from '../components/MeetingModal';
+import { getActiveComplaints } from '../../../engine/complaint/complaintEngine';
+import { getBoardExpectations } from '../../../engine/board/boardEngine';
+import { getCompletedReports } from '../../../engine/scouting/scoutingEngine';
+import { getUnreadCount } from '../../../engine/news/newsEngine';
 import type { Match } from '../../../types/match';
 
 const SALARY_CAP = 400000;
+
+interface DashboardAlert {
+  type: 'warning' | 'info' | 'danger';
+  message: string;
+  link?: string;
+}
 
 interface NewsEvent {
   id: number;
@@ -52,12 +62,14 @@ export function ManagerHome() {
   const season = useGameStore((s) => s.season);
   const teams = useGameStore((s) => s.teams);
   const tutorialComplete = useSettingsStore((s) => s.tutorialComplete);
+  const navigate = useNavigate();
 
   const [upcomingMatches, setUpcomingMatches] = useState<Match[]>([]);
   const [recentMatches, setRecentMatches] = useState<Match[]>([]);
   const [totalSalary, setTotalSalary] = useState<number>(0);
   const [conditions, setConditions] = useState<Map<string, { stamina: number; morale: number; form: number }>>(new Map());
   const [newsEvents, setNewsEvents] = useState<NewsEvent[]>([]);
+  const [alerts, setAlerts] = useState<DashboardAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalMode, setModalMode] = useState<'meeting' | 'press' | null>(null);
   const [lastMeetingDate, setLastMeetingDate] = useState<string | null>(null);
@@ -90,6 +102,77 @@ export function ManagerHome() {
         setTotalSalary(salary);
         setConditions(cond);
         setNewsEvents(news);
+
+        // 알림 체크
+        const newAlerts: DashboardAlert[] = [];
+
+        try {
+          // 계약 만료 임박 선수
+          const expiring = await getExpiringContracts(season.id);
+          const teamExpiring = expiring.filter(p => p.teamId === userTeam.id);
+          if (teamExpiring.length > 0) {
+            const firstName = teamExpiring[0].name;
+            const msg = teamExpiring.length > 1
+              ? `${firstName} 외 ${teamExpiring.length - 1}명의 계약이 이번 시즌 종료`
+              : `${firstName}의 계약이 이번 시즌 종료`;
+            newAlerts.push({ type: 'warning', message: msg, link: '/manager/roster' });
+          }
+
+          // 활성 불만 (severity 2 이상)
+          const complaints = await getActiveComplaints(userTeam.id);
+          const severeComplaints = complaints.filter(c => c.severity >= 2);
+          if (severeComplaints.length > 0) {
+            newAlerts.push({
+              type: 'danger',
+              message: `선수 불만 ${severeComplaints.length}건 미해결`,
+              link: '/manager/roster',
+            });
+          }
+
+          // 샐러리캡 경고 (90% 이상)
+          const salaryRatioVal = salary / SALARY_CAP;
+          if (salaryRatioVal >= 0.9) {
+            newAlerts.push({
+              type: 'danger',
+              message: `샐러리캡 ${(salaryRatioVal * 100).toFixed(1)}% 도달`,
+              link: '/manager/finance',
+            });
+          }
+
+          // 읽지 않은 뉴스
+          const unreadCount = await getUnreadCount(season.id);
+          if (unreadCount > 0) {
+            newAlerts.push({
+              type: 'info',
+              message: `미확인 뉴스 ${unreadCount}건`,
+              link: '/manager/news',
+            });
+          }
+
+          // 보드 만족도 위험 (30 이하)
+          const board = await getBoardExpectations(userTeam.id, season.id);
+          if (board && board.satisfaction <= 30) {
+            newAlerts.push({
+              type: 'danger',
+              message: '구단 만족도 위험!',
+              link: '/manager/board',
+            });
+          }
+
+          // 스카우팅 리포트 완료
+          const reports = await getCompletedReports(userTeam.id);
+          if (reports.length > 0) {
+            newAlerts.push({
+              type: 'info',
+              message: `스카우팅 리포트 ${reports.length}건 도착`,
+              link: '/manager/scouting',
+            });
+          }
+        } catch (e) {
+          console.warn('[ManagerHome] alert check failed:', e);
+        }
+
+        if (!cancelled) setAlerts(newAlerts);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -103,7 +186,7 @@ export function ManagerHome() {
   }, [userTeam?.id, season?.id, season?.currentDate]);
 
   if (!userTeam || !season) {
-    return <p style={{ color: '#6a6a7a' }}>데이터를 불러오는 중...</p>;
+    return <p style={{ color: 'var(--text-muted)' }}>데이터를 불러오는 중...</p>;
   }
 
   // 1군 로스터 (division이 있으면 main 기준, 없으면 처음 5명)
@@ -168,6 +251,57 @@ export function ManagerHome() {
     <div>
       {!tutorialComplete && <TutorialOverlay />}
       <h1 style={styles.title}>팀 대시보드</h1>
+
+      {/* 알림 배너 섹션 */}
+      {alerts.length > 0 && (
+        <div style={styles.alertSection}>
+          {alerts.map((alert, idx) => (
+            <div
+              key={idx}
+              style={{
+                ...styles.alertBanner,
+                background: alert.type === 'danger'
+                  ? 'rgba(220, 60, 60, 0.12)'
+                  : alert.type === 'warning'
+                  ? 'rgba(200, 155, 60, 0.12)'
+                  : 'rgba(96, 165, 250, 0.12)',
+                borderColor: alert.type === 'danger'
+                  ? 'rgba(220, 60, 60, 0.3)'
+                  : alert.type === 'warning'
+                  ? 'rgba(200, 155, 60, 0.3)'
+                  : 'rgba(96, 165, 250, 0.3)',
+                cursor: alert.link ? 'pointer' : 'default',
+              }}
+              onClick={() => alert.link && navigate(alert.link)}
+              role={alert.link ? 'button' : undefined}
+              tabIndex={alert.link ? 0 : undefined}
+              aria-label={alert.message}
+              onKeyDown={(e) => {
+                if (alert.link && (e.key === 'Enter' || e.key === ' ')) {
+                  navigate(alert.link);
+                }
+              }}
+            >
+              <span style={styles.alertIcon}>
+                {alert.type === 'danger' ? '!' : alert.type === 'warning' ? '!' : 'i'}
+              </span>
+              <span
+                style={{
+                  ...styles.alertMessage,
+                  color: alert.type === 'danger'
+                    ? '#dc3c3c'
+                    : alert.type === 'warning'
+                    ? '#c89b3c'
+                    : '#60a5fa',
+                }}
+              >
+                {alert.message}
+              </span>
+              {alert.link && <span style={styles.alertArrow}>&rarr;</span>}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* 팀 정보 카드 */}
       <div style={styles.card}>
@@ -464,12 +598,50 @@ const styles: Record<string, React.CSSProperties> = {
   title: {
     fontSize: '24px',
     fontWeight: 700,
-    color: '#f0e6d2',
+    color: 'var(--text-primary)',
     marginBottom: '24px',
+  },
+  alertSection: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    marginBottom: '16px',
+  },
+  alertBanner: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    padding: '12px 16px',
+    borderRadius: '8px',
+    border: '1px solid',
+    transition: 'opacity 0.2s',
+  },
+  alertIcon: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '22px',
+    height: '22px',
+    borderRadius: '50%',
+    background: 'rgba(255,255,255,0.1)',
+    fontSize: '12px',
+    fontWeight: 700,
+    color: 'var(--text-primary)',
+    flexShrink: 0,
+  },
+  alertMessage: {
+    flex: 1,
+    fontSize: '13px',
+    fontWeight: 500,
+  },
+  alertArrow: {
+    fontSize: '14px',
+    color: 'var(--text-secondary)',
+    flexShrink: 0,
   },
   card: {
     background: 'rgba(255,255,255,0.03)',
-    border: '1px solid #2a2a4a',
+    border: '1px solid var(--border)',
     borderRadius: '10px',
     padding: '20px',
     marginBottom: '16px',
@@ -477,7 +649,7 @@ const styles: Record<string, React.CSSProperties> = {
   cardTitle: {
     fontSize: '16px',
     fontWeight: 600,
-    color: '#c89b3c',
+    color: 'var(--accent)',
     marginBottom: '16px',
   },
   infoGrid: {
@@ -492,12 +664,12 @@ const styles: Record<string, React.CSSProperties> = {
   },
   infoLabel: {
     fontSize: '12px',
-    color: '#6a6a7a',
+    color: 'var(--text-muted)',
   },
   infoValue: {
     fontSize: '16px',
     fontWeight: 600,
-    color: '#e0e0e0',
+    color: 'var(--text-primary)',
   },
   rosterList: {
     display: 'flex',
@@ -515,18 +687,18 @@ const styles: Record<string, React.CSSProperties> = {
   rosterPos: {
     fontSize: '12px',
     fontWeight: 600,
-    color: '#c89b3c',
+    color: 'var(--accent)',
     minWidth: '48px',
   },
   rosterName: {
     flex: 1,
     fontSize: '14px',
     fontWeight: 500,
-    color: '#e0e0e0',
+    color: 'var(--text-primary)',
   },
   rosterAge: {
     fontSize: '12px',
-    color: '#8a8a9a',
+    color: 'var(--text-secondary)',
   },
   rosterOvr: {
     fontSize: '13px',
@@ -537,7 +709,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   dimText: {
     fontSize: '13px',
-    color: '#6a6a7a',
+    color: 'var(--text-muted)',
   },
   widgetGrid: {
     display: 'grid',
@@ -560,28 +732,28 @@ const styles: Record<string, React.CSSProperties> = {
   matchWeek: {
     fontSize: '12px',
     fontWeight: 600,
-    color: '#8a8a9a',
+    color: 'var(--text-secondary)',
     minWidth: '40px',
   },
   matchDate: {
     fontSize: '12px',
-    color: '#6a6a7a',
+    color: 'var(--text-muted)',
     minWidth: '80px',
   },
   matchVs: {
     flex: 1,
     fontSize: '14px',
     fontWeight: 500,
-    color: '#e0e0e0',
+    color: 'var(--text-primary)',
   },
   matchSide: {
     fontSize: '12px',
-    color: '#8a8a9a',
+    color: 'var(--text-secondary)',
   },
   matchScore: {
     fontSize: '14px',
     fontWeight: 600,
-    color: '#e0e0e0',
+    color: 'var(--text-primary)',
     minWidth: '40px',
     textAlign: 'right',
   },
@@ -624,7 +796,7 @@ const styles: Record<string, React.CSSProperties> = {
   salaryPercent: {
     fontSize: '13px',
     fontWeight: 600,
-    color: '#8a8a9a',
+    color: 'var(--text-secondary)',
     minWidth: '48px',
     textAlign: 'right',
   },
@@ -644,13 +816,13 @@ const styles: Record<string, React.CSSProperties> = {
   conditionPos: {
     fontSize: '12px',
     fontWeight: 600,
-    color: '#c89b3c',
+    color: 'var(--accent)',
     minWidth: '40px',
   },
   conditionName: {
     fontSize: '13px',
     fontWeight: 500,
-    color: '#e0e0e0',
+    color: 'var(--text-primary)',
     minWidth: '80px',
   },
   conditionBars: {
@@ -666,7 +838,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   conditionBarLabel: {
     fontSize: '11px',
-    color: '#6a6a7a',
+    color: 'var(--text-muted)',
     minWidth: '28px',
   },
   conditionBarBg: {
@@ -684,7 +856,7 @@ const styles: Record<string, React.CSSProperties> = {
   conditionBarValue: {
     fontSize: '12px',
     fontWeight: 600,
-    color: '#8a8a9a',
+    color: 'var(--text-secondary)',
     minWidth: '28px',
     textAlign: 'right',
   },
@@ -717,7 +889,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   newsDate: {
     fontSize: '11px',
-    color: '#6a6a7a',
+    color: 'var(--text-muted)',
   },
   newsDesc: {
     fontSize: '13px',
@@ -728,7 +900,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   newsMoreLink: {
     fontSize: '13px',
-    color: '#c89b3c',
+    color: 'var(--accent)',
     textDecoration: 'none',
     textAlign: 'right',
     marginTop: '4px',
@@ -745,10 +917,10 @@ const styles: Record<string, React.CSSProperties> = {
     gap: '10px',
     padding: '14px 18px',
     background: 'rgba(255,255,255,0.03)',
-    border: '1px solid #2a2a4a',
+    border: '1px solid var(--border)',
     borderRadius: '10px',
     cursor: 'pointer',
-    color: '#e0e0e0',
+    color: 'var(--text-primary)',
     transition: 'all 0.2s',
     position: 'relative',
   },
@@ -758,11 +930,11 @@ const styles: Record<string, React.CSSProperties> = {
   actionLabel: {
     fontSize: '15px',
     fontWeight: 600,
-    color: '#f0e6d2',
+    color: 'var(--text-primary)',
   },
   actionCooldown: {
     fontSize: '11px',
-    color: '#8a8a9a',
+    color: 'var(--text-secondary)',
     marginLeft: 'auto',
   },
 };

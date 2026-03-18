@@ -11,8 +11,9 @@ import type { Region } from '../../types/game';
 import type { MatchType } from '../../types/match';
 import { LEAGUE_CONSTANTS } from '../../data/systemPrompt';
 import { getDatabase } from '../../db/database';
-import { insertMatch, getMatchById } from '../../db/queries';
+import { insertMatch, getMatchById, getPlayersByTeamId } from '../../db/queries';
 import { addDays, getTournamentDates } from '../season/calendar';
+import { registerTournamentAbsence, clearTournamentAbsence } from './tournamentAbsence';
 
 // ─────────────────────────────────────────
 // 타입
@@ -105,6 +106,11 @@ export async function updateTournamentStatus(
     'UPDATE tournaments SET status = $1 WHERE id = $2',
     [status, tournamentId],
   );
+
+  // 대회 완료 시 참가 선수 부재 기록 해제
+  if (status === 'completed') {
+    await clearTournamentAbsence(tournamentId);
+  }
 }
 
 /** 대회 조회 */
@@ -302,6 +308,25 @@ async function updateSwissStatus(
     `UPDATE swiss_records SET status = $1 WHERE tournament_id = $2 AND team_id = $3`,
     [status, tournamentId, teamId],
   );
+}
+
+// ─────────────────────────────────────────
+// 국제대회 참가 선수 부재 등록 헬퍼
+// ─────────────────────────────────────────
+
+/** 참가팀 선수들의 대회 기간 부재 일괄 등록 */
+async function registerAbsenceForParticipants(
+  tournamentId: string,
+  teamIds: string[],
+  startDate: string,
+  endDate: string,
+): Promise<void> {
+  for (const teamId of teamIds) {
+    const players = await getPlayersByTeamId(teamId);
+    for (const player of players) {
+      await registerTournamentAbsence(player.id, teamId, tournamentId, startDate, endDate);
+    }
+  }
 }
 
 // ─────────────────────────────────────────
@@ -526,6 +551,10 @@ export async function generateFST(
     fearlessDraft: true,
   });
 
+  // 참가 선수 부재 등록
+  const fstTeamIds = participants.map((p) => p.teamId);
+  await registerAbsenceForParticipants(tournamentId, fstTeamIds, dates.start, dates.end);
+
   await updateTournamentStatus(tournamentId, 'knockout');
   return tournamentId;
 }
@@ -627,6 +656,9 @@ export async function generateMSI(
     fearlessDraft: true,
   });
 
+  // 참가 선수 부재 등록
+  await registerAbsenceForParticipants(tournamentId, teamIds, dates.start, dates.end);
+
   await updateTournamentStatus(tournamentId, 'group_stage');
   return tournamentId;
 }
@@ -697,6 +729,10 @@ export async function generateEWC(
     teamHomeId: 'TBD', teamAwayId: 'TBD',
     matchDate: addDays(dates.start, 10), matchType: 'ewc_final', boFormat: 'Bo5',
   });
+
+  // 참가 선수 부재 등록
+  const ewcTeamIds = participants.map((p) => p.teamId);
+  await registerAbsenceForParticipants(tournamentId, ewcTeamIds, dates.start, dates.end);
 
   await updateTournamentStatus(tournamentId, 'knockout');
   return tournamentId;
@@ -769,6 +805,10 @@ export async function generateWorlds(
     teamHomeId: 'TBD', teamAwayId: 'TBD',
     matchDate: addDays(knockoutStart, 14), matchType: 'worlds_final', boFormat: 'Bo5',
   });
+
+  // 참가 선수 부재 등록
+  const worldsTeamIds = allParticipants.map((p) => p.teamId);
+  await registerAbsenceForParticipants(tournamentId, worldsTeamIds, dates.start, dates.end);
 
   await updateTournamentStatus(tournamentId, 'swiss_stage');
   return tournamentId;

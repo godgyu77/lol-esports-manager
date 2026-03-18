@@ -4,9 +4,13 @@
  * - RosterView에서 선수 이름 클릭으로 진입
  */
 
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useGameStore } from '../../../stores/gameStore';
 import type { Player, PlayerStats } from '../../../types/player';
+import type { PlayerGameStats } from '../../../types/match';
+import { getPlayerGameStatsByPlayer } from '../../../db/queries';
+import { PlayerAvatar } from '../../../components/PlayerAvatar';
 
 const POSITION_LABELS: Record<string, string> = {
   top: '탑',
@@ -86,6 +90,12 @@ export function PlayerDetailView() {
   const { playerId } = useParams<{ playerId: string }>();
   const navigate = useNavigate();
   const teams = useGameStore((s) => s.teams);
+  const [recentGames, setRecentGames] = useState<PlayerGameStats[]>([]);
+
+  useEffect(() => {
+    if (!playerId) return;
+    getPlayerGameStatsByPlayer(playerId, 10).then(setRecentGames);
+  }, [playerId]);
 
   let player: Player | undefined;
   let teamName = '';
@@ -129,7 +139,15 @@ export function PlayerDetailView() {
         ← 로스터로 돌아가기
       </button>
 
-      <h1 style={styles.title}>{player.name}</h1>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '20px' }}>
+        <PlayerAvatar
+          position={player.position}
+          nationality={player.nationality}
+          size={56}
+          name={player.name}
+        />
+        <h1 style={{ ...styles.title, marginBottom: 0 }}>{player.name}</h1>
+      </div>
 
       {/* 프로필 카드 */}
       <div style={styles.card}>
@@ -254,6 +272,67 @@ export function PlayerDetailView() {
               </div>
             ))}
           </div>
+        )}
+      </div>
+
+      {/* 최근 경기 기록 */}
+      <div style={styles.card}>
+        <h2 style={styles.cardTitle}>최근 경기 기록</h2>
+        {recentGames.length === 0 ? (
+          <p style={{ color: '#6a6a7a', fontSize: '13px' }}>경기 기록이 없습니다.</p>
+        ) : (
+          <>
+            {/* 시즌 평균 요약 */}
+            <div style={detailStyles.avgGrid}>
+              <div style={detailStyles.avgItem}>
+                <span style={detailStyles.avgLabel}>평균 K/D/A</span>
+                <span style={detailStyles.avgValue}>
+                  {(recentGames.reduce((s, g) => s + g.kills, 0) / recentGames.length).toFixed(1)} /
+                  {' '}{(recentGames.reduce((s, g) => s + g.deaths, 0) / recentGames.length).toFixed(1)} /
+                  {' '}{(recentGames.reduce((s, g) => s + g.assists, 0) / recentGames.length).toFixed(1)}
+                </span>
+              </div>
+              <div style={detailStyles.avgItem}>
+                <span style={detailStyles.avgLabel}>평균 CS</span>
+                <span style={detailStyles.avgValue}>
+                  {Math.round(recentGames.reduce((s, g) => s + g.cs, 0) / recentGames.length)}
+                </span>
+              </div>
+              <div style={detailStyles.avgItem}>
+                <span style={detailStyles.avgLabel}>평균 데미지</span>
+                <span style={detailStyles.avgValue}>
+                  {Math.round(recentGames.reduce((s, g) => s + g.damageDealt, 0) / recentGames.length).toLocaleString()}
+                </span>
+              </div>
+            </div>
+
+            <table style={detailStyles.table}>
+              <thead>
+                <tr>
+                  <th style={detailStyles.th}>매치</th>
+                  <th style={detailStyles.th}>K</th>
+                  <th style={detailStyles.th}>D</th>
+                  <th style={detailStyles.th}>A</th>
+                  <th style={detailStyles.th}>CS</th>
+                  <th style={detailStyles.th}>골드</th>
+                  <th style={detailStyles.th}>데미지</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentGames.map((g) => (
+                  <tr key={g.id} style={detailStyles.tr}>
+                    <td style={detailStyles.td}>{g.gameId}</td>
+                    <td style={{ ...detailStyles.td, color: '#90ee90' }}>{g.kills}</td>
+                    <td style={{ ...detailStyles.td, color: '#ff6b6b' }}>{g.deaths}</td>
+                    <td style={detailStyles.td}>{g.assists}</td>
+                    <td style={detailStyles.td}>{g.cs}</td>
+                    <td style={detailStyles.td}>{g.goldEarned.toLocaleString()}</td>
+                    <td style={detailStyles.td}>{g.damageDealt.toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
         )}
       </div>
     </div>
@@ -396,5 +475,52 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#6a6a7a',
     minWidth: '48px',
     textAlign: 'right',
+  },
+};
+
+const detailStyles: Record<string, React.CSSProperties> = {
+  avgGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, 1fr)',
+    gap: '12px',
+    marginBottom: '16px',
+  },
+  avgItem: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '4px',
+    padding: '12px',
+    background: 'rgba(255,255,255,0.03)',
+    borderRadius: '8px',
+  },
+  avgLabel: {
+    fontSize: '12px',
+    color: '#6a6a7a',
+  },
+  avgValue: {
+    fontSize: '16px',
+    fontWeight: 700,
+    color: '#e0e0e0',
+  },
+  table: {
+    width: '100%',
+    borderCollapse: 'collapse',
+    fontSize: '13px',
+  },
+  th: {
+    padding: '8px 10px',
+    textAlign: 'left',
+    borderBottom: '1px solid #3a3a5c',
+    color: '#6a6a7a',
+    fontSize: '12px',
+    fontWeight: 500,
+  },
+  tr: {
+    borderBottom: '1px solid rgba(255,255,255,0.04)',
+  },
+  td: {
+    padding: '8px 10px',
+    color: '#c0c0d0',
   },
 };

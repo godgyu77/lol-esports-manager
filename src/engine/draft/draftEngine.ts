@@ -9,6 +9,7 @@
 import type { Position } from '../../types/game';
 import type { Champion } from '../../types/champion';
 import type { ChampionProficiency } from '../../types/player';
+import { getDatabase } from '../../db/database';
 
 // ─────────────────────────────────────────
 // 타입
@@ -216,18 +217,81 @@ export function executeDraftAction(
 }
 
 // ─────────────────────────────────────────
+// 챔피언 현재 티어 조회 (DB 기반)
+// ─────────────────────────────────────────
+
+/** C/D 티어 이하 챔피언은 AI가 밴/픽하지 않도록 필터링하는 기준 */
+const AI_IGNORE_TIERS = new Set(['C', 'D']);
+
+/**
+ * DB에서 챔피언 현재 티어 조회 (champion_patches 반영)
+ * DB 접근 실패 시 정적 데이터 기반 티어를 fallback으로 사용
+ */
+export async function getChampionCurrentTier(
+  championId: string,
+): Promise<Champion['tier']> {
+  try {
+    const db = await getDatabase();
+    const rows = await db.select<{ tier: string }[]>(
+      'SELECT tier FROM champions WHERE id = $1',
+      [championId],
+    );
+    if (rows.length > 0) {
+      return rows[0].tier as Champion['tier'];
+    }
+  } catch {
+    // DB 접근 실패 시 무시
+  }
+  return 'B'; // 기본 폴백
+}
+
+/**
+ * 전체 챔피언의 현재 티어를 일괄 조회 (캐시용)
+ */
+async function getChampionTierMap(): Promise<Map<string, Champion['tier']>> {
+  const tierMap = new Map<string, Champion['tier']>();
+  try {
+    const db = await getDatabase();
+    const rows = await db.select<{ id: string; tier: string }[]>(
+      'SELECT id, tier FROM champions',
+    );
+    for (const row of rows) {
+      tierMap.set(row.id, row.tier as Champion['tier']);
+    }
+  } catch {
+    // DB 접근 실패 시 빈 맵 반환
+  }
+  return tierMap;
+}
+
+/** 티어 보너스 계산 (현재 DB 티어 기반) */
+function getTierBonus(tier: Champion['tier']): number {
+  switch (tier) {
+    case 'S': return 20;
+    case 'A': return 10;
+    case 'B': return 0;
+    case 'C': return -10;
+    case 'D': return -20;
+    default: return 0;
+  }
+}
+
+// ─────────────────────────────────────────
 // AI 밴픽 로직
 // ─────────────────────────────────────────
 
 /**
  * AI의 밴 선택
  * 상대팀 핵심 챔피언 (높은 숙련도) 위주로 밴
+ * 현재 챔피언 티어를 DB에서 실시간 조회하여 패치 반영
  */
-export function aiSelectBan(
+export async function aiSelectBan(
   state: DraftState,
   opponentInfo: DraftTeamInfo,
   allChampions: Champion[],
-): string {
+): Promise<string> {
+  const tierMap = await getChampionTierMap();
+
   // 상대팀 전체 챔피언 풀에서 숙련도 높은 순으로 정렬
   const positions: Position[] = ['top', 'jungle', 'mid', 'adc', 'support'];
   const candidateMap = new Map<string, number>();
@@ -239,8 +303,14 @@ export function aiSelectBan(
       const champ = allChampions.find(c => c.id === cp.championId);
       if (!champ) continue;
 
-      // 점수 = 숙련도 + 티어 보너스
-      const tierBonus = champ.tier === 'S' ? 20 : champ.tier === 'A' ? 10 : 0;
+      // DB에서 현재 티어 조회 (패치 반영)
+      const currentTier = tierMap.get(cp.championId) ?? champ.tier;
+
+      // C/D 티어 챔피언은 밴 가치가 없으므로 스킵
+      if (AI_IGNORE_TIERS.has(currentTier)) continue;
+
+      // 점수 = 숙련도 + 현재 티어 보너스
+      const tierBonus = getTierBonus(currentTier);
       const score = cp.proficiency + tierBonus;
       const existing = candidateMap.get(cp.championId) ?? 0;
       candidateMap.set(cp.championId, Math.max(existing, score));
@@ -252,10 +322,11 @@ export function aiSelectBan(
 
   // 최상위 챔피언 밴 (약간의 랜덤성)
   if (sorted.length === 0) {
-    // 풀이 없으면 S/A 티어 챔피언 중 랜덤 밴
-    const highTier = allChampions.filter(
-      c => (c.tier === 'S' || c.tier === 'A') && isChampionAvailable(state, c.id),
-    );
+    // 풀이 없으면 S/A 티어 챔피언 중 랜덤 밴 (DB 티어 기반)
+    const highTier = allChampions.filter(c => {
+      const currentTier = tierMap.get(c.id) ?? c.tier;
+      return (currentTier === 'S' || currentTier === 'A') && isChampionAvailable(state, c.id);
+    });
     return highTier[Math.floor(Math.random() * highTier.length)]?.id ?? 'aatrox';
   }
 
@@ -268,13 +339,16 @@ export function aiSelectBan(
 /**
  * AI의 픽 선택
  * 아직 픽하지 않은 포지션 중 필요한 포지션의 최적 챔피언 선택
+ * 현재 챔피언 티어를 DB에서 실시간 조회하여 패치 반영
  */
-export function aiSelectPick(
+export async function aiSelectPick(
   state: DraftState,
   side: 'blue' | 'red',
   teamInfo: DraftTeamInfo,
   allChampions: Champion[],
-): { championId: string; position: Position } {
+): Promise<{ championId: string; position: Position }> {
+  const tierMap = await getChampionTierMap();
+
   const teamState = side === 'blue' ? state.blue : state.red;
   const pickedPositions = new Set(teamState.picks.map(p => p.position));
   const positions: Position[] = ['top', 'jungle', 'mid', 'adc', 'support'];
@@ -301,8 +375,14 @@ export function aiSelectPick(
       const champ = allChampions.find(c => c.id === cp.championId);
       if (!champ) continue;
 
-      // 점수 = 숙련도 + 티어 보너스 + 팀 선호 태그 매칭
-      const tierBonus = champ.tier === 'S' ? 15 : champ.tier === 'A' ? 8 : 0;
+      // DB에서 현재 티어 조회 (패치 반영)
+      const currentTier = tierMap.get(cp.championId) ?? champ.tier;
+
+      // C/D 티어 챔피언은 AI가 픽하지 않음
+      if (AI_IGNORE_TIERS.has(currentTier)) continue;
+
+      // 점수 = 숙련도 + 현재 티어 보너스 + 팀 선호 태그 매칭
+      const tierBonus = getTierBonus(currentTier);
       const tagBonus = champ.tags.some(t => teamInfo.preferredTags.includes(t)) ? 5 : 0;
       const score = cp.proficiency + tierBonus + tagBonus;
 
@@ -314,14 +394,15 @@ export function aiSelectPick(
     }
   }
 
-  // 풀에서 못 찾으면 해당 포지션 S/A 티어 챔피언 중 아무거나
+  // 풀에서 못 찾으면 해당 포지션 S/A/B 티어 챔피언 중 아무거나 (DB 티어 기반)
   if (!bestChampId) {
     const fallbackPos = sortedRemaining[0] ?? 'mid';
-    const available = allChampions.filter(
-      c => c.primaryRole === fallbackPos
-        && (c.tier === 'S' || c.tier === 'A' || c.tier === 'B')
-        && isChampionAvailable(state, c.id),
-    );
+    const available = allChampions.filter(c => {
+      const currentTier = tierMap.get(c.id) ?? c.tier;
+      return c.primaryRole === fallbackPos
+        && (currentTier === 'S' || currentTier === 'A' || currentTier === 'B')
+        && isChampionAvailable(state, c.id);
+    });
     bestChampId = available[Math.floor(Math.random() * available.length)]?.id ?? 'aatrox';
     bestPosition = fallbackPos;
   }
@@ -356,12 +437,14 @@ export function buildDraftTeamInfo(
  * 전체 드래프트를 AI끼리 자동 완료
  * (타 팀 경기 시뮬레이션용)
  */
-export function autoCompleteDraft(
+export async function autoCompleteDraft(
   blueInfo: DraftTeamInfo,
   redInfo: DraftTeamInfo,
   allChampions: Champion[],
-): DraftState {
-  const state = createDraftState();
+  fearlessMode = false,
+  fearlessPool?: Record<'blue' | 'red', string[]>,
+): Promise<DraftState> {
+  const state = createDraftState(fearlessMode, fearlessPool);
   const maxIterations = DRAFT_ORDER.length + 1;
   let iterations = 0;
 
@@ -372,12 +455,12 @@ export function autoCompleteDraft(
 
     if (step.type === 'ban') {
       const opponentInfo = step.side === 'blue' ? redInfo : blueInfo;
-      const champId = aiSelectBan(state, opponentInfo, allChampions);
+      const champId = await aiSelectBan(state, opponentInfo, allChampions);
       const success = executeDraftAction(state, champId);
       if (!success) break;
     } else {
       const teamInfo = step.side === 'blue' ? blueInfo : redInfo;
-      const { championId, position } = aiSelectPick(state, step.side, teamInfo, allChampions);
+      const { championId, position } = await aiSelectPick(state, step.side, teamInfo, allChampions);
       const success = executeDraftAction(state, championId, position);
       if (!success) break;
     }

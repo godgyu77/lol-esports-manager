@@ -3,9 +3,10 @@
  */
 import type { GameMode, GameSave, Position, Region } from '../types';
 import type { PlayerBackground } from '../types/player';
+import type { PendingManager } from '../stores/gameStore';
 import { generateLeagueSchedule } from '../engine/season/scheduleGenerator';
 import { assignMatchDates, SEASON_DATES } from '../engine/season/calendar';
-import { withTransaction } from './database';
+import { getDatabase, withTransaction } from './database';
 import {
   createSave,
   createSeason,
@@ -84,9 +85,11 @@ export async function initializeNewGame(
   mode: GameMode,
   teamId: string,
   pendingPlayer?: PendingPlayer | null,
+  pendingManager?: PendingManager | null,
 ): Promise<GameSave> {
   // 1. 기존 데이터 정리 (트랜잭션)
   await withTransaction(async (db) => {
+    await db.execute('DELETE FROM manager_profiles');
     await db.execute('DELETE FROM save_metadata');
     await db.execute('DELETE FROM daily_events');
     await db.execute('DELETE FROM player_daily_condition');
@@ -175,6 +178,32 @@ export async function initializeNewGame(
 
     if (!save) {
       throw new Error('세이브 생성 실패');
+    }
+
+    // 감독 프로필 저장 (감독 모드)
+    if (mode === 'manager' && pendingManager) {
+      const db = await getDatabase();
+      await db.execute(
+        `INSERT INTO manager_profiles
+          (save_id, name, nationality, age, background,
+           tactical_knowledge, motivation, discipline,
+           adaptability, scouting_eye, media_handling, reputation)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+        [
+          saveId,
+          pendingManager.name,
+          pendingManager.nationality,
+          pendingManager.age,
+          pendingManager.background,
+          pendingManager.stats.tacticalKnowledge,
+          pendingManager.stats.motivation,
+          pendingManager.stats.discipline,
+          pendingManager.stats.adaptability,
+          pendingManager.stats.scoutingEye,
+          pendingManager.stats.mediaHandling,
+          pendingManager.reputation,
+        ],
+      );
     }
 
     return save;

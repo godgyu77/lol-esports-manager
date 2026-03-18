@@ -10,6 +10,8 @@ import { MATCH_CONSTANTS } from '../../data/systemPrompt';
 import type { Position } from '../../types/game';
 import type { Game, MatchEvent, MatchEventType } from '../../types/match';
 import type { Player } from '../../types/player';
+import type { PlayStyle } from '../../types/team';
+import type { TacticsBonus } from '../tactics/tacticsEngine';
 import {
   type Lineup,
   type MatchupResult,
@@ -23,6 +25,18 @@ import { createRng } from '../../utils/rng';
 
 export type BoFormat = 'Bo1' | 'Bo3' | 'Bo5';
 
+/** 엔진 산출용 선수별 스탯 라인 */
+export interface PlayerGameStatLine {
+  playerId: string;
+  position: Position;
+  kills: number;
+  deaths: number;
+  assists: number;
+  cs: number;
+  goldEarned: number;
+  damageDealt: number;
+}
+
 /** 단일 세트 결과 */
 export interface GameResult {
   winnerSide: 'home' | 'away';
@@ -31,6 +45,8 @@ export interface GameResult {
   killsHome: number;
   killsAway: number;
   events: MatchEvent[];
+  playerStatsHome: PlayerGameStatLine[];
+  playerStatsAway: PlayerGameStatLine[];
 }
 
 /** 매치(시리즈) 전체 결과 */
@@ -39,6 +55,136 @@ export interface MatchResult {
   scoreAway: number;
   winner: 'home' | 'away';
   games: GameResult[];
+}
+
+// ─────────────────────────────────────────
+// 전술 이벤트 보정 계수
+// ─────────────────────────────────────────
+
+const PLAY_STYLE_EVENT_MODIFIERS: Record<PlayStyle, {
+  soloKill: number;
+  dragon: number;
+  tower: number;
+  teamfight: number;
+}> = {
+  aggressive: { soloKill: 1.3, dragon: 1.0, tower: 0.9, teamfight: 1.3 },
+  controlled: { soloKill: 0.8, dragon: 1.2, tower: 1.15, teamfight: 0.7 },
+  split: { soloKill: 1.1, dragon: 0.9, tower: 1.1, teamfight: 0.9 },
+};
+
+// ─────────────────────────────────────────
+// 선수별 스탯 생성 (사후 분배)
+// ─────────────────────────────────────────
+
+/** 킬 분배 가중치 (포지션별) */
+const KILL_WEIGHT: Record<Position, number> = {
+  top: 0.18, jungle: 0.20, mid: 0.22, adc: 0.28, support: 0.12,
+};
+
+/** 데스 분배 가중치 (역방향 — 서포트/탑이 더 많이 죽음) */
+const DEATH_WEIGHT: Record<Position, number> = {
+  top: 0.22, jungle: 0.20, mid: 0.18, adc: 0.15, support: 0.25,
+};
+
+/** 데미지 비율 가중치 */
+const DAMAGE_WEIGHT: Record<Position, number> = {
+  top: 0.18, jungle: 0.15, mid: 0.25, adc: 0.30, support: 0.12,
+};
+
+/** CS/분 기본값 */
+const BASE_CS_PER_MIN: Record<Position, number> = {
+  top: 8.0, jungle: 5.5, mid: 8.5, adc: 9.0, support: 1.5,
+};
+
+/**
+ * 게임 종료 후 팀 킬/데스를 선수별로 분배
+ */
+function generatePlayerStats(
+  lineup: Lineup,
+  teamKills: number,
+  teamDeaths: number,
+  durationMinutes: number,
+  rand: () => number,
+): PlayerGameStatLine[] {
+  const positions: Position[] = ['top', 'jungle', 'mid', 'adc', 'support'];
+  const stats: PlayerGameStatLine[] = [];
+
+  // 킬 분배 (가중치 + aggression 미세조정)
+  const killWeights = positions.map(pos => {
+    const base = KILL_WEIGHT[pos];
+    const aggressionMod = (lineup[pos].stats.aggression - 60) * 0.002;
+    return Math.max(0.05, base + aggressionMod);
+  });
+  const killWeightSum = killWeights.reduce((a, b) => a + b, 0);
+  const killShares = killWeights.map(w => w / killWeightSum);
+
+  // 데스 분배
+  const deathShares = positions.map(pos => DEATH_WEIGHT[pos]);
+  const deathSum = deathShares.reduce((a, b) => a + b, 0);
+
+  // 분배 실행
+  let remainingKills = teamKills;
+  let remainingDeaths = teamDeaths;
+  const killAssigned: number[] = [];
+  const deathAssigned: number[] = [];
+
+  for (let i = 0; i < positions.length; i++) {
+    if (i === positions.length - 1) {
+      killAssigned.push(Math.max(0, remainingKills));
+      deathAssigned.push(Math.max(0, remainingDeaths));
+    } else {
+      const k = Math.round(teamKills * killShares[i] + (rand() - 0.5) * 1.5);
+      const clamped = Math.max(0, Math.min(remainingKills, k));
+      killAssigned.push(clamped);
+      remainingKills -= clamped;
+
+      const d = Math.round(teamDeaths * (deathShares[i] / deathSum) + (rand() - 0.5) * 1.5);
+      const clampedD = Math.max(0, Math.min(remainingDeaths, d));
+      deathAssigned.push(clampedD);
+      remainingDeaths -= clampedD;
+    }
+  }
+
+  for (let i = 0; i < positions.length; i++) {
+    const pos = positions[i];
+    const player = lineup[pos];
+    const kills = killAssigned[i];
+    const deaths = deathAssigned[i];
+
+    // 어시스트: 킬당 평균 2명, 킬러 제외 랜덤
+    // 총 어시스트 = 팀 킬 * 2 정도, 각 선수는 자기 킬 제외 나머지에서 분배
+    const assistBase = Math.round((teamKills - kills) * 0.5 + rand() * 2);
+    const assists = Math.max(0, assistBase);
+
+    // CS
+    const laningMod = 1 + (player.stats.laning - 60) * 0.005;
+    const cs = Math.round(BASE_CS_PER_MIN[pos] * durationMinutes * laningMod + (rand() - 0.5) * 20);
+
+    // 골드
+    const killGold = kills * 300;
+    const csGold = cs * 20;
+    const baseGold = durationMinutes * 100;
+    const goldEarned = killGold + csGold + baseGold;
+
+    // 데미지
+    const baseDamage = durationMinutes * 600;
+    const mechanicalMod = 1 + (player.stats.mechanical - 60) * 0.005;
+    const aggressionMod = 1 + (player.stats.aggression - 60) * 0.003;
+    const damageDealt = Math.round(baseDamage * DAMAGE_WEIGHT[pos] / 0.2 * mechanicalMod * aggressionMod + (rand() - 0.5) * 2000);
+
+    stats.push({
+      playerId: player.id,
+      position: pos,
+      kills,
+      deaths,
+      assists,
+      cs: Math.max(0, cs),
+      goldEarned: Math.max(0, goldEarned),
+      damageDealt: Math.max(0, damageDealt),
+    });
+  }
+
+  return stats;
 }
 
 // ─────────────────────────────────────────
@@ -59,12 +205,18 @@ function simulateGame(
   fatigueHome: number,
   fatigueAway: number,
   seed: string,
+  homeLineup: Lineup,
+  awayLineup: Lineup,
+  homePlayStyle: PlayStyle = 'controlled',
+  awayPlayStyle: PlayStyle = 'controlled',
+  homeTacticsBonus?: TacticsBonus,
+  awayTacticsBonus?: TacticsBonus,
 ): GameResult {
   const rand = createRng(seed);
   const { homeWinRate, homeRating, awayRating, laneMatchups } = matchup;
 
-  // 피로 보정: 후반 세트일수록 체력이 낮은 팀 불리
-  const fatigueDiff = (fatigueAway - fatigueHome) * 0.02;
+  // 피로 보정: 후반 세트일수록 체력이 낮은 팀 불리 (3배 강화)
+  const fatigueDiff = (fatigueAway - fatigueHome) * 0.04;
   let currentWinRate = Math.max(0.15, Math.min(0.85, homeWinRate + fatigueDiff));
 
   /** 승률 보정 (클램프 적용) */
@@ -90,6 +242,16 @@ function simulateGame(
 
   const positions: Position[] = ['top', 'jungle', 'mid', 'adc', 'support'];
 
+  // 전술 보정값 추출 (없으면 0)
+  const homeEarly = homeTacticsBonus?.earlyBonus ?? 0;
+  const awayEarly = awayTacticsBonus?.earlyBonus ?? 0;
+  const homeMid = homeTacticsBonus?.midBonus ?? 0;
+  const awayMid = awayTacticsBonus?.midBonus ?? 0;
+  const homeLate = homeTacticsBonus?.lateBonus ?? 0;
+  const awayLate = awayTacticsBonus?.lateBonus ?? 0;
+  const homeObj = homeTacticsBonus?.objectiveBonus ?? 0;
+  const awayObj = awayTacticsBonus?.objectiveBonus ?? 0;
+
   // 각 라인별 라인전 결과
   for (const pos of positions) {
     if (pos === 'jungle') continue;
@@ -100,10 +262,14 @@ function simulateGame(
     if (laneWin === 'home') goldHome += csDiffGold;
     else goldAway += csDiffGold;
 
-    // 라인전 결과가 승률에 반영
-    adjustWinRate(laneDiff * 0.003);
+    // 라인전 결과가 승률에 반영 + 전술 초반 보정
+    const earlyTacticsDiff = homeEarly - awayEarly;
+    adjustWinRate(laneDiff * 0.003 + earlyTacticsDiff * 0.5);
 
-    if (Math.abs(laneDiff) > 5 && rand() < 0.3 + Math.abs(laneDiff) * 0.01) {
+    const soloKillMod = laneWin === 'home'
+      ? PLAY_STYLE_EVENT_MODIFIERS[homePlayStyle].soloKill
+      : PLAY_STYLE_EVENT_MODIFIERS[awayPlayStyle].soloKill;
+    if (Math.abs(laneDiff) > 5 && rand() < (0.3 + Math.abs(laneDiff) * 0.01) * soloKillMod) {
       const tick = Math.round(180 + rand() * 720);
       if (laneWin === 'home') { killsHome++; goldHome += 300; adjustWinRate(0.02); }
       else { killsAway++; goldAway += 300; adjustWinRate(-0.02); }
@@ -111,11 +277,12 @@ function simulateGame(
     }
   }
 
-  // 정글 갱킹
+  // 정글 갱킹 (전술 초반 보정: invade → 갱킹 성공률 상승, safe_farm → 안정)
   const gangkCount = 1 + Math.floor(rand() * 3);
   for (let g = 0; g < gangkCount; g++) {
     const jglDiff = laneMatchups.jungle;
-    const gangkSuccess = rand() < 0.5 + jglDiff * 0.01;
+    const gangkTacticsMod = (homeEarly - awayEarly) * 0.5;
+    const gangkSuccess = rand() < 0.5 + jglDiff * 0.01 + gangkTacticsMod;
     const tick = Math.round(180 + rand() * 600);
     const targetLane = positions[Math.floor(rand() * 3) * 2];
 
@@ -135,7 +302,12 @@ function simulateGame(
   for (let d = 0; d < dragonCount; d++) {
     const tick = Math.round(900 + d * 300 + rand() * 180);
     const tfPower = homeRating.teamfightPower - awayRating.teamfightPower;
-    const dragonWin = rand() < 0.5 + tfPower * 0.008 + (currentWinRate - 0.5) * 0.15;
+    const dragonModHome = PLAY_STYLE_EVENT_MODIFIERS[homePlayStyle].dragon;
+    const dragonModAway = PLAY_STYLE_EVENT_MODIFIERS[awayPlayStyle].dragon;
+    const dragonBias = (dragonModHome - dragonModAway) * 0.05;
+    // 전술 중반 보정 + 오브젝트 우선도 보정
+    const midTacticsDiff = (homeMid - awayMid) + (homeObj - awayObj);
+    const dragonWin = rand() < 0.5 + tfPower * 0.008 + (currentWinRate - 0.5) * 0.15 + dragonBias + midTacticsDiff;
 
     if (dragonWin) {
       goldHome += 200; adjustWinRate(0.03);
@@ -145,7 +317,10 @@ function simulateGame(
       events.push({ tick, type: 'dragon', side: 'away', description: '드래곤 확보', goldChange: 200 });
     }
 
-    if (rand() < 0.6) {
+    const tfMod = dragonWin
+      ? PLAY_STYLE_EVENT_MODIFIERS[homePlayStyle].teamfight
+      : PLAY_STYLE_EVENT_MODIFIERS[awayPlayStyle].teamfight;
+    if (rand() < 0.6 * tfMod) {
       const teamfightKills = 1 + Math.floor(rand() * 3);
       const tfSide: 'home' | 'away' = dragonWin ? 'home' : 'away';
       if (tfSide === 'home') { killsHome += teamfightKills; goldHome += teamfightKills * 300; adjustWinRate(0.02 * teamfightKills); }
@@ -156,7 +331,8 @@ function simulateGame(
 
   // 타워 (중반)
   const leadingSide: 'home' | 'away' = goldHome > goldAway ? 'home' : 'away';
-  const towersTaken = 1 + Math.floor(rand() * 3);
+  const towerMod = PLAY_STYLE_EVENT_MODIFIERS[leadingSide === 'home' ? homePlayStyle : awayPlayStyle].tower;
+  const towersTaken = Math.round((1 + Math.floor(rand() * 3)) * towerMod);
   for (let t = 0; t < towersTaken; t++) {
     const tick = Math.round(1000 + t * 120 + rand() * 300);
     if (leadingSide === 'home') { goldHome += 550; adjustWinRate(0.015); }
@@ -167,7 +343,9 @@ function simulateGame(
   // ── 후반 시뮬레이션 (25분+) ──
   if (durationMinutes > 25) {
     const baronTick = Math.round(1500 + rand() * 300);
-    const baronWin = rand() < currentWinRate;
+    // 전술 후반 보정 + 오브젝트 우선도 보정
+    const lateTacticsDiff = (homeLate - awayLate) + (homeObj - awayObj);
+    const baronWin = rand() < currentWinRate + lateTacticsDiff;
     const baronSide: 'home' | 'away' = baronWin ? 'home' : 'away';
 
     if (baronSide === 'home') { goldHome += 1500; adjustWinRate(0.06); }
@@ -208,7 +386,11 @@ function simulateGame(
 
   events.sort((a, b) => a.tick - b.tick);
 
-  return { winnerSide, durationMinutes, goldDiffAt15, killsHome, killsAway, events };
+  // 선수별 스탯 생성 (사후 분배)
+  const playerStatsHome = generatePlayerStats(homeLineup, killsHome, killsAway, durationMinutes, rand);
+  const playerStatsAway = generatePlayerStats(awayLineup, killsAway, killsHome, durationMinutes, rand);
+
+  return { winnerSide, durationMinutes, goldDiffAt15, killsHome, killsAway, events, playerStatsHome, playerStatsAway };
 }
 
 // ─────────────────────────────────────────
@@ -235,8 +417,12 @@ export function simulateMatch(
   awayTraits: Record<string, string[]> = {},
   homeForm: Record<string, number> = {},
   awayForm: Record<string, number> = {},
+  homePlayStyle: PlayStyle = 'controlled',
+  awayPlayStyle: PlayStyle = 'controlled',
+  homeTacticsBonus?: TacticsBonus,
+  awayTacticsBonus?: TacticsBonus,
 ): MatchResult {
-  const matchup = evaluateMatchup(homeLineup, awayLineup, homeTraits, awayTraits, homeForm, awayForm);
+  const matchup = evaluateMatchup(homeLineup, awayLineup, homeTraits, awayTraits, homeForm, awayForm, homePlayStyle, awayPlayStyle);
   const maxGames = format === 'Bo5' ? 5 : format === 'Bo3' ? 3 : 1;
   const winsNeeded = format === 'Bo1' ? 1 : format === 'Bo3' ? 2 : 3;
 
@@ -254,7 +440,7 @@ export function simulateMatch(
     const fatigueAway = (gameNum - 1) * (1 - avgStaminaAway / 100) * 2;
 
     const seed = `${matchId}_game${gameNum}`;
-    const result = simulateGame(matchup, gameNum, fatigueHome, fatigueAway, seed);
+    const result = simulateGame(matchup, gameNum, fatigueHome, fatigueAway, seed, homeLineup, awayLineup, homePlayStyle, awayPlayStyle, homeTacticsBonus, awayTacticsBonus);
 
     games.push(result);
 

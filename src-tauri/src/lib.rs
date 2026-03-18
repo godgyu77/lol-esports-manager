@@ -83,6 +83,72 @@ pub fn run() {
             sql: include_str!("../migrations/013_tournament_expansion.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 14,
+            description: "create player game stats table",
+            sql: include_str!("../migrations/014_player_game_stats.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 15,
+            description: "add play style column to teams",
+            sql: include_str!("../migrations/015_team_play_style.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 22,
+            description: "create academy and rookie draft tables",
+            sql: include_str!("../migrations/022_academy.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 23,
+            description: "create news articles table",
+            sql: include_str!("../migrations/023_news_system.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 28,
+            description: "staff free agent support",
+            sql: include_str!("../migrations/028_staff_fa.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 29,
+            description: "social reactions system",
+            sql: include_str!("../migrations/029_social_reactions.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 31,
+            description: "create manager profiles table",
+            sql: include_str!("../migrations/031_manager_profile.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 34,
+            description: "create offseason state table",
+            sql: include_str!("../migrations/034_offseason.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 35,
+            description: "create player goals table",
+            sql: include_str!("../migrations/035_player_goals.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 36,
+            description: "create player agents table",
+            sql: include_str!("../migrations/036_agents.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 37,
+            description: "create league nationality rules table",
+            sql: include_str!("../migrations/037_nationality_rules.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

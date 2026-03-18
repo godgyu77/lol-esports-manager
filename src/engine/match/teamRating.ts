@@ -8,6 +8,7 @@ import { MATCH_CONSTANTS } from '../../data/systemPrompt';
 import { TRAIT_LIBRARY, type TraitTier } from '../../data/traitLibrary';
 import type { Position } from '../../types/game';
 import type { Player } from '../../types/player';
+import type { PlayStyle } from '../../types/team';
 
 // ─────────────────────────────────────────
 // 타입
@@ -155,12 +156,17 @@ export function evaluateTeam(
     const traits = playerTraits[player.id] ?? [];
     const traitBonus = calculateTraitBonus(traits);
 
-    // 폼 보정: 50 기준, ±5 범위 (폼 100 → +5, 폼 0 → -5)
+    // 폼 보정: 50 기준, ±10 범위 (폼 100 → +10, 폼 0 → -10) — 2배 강화
     const form = playerForm[player.id] ?? 50;
-    const formBonus = (form - 50) * 0.1;
+    const formBonus = (form - 50) * 0.2;
 
-    byPosition[pos] = rating + mental + traitBonus + formBonus;
-    weightedSum += (rating + mental + traitBonus + formBonus) * weights[pos];
+    // 폼 기반 전투력 보정: 30 이하 → -10%, 80 이상 → +5%
+    let posRating = rating + mental + traitBonus + formBonus;
+    if (form <= 30) posRating *= 0.9;
+    else if (form >= 80) posRating *= 1.05;
+
+    byPosition[pos] = posRating;
+    weightedSum += posRating * weights[pos];
     laningSum += calculateLaningRating(player) * weights[pos];
     teamfightSum += calculateTeamfightRating(player) * weights[pos];
     traitBonusTotal += traitBonus;
@@ -190,6 +196,21 @@ export function evaluateTeam(
  * @param homeForm 홈 팀 선수별 폼
  * @param awayForm 어웨이 팀 선수별 폼
  */
+/**
+ * PlayStyle 상성 보정값
+ * aggressive > split > controlled > aggressive
+ * 유리 시 +0.04, 불리 시 -0.04, 동일 시 0
+ */
+function getPlayStyleAdvantage(home: PlayStyle, away: PlayStyle): number {
+  if (home === away) return 0;
+  if (
+    (home === 'aggressive' && away === 'split') ||
+    (home === 'split' && away === 'controlled') ||
+    (home === 'controlled' && away === 'aggressive')
+  ) return 0.04;
+  return -0.04;
+}
+
 export function evaluateMatchup(
   homeLineup: Lineup,
   awayLineup: Lineup,
@@ -197,6 +218,8 @@ export function evaluateMatchup(
   awayTraits: Record<string, string[]> = {},
   homeForm: Record<string, number> = {},
   awayForm: Record<string, number> = {},
+  homePlayStyle: PlayStyle = 'controlled',
+  awayPlayStyle: PlayStyle = 'controlled',
 ): MatchupResult {
   const homeRating = evaluateTeam(homeLineup, homeTraits, homeForm);
   const awayRating = evaluateTeam(awayLineup, awayTraits, awayForm);
@@ -210,12 +233,12 @@ export function evaluateMatchup(
   }
 
   // 승률 계산: 시그모이드 함수 기반
-  // 전력 차이를 승률로 변환 (차이 0 = 50%, 차이 10 ≈ 73%, 차이 20 ≈ 88%)
   const ratingDiff = homeRating.overall - awayRating.overall;
   const rawWinRate = sigmoid(ratingDiff * 0.08);
 
-  // 업셋 보장: OVR 차이가 커도 약팀 승률 최소 15%
-  const homeWinRate = clampWinRate(rawWinRate);
+  // PlayStyle 상성 보정 적용 (rawWinRate에 더한 뒤 clamp)
+  const styleAdv = getPlayStyleAdvantage(homePlayStyle, awayPlayStyle);
+  const homeWinRate = clampWinRate(rawWinRate + styleAdv);
 
   return {
     homeRating,
@@ -229,15 +252,28 @@ export function evaluateMatchup(
 // 유틸리티
 // ─────────────────────────────────────────
 
-/** 라인업 구성: 팀 로스터에서 포지션별 1군 선수 자동 선택 */
-export function buildLineup(roster: (Player & { division: string })[]): Lineup | null {
+/** 라인업 구성: 팀 로스터에서 포지션별 1군 선수 자동 선택 (부상 선수 제외) */
+export function buildLineup(
+  roster: (Player & { division: string })[],
+  injuredPlayerIds?: Set<string>,
+): Lineup | null {
   const positions: Position[] = ['top', 'jungle', 'mid', 'adc', 'support'];
   const lineup = {} as Record<Position, Player>;
 
   for (const pos of positions) {
-    // 1군(main) 선수 중 해당 포지션 선수를 찾음
-    const candidate = roster.find(p => p.position === pos && p.division === 'main');
-    if (!candidate) return null; // 해당 포지션에 1군 선수 없음
+    // 1군(main) 선수 중 부상이 아닌 해당 포지션 선수를 찾음
+    let candidate = roster.find(
+      p => p.position === pos && p.division === 'main' && !(injuredPlayerIds?.has(p.id)),
+    );
+
+    // 1군에 없으면 (부상 등) 2군(academy)에서 대체 선수 탐색
+    if (!candidate) {
+      candidate = roster.find(
+        p => p.position === pos && p.division === 'academy' && !(injuredPlayerIds?.has(p.id)),
+      );
+    }
+
+    if (!candidate) return null; // 해당 포지션에 출전 가능 선수 없음
     lineup[pos] = candidate;
   }
 

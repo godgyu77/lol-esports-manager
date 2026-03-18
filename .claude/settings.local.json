@@ -26,7 +26,18 @@
       "Bash(npx vite:*)",
       "Bash(ls:*)",
       "Bash(cd:*)",
-      "Bash(npx vitest:*)"
+      "Bash(npx vitest:*)",
+      "Bash(git push:*)",
+      "Bash(find /c/Users/user/Desktop/KANG/Study/project/lol-esports-manager/src -type f \\\\\\(-name *.ts -o -name *.tsx \\\\\\))",
+      "Bash(xargs basename:*)",
+      "Bash(python3:*)",
+      "Bash(wc -l \"C:\\\\Users\\\\user\\\\Desktop\\\\KANG\\\\Study\\\\project\\\\lol-esports-manager\\\\src-tauri\\\\migrations\"/*.sql)",
+      "Bash(cargo check:*)",
+      "Bash(pnpm install:*)",
+      "Bash(rustc --version)",
+      "Bash(cargo --version)",
+      "Bash(test -f \"$USERPROFILE/.cargo/bin/rustc.exe\")",
+      "Read(//c/Users/user/.rustup/**)"
     ]
   }
 }

@@ -18,17 +18,21 @@ import {
   type Decision,
 } from '../../engine/match/liveMatch';
 import { buildLineup } from '../../engine/match/teamRating';
-import { getPlayersByTeamId, getTraitsByTeamId, getFormByTeamId } from '../../db/queries';
+import { getPlayersByTeamId, getTraitsByTeamId, getFormByTeamId, getTeamPlayStyle } from '../../db/queries';
 import { saveUserMatchResult } from '../../engine/season/dayAdvancer';
 import { processPlayoffMatchResult } from '../../engine/season/playoffGenerator';
 import { processTournamentMatchResult } from '../../engine/tournament/tournamentEngine';
 import { generatePostMatchComment, type PostMatchComment } from '../../ai/gameAiService';
+import { accumulateFearlessChampions } from '../../engine/draft/draftEngine';
 import type { MatchResult, GameResult } from '../../engine/match/matchSimulator';
 
 import { Scoreboard } from './Scoreboard';
 import { DecisionPopup } from './DecisionPopup';
 import { CommentaryPanel } from './CommentaryPanel';
 import { SeriesResult } from './SeriesResult';
+import { TacticsPanel } from './TacticsPanel';
+import { PlayerInstructions } from './PlayerInstructions';
+import { soundManager } from '../../audio/soundManager';
 const MatchMinimap = lazy(() => import('./MatchMinimap').then((m) => ({ default: m.MatchMinimap })));
 
 const phaseLabels: Record<string, string> = {
@@ -48,19 +52,27 @@ export function LiveMatchView() {
   const setPendingUserMatch = useGameStore((s) => s.setPendingUserMatch);
 
   const draftResult = useGameStore((s) => s.draftResult);
+  const setDraftResult = useGameStore((s) => s.setDraftResult);
+  const fearlessPool = useGameStore((s) => s.fearlessPool);
+  const setFearlessPool = useGameStore((s) => s.setFearlessPool);
+  const mode = useGameStore((s) => s.mode);
+  const basePath = mode === 'player' ? '/player' : '/manager';
 
   const matchSpeed = useMatchStore((s) => s.speed);
   const setSpeed = useMatchStore((s) => s.setSpeed);
+  // 시리즈 상태 (matchStore — 피어리스 재드래프트 시 유지)
+  const seriesScore = useMatchStore((s) => s.seriesScore);
+  const setSeriesScore = useMatchStore((s) => s.setSeriesScore);
+  const currentGameNum = useMatchStore((s) => s.currentGameNum);
+  const setCurrentGameNum = useMatchStore((s) => s.setCurrentGameNum);
+  const gameResults = useMatchStore((s) => s.gameResults);
+  const setGameResults = useMatchStore((s) => s.setGameResults);
+  const resetSeries = useMatchStore((s) => s.resetSeries);
 
   const [engine, setEngine] = useState<LiveMatchEngine | null>(null);
   const [gameState, setGameState] = useState<LiveGameState | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [currentDecision, setCurrentDecision] = useState<Decision | null>(null);
-
-  // Bo3 시리즈 상태
-  const [seriesScore, setSeriesScore] = useState({ home: 0, away: 0 });
-  const [currentGameNum, setCurrentGameNum] = useState(1);
-  const [gameResults, setGameResults] = useState<GameResult[]>([]);
   const [seriesComplete, setSeriesComplete] = useState(false);
   const [postMatchComment, setPostMatchComment] = useState<PostMatchComment | null>(null);
   const [homePlayerIds, setHomePlayerIds] = useState<string[]>([]);
@@ -96,6 +108,8 @@ export function LiveMatchView() {
     const awayTraits = await getTraitsByTeamId(pendingMatch.teamAwayId);
     const homeForm = currentDate ? await getFormByTeamId(pendingMatch.teamHomeId, currentDate) : {};
     const awayForm = currentDate ? await getFormByTeamId(pendingMatch.teamAwayId, currentDate) : {};
+    const homePlayStyle = await getTeamPlayStyle(pendingMatch.teamHomeId);
+    const awayPlayStyle = await getTeamPlayStyle(pendingMatch.teamAwayId);
 
     const newEngine = new LiveMatchEngine({
       homeLineup,
@@ -107,6 +121,8 @@ export function LiveMatchView() {
       seed: `${pendingMatch.id}_g${gameNum}`,
       gameMode: save.mode,
       draftResult,
+      homePlayStyle,
+      awayPlayStyle,
     });
 
     // 설정의 기본 속도를 경기 속도로 적용
@@ -119,10 +135,10 @@ export function LiveMatchView() {
     setIsRunning(false);
   }, [pendingMatch, save, currentDate, setSpeed, draftResult]);
 
-  // 첫 게임 초기화
+  // 게임 초기화 (첫 세트 또는 피어리스 재드래프트 후 복귀)
   useEffect(() => {
-    initGame(1);
-  }, [initGame]);
+    initGame(currentGameNum);
+  }, [initGame, currentGameNum]);
 
   // 틱 루프
   useEffect(() => {
@@ -156,6 +172,12 @@ export function LiveMatchView() {
     }
   }, [gameState?.commentary.length]);
 
+  // 전술 변경 후 상태 갱신
+  const handleTacticsChanged = useCallback(() => {
+    if (!engine) return;
+    setGameState({ ...engine.getState() });
+  }, [engine]);
+
   // 선택지 응답
   const handleDecision = useCallback((optionId: string) => {
     if (!engine) return;
@@ -169,6 +191,7 @@ export function LiveMatchView() {
   const handleGameEnd = useCallback(async () => {
     if (!gameState || !pendingMatch) return;
 
+    const playerStatLines = engine!.getPlayerStatLines();
     const result: GameResult = {
       winnerSide: gameState.winner!,
       durationMinutes: gameState.maxTick,
@@ -176,20 +199,28 @@ export function LiveMatchView() {
       killsHome: gameState.killsHome,
       killsAway: gameState.killsAway,
       events: gameState.events,
+      playerStatsHome: playerStatLines.home,
+      playerStatsAway: playerStatLines.away,
     };
 
     const newResults = [...gameResults, result];
-    setGameResults(newResults);
 
     const newScore = { ...seriesScore };
     if (gameState.winner === 'home') newScore.home++;
     else newScore.away++;
     setSeriesScore(newScore);
+    setGameResults(newResults);
 
     // Bo3: 2승 필요
     if (newScore.home >= 2 || newScore.away >= 2) {
       // 시리즈 종료
       setSeriesComplete(true);
+
+      // 승리/패배 사운드
+      const userIsHome = pendingMatch.teamHomeId === save?.userTeamId;
+      const isUserWinner = (newScore.home > newScore.away && userIsHome) ||
+        (newScore.away > newScore.home && !userIsHome);
+      soundManager.play(isUserWinner ? 'victory' : 'defeat');
 
       // DB 저장
       const matchResult: MatchResult = {
@@ -198,7 +229,7 @@ export function LiveMatchView() {
         winner: newScore.home > newScore.away ? 'home' : 'away',
         games: newResults,
       };
-      await saveUserMatchResult(pendingMatch, matchResult);
+      await saveUserMatchResult(pendingMatch, matchResult, pendingMatch.seasonId, save?.userTeamId);
 
       // 경기 후 AI 코멘트 생성
       const isUserWin =
@@ -233,19 +264,29 @@ export function LiveMatchView() {
       // 다음 세트
       const nextGame = currentGameNum + 1;
       setCurrentGameNum(nextGame);
+
+      // 피어리스 드래프트: 사용된 챔피언 풀 누적 → 재드래프트
+      if (pendingMatch.fearlessDraft && draftResult) {
+        const newPool = accumulateFearlessChampions(fearlessPool, draftResult);
+        setFearlessPool(newPool);
+        setDayPhase('banpick');
+        navigate(`${basePath}/draft`);
+        return;
+      }
+
       await initGame(nextGame);
     }
-  }, [gameState, pendingMatch, gameResults, seriesScore, currentGameNum, initGame]);
+  }, [engine, gameState, pendingMatch, gameResults, seriesScore, currentGameNum, initGame, draftResult, fearlessPool, setFearlessPool, setDayPhase, navigate, basePath]);
 
   // 시리즈 완료 → 대시보드 복귀
-  const setDraftResult = useGameStore((s) => s.setDraftResult);
-
   const handleReturnToDashboard = useCallback(() => {
     setPendingUserMatch(null);
     setDraftResult(null);
+    setFearlessPool({ blue: [], red: [] });
+    resetSeries();
     setDayPhase('idle');
-    navigate('/manager/day');
-  }, [navigate, setDayPhase, setPendingUserMatch, setDraftResult]);
+    navigate(`${basePath}/day`);
+  }, [navigate, basePath, setDayPhase, setPendingUserMatch, setDraftResult, setFearlessPool, resetSeries]);
 
   if (!pendingMatch || !gameState) {
     return <p style={{ color: '#6a6a7a' }}>경기 데이터 로딩 중...</p>;
@@ -271,7 +312,12 @@ export function LiveMatchView() {
                 ...styles.ctrlBtn,
                 background: isRunning ? '#e74c3c' : '#2ecc71',
               }}
-              onClick={() => setIsRunning(!isRunning)}
+              onClick={() => {
+                if (!isRunning && gameState?.phase === 'loading') {
+                  soundManager.play('match_start');
+                }
+                setIsRunning(!isRunning);
+              }}
               aria-label={isRunning ? '일시정지' : '재생'}
             >
               {isRunning ? '일시정지' : '재생'}
@@ -292,6 +338,9 @@ export function LiveMatchView() {
                 </button>
               ))}
             </div>
+            {mode === 'manager' && engine && (
+              <TacticsPanel engine={engine} onTacticsChanged={handleTacticsChanged} />
+            )}
           </>
         ) : (
           <button style={styles.nextBtn} onClick={handleGameEnd}>
@@ -307,6 +356,26 @@ export function LiveMatchView() {
           decision={currentDecision}
           onDecision={handleDecision}
         />
+      )}
+
+      {/* 개별 선수 지시 (감독 모드, 경기 진행 중) */}
+      {mode === 'manager' && engine && !gameState.isFinished && (
+        <div style={styles.instructionsRow}>
+          <PlayerInstructions
+            engine={engine}
+            playerStats={gameState.playerStatsHome}
+            side="home"
+            teamShortName={homeTeam?.shortName ?? '블루'}
+            onInstructionChanged={handleTacticsChanged}
+          />
+          <PlayerInstructions
+            engine={engine}
+            playerStats={gameState.playerStatsAway}
+            side="away"
+            teamShortName={awayTeam?.shortName ?? '레드'}
+            onInstructionChanged={handleTacticsChanged}
+          />
+        </div>
       )}
 
       <div style={styles.matchContent}>
@@ -331,6 +400,7 @@ export function LiveMatchView() {
           awayTeamName={awayTeam?.name}
           seriesScore={seriesScore}
           postMatchComment={postMatchComment}
+          gameResults={gameResults}
           onReturn={handleReturnToDashboard}
         />
       )}
@@ -342,6 +412,11 @@ const styles: Record<string, React.CSSProperties> = {
   container: {
     maxWidth: '900px',
     margin: '0 auto',
+  },
+  instructionsRow: {
+    display: 'flex',
+    gap: '12px',
+    marginBottom: '12px',
   },
   matchContent: {
     display: 'flex',

@@ -20,6 +20,7 @@ import {
   acceptFreeAgentOffer,
 } from '../../../engine/economy/transferEngine';
 import type { Player } from '../../../types/player';
+import { Skeleton, SkeletonTable } from '../../../components/Skeleton';
 
 type Tab = 'freeAgents' | 'myOffers';
 
@@ -151,11 +152,19 @@ export function TransferView() {
   };
 
   if (!season || !save) {
-    return <p style={{ color: '#6a6a7a' }}>데이터를 불러오는 중...</p>;
+    return <p style={{ color: 'var(--text-muted)' }}>데이터를 불러오는 중...</p>;
   }
 
   if (isLoading) {
-    return <p style={{ color: '#6a6a7a' }}>이적 시장을 불러오는 중...</p>;
+    return (
+      <div>
+        <Skeleton width="180px" height="28px" variant="text" />
+        <div style={{ marginTop: '16px', marginBottom: '16px' }}>
+          <Skeleton width="100%" height="48px" variant="rect" />
+        </div>
+        <SkeletonTable rows={8} cols={7} />
+      </div>
+    );
   }
 
   const filteredAgents = posFilter === 'all'
@@ -183,13 +192,13 @@ export function TransferView() {
       {/* 팀 재정 요약 */}
       <div style={styles.budgetBar}>
         <span style={styles.budgetItem}>
-          예산: <strong style={{ color: '#c89b3c' }}>{formatAmount(teamBudget)}</strong>
+          예산: <strong style={{ color: 'var(--accent)' }}>{formatAmount(teamBudget)}</strong>
         </span>
         <span style={styles.budgetItem}>
-          총 연봉: <strong style={{ color: '#e0e0e0' }}>{formatAmount(teamSalary)}</strong>
+          총 연봉: <strong style={{ color: 'var(--text-primary)' }}>{formatAmount(teamSalary)}</strong>
         </span>
         <span style={styles.budgetItem}>
-          연봉 상한: <strong style={{ color: '#6a6a7a' }}>{formatAmount(400000)}</strong>
+          연봉 상한: <strong style={{ color: 'var(--text-muted)' }}>{formatAmount(400000)}</strong>
         </span>
       </div>
 
@@ -197,8 +206,8 @@ export function TransferView() {
       {message && (
         <div style={{
           ...styles.message,
-          borderColor: message.type === 'success' ? '#2ecc71' : '#e74c3c',
-          color: message.type === 'success' ? '#2ecc71' : '#e74c3c',
+          borderColor: message.type === 'success' ? 'var(--success)' : 'var(--danger)',
+          color: message.type === 'success' ? 'var(--success)' : 'var(--danger)',
         }}>
           {message.text}
         </div>
@@ -237,7 +246,7 @@ export function TransferView() {
           </div>
 
           {filteredAgents.length === 0 ? (
-            <p style={{ color: '#6a6a7a', fontSize: '13px', marginTop: '16px' }}>
+            <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '16px' }}>
               자유계약 선수가 없습니다.
             </p>
           ) : (
@@ -266,17 +275,17 @@ export function TransferView() {
                     );
                     return (
                       <tr key={player.id} style={styles.tr}>
-                        <td style={{ ...styles.td, color: '#c89b3c', fontWeight: 600 }}>
+                        <td style={{ ...styles.td, color: 'var(--accent)', fontWeight: 600 }}>
                           {POSITION_LABELS[player.position] ?? player.position}
                         </td>
-                        <td style={{ ...styles.td, fontWeight: 500, color: '#e0e0e0' }}>
+                        <td style={{ ...styles.td, fontWeight: 500, color: 'var(--text-primary)' }}>
                           {player.name}
                         </td>
                         <td style={styles.td}>{player.age}</td>
                         <td style={{
                           ...styles.td,
                           fontWeight: 700,
-                          color: ovr >= 80 ? '#c89b3c' : ovr >= 65 ? '#e0e0e0' : '#8a8a9a',
+                          color: ovr >= 80 ? 'var(--accent)' : ovr >= 65 ? 'var(--text-primary)' : 'var(--text-secondary)',
                         }}>
                           {ovr}
                         </td>
@@ -309,7 +318,7 @@ export function TransferView() {
         <div>
           <h2 style={styles.subTitle}>보낸 제안</h2>
           {sentOffers.length === 0 ? (
-            <p style={{ color: '#6a6a7a', fontSize: '13px' }}>보낸 제안이 없습니다.</p>
+            <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>보낸 제안이 없습니다.</p>
           ) : (
             <table style={styles.table}>
               <thead>
@@ -326,7 +335,7 @@ export function TransferView() {
               <tbody>
                 {sentOffers.map(offer => (
                   <tr key={offer.id} style={styles.tr}>
-                    <td style={{ ...styles.td, fontWeight: 500, color: '#e0e0e0' }}>
+                    <td style={{ ...styles.td, fontWeight: 500, color: 'var(--text-primary)' }}>
                       {getPlayerName(offer.playerId)}
                     </td>
                     <td style={styles.td}>{getTeamName(offer.toTeamId)}</td>
@@ -335,10 +344,10 @@ export function TransferView() {
                     <td style={styles.td}>{offer.contractYears}년</td>
                     <td style={{
                       ...styles.td,
-                      color: offer.status === 'accepted' ? '#2ecc71'
-                        : offer.status === 'rejected' ? '#e74c3c'
-                        : offer.status === 'cancelled' ? '#6a6a7a'
-                        : '#f39c12',
+                      color: offer.status === 'accepted' ? 'var(--success)'
+                        : offer.status === 'rejected' ? 'var(--danger)'
+                        : offer.status === 'cancelled' ? 'var(--text-muted)'
+                        : 'var(--warning)',
                       fontWeight: 600,
                     }}>
                       {offer.status === 'pending' ? '대기중'
@@ -377,16 +386,16 @@ export function TransferView() {
                 <tbody>
                   {receivedOffers.map(offer => (
                     <tr key={offer.id} style={styles.tr}>
-                      <td style={{ ...styles.td, fontWeight: 500, color: '#e0e0e0' }}>
+                      <td style={{ ...styles.td, fontWeight: 500, color: 'var(--text-primary)' }}>
                         {getPlayerName(offer.playerId)}
                       </td>
                       <td style={styles.td}>{getTeamName(offer.fromTeamId)}</td>
                       <td style={styles.td}>{formatAmount(offer.transferFee)}</td>
                       <td style={{
                         ...styles.td,
-                        color: offer.status === 'accepted' ? '#2ecc71'
-                          : offer.status === 'rejected' ? '#e74c3c'
-                          : '#f39c12',
+                        color: offer.status === 'accepted' ? 'var(--success)'
+                          : offer.status === 'rejected' ? 'var(--danger)'
+                          : 'var(--warning)',
                         fontWeight: 600,
                       }}>
                         {offer.status === 'pending' ? '대기중'
@@ -470,7 +479,7 @@ const styles: Record<string, React.CSSProperties> = {
   title: {
     fontSize: '24px',
     fontWeight: 700,
-    color: '#f0e6d2',
+    color: 'var(--text-primary)',
     marginBottom: '16px',
   },
   budgetBar: {
@@ -478,13 +487,13 @@ const styles: Record<string, React.CSSProperties> = {
     gap: '24px',
     marginBottom: '16px',
     padding: '12px 16px',
-    background: '#12122a',
-    border: '1px solid #2a2a4a',
+    background: 'var(--bg-secondary)',
+    border: '1px solid var(--border)',
     borderRadius: '8px',
     fontSize: '13px',
   },
   budgetItem: {
-    color: '#8a8a9a',
+    color: 'var(--text-secondary)',
   },
   message: {
     padding: '10px 16px',
@@ -498,21 +507,21 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     gap: '4px',
     marginBottom: '16px',
-    borderBottom: '1px solid #2a2a4a',
+    borderBottom: '1px solid var(--border)',
   },
   tab: {
     padding: '10px 20px',
     background: 'none',
     border: 'none',
     borderBottom: '2px solid transparent',
-    color: '#6a6a7a',
+    color: 'var(--text-muted)',
     fontSize: '13px',
     fontWeight: 500,
     cursor: 'pointer',
   },
   activeTab: {
-    color: '#c89b3c',
-    borderBottomColor: '#c89b3c',
+    color: 'var(--accent)',
+    borderBottomColor: 'var(--accent)',
   },
   filterRow: {
     display: 'flex',
@@ -522,21 +531,21 @@ const styles: Record<string, React.CSSProperties> = {
   filterBtn: {
     padding: '6px 14px',
     background: 'rgba(255,255,255,0.03)',
-    border: '1px solid #2a2a4a',
+    border: '1px solid var(--border)',
     borderRadius: '6px',
-    color: '#8a8a9a',
+    color: 'var(--text-secondary)',
     fontSize: '12px',
     cursor: 'pointer',
   },
   filterActive: {
     background: 'rgba(200,155,60,0.15)',
-    borderColor: '#c89b3c',
-    color: '#c89b3c',
+    borderColor: 'var(--accent)',
+    color: 'var(--accent)',
   },
   subTitle: {
     fontSize: '15px',
     fontWeight: 600,
-    color: '#c89b3c',
+    color: 'var(--accent)',
     marginBottom: '12px',
   },
   table: {
@@ -548,7 +557,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '8px 10px',
     textAlign: 'left',
     borderBottom: '1px solid #3a3a5c',
-    color: '#6a6a7a',
+    color: 'var(--text-muted)',
     fontSize: '12px',
     fontWeight: 500,
   },
@@ -561,8 +570,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   offerBtn: {
     padding: '4px 12px',
-    background: '#c89b3c',
-    color: '#0d0d1a',
+    background: 'var(--accent)',
+    color: 'var(--bg-primary)',
     border: 'none',
     borderRadius: '4px',
     fontSize: '12px',
@@ -572,9 +581,9 @@ const styles: Record<string, React.CSSProperties> = {
   cancelBtn: {
     padding: '4px 10px',
     background: 'none',
-    border: '1px solid #6a6a7a',
+    border: '1px solid var(--text-muted)',
     borderRadius: '4px',
-    color: '#6a6a7a',
+    color: 'var(--text-muted)',
     fontSize: '12px',
     cursor: 'pointer',
   },
@@ -589,8 +598,8 @@ const styles: Record<string, React.CSSProperties> = {
     zIndex: 100,
   },
   modal: {
-    background: '#1a1a2e',
-    border: '1px solid #2a2a4a',
+    background: 'var(--bg-card)',
+    border: '1px solid var(--border)',
     borderRadius: '12px',
     padding: '24px',
     width: '420px',
@@ -599,7 +608,7 @@ const styles: Record<string, React.CSSProperties> = {
   modalTitle: {
     fontSize: '18px',
     fontWeight: 700,
-    color: '#f0e6d2',
+    color: 'var(--text-primary)',
     marginBottom: '16px',
   },
   modalPlayerInfo: {
@@ -614,7 +623,7 @@ const styles: Record<string, React.CSSProperties> = {
   modalPos: {
     fontSize: '12px',
     fontWeight: 600,
-    color: '#c89b3c',
+    color: 'var(--accent)',
     background: 'rgba(200,155,60,0.15)',
     padding: '2px 8px',
     borderRadius: '4px',
@@ -622,16 +631,16 @@ const styles: Record<string, React.CSSProperties> = {
   modalName: {
     fontSize: '15px',
     fontWeight: 600,
-    color: '#e0e0e0',
+    color: 'var(--text-primary)',
   },
   modalAge: {
     fontSize: '13px',
-    color: '#8a8a9a',
+    color: 'var(--text-secondary)',
   },
   modalOvr: {
     fontSize: '13px',
     fontWeight: 700,
-    color: '#c89b3c',
+    color: 'var(--accent)',
     marginLeft: 'auto',
   },
   modalField: {
@@ -640,23 +649,23 @@ const styles: Record<string, React.CSSProperties> = {
   modalLabel: {
     display: 'block',
     fontSize: '12px',
-    color: '#8a8a9a',
+    color: 'var(--text-secondary)',
     marginBottom: '6px',
   },
   modalInput: {
     width: '100%',
     padding: '8px 12px',
-    background: '#0d0d1a',
-    border: '1px solid #2a2a4a',
+    background: 'var(--bg-primary)',
+    border: '1px solid var(--border)',
     borderRadius: '6px',
-    color: '#e0e0e0',
+    color: 'var(--text-primary)',
     fontSize: '14px',
     boxSizing: 'border-box',
   },
   modalHint: {
     display: 'block',
     fontSize: '11px',
-    color: '#6a6a7a',
+    color: 'var(--text-muted)',
     marginTop: '4px',
   },
   yearBtns: {
@@ -666,16 +675,16 @@ const styles: Record<string, React.CSSProperties> = {
   yearBtn: {
     padding: '6px 16px',
     background: 'rgba(255,255,255,0.03)',
-    border: '1px solid #2a2a4a',
+    border: '1px solid var(--border)',
     borderRadius: '6px',
-    color: '#8a8a9a',
+    color: 'var(--text-secondary)',
     fontSize: '13px',
     cursor: 'pointer',
   },
   yearBtnActive: {
     background: 'rgba(200,155,60,0.15)',
-    borderColor: '#c89b3c',
-    color: '#c89b3c',
+    borderColor: 'var(--accent)',
+    color: 'var(--accent)',
   },
   modalActions: {
     display: 'flex',
@@ -688,16 +697,16 @@ const styles: Record<string, React.CSSProperties> = {
     background: 'none',
     border: '1px solid #3a3a5c',
     borderRadius: '6px',
-    color: '#8a8a9a',
+    color: 'var(--text-secondary)',
     fontSize: '13px',
     cursor: 'pointer',
   },
   modalSubmit: {
     padding: '8px 18px',
-    background: '#c89b3c',
+    background: 'var(--accent)',
     border: 'none',
     borderRadius: '6px',
-    color: '#0d0d1a',
+    color: 'var(--bg-primary)',
     fontSize: '13px',
     fontWeight: 600,
     cursor: 'pointer',

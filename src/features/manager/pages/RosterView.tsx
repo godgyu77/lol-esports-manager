@@ -8,10 +8,39 @@
 import { useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useGameStore } from '../../../stores/gameStore';
-import { updatePlayerDivision } from '../../../db/queries';
+import { updatePlayerDivision, updateTeamPlayStyle } from '../../../db/queries';
 import type { Player } from '../../../types/player';
+import type { Position } from '../../../types/game';
+import type { PlayStyle } from '../../../types/team';
+import { PlayerAvatar } from '../../../components/PlayerAvatar';
 
 type Division = 'main' | 'sub';
+
+const PLAY_STYLE_INFO: Record<PlayStyle, {
+  name: string;
+  icon: string;
+  description: string;
+  matchup: string;
+}> = {
+  aggressive: {
+    name: '공격형',
+    icon: '\u2694\uFE0F',
+    description: '적극적인 교전과 솔로킬로 초반 주도권 확보',
+    matchup: '\u25B6 스플릿에 강함 | \u25C0 운영형에 약함',
+  },
+  controlled: {
+    name: '운영형',
+    icon: '\uD83D\uDEE1\uFE0F',
+    description: '안정적인 시야와 오브젝트 중심의 매크로 운영',
+    matchup: '\u25B6 공격형에 강함 | \u25C0 스플릿에 약함',
+  },
+  split: {
+    name: '스플릿',
+    icon: '\uD83D\uDDE1\uFE0F',
+    description: '사이드 라인 압박으로 맵 주도권 분산',
+    matchup: '\u25B6 운영형에 강함 | \u25C0 공격형에 약함',
+  },
+};
 
 const POSITION_LABELS: Record<string, string> = {
   top: '탑',
@@ -40,7 +69,7 @@ function getOvrStyle(ovr: number): React.CSSProperties {
   if (ovr >= 90) return { color: '#ffd700', fontWeight: 700 };
   if (ovr >= 80) return { color: '#a0d0ff', fontWeight: 600 };
   if (ovr >= 70) return { color: '#90ee90', fontWeight: 500 };
-  return { color: '#e0e0e0' };
+  return { color: 'var(--text-primary)' };
 }
 
 export function RosterView() {
@@ -155,7 +184,7 @@ export function RosterView() {
   }, [userTeam, teams, setTeams]);
 
   if (!userTeam) {
-    return <p style={{ color: '#6a6a7a' }}>데이터를 불러오는 중...</p>;
+    return <p style={{ color: 'var(--text-muted)' }}>데이터를 불러오는 중...</p>;
   }
 
   const mainRoster = userTeam.roster.filter(
@@ -206,9 +235,17 @@ export function RosterView() {
                   </span>
                 </td>
                 <td style={{ ...styles.td, ...styles.nameCell }}>
-                  <Link to={'/manager/player/' + player.id} style={styles.nameLink}>
-                    {player.name}
-                  </Link>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <PlayerAvatar
+                      position={player.position as Position}
+                      nationality={player.nationality}
+                      size={28}
+                      name={player.name}
+                    />
+                    <Link to={'/manager/player/' + player.id} style={styles.nameLink}>
+                      {player.name}
+                    </Link>
+                  </div>
                 </td>
                 <td style={styles.td}>{player.age}</td>
                 <td style={{ ...styles.td, ...getOvrStyle(avgOvr) }}>{avgOvr}</td>
@@ -251,9 +288,46 @@ export function RosterView() {
     </div>
   );
 
+  const handlePlayStyleChange = useCallback(async (style: PlayStyle) => {
+    if (!userTeam) return;
+    await updateTeamPlayStyle(userTeam.id, style);
+    const updatedTeams = teams.map(team => {
+      if (team.id !== userTeam.id) return team;
+      return { ...team, playStyle: style };
+    });
+    setTeams(updatedTeams);
+    setMessage(`팀 전술이 "${PLAY_STYLE_INFO[style].name}"(으)로 변경되었습니다`);
+  }, [userTeam, teams, setTeams]);
+
   return (
     <div>
       <h1 style={styles.title}>로스터 관리</h1>
+
+      {/* 팀 전술 선택 */}
+      <div style={styles.section}>
+        <h2 style={styles.sectionTitle}>팀 전술</h2>
+        <div style={rosterStyles.styleGrid}>
+          {(Object.keys(PLAY_STYLE_INFO) as PlayStyle[]).map((style) => {
+            const info = PLAY_STYLE_INFO[style];
+            const isActive = userTeam?.playStyle === style;
+            return (
+              <button
+                key={style}
+                style={{
+                  ...rosterStyles.styleCard,
+                  ...(isActive ? rosterStyles.styleCardActive : {}),
+                }}
+                onClick={() => handlePlayStyleChange(style)}
+              >
+                <span style={rosterStyles.styleIcon}>{info.icon}</span>
+                <span style={rosterStyles.styleName}>{info.name}</span>
+                <span style={rosterStyles.styleDesc}>{info.description}</span>
+                <span style={rosterStyles.styleMatchup}>{info.matchup}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
       {/* 안내 메시지 */}
       {swapSource && (
@@ -271,7 +345,7 @@ export function RosterView() {
       {subRoster.length === 0 && (
         <div style={styles.section}>
           <h2 style={styles.sectionTitle}>2군 (0명)</h2>
-          <p style={{ color: '#6a6a7a', fontSize: '13px' }}>2군 선수가 없습니다.</p>
+          <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>2군 선수가 없습니다.</p>
         </div>
       )}
     </div>
@@ -282,7 +356,7 @@ const styles: Record<string, React.CSSProperties> = {
   title: {
     fontSize: '24px',
     fontWeight: 700,
-    color: '#f0e6d2',
+    color: 'var(--text-primary)',
     marginBottom: '16px',
   },
   section: {
@@ -291,7 +365,7 @@ const styles: Record<string, React.CSSProperties> = {
   sectionTitle: {
     fontSize: '16px',
     fontWeight: 600,
-    color: '#c89b3c',
+    color: 'var(--accent)',
     marginBottom: '12px',
   },
   table: {
@@ -303,7 +377,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '8px 10px',
     textAlign: 'left',
     borderBottom: '1px solid #3a3a5c',
-    color: '#6a6a7a',
+    color: 'var(--text-muted)',
     fontSize: '12px',
     fontWeight: 500,
   },
@@ -321,10 +395,10 @@ const styles: Record<string, React.CSSProperties> = {
   },
   nameCell: {
     fontWeight: 500,
-    color: '#e0e0e0',
+    color: 'var(--text-primary)',
   },
   nameLink: {
-    color: '#e0e0e0',
+    color: 'var(--text-primary)',
     textDecoration: 'none',
     borderBottom: '1px solid transparent',
     transition: 'border-color 0.15s',
@@ -332,7 +406,7 @@ const styles: Record<string, React.CSSProperties> = {
   posTag: {
     fontSize: '11px',
     fontWeight: 600,
-    color: '#c89b3c',
+    color: 'var(--accent)',
     background: 'rgba(200,155,60,0.1)',
     padding: '2px 8px',
     borderRadius: '4px',
@@ -348,13 +422,13 @@ const styles: Record<string, React.CSSProperties> = {
     background: 'rgba(255,255,255,0.05)',
     border: '1px solid #3a3a5c',
     borderRadius: '4px',
-    color: '#8a8a9a',
+    color: 'var(--text-secondary)',
     cursor: 'pointer',
   },
   swapBtnActive: {
     background: 'rgba(200,155,60,0.2)',
-    borderColor: '#c89b3c',
-    color: '#c89b3c',
+    borderColor: 'var(--accent)',
+    color: 'var(--accent)',
   },
   moveBtn: {
     padding: '3px 8px',
@@ -363,7 +437,7 @@ const styles: Record<string, React.CSSProperties> = {
     background: 'rgba(255,255,255,0.05)',
     border: '1px solid #3a3a5c',
     borderRadius: '4px',
-    color: '#8a8a9a',
+    color: 'var(--text-secondary)',
     cursor: 'pointer',
   },
   swapNotice: {
@@ -372,7 +446,7 @@ const styles: Record<string, React.CSSProperties> = {
     border: '1px solid #c89b3c44',
     borderRadius: '6px',
     fontSize: '13px',
-    color: '#c89b3c',
+    color: 'var(--accent)',
     background: 'rgba(200,155,60,0.05)',
   },
   successMsg: {
@@ -381,7 +455,52 @@ const styles: Record<string, React.CSSProperties> = {
     border: '1px solid #2ecc7144',
     borderRadius: '6px',
     fontSize: '13px',
-    color: '#2ecc71',
+    color: 'var(--success)',
     background: 'rgba(46,204,113,0.05)',
+  },
+};
+
+const rosterStyles: Record<string, React.CSSProperties> = {
+  styleGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, 1fr)',
+    gap: '12px',
+    marginBottom: '16px',
+  },
+  styleCard: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '16px 12px',
+    background: 'rgba(255,255,255,0.03)',
+    border: '1px solid #3a3a5c',
+    borderRadius: '10px',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+  },
+  styleCardActive: {
+    background: 'rgba(200,155,60,0.12)',
+    borderColor: 'var(--accent)',
+  },
+  styleIcon: {
+    fontSize: '24px',
+  },
+  styleName: {
+    fontSize: '14px',
+    fontWeight: 700,
+    color: 'var(--text-primary)',
+  },
+  styleDesc: {
+    fontSize: '12px',
+    color: 'var(--text-secondary)',
+    textAlign: 'center',
+    lineHeight: '1.4',
+  },
+  styleMatchup: {
+    fontSize: '11px',
+    color: 'var(--text-muted)',
+    textAlign: 'center',
+    marginTop: '4px',
   },
 };

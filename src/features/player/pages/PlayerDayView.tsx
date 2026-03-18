@@ -9,6 +9,7 @@
 import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGameStore } from '../../../stores/gameStore';
+import { useMatchStore } from '../../../stores/matchStore';
 import { advanceDay, skipToNextMatchDay } from '../../../engine/season/dayAdvancer';
 import type { DayResult } from '../../../engine/season/dayAdvancer';
 import type { DayType } from '../../../engine/season/calendar';
@@ -34,11 +35,12 @@ export function PlayerDayView() {
   const setPendingUserMatch = useGameStore((s) => s.setPendingUserMatch);
   const setCurrentDate = useGameStore((s) => s.setCurrentDate);
   const setDayType = useGameStore((s) => s.setDayType);
+  const setFearlessPool = useGameStore((s) => s.setFearlessPool);
+  const resetSeries = useMatchStore((s) => s.resetSeries);
 
   const [dayResult, setDayResult] = useState<DayResult | null>(null);
   const [skipResults, setSkipResults] = useState<DayResult[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [matchCompleted, setMatchCompleted] = useState(false);
 
   const currentDate = season?.currentDate ?? '2026-01-12';
   const userTeamId = save?.userTeamId ?? '';
@@ -55,7 +57,6 @@ export function PlayerDayView() {
     setIsProcessing(true);
     setDayPhase('processing');
     setSkipResults([]);
-    setMatchCompleted(false);
 
     try {
       const result = await advanceDay(
@@ -73,13 +74,15 @@ export function PlayerDayView() {
       if (result.isSeasonEnd) {
         setDayPhase('idle');
         setSeason({ ...season, currentDate: result.nextDate });
-        navigate('/player');
+        navigate('/player/season-end');
       } else if (result.hasUserMatch && result.userMatch) {
-        // 선수 모드: 경기가 있으면 자동 시뮬 결과 표시
+        // 유저 팀 경기 → 밴픽(AI 자동) → 라이브 매치로 분기
+        resetSeries();
+        setFearlessPool({ blue: [], red: [] });
         setPendingUserMatch(result.userMatch);
-        setMatchCompleted(true);
-        setDayPhase('idle');
+        setDayPhase('banpick');
         setSeason({ ...season, currentDate: result.nextDate });
+        navigate('/player/draft');
       } else {
         setDayPhase('idle');
         setSeason({ ...season, currentDate: result.nextDate });
@@ -90,7 +93,7 @@ export function PlayerDayView() {
     } finally {
       setIsProcessing(false);
     }
-  }, [season, save, currentDate, userTeamId, navigate, setDayPhase, setSeason, setPendingUserMatch, setCurrentDate, setDayType]);
+  }, [season, save, currentDate, userTeamId, navigate, setDayPhase, setSeason, setPendingUserMatch, setCurrentDate, setDayType, resetSeries, setFearlessPool]);
 
   // 경기일까지 스킵
   const handleSkipToMatch = useCallback(async () => {
@@ -98,7 +101,6 @@ export function PlayerDayView() {
     setIsProcessing(true);
     setDayPhase('processing');
     setDayResult(null);
-    setMatchCompleted(false);
 
     try {
       const results = await skipToNextMatchDay(
@@ -120,14 +122,16 @@ export function PlayerDayView() {
 
         if (lastResult.isSeasonEnd) {
           setDayPhase('idle');
-          navigate('/player');
+          navigate('/player/season-end');
           return;
         }
 
         if (lastResult.hasUserMatch && lastResult.userMatch) {
+          resetSeries();
+          setFearlessPool({ blue: [], red: [] });
           setPendingUserMatch(lastResult.userMatch);
-          setMatchCompleted(true);
-          setDayPhase('idle');
+          setDayPhase('banpick');
+          navigate('/player/draft');
           return;
         }
       }
@@ -139,7 +143,7 @@ export function PlayerDayView() {
     } finally {
       setIsProcessing(false);
     }
-  }, [season, save, currentDate, userTeamId, navigate, setDayPhase, setSeason, setPendingUserMatch, setCurrentDate, setDayType]);
+  }, [season, save, currentDate, userTeamId, navigate, setDayPhase, setSeason, setPendingUserMatch, setCurrentDate, setDayType, resetSeries, setFearlessPool]);
 
   if (!season || !save || !userTeam) {
     return <p style={{ color: '#6a6a7a' }}>데이터를 불러오는 중...</p>;
@@ -171,7 +175,7 @@ export function PlayerDayView() {
       <div style={styles.infoPanel}>
         <span style={styles.infoText}>
           선수 모드에서는 팀 일정에 따라 자동으로 훈련이 진행됩니다.
-          경기일에는 경기 결과를 확인할 수 있습니다.
+          경기일에는 밴픽(AI 자동) 후 라이브 경기를 관전합니다.
         </span>
       </div>
 
@@ -200,16 +204,6 @@ export function PlayerDayView() {
           {isProcessing ? '스킵 중...' : '경기일까지 스킵 ⏩'}
         </button>
       </div>
-
-      {/* 경기 알림 - 유저 팀 경기가 있었을 때 */}
-      {matchCompleted && dayResult?.userMatch && (
-        <div style={styles.matchAlert}>
-          <h3 style={styles.matchAlertTitle}>내 팀 경기 완료!</h3>
-          <p style={styles.matchAlertDesc}>
-            오늘 경기가 자동으로 진행되었습니다. 결과는 아래에서 확인하세요.
-          </p>
-        </div>
-      )}
 
       {/* 하루 결과 */}
       {dayResult && (
@@ -382,24 +376,6 @@ const styles: Record<string, React.CSSProperties> = {
     background: 'transparent',
     border: '1px solid #3a3a5c',
     color: '#8a8a9a',
-  },
-  matchAlert: {
-    background: 'rgba(231,76,60,0.1)',
-    border: '1px solid rgba(231,76,60,0.3)',
-    borderRadius: '10px',
-    padding: '16px 20px',
-    marginBottom: '16px',
-  },
-  matchAlertTitle: {
-    fontSize: '16px',
-    fontWeight: 700,
-    color: '#e74c3c',
-    marginBottom: '6px',
-  },
-  matchAlertDesc: {
-    fontSize: '13px',
-    color: '#8a8a9a',
-    margin: 0,
   },
   card: {
     background: 'rgba(255,255,255,0.03)',

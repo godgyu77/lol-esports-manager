@@ -37,6 +37,9 @@ export function PlayerDashboard() {
             </li>
           ))}
         </ul>
+        <button style={styles.saveBtn} className="back-btn" onClick={() => navigate('/save-load')}>
+          저장/불러오기
+        </button>
         <button style={styles.backBtn} className="back-btn" onClick={() => navigate('/')}>
           메인 메뉴
         </button>
@@ -92,6 +95,16 @@ const styles: Record<string, React.CSSProperties> = {
   navItemActive: {
     color: '#c89b3c',
     background: 'rgba(200,155,60,0.1)',
+  },
+  saveBtn: {
+    padding: '10px',
+    border: '1px solid rgba(200,155,60,0.4)',
+    borderRadius: '6px',
+    background: 'rgba(200,155,60,0.08)',
+    color: '#c89b3c',
+    cursor: 'pointer',
+    fontSize: '13px',
+    marginBottom: '8px',
   },
   backBtn: {
     padding: '10px',

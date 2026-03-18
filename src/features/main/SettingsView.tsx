@@ -2,6 +2,7 @@ import type React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { useSettingsStore } from '../../stores/settingsStore';
+import type { Difficulty, Theme } from '../../stores/settingsStore';
 import { checkOllamaStatus } from '../../ai/provider';
 
 const SPEED_OPTIONS = [1, 2, 4];
@@ -10,15 +11,28 @@ const AUTO_SAVE_OPTIONS: { value: 'daily' | 'weekly' | 'manual'; label: string }
   { value: 'weekly', label: '매주' },
   { value: 'manual', label: '수동' },
 ];
+const DIFFICULTY_OPTIONS: { value: Difficulty; label: string; desc: string }[] = [
+  { value: 'easy', label: '쉬움', desc: 'AI 이적 약화, 승률 보정, 예산 130%' },
+  { value: 'normal', label: '보통', desc: '기본 밸런스' },
+  { value: 'hard', label: '어려움', desc: 'AI 이적 강화, 승률 불리, 예산 80%' },
+];
 
 export function SettingsView() {
   const navigate = useNavigate();
   const defaultSpeed = useSettingsStore((s) => s.defaultSpeed);
   const aiEnabled = useSettingsStore((s) => s.aiEnabled);
   const autoSaveInterval = useSettingsStore((s) => s.autoSaveInterval);
+  const difficulty = useSettingsStore((s) => s.difficulty);
+  const soundEnabled = useSettingsStore((s) => s.soundEnabled);
+  const soundVolume = useSettingsStore((s) => s.soundVolume);
+  const theme = useSettingsStore((s) => s.theme);
   const setDefaultSpeed = useSettingsStore((s) => s.setDefaultSpeed);
   const setAiEnabled = useSettingsStore((s) => s.setAiEnabled);
   const setAutoSaveInterval = useSettingsStore((s) => s.setAutoSaveInterval);
+  const setDifficulty = useSettingsStore((s) => s.setDifficulty);
+  const setSoundEnabled = useSettingsStore((s) => s.setSoundEnabled);
+  const setSoundVolume = useSettingsStore((s) => s.setSoundVolume);
+  const setTheme = useSettingsStore((s) => s.setTheme);
 
   const [ollamaStatus, setOllamaStatus] = useState<boolean | null>(null);
 
@@ -50,6 +64,27 @@ export function SettingsView() {
               onClick={() => setDefaultSpeed(speed)}
             >
               {speed}x
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 난이도 설정 */}
+      <div style={styles.card}>
+        <h2 style={styles.cardTitle}>난이도 설정</h2>
+        <p style={styles.cardDesc}>게임 전반의 난이도를 설정합니다. 진행 중인 세이브에도 즉시 적용됩니다.</p>
+        <div style={styles.optionRow}>
+          {DIFFICULTY_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              style={{
+                ...styles.difficultyBtn,
+                ...(difficulty === opt.value ? styles.optionBtnActive : {}),
+              }}
+              onClick={() => setDifficulty(opt.value)}
+            >
+              <span style={styles.difficultyLabel}>{opt.label}</span>
+              <span style={styles.difficultyDesc}>{opt.desc}</span>
             </button>
           ))}
         </div>
@@ -97,6 +132,72 @@ export function SettingsView() {
             AI가 비활성화되면 템플릿 기반 모드로 동작합니다.
           </p>
         )}
+      </div>
+
+      {/* 사운드 설정 */}
+      <div style={styles.card}>
+        <h2 style={styles.cardTitle}>사운드 설정</h2>
+        <p style={styles.cardDesc}>효과음 및 볼륨을 설정합니다. (현재 오디오 파일 미포함)</p>
+        <div style={styles.toggleRow}>
+          <span style={styles.toggleLabel}>효과음</span>
+          <button
+            style={{
+              ...styles.toggleBtn,
+              background: soundEnabled ? '#c89b3c' : 'rgba(255,255,255,0.1)',
+            }}
+            onClick={() => setSoundEnabled(!soundEnabled)}
+          >
+            <span
+              style={{
+                ...styles.toggleKnob,
+                transform: soundEnabled ? 'translateX(20px)' : 'translateX(0)',
+              }}
+            />
+          </button>
+        </div>
+        <div style={{ marginTop: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <span style={{ fontSize: '14px', color: '#e0e0e0' }}>볼륨</span>
+            <span style={{ fontSize: '13px', color: '#8a8a9a' }}>{Math.round(soundVolume * 100)}%</span>
+          </div>
+          <input
+            type="range"
+            min="0"
+            max="100"
+            value={Math.round(soundVolume * 100)}
+            onChange={(e) => setSoundVolume(Number(e.target.value) / 100)}
+            disabled={!soundEnabled}
+            style={{
+              width: '100%',
+              accentColor: '#c89b3c',
+              opacity: soundEnabled ? 1 : 0.4,
+            }}
+            aria-label="볼륨 조절"
+          />
+        </div>
+      </div>
+
+      {/* 테마 설정 */}
+      <div style={styles.card}>
+        <h2 style={styles.cardTitle}>테마 설정</h2>
+        <p style={styles.cardDesc}>화면 테마를 변경합니다.</p>
+        <div style={styles.optionRow}>
+          {([
+            { value: 'dark' as Theme, label: '다크' },
+            { value: 'light' as Theme, label: '라이트' },
+          ]).map((opt) => (
+            <button
+              key={opt.value}
+              style={{
+                ...styles.optionBtn,
+                ...(theme === opt.value ? styles.optionBtnActive : {}),
+              }}
+              onClick={() => setTheme(opt.value)}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* 자동 저장 간격 */}
@@ -293,5 +394,30 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '13px',
     fontWeight: 500,
     color: '#e0e0e0',
+  },
+  difficultyBtn: {
+    flex: 1,
+    padding: '12px 10px',
+    border: '1px solid #3a3a5c',
+    borderRadius: '8px',
+    background: 'rgba(255,255,255,0.05)',
+    color: '#e0e0e0',
+    fontSize: '14px',
+    fontWeight: 500,
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '4px',
+  },
+  difficultyLabel: {
+    fontSize: '14px',
+    fontWeight: 700,
+  },
+  difficultyDesc: {
+    fontSize: '11px',
+    color: '#6a6a7a',
+    textAlign: 'center' as const,
   },
 };

@@ -11,12 +11,14 @@ import { MATCH_CONSTANTS } from '../../data/systemPrompt';
 import type { Position } from '../../types/game';
 import type { MatchEvent, MatchEventType } from '../../types/match';
 import type { Player } from '../../types/player';
+import type { PlayStyle } from '../../types/team';
 import {
   type Lineup,
   type MatchupResult,
   evaluateMatchup,
   calculatePlayerRating,
 } from './teamRating';
+import type { PlayerGameStatLine } from './matchSimulator';
 import type { DraftState } from '../draft/draftEngine';
 import { createRng } from '../../utils/rng';
 
@@ -97,10 +99,25 @@ commentary: Commentary[];
   /** 완료된 선택지들 */
   resolvedDecisions: Decision[];
 
+  /** 선수별 실시간 스탯 (홈) */
+  playerStatsHome: LivePlayerStat[];
+  /** 선수별 실시간 스탯 (어웨이) */
+  playerStatsAway: LivePlayerStat[];
+
   /** 게임 종료 여부 */
   isFinished: boolean;
   /** 승리 팀 */
   winner?: 'home' | 'away';
+}
+
+/** 실시간 선수 스탯 (틱별 누적) */
+export interface LivePlayerStat {
+  playerId: string;
+  position: Position;
+  kills: number;
+  deaths: number;
+  assists: number;
+  cs: number;
 }
 
 // ─────────────────────────────────────────
@@ -300,6 +317,51 @@ function createLateGameDecision_Player(tick: number, situation: string): Decisio
 }
 
 // ─────────────────────────────────────────
+// 개별 선수 지시 타입
+// ─────────────────────────────────────────
+
+export type PlayerInstructionType = 'aggressive' | 'safe' | 'roam' | 'lane_focus';
+
+export interface PlayerInstruction {
+  playerId: string;
+  instruction: PlayerInstructionType;
+}
+
+export const PLAYER_INSTRUCTION_LABELS: Record<PlayerInstructionType, string> = {
+  aggressive: '공격적으로 플레이',
+  safe: '안전하게 플레이',
+  roam: '적극적 로밍',
+  lane_focus: '라인에 집중',
+};
+
+export const PLAYER_INSTRUCTION_DESCRIPTIONS: Record<PlayerInstructionType, string> = {
+  aggressive: 'aggression 임시 +10 보정',
+  safe: 'consistency 임시 +10 보정',
+  roam: 'teamwork 임시 +5 보정 (정글/서포트)',
+  lane_focus: 'laning 임시 +10 보정',
+};
+
+// ─────────────────────────────────────────
+// 경기 중 전술 타입
+// ─────────────────────────────────────────
+
+/** 경기 중 플레이 스타일 */
+export type InGamePlayStyle = 'aggressive' | 'controlled' | 'split';
+
+/** 오브젝트 우선순위 */
+export type ObjectivePriority = 'dragon' | 'baron' | 'balanced';
+
+/** 팀파이트 성향 */
+export type TeamfightAggression = 'engage' | 'avoid' | 'situational';
+
+/** 경기 중 전술 설정 */
+export interface InGameTactics {
+  playStyle: InGamePlayStyle;
+  objectivePriority: ObjectivePriority;
+  teamfightAggression: TeamfightAggression;
+}
+
+// ─────────────────────────────────────────
 // 밴픽 숙련도 보정
 // ─────────────────────────────────────────
 
@@ -345,6 +407,110 @@ function calculateDraftProficiencyBonus(
 }
 
 // ─────────────────────────────────────────
+// 중계 텍스트 템플릿
+// ─────────────────────────────────────────
+
+const COMMENTARY_TEMPLATES = {
+  gameStart: [
+    '경기가 시작됩니다!',
+    '양 팀 선수들이 소환사의 협곡에 입장합니다!',
+    '드디어 경기 시작! 양 팀의 대결이 펼쳐집니다!',
+    '소환사의 협곡에 전운이 감돕니다. 경기 시작!',
+  ],
+  midGameTransition: [
+    '라인전이 종료되고 중반으로 넘어갑니다',
+    '라인전 페이즈가 끝났습니다. 이제 팀 운영이 중요해집니다',
+    '중반 진입! 오브젝트 싸움이 본격적으로 시작됩니다',
+    '라인전이 마무리되며 본격적인 팀 교전 페이즈로 전환됩니다',
+  ],
+  lateGameTransition: [
+    '후반 진입 — 바론과 엘더 드래곤이 중요해집니다',
+    '후반 교전 페이즈! 한 번의 실수가 경기를 결정할 수 있습니다',
+    '게임이 후반으로 접어듭니다. 바론 내셔가 핵심이 됩니다',
+    '후반 진입! 이제 한타 한 번에 게임이 뒤집힐 수 있습니다',
+  ],
+  soloKill: [
+    '{side}팀 선수의 솔로킬! 라인전에서 압도합니다!',
+    '솔로킬! {side}팀이 라인전에서 우위를 점합니다!',
+    '{side}팀의 화려한 솔로킬! 상대를 제압합니다!',
+    '아! {side}팀 선수가 솔로킬을 따냅니다!',
+    '{side}팀, 완벽한 콤보로 솔로킬 성공!',
+    '기가 막힌 솔로킬! {side}팀이 라인전 주도권을 잡습니다!',
+  ],
+  counterKill: [
+    '{side}팀의 반격 솔로킬!',
+    '{side}팀이 반격에 성공합니다! 되받아치는 솔로킬!',
+    '역전 솔로킬! {side}팀이 반격합니다!',
+  ],
+  gank: [
+    '{side}팀 정글러의 갱킹!',
+    '{side}팀 정글러의 기습 갱킹! 킬을 따냅니다!',
+    '완벽한 갱킹 타이밍! {side}팀 정글러가 킬을 가져갑니다!',
+    '{side}팀 정글러의 갱킹 성공! 라인을 장악합니다!',
+    '갱킹! {side}팀의 정글러가 적을 급습합니다!',
+    '{side}팀, 갱킹으로 킬을 추가합니다!',
+  ],
+  dragon: [
+    '{side}팀이 드래곤을 확보합니다!',
+    '드래곤 처치! {side}팀의 오브젝트 컨트롤이 돋보입니다!',
+    '{side}팀, 깔끔하게 드래곤을 가져갑니다!',
+    '드래곤 타이밍! {side}팀이 정확하게 오브젝트를 챙깁니다!',
+    '{side}팀이 드래곤을 확보하며 우위를 점합니다!',
+  ],
+  dragonFight: [
+    '드래곤 교전에서 {kills}킬!',
+    '드래곤 앞 교전! {kills}킬을 따내며 {side}팀이 승리!',
+    '드래곤 교전 발생! {side}팀이 {kills}킬을 기록합니다!',
+    '드래곤을 둘러싼 교전! {kills}킬!',
+  ],
+  baron: [
+    '{side}팀 바론 내셔 처치!',
+    '내셔 남작 처치! {side}팀의 대역전극이 시작됩니다!',
+    '{side}팀, 바론을 가져가며 게임의 주도권을 잡습니다!',
+    '결정적인 바론! {side}팀이 이 게임을 끝낼 수 있을까?',
+    '{side}팀, 바론 버프를 얻어 최종 공세를 준비합니다!',
+  ],
+  baronFight: [
+    '바론 앞 대규모 교전! {kills}킬!',
+    '바론 교전! {side}팀이 {kills}킬을 따내며 바론까지!',
+    '바론 앞에서 대규모 한타! {kills}킬이 터졌습니다!',
+    '치열한 바론 교전! {side}팀이 {kills}킬로 승리합니다!',
+  ],
+  midSkirmish: [
+    '{side}팀이 중반 교전에서 킬을 추가합니다',
+    '소규모 교전 발생! {side}팀이 킬을 가져갑니다',
+    '{side}팀, 교전에서 승리하며 골드 격차를 벌립니다',
+  ],
+  lateTeamfight: [
+    '한타 발생! {side}팀 {kills}킬!',
+    '대규모 교전! {side}팀이 {kills}킬을 따내며 승리!',
+    '에이스급 한타! {side}팀이 {kills}킬로 전세를 뒤집습니다!',
+    '아름다운 한타! {side}팀의 팀파이트 실력이 빛납니다! {kills}킬!',
+    '{side}팀의 인게이지가 완벽했습니다! {kills}명을 처치!',
+    '후반 대규모 교전에서 {side}팀이 {kills}킬을 기록합니다!',
+  ],
+  nexusDestroy: [
+    '{side}팀이 넥서스를 파괴합니다! GG!',
+    '{side}팀 승리! 넥서스가 무너집니다!',
+    'GG! {side}팀이 넥서스를 부수며 승리를 확정합니다!',
+    '{side}팀의 승리! 경기 종료!',
+    '넥서스 파괴! {side}팀이 이 경기의 승자입니다!',
+  ],
+};
+
+function pickCommentary(pool: string[], vars: Record<string, string> = {}): string {
+  let text = pool[Math.floor(Math.random() * pool.length)];
+  for (const [key, value] of Object.entries(vars)) {
+    text = text.replaceAll(`{${key}}`, value);
+  }
+  return text;
+}
+
+function sideLabel(side: 'home' | 'away'): string {
+  return side === 'home' ? '블루' : '레드';
+}
+
+// ─────────────────────────────────────────
 // 라이브 경기 엔진
 // ─────────────────────────────────────────
 
@@ -358,6 +524,21 @@ export class LiveMatchEngine {
   private rand: () => number;
   private gameMode: 'manager' | 'player';
   private userPosition?: Position; // 선수 모드일 때 유저 포지션
+  private homeLineup: Lineup;
+  private awayLineup: Lineup;
+  private homePlayStyle: PlayStyle;
+  private awayPlayStyle: PlayStyle;
+
+  // 개별 선수 지시 (최대 2명)
+  private playerInstructions: Map<string, PlayerInstructionType> = new Map();
+
+  // 경기 중 전술 (유저 팀)
+  private inGameTactics: InGameTactics = {
+    playStyle: 'controlled',
+    objectivePriority: 'balanced',
+    teamfightAggression: 'situational',
+  };
+  private tacticsCooldown: number = 0; // 남은 쿨다운 틱
 
   // 선택지 발생 틱 (고정 시점)
   private decisionTicks = {
@@ -378,7 +559,14 @@ export class LiveMatchEngine {
     userPosition?: Position;
     durationMinutes?: number;
     draftResult?: DraftState | null;
+    homePlayStyle?: PlayStyle;
+    awayPlayStyle?: PlayStyle;
   }) {
+    this.homeLineup = params.homeLineup;
+    this.awayLineup = params.awayLineup;
+    this.homePlayStyle = params.homePlayStyle ?? 'controlled';
+    this.awayPlayStyle = params.awayPlayStyle ?? 'controlled';
+
     this.matchup = evaluateMatchup(
       params.homeLineup,
       params.awayLineup,
@@ -386,6 +574,8 @@ export class LiveMatchEngine {
       params.awayTraits ?? {},
       params.homeForm ?? {},
       params.awayForm ?? {},
+      this.homePlayStyle,
+      this.awayPlayStyle,
     );
 
     // 밴픽 결과 → 챔피언 숙련도 보정
@@ -411,6 +601,8 @@ export class LiveMatchEngine {
     const maxTick = Math.max(MATCH_CONSTANTS.gameDuration.min,
       Math.min(MATCH_CONSTANTS.gameDuration.max, baseDuration));
 
+    const positions: Position[] = ['top', 'jungle', 'mid', 'adc', 'support'];
+
     this.state = {
       currentTick: 0,
       maxTick,
@@ -430,6 +622,16 @@ export class LiveMatchEngine {
       commentary: [],
       pendingDecision: null,
       resolvedDecisions: [],
+      playerStatsHome: positions.map(pos => ({
+        playerId: params.homeLineup[pos].id,
+        position: pos,
+        kills: 0, deaths: 0, assists: 0, cs: 0,
+      })),
+      playerStatsAway: positions.map(pos => ({
+        playerId: params.awayLineup[pos].id,
+        position: pos,
+        kills: 0, deaths: 0, assists: 0, cs: 0,
+      })),
       isFinished: false,
     };
   }
@@ -437,6 +639,110 @@ export class LiveMatchEngine {
   /** 현재 상태 조회 (읽기 전용) */
   getState(): Readonly<LiveGameState> {
     return this.state;
+  }
+
+  /** 현재 경기 중 전술 조회 */
+  getInGameTactics(): Readonly<InGameTactics> {
+    return this.inGameTactics;
+  }
+
+  /** 전술 쿨다운 남은 틱 조회 */
+  getTacticsCooldown(): number {
+    return this.tacticsCooldown;
+  }
+
+  /**
+   * 개별 선수 지시 설정
+   * 한 번에 최대 2명에게만 지시 가능
+   * 이미 지시가 있는 선수는 교체됨
+   * @returns 성공 여부
+   */
+  setPlayerInstruction(playerId: string, instruction: PlayerInstructionType): boolean {
+    // 이미 해당 선수에게 지시가 있으면 교체
+    if (this.playerInstructions.has(playerId)) {
+      this.playerInstructions.set(playerId, instruction);
+      this.addCommentary(
+        this.state.currentTick,
+        `선수 지시 변경: ${PLAYER_INSTRUCTION_LABELS[instruction]}`,
+        'info',
+      );
+      return true;
+    }
+
+    // 최대 2명 제한
+    if (this.playerInstructions.size >= 2) {
+      return false;
+    }
+
+    this.playerInstructions.set(playerId, instruction);
+    this.addCommentary(
+      this.state.currentTick,
+      `선수 지시: ${PLAYER_INSTRUCTION_LABELS[instruction]}`,
+      'info',
+    );
+    return true;
+  }
+
+  /** 선수 지시 해제 */
+  clearPlayerInstruction(playerId: string): void {
+    this.playerInstructions.delete(playerId);
+  }
+
+  /** 현재 선수 지시 조회 */
+  getPlayerInstructions(): ReadonlyMap<string, PlayerInstructionType> {
+    return this.playerInstructions;
+  }
+
+  /**
+   * 경기 중 전술 변경
+   * 쿨다운(5틱) 동안 재변경 불가
+   */
+  setInGameTactics(
+    style: InGamePlayStyle,
+    objectivePriority: ObjectivePriority,
+    teamfightAggression: TeamfightAggression,
+  ): boolean {
+    if (this.tacticsCooldown > 0) return false;
+
+    this.inGameTactics = { playStyle: style, objectivePriority, teamfightAggression };
+    this.tacticsCooldown = 5; // 5틱 쿨다운
+
+    this.addCommentary(
+      this.state.currentTick,
+      `전술 변경: ${style === 'aggressive' ? '공격적' : style === 'split' ? '스플릿' : '안정'} / ${objectivePriority === 'dragon' ? '드래곤 중시' : objectivePriority === 'baron' ? '바론 중시' : '균형'} / ${teamfightAggression === 'engage' ? '적극 교전' : teamfightAggression === 'avoid' ? '교전 회피' : '상황 판단'}`,
+      'info',
+    );
+
+    return true;
+  }
+
+  /** 선수 스탯을 PlayerGameStatLine 형식으로 변환 (GameResult 생성용) */
+  getPlayerStatLines(): { home: PlayerGameStatLine[]; away: PlayerGameStatLine[] } {
+    const convert = (stats: LivePlayerStat[], lineup: Lineup): PlayerGameStatLine[] =>
+      stats.map(s => {
+        const player = lineup[s.position];
+        const killGold = s.kills * 300;
+        const csGold = s.cs * 20;
+        const baseGold = this.state.maxTick * 100;
+        return {
+          playerId: s.playerId,
+          position: s.position,
+          kills: s.kills,
+          deaths: s.deaths,
+          assists: s.assists,
+          cs: s.cs,
+          goldEarned: killGold + csGold + baseGold,
+          damageDealt: Math.round(
+            this.state.maxTick * 600 *
+            ({ top: 0.18, jungle: 0.15, mid: 0.25, adc: 0.30, support: 0.12 }[s.position] / 0.2) *
+            (1 + (player.stats.mechanical - 60) * 0.005),
+          ),
+        };
+      });
+    return {
+      home: convert(this.state.playerStatsHome, this.homeLineup),
+      away: convert(this.state.playerStatsAway, this.awayLineup),
+    };
   }
 
   /** 선택지 응답 */
@@ -482,16 +788,19 @@ export class LiveMatchEngine {
     this.state.currentTick++;
     const tick = this.state.currentTick;
 
+    // 전술 쿨다운 감소
+    if (this.tacticsCooldown > 0) this.tacticsCooldown--;
+
     // 페이즈 업데이트
     if (tick <= 1) {
       this.state.phase = 'laning';
-      this.addCommentary(0, '경기가 시작됩니다!', 'info');
+      this.addCommentary(0, pickCommentary(COMMENTARY_TEMPLATES.gameStart), 'info');
     } else if (tick === MATCH_CONSTANTS.laningPhaseEnd + 1) {
       this.state.phase = 'mid_game';
-      this.addCommentary(tick, '라인전이 종료되고 중반으로 넘어갑니다', 'info');
+      this.addCommentary(tick, pickCommentary(COMMENTARY_TEMPLATES.midGameTransition), 'info');
     } else if (tick === 25) {
       this.state.phase = 'late_game';
-      this.addCommentary(tick, '후반 진입 — 바론과 엘더 드래곤이 중요해집니다', 'info');
+      this.addCommentary(tick, pickCommentary(COMMENTARY_TEMPLATES.lateGameTransition), 'info');
     }
 
     // 경기 종료 체크
@@ -532,6 +841,25 @@ export class LiveMatchEngine {
     const { matchup } = this;
     const wr = this.state.currentWinRate;
 
+    // 전술 보정 계수
+    const tactics = this.inGameTactics;
+    const killMod = tactics.playStyle === 'aggressive' ? 1.20 : 1.0;   // aggressive: 킬 확률 +20%
+    const deathMod = tactics.playStyle === 'aggressive' ? 1.15 : 1.0;  // aggressive: 데스 확률 +15%
+    const dragonMod = tactics.objectivePriority === 'dragon' ? 1.30 : 1.0; // 드래곤 중시: +30%
+    const teamfightMod = tactics.teamfightAggression === 'engage' ? 1.25 : 1.0; // 적극 교전: +25%
+
+    // 매 3틱(3분)마다 CS 누적
+    if (tick % 3 === 0) {
+      const csPerMin: Record<Position, number> = { top: 8, jungle: 5.5, mid: 8.5, adc: 9, support: 1.5 };
+      const positions: Position[] = ['top', 'jungle', 'mid', 'adc', 'support'];
+      for (let i = 0; i < positions.length; i++) {
+        const pos = positions[i];
+        const base = Math.round(csPerMin[pos] * 3 + (this.rand() - 0.5) * 4);
+        this.state.playerStatsHome[i].cs += Math.max(0, base);
+        this.state.playerStatsAway[i].cs += Math.max(0, base + Math.round((this.rand() - 0.5) * 4));
+      }
+    }
+
     // ── 라인전 (1~15분) ──
     if (tick <= 15) {
       // 매 3분마다 CS 골드 차이 업데이트
@@ -542,10 +870,15 @@ export class LiveMatchEngine {
         else this.state.goldAway += Math.abs(csGold);
       }
 
-      // 솔로킬 (5분부터, ~15% 확률/분)
-      if (tick >= 5 && this.rand() < 0.08) {
+      // 솔로킬 (5분부터, ~15% 확률/분) — aggressive 전술 시 확률 증가
+      if (tick >= 5 && this.rand() < 0.08 * killMod) {
         const killer = this.rand() < wr ? 'home' : 'away';
         this.registerKill(tick, killer, '라인전 솔로킬');
+        // aggressive 전술 시 상대 킬도 추가 확률
+        if (deathMod > 1.0 && this.rand() < 0.08 * (deathMod - 1.0)) {
+          const otherSide = killer === 'home' ? 'away' : 'home';
+          this.registerKill(tick, otherSide, '반격 솔로킬');
+        }
       }
 
       // 갱킹 (4분부터, ~10% 확률/분)
@@ -554,29 +887,30 @@ export class LiveMatchEngine {
         const success = this.rand() < 0.5 + jglDiff * 0.01;
         const ganker = (jglDiff > 0 && success) ? 'home' : 'away';
         this.registerKill(tick, ganker, '정글 갱킹');
-        this.addCommentary(tick, `${ganker === 'home' ? '블루' : '레드'}팀 정글러의 갱킹!`, 'kill');
+        this.addCommentary(tick, pickCommentary(COMMENTARY_TEMPLATES.gank, { side: sideLabel(ganker) }), 'kill');
       }
     }
 
     // ── 중반 (16~24분) ──
     if (tick > 15 && tick <= 24) {
-      // 드래곤 (18, 22분)
+      // 드래곤 (18, 22분) — 드래곤 중시 전술 시 교전 확률 증가
       if (tick === 18 || tick === 22) {
         const tfDiff = matchup.homeRating.teamfightPower - matchup.awayRating.teamfightPower;
-        const dragonWin = this.rand() < 0.5 + tfDiff * 0.008 + (wr - 0.5) * 0.2;
+        const dragonBonus = dragonMod > 1.0 ? 0.1 : 0; // 드래곤 중시 시 홈팀 유리
+        const dragonWin = this.rand() < 0.5 + tfDiff * 0.008 + (wr - 0.5) * 0.2 + dragonBonus;
         const side = dragonWin ? 'home' : 'away';
 
         if (side === 'home') this.state.dragonsHome++;
         else this.state.dragonsAway++;
 
         this.addEvent(tick, 'dragon', side, '드래곤 처치', 200);
-        this.addCommentary(tick, `${side === 'home' ? '블루' : '레드'}팀이 드래곤을 확보합니다!`, 'objective');
+        this.addCommentary(tick, pickCommentary(COMMENTARY_TEMPLATES.dragon, { side: sideLabel(side) }), 'objective');
 
-        // 드래곤 교전 킬
-        if (this.rand() < 0.5) {
+        // 드래곤 교전 킬 — 드래곤 중시 시 교전 확률 증가
+        if (this.rand() < 0.5 * dragonMod) {
           const kills = 1 + Math.floor(this.rand() * 2);
           for (let k = 0; k < kills; k++) this.registerKill(tick, side, '드래곤 교전');
-          this.addCommentary(tick, `드래곤 교전에서 ${kills}킬!`, 'teamfight');
+          this.addCommentary(tick, pickCommentary(COMMENTARY_TEMPLATES.dragonFight, { kills: String(kills), side: sideLabel(side) }), 'teamfight');
         }
       }
 
@@ -590,8 +924,8 @@ export class LiveMatchEngine {
         }
       }
 
-      // 소규모 교전
-      if (this.rand() < 0.05) {
+      // 소규모 교전 — 적극 교전 전술 시 확률 증가
+      if (this.rand() < 0.05 * teamfightMod) {
         const winner = this.rand() < wr ? 'home' : 'away';
         this.registerKill(tick, winner, '중반 교전');
       }
@@ -608,13 +942,13 @@ export class LiveMatchEngine {
         else this.state.baronAway = true;
 
         this.addEvent(tick, 'baron', side, '바론 내셔 처치', 1500);
-        this.addCommentary(tick, `${side === 'home' ? '블루' : '레드'}팀 바론 내셔 처치!`, 'objective');
+        this.addCommentary(tick, pickCommentary(COMMENTARY_TEMPLATES.baron, { side: sideLabel(side) }), 'objective');
 
         // 바론 교전
         if (this.rand() < 0.6) {
           const kills = 2 + Math.floor(this.rand() * 3);
           for (let k = 0; k < kills; k++) this.registerKill(tick, side, '바론 교전');
-          this.addCommentary(tick, `바론 앞 대규모 교전! ${kills}킬!`, 'teamfight');
+          this.addCommentary(tick, pickCommentary(COMMENTARY_TEMPLATES.baronFight, { kills: String(kills), side: sideLabel(side) }), 'teamfight');
         }
       }
 
@@ -626,12 +960,12 @@ export class LiveMatchEngine {
         this.addEvent(tick, 'tower_destroy', side, '내부 타워 파괴', 550);
       }
 
-      // 후반 교전
-      if (this.rand() < 0.08) {
+      // 후반 교전 — 적극 교전 전술 시 확률 증가
+      if (this.rand() < 0.08 * teamfightMod) {
         const winner = this.rand() < wr ? 'home' : 'away';
         const kills = 1 + Math.floor(this.rand() * 2);
         for (let k = 0; k < kills; k++) this.registerKill(tick, winner, '후반 교전');
-        this.addCommentary(tick, `한타 발생! ${winner === 'home' ? '블루' : '레드'}팀 ${kills}킬!`, 'teamfight');
+        this.addCommentary(tick, pickCommentary(COMMENTARY_TEMPLATES.lateTeamfight, { side: sideLabel(winner), kills: String(kills) }), 'teamfight');
       }
     }
   }
@@ -683,7 +1017,7 @@ export class LiveMatchEngine {
     const finalKills = 2 + Math.floor(this.rand() * 3);
     for (let k = 0; k < finalKills; k++) this.registerKill(tick, winner, '최종 교전');
 
-    this.addCommentary(tick, `${winner === 'home' ? '블루' : '레드'}팀이 넥서스를 파괴합니다! GG!`, 'highlight');
+    this.addCommentary(tick, pickCommentary(COMMENTARY_TEMPLATES.nexusDestroy, { side: sideLabel(winner) }), 'highlight');
 
     this.state.isFinished = true;
     this.state.winner = winner;
@@ -699,6 +1033,34 @@ export class LiveMatchEngine {
       this.state.goldAway += 300;
     }
     this.addEvent(tick, 'kill', side, desc, 300);
+
+    // 선수별 킬/데스/어시 추적
+    const killerStats = side === 'home' ? this.state.playerStatsHome : this.state.playerStatsAway;
+    const victimStats = side === 'home' ? this.state.playerStatsAway : this.state.playerStatsHome;
+
+    // 킬러: 가중치 랜덤 선택
+    const killWeights = [0.18, 0.20, 0.22, 0.28, 0.12]; // top,jg,mid,adc,sup
+    const r = this.rand();
+    let cumulative = 0;
+    let killerIdx = 0;
+    for (let i = 0; i < killWeights.length; i++) {
+      cumulative += killWeights[i];
+      if (r < cumulative) { killerIdx = i; break; }
+    }
+    killerStats[killerIdx].kills++;
+
+    // 피해자: 랜덤
+    const victimIdx = Math.floor(this.rand() * 5);
+    victimStats[victimIdx].deaths++;
+
+    // 어시스트: 킬러 제외 1~2명
+    const assistCount = 1 + Math.floor(this.rand() * 2);
+    const assistCandidates = [0, 1, 2, 3, 4].filter(i => i !== killerIdx);
+    for (let a = 0; a < Math.min(assistCount, assistCandidates.length); a++) {
+      const idx = Math.floor(this.rand() * assistCandidates.length);
+      killerStats[assistCandidates[idx]].assists++;
+      assistCandidates.splice(idx, 1);
+    }
   }
 
   private addEvent(tick: number, type: MatchEventType, side: 'home' | 'away', description: string, goldChange: number): void {

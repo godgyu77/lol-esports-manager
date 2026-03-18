@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { GameMode, GameSave, Match, Position, Season } from '../types';
 import type { PlayerBackground } from '../types/player';
+import type { ManagerBackground, ManagerStats } from '../types/manager';
 import type { Team } from '../types';
 import type { DayType } from '../engine/season/calendar';
 import type { DraftState } from '../engine/draft/draftEngine';
@@ -9,6 +10,15 @@ export interface PendingPlayer {
   name: string;
   position: Position;
   background: PlayerBackground;
+}
+
+export interface PendingManager {
+  name: string;
+  nationality: string;
+  age: number;
+  background: ManagerBackground;
+  stats: ManagerStats;
+  reputation: number;
 }
 
 /** 현재 진행 중인 날의 상태 */
@@ -28,6 +38,7 @@ interface GameState {
   teams: Team[];
   isLoading: boolean;
   pendingPlayer: PendingPlayer | null;
+  pendingManager: PendingManager | null;
 
   // 일간 진행 상태
   currentDate: string | null;      // 현재 날짜
@@ -35,6 +46,7 @@ interface GameState {
   dayPhase: DayPhase;              // 현재 일간 단계
   pendingUserMatch: Match | null;  // 밴픽/라이브매치 대기 중인 유저 경기
   draftResult: DraftState | null;  // 완료된 밴픽 결과
+  fearlessPool: Record<'blue' | 'red', string[]>;  // 피어리스 드래프트 세트 간 누적 풀
 
   // 액션
   setMode: (mode: GameMode) => void;
@@ -43,11 +55,15 @@ interface GameState {
   setTeams: (teams: Team[]) => void;
   setLoading: (loading: boolean) => void;
   setPendingPlayer: (player: PendingPlayer | null) => void;
+  setPendingManager: (manager: PendingManager | null) => void;
+  pendingTeamId: string | null;
+  setPendingTeamId: (id: string | null) => void;
   setCurrentDate: (date: string) => void;
   setDayType: (dayType: DayType) => void;
   setDayPhase: (phase: DayPhase) => void;
   setPendingUserMatch: (match: Match | null) => void;
   setDraftResult: (draft: DraftState | null) => void;
+  setFearlessPool: (pool: Record<'blue' | 'red', string[]>) => void;
   reset: () => void;
 }
 
@@ -58,11 +74,14 @@ const initialState = {
   teams: [] as Team[],
   isLoading: false,
   pendingPlayer: null as PendingPlayer | null,
+  pendingManager: null as PendingManager | null,
+  pendingTeamId: null as string | null,
   currentDate: null as string | null,
   dayType: null as DayType | null,
   dayPhase: 'idle' as DayPhase,
   pendingUserMatch: null as Match | null,
   draftResult: null as DraftState | null,
+  fearlessPool: { blue: [], red: [] } as Record<'blue' | 'red', string[]>,
 };
 
 export const useGameStore = create<GameState>((set) => ({
@@ -74,10 +93,13 @@ export const useGameStore = create<GameState>((set) => ({
   setTeams: (teams) => set({ teams }),
   setLoading: (loading) => set({ isLoading: loading }),
   setPendingPlayer: (player) => set({ pendingPlayer: player }),
+  setPendingManager: (manager) => set({ pendingManager: manager }),
+  setPendingTeamId: (id) => set({ pendingTeamId: id }),
   setCurrentDate: (date) => set({ currentDate: date }),
   setDayType: (dayType) => set({ dayType }),
   setDayPhase: (phase) => set({ dayPhase: phase }),
   setPendingUserMatch: (match) => set({ pendingUserMatch: match }),
   setDraftResult: (draft) => set({ draftResult: draft }),
+  setFearlessPool: (pool) => set({ fearlessPool: pool }),
   reset: () => set(initialState),
 }));

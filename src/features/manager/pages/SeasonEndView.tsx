@@ -23,6 +23,8 @@ export function SeasonEndView() {
   const season = useGameStore((s) => s.season);
   const save = useGameStore((s) => s.save);
   const teams = useGameStore((s) => s.teams);
+  const mode = useGameStore((s) => s.mode);
+  const dayPath = mode === 'player' ? '/player/day' : '/manager/day';
 
   const [regularResult, setRegularResult] = useState<RegularSeasonEndResult | null>(null);
   const [fullResult, setFullResult] = useState<SeasonEndResult | null>(null);
@@ -46,8 +48,8 @@ export function SeasonEndView() {
 
   // Step 2: 플레이오프 진행 (DayView로 복귀)
   const handleStartPlayoff = useCallback(() => {
-    navigate('/manager/day');
-  }, [navigate]);
+    navigate(dayPath);
+  }, [navigate, dayPath]);
 
   // Step 3: 전체 시즌 종료 처리
   const handleFullEnd = useCallback(async () => {
@@ -63,21 +65,21 @@ export function SeasonEndView() {
           : finalMatch.teamAwayId;
       }
 
-      const result = await processFullSeasonEnd(season, championTeamId);
+      const result = await processFullSeasonEnd(season, championTeamId, save?.id);
       setFullResult(result);
     } catch (err) {
       console.error('시즌 종료 처리 오류:', err);
     } finally {
       setIsProcessing(false);
     }
-  }, [season]);
+  }, [season, save]);
 
   // 다음 스플릿 시작
   const handleNextSeason = useCallback(async () => {
     if (!save || !fullResult?.nextSeasonId) return;
     await loadGameIntoStore(save.id);
-    navigate('/manager/day');
-  }, [save, fullResult, navigate]);
+    navigate(dayPath);
+  }, [save, fullResult, navigate, dayPath]);
 
   if (!season) {
     return <p style={{ color: '#6a6a7a' }}>데이터를 불러오는 중...</p>;

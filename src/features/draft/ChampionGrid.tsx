@@ -13,6 +13,7 @@ interface ChampionGridProps {
   filteredChampions: Champion[];
   selectedChampion: string | null;
   filterPosition: Position | 'all';
+  fearlessDisabledIds?: Set<string>;
   onSelectChampion: (id: string) => void;
   onFilterChange: (pos: Position | 'all') => void;
 }
@@ -21,6 +22,7 @@ export function ChampionGrid({
   filteredChampions,
   selectedChampion,
   filterPosition,
+  fearlessDisabledIds,
   onSelectChampion,
   onFilterChange,
 }: ChampionGridProps) {
@@ -54,25 +56,35 @@ export function ChampionGrid({
       </div>
 
       <div style={styles.champList}>
-        {filteredChampions.map((champ) => (
-          <div
-            key={champ.id}
-            style={{
-              ...styles.champItem,
-              borderColor: selectedChampion === champ.id ? '#c89b3c' : '#2a2a4a',
-              background: selectedChampion === champ.id ? 'rgba(200,155,60,0.08)' : 'transparent',
-            }}
-            onClick={() => onSelectChampion(champ.id)}
-          >
-            <span style={styles.champName}>{champ.nameKo}</span>
-            <span style={{
-              ...styles.champTier,
-              color: champ.tier === 'S' ? '#e74c3c' : champ.tier === 'A' ? '#f39c12' : '#6a6a7a',
-            }}>
-              {champ.tier}
-            </span>
-          </div>
-        ))}
+        {filteredChampions.map((champ) => {
+          const isFearlessBlocked = fearlessDisabledIds?.has(champ.id) ?? false;
+          return (
+            <div
+              key={champ.id}
+              style={{
+                ...styles.champItem,
+                borderColor: isFearlessBlocked ? '#1a1a2e' : selectedChampion === champ.id ? '#c89b3c' : '#2a2a4a',
+                background: isFearlessBlocked ? 'rgba(255,255,255,0.01)' : selectedChampion === champ.id ? 'rgba(200,155,60,0.08)' : 'transparent',
+                opacity: isFearlessBlocked ? 0.35 : 1,
+                cursor: isFearlessBlocked ? 'not-allowed' : 'pointer',
+              }}
+              onClick={() => !isFearlessBlocked && onSelectChampion(champ.id)}
+              title={isFearlessBlocked ? '피어리스: 이전 세트에서 사용됨' : undefined}
+            >
+              <span style={styles.champName}>{champ.nameKo}</span>
+              {isFearlessBlocked ? (
+                <span style={styles.fearlessTag}>사용됨</span>
+              ) : (
+                <span style={{
+                  ...styles.champTier,
+                  color: champ.tier === 'S' ? '#e74c3c' : champ.tier === 'A' ? '#f39c12' : '#6a6a7a',
+                }}>
+                  {champ.tier}
+                </span>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -121,5 +133,11 @@ const styles: Record<string, React.CSSProperties> = {
   champTier: {
     fontSize: '10px',
     fontWeight: 700,
+  },
+  fearlessTag: {
+    fontSize: '9px',
+    fontWeight: 600,
+    color: '#e74c3c',
+    opacity: 0.8,
   },
 };

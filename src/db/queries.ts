@@ -4,9 +4,9 @@
  */
 import type { GameMode, GameSave, Position, Region, Season, Split } from '../types';
 import type { Champion } from '../types/champion';
-import type { Match } from '../types/match';
+import type { Match, PlayerGameStats } from '../types/match';
 import type { ChampionProficiency, Player, PlayerContract, PlayerMental, PlayerStats } from '../types/player';
-import type { Team } from '../types/team';
+import type { PlayStyle, Team } from '../types/team';
 import { getDatabase } from './database';
 
 // ─────────────────────────────────────────
@@ -46,6 +46,7 @@ interface TeamRow {
   budget: number;
   salary_cap: number;
   reputation: number;
+  play_style: string;
 }
 
 interface SeasonRow {
@@ -67,6 +68,11 @@ interface SaveRow {
   current_season_id: number;
   created_at: string;
   updated_at: string;
+  slot_number: number;
+  save_name: string;
+  play_time_minutes: number;
+  team_name: string | null;
+  season_info: string | null;
 }
 
 export function mapRowToPlayer(row: PlayerRow): Player & { division: string } {
@@ -118,6 +124,7 @@ export function mapRowToTeam(row: TeamRow): Team {
     salaryCap: row.salary_cap,
     reputation: row.reputation,
     roster: [],
+    playStyle: (row.play_style as Team['playStyle']) ?? 'controlled',
   };
 }
 
@@ -143,6 +150,11 @@ export function mapRowToSave(row: SaveRow): GameSave {
     currentSeasonId: row.current_season_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    slotNumber: row.slot_number,
+    saveName: row.save_name,
+    playTimeMinutes: row.play_time_minutes,
+    teamName: row.team_name ?? undefined,
+    seasonInfo: row.season_info ?? undefined,
   };
 }
 
@@ -442,6 +454,103 @@ export async function updateSaveTimestamp(saveId: number): Promise<void> {
   );
 }
 
+/** 수동 저장 생성 (슬롯 지정) */
+export async function createManualSave(
+  mode: GameMode,
+  teamId: string,
+  playerId: string | null,
+  seasonId: number,
+  slotNumber: number,
+  saveName: string,
+  teamName: string | null,
+  seasonInfo: string | null,
+): Promise<number> {
+  const db = await getDatabase();
+  // 같은 슬롯에 기존 저장이 있으면 삭제
+  await db.execute(
+    'DELETE FROM save_metadata WHERE slot_number = $1',
+    [slotNumber],
+  );
+  const result = await db.execute(
+    `INSERT INTO save_metadata (mode, user_team_id, user_player_id, current_season_id, slot_number, save_name, team_name, season_info)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [mode, teamId, playerId, seasonId, slotNumber, saveName, teamName, seasonInfo],
+  );
+  return result.lastInsertId;
+}
+
+/** 모든 저장 슬롯 조회 */
+export async function getAllSaves(): Promise<GameSave[]> {
+  const db = await getDatabase();
+  const rows = await db.select<SaveRow[]>(
+    'SELECT * FROM save_metadata ORDER BY slot_number ASC',
+  );
+  return rows.map(mapRowToSave);
+}
+
+/** 자동 저장(슬롯 0) 조회 */
+export async function getAutoSave(): Promise<GameSave | null> {
+  const db = await getDatabase();
+  const rows = await db.select<SaveRow[]>(
+    'SELECT * FROM save_metadata WHERE slot_number = 0 LIMIT 1',
+  );
+  if (rows.length === 0) return null;
+  return mapRowToSave(rows[0]);
+}
+
+/** 저장 삭제 */
+export async function deleteSave(saveId: number): Promise<void> {
+  const db = await getDatabase();
+  await db.execute('DELETE FROM save_metadata WHERE id = $1', [saveId]);
+}
+
+/** 저장 메타 업데이트 (팀 이름, 시즌 정보 등) */
+export async function updateSaveMeta(
+  saveId: number,
+  updates: { saveName?: string; teamName?: string; seasonInfo?: string; playTimeMinutes?: number },
+): Promise<void> {
+  const db = await getDatabase();
+  const setClauses: string[] = [];
+  const params: unknown[] = [];
+  let idx = 1;
+
+  if (updates.saveName !== undefined) {
+    setClauses.push(`save_name = $${idx++}`);
+    params.push(updates.saveName);
+  }
+  if (updates.teamName !== undefined) {
+    setClauses.push(`team_name = $${idx++}`);
+    params.push(updates.teamName);
+  }
+  if (updates.seasonInfo !== undefined) {
+    setClauses.push(`season_info = $${idx++}`);
+    params.push(updates.seasonInfo);
+  }
+  if (updates.playTimeMinutes !== undefined) {
+    setClauses.push(`play_time_minutes = $${idx++}`);
+    params.push(updates.playTimeMinutes);
+  }
+
+  if (setClauses.length === 0) return;
+
+  setClauses.push(`updated_at = CURRENT_TIMESTAMP`);
+  params.push(saveId);
+
+  await db.execute(
+    `UPDATE save_metadata SET ${setClauses.join(', ')} WHERE id = $${idx}`,
+    params,
+  );
+}
+
+/** 플레이 시간 업데이트 */
+export async function updatePlayTime(saveId: number, minutes: number): Promise<void> {
+  const db = await getDatabase();
+  await db.execute(
+    'UPDATE save_metadata SET play_time_minutes = $1 WHERE id = $2',
+    [minutes, saveId],
+  );
+}
+
 // ─────────────────────────────────────────
 // 챔피언 CRUD
 // ─────────────────────────────────────────
@@ -533,6 +642,7 @@ interface MatchRow {
   played_at: string | null;
   match_type: string;
   bo_format: string;
+  fearless_draft: boolean | number;
 }
 
 export function mapRowToMatch(row: MatchRow): Match {
@@ -550,6 +660,7 @@ export function mapRowToMatch(row: MatchRow): Match {
     games: [],
     matchType: (row.match_type ?? 'regular') as Match['matchType'],
     boFormat: (row.bo_format ?? 'Bo3') as Match['boFormat'],
+    fearlessDraft: Boolean(row.fearless_draft),
   };
 }
 
@@ -1165,7 +1276,7 @@ export interface TransferOffer {
   transferFee: number;
   offeredSalary: number;
   contractYears: number;
-  status: 'pending' | 'accepted' | 'rejected' | 'cancelled';
+  status: 'pending' | 'accepted' | 'rejected' | 'cancelled' | 'player_request';
   offerDate: string;
   resolvedDate?: string;
 }
@@ -1194,7 +1305,7 @@ export async function createTransferOffer(offer: {
 /** 이적 제안 상태 변경 */
 export async function updateTransferOfferStatus(
   offerId: number,
-  status: 'accepted' | 'rejected' | 'cancelled',
+  status: 'accepted' | 'rejected' | 'cancelled' | 'player_request',
   resolvedDate: string,
 ): Promise<void> {
   const db = await getDatabase();
@@ -1550,5 +1661,181 @@ export async function getChampionStatModifier(
   };
 }
 
+// ─────────────────────────────────────────
+// 선수 개인 경기 스탯 (player_game_stats)
+// ─────────────────────────────────────────
 
+interface PlayerGameStatsRow {
+  id: string;
+  game_id: string;
+  match_id: string;
+  player_id: string;
+  team_id: string;
+  side: string;
+  position: string;
+  kills: number;
+  deaths: number;
+  assists: number;
+  cs: number;
+  gold_earned: number;
+  damage_dealt: number;
+}
 
+function mapRowToPlayerGameStats(row: PlayerGameStatsRow): PlayerGameStats {
+  return {
+    id: row.id,
+    gameId: row.game_id,
+    matchId: row.match_id,
+    playerId: row.player_id,
+    teamId: row.team_id,
+    side: row.side as 'home' | 'away',
+    position: row.position,
+    kills: row.kills,
+    deaths: row.deaths,
+    assists: row.assists,
+    cs: row.cs,
+    goldEarned: row.gold_earned,
+    damageDealt: row.damage_dealt,
+  };
+}
+
+/** 선수 경기 스탯 배치 INSERT */
+export async function insertPlayerGameStats(
+  stats: PlayerGameStats[],
+): Promise<void> {
+  if (stats.length === 0) return;
+  const db = await getDatabase();
+
+  for (const s of stats) {
+    await db.execute(
+      `INSERT INTO player_game_stats (id, game_id, match_id, player_id, team_id, side, position, kills, deaths, assists, cs, gold_earned, damage_dealt)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+      [s.id, s.gameId, s.matchId, s.playerId, s.teamId, s.side, s.position, s.kills, s.deaths, s.assists, s.cs, s.goldEarned, s.damageDealt],
+    );
+  }
+}
+
+/** 선수별 경기 기록 조회 */
+export async function getPlayerGameStatsByPlayer(
+  playerId: string,
+  limit = 20,
+): Promise<PlayerGameStats[]> {
+  const db = await getDatabase();
+  const rows = await db.select<PlayerGameStatsRow[]>(
+    `SELECT pgs.* FROM player_game_stats pgs
+     JOIN matches m ON m.id = pgs.match_id
+     WHERE pgs.player_id = $1
+     ORDER BY m.match_date DESC, pgs.game_id DESC
+     LIMIT $2`,
+    [playerId, limit],
+  );
+  return rows.map(mapRowToPlayerGameStats);
+}
+
+/** 시즌 개인 순위 (SUM/AVG 집계) */
+export async function getSeasonPlayerRankings(
+  seasonId: number,
+): Promise<{
+  playerId: string;
+  playerName: string;
+  teamId: string;
+  position: string;
+  games: number;
+  totalKills: number;
+  totalDeaths: number;
+  totalAssists: number;
+  totalCs: number;
+  totalDamage: number;
+  avgKills: number;
+  avgDeaths: number;
+  avgAssists: number;
+  avgCs: number;
+  avgDamage: number;
+}[]> {
+  const db = await getDatabase();
+  const rows = await db.select<{
+    player_id: string;
+    player_name: string;
+    team_id: string;
+    position: string;
+    games: number;
+    total_kills: number;
+    total_deaths: number;
+    total_assists: number;
+    total_cs: number;
+    total_damage: number;
+    avg_kills: number;
+    avg_deaths: number;
+    avg_assists: number;
+    avg_cs: number;
+    avg_damage: number;
+  }[]>(
+    `SELECT
+      pgs.player_id,
+      p.name as player_name,
+      pgs.team_id,
+      pgs.position,
+      COUNT(*) as games,
+      SUM(pgs.kills) as total_kills,
+      SUM(pgs.deaths) as total_deaths,
+      SUM(pgs.assists) as total_assists,
+      SUM(pgs.cs) as total_cs,
+      SUM(pgs.damage_dealt) as total_damage,
+      ROUND(AVG(pgs.kills), 1) as avg_kills,
+      ROUND(AVG(pgs.deaths), 1) as avg_deaths,
+      ROUND(AVG(pgs.assists), 1) as avg_assists,
+      ROUND(AVG(pgs.cs), 0) as avg_cs,
+      ROUND(AVG(pgs.damage_dealt), 0) as avg_damage
+    FROM player_game_stats pgs
+    JOIN players p ON p.id = pgs.player_id
+    JOIN matches m ON m.id = pgs.match_id
+    WHERE m.season_id = $1
+    GROUP BY pgs.player_id
+    ORDER BY total_kills DESC`,
+    [seasonId],
+  );
+  return rows.map(r => ({
+    playerId: r.player_id,
+    playerName: r.player_name,
+    teamId: r.team_id,
+    position: r.position,
+    games: r.games,
+    totalKills: r.total_kills,
+    totalDeaths: r.total_deaths,
+    totalAssists: r.total_assists,
+    totalCs: r.total_cs,
+    totalDamage: r.total_damage,
+    avgKills: r.avg_kills,
+    avgDeaths: r.avg_deaths,
+    avgAssists: r.avg_assists,
+    avgCs: r.avg_cs,
+    avgDamage: r.avg_damage,
+  }));
+}
+
+// ─────────────────────────────────────────
+// 팀 전술 변경
+// ─────────────────────────────────────────
+
+/** 팀 전술 조회 */
+export async function getTeamPlayStyle(
+  teamId: string,
+): Promise<PlayStyle> {
+  const db = await getDatabase();
+  const rows = await db.select<{ play_style: string }[]>(
+    'SELECT play_style FROM teams WHERE id = $1',
+    [teamId],
+  );
+  return (rows[0]?.play_style as PlayStyle) ?? 'controlled';
+}
+
+export async function updateTeamPlayStyle(
+  teamId: string,
+  style: PlayStyle,
+): Promise<void> {
+  const db = await getDatabase();
+  await db.execute(
+    'UPDATE teams SET play_style = $1 WHERE id = $2',
+    [style, teamId],
+  );
+}

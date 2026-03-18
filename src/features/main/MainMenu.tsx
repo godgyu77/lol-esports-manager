@@ -25,7 +25,7 @@ export function MainMenu() {
         >
           새 게임
         </button>
-        <button className="main-menu__btn" disabled>
+        <button className="main-menu__btn" onClick={() => navigate('/save-load')}>
           불러오기
         </button>
         <button className="main-menu__btn" onClick={() => navigate('/settings')}>

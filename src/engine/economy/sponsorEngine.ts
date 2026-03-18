@@ -206,6 +206,86 @@ export async function expireSponsors(
   }
 }
 
+// ─────────────────────────────────────────
+// 스폰서 동적 변동 (주간 체크)
+// ─────────────────────────────────────────
+
+export interface SponsorChangeResult {
+  newOffers: SponsorOffer[];
+  lostSponsors: string[];   // 이탈한 스폰서 이름 목록
+  majorOffer: SponsorOffer | null; // 시즌 우승 시 대형 스폰서
+}
+
+/**
+ * 주간 스폰서 변동 체크
+ * - 팀 reputation 80+ → 새 스폰서 제안 (10% 확률/주)
+ * - 팀 reputation 30- → 기존 스폰서 이탈 (15% 확률/주)
+ * - 시즌 우승 → 대형 스폰서 자동 제안
+ */
+export async function checkSponsorChanges(
+  teamId: string,
+  seasonId: number,
+  currentDate: string,
+): Promise<SponsorChangeResult> {
+  const db = await getDatabase();
+  const result: SponsorChangeResult = { newOffers: [], lostSponsors: [], majorOffer: null };
+
+  // 팀 reputation 조회
+  const teamRows = await db.select<{ reputation: number }[]>(
+    'SELECT reputation FROM teams WHERE id = $1',
+    [teamId],
+  );
+  const reputation = teamRows[0]?.reputation ?? 50;
+
+  // 현재 활성 스폰서 조회
+  const activeSponsors = await getActiveSponsors(teamId, seasonId);
+  const activeNames = activeSponsors.map(s => s.name);
+
+  // 1) reputation 80+ → 새 스폰서 제안 (10% 확률)
+  if (reputation >= 80 && Math.random() < 0.1) {
+    const offers = generateSponsorOffers(reputation, activeNames);
+    if (offers.length > 0) {
+      // 1개만 제안
+      result.newOffers.push(offers[0]);
+    }
+  }
+
+  // 2) reputation 30 이하 → 기존 스폰서 이탈 (15% 확률)
+  if (reputation <= 30) {
+    for (const sponsor of activeSponsors) {
+      if (Math.random() < 0.15) {
+        await updateSponsorStatus(sponsor.id, 'cancelled');
+        result.lostSponsors.push(sponsor.name);
+      }
+    }
+  }
+
+  // 3) 시즌 우승 체크 (직전 시즌 우승 여부)
+  const championCheck = await db.select<{ cnt: number }[]>(
+    `SELECT COUNT(*) as cnt FROM playoff_results
+     WHERE season_id = $1 AND team_id = $2 AND final_rank = 1`,
+    [seasonId - 1, teamId],
+  );
+  const isChampion = (championCheck[0]?.cnt ?? 0) > 0;
+
+  if (isChampion) {
+    // 대형 스폰서 자동 제안 (플래티넘 중 하나)
+    const platinumOffers = SPONSOR_POOL.filter(
+      s => s.tier === 'platinum' && !activeNames.includes(s.name),
+    );
+    if (platinumOffers.length > 0) {
+      const majorOffer = platinumOffers[Math.floor(Math.random() * platinumOffers.length)];
+      result.majorOffer = majorOffer;
+      result.newOffers.push(majorOffer);
+    }
+  }
+
+  // 새 스폰서 제안이 있으면 자동 수락 (AI 팀용 - 유저 팀은 UI에서 처리)
+  // 여기서는 제안만 반환, dayAdvancer에서 이벤트로 알림
+
+  return result;
+}
+
 /** 스폰서 티어 한국어 라벨 */
 export const SPONSOR_TIER_LABELS: Record<SponsorTier, string> = {
   platinum: '플래티넘',

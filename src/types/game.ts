@@ -14,6 +14,17 @@ export interface GameSave {
   currentSeasonId: number;
   createdAt: string;
   updatedAt: string;
+  slotNumber: number;
+  saveName: string;
+  playTimeMinutes: number;
+  teamName?: string;
+  seasonInfo?: string;
+}
+
+/** 저장 슬롯 표시용 (빈 슬롯 포함) */
+export interface SaveSlot {
+  slotNumber: number;
+  save: GameSave | null;
 }
 
 export interface Season {

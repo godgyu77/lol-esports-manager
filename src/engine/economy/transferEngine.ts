@@ -18,13 +18,16 @@ import {
   getExpiringContracts,
   getFreeAgents as dbGetFreeAgents,
   getPlayersByTeamId,
+  getPlayerById,
   getAllTeams,
   insertFinanceLog,
   type TransferOffer,
 } from '../../db/queries';
 import { getDatabase } from '../../db/database';
+import { agentNegotiate } from '../agent/agentEngine';
+import { canSignForeignPlayer } from '../rules/leagueRulesEngine';
 import type { Player } from '../../types/player';
-import type { Position } from '../../types/game';
+import type { Position, Region } from '../../types/game';
 
 // ─────────────────────────────────────────
 // 상수
@@ -66,11 +69,11 @@ export function calculatePlayerValue(player: Player): number {
   const potentialFactor = 0.8 + (player.potential / 100) * 0.4; // 0.8 ~ 1.2
   const popFactor = 0.9 + (player.popularity / 100) * 0.2;     // 0.9 ~ 1.1
 
-  // 기본 가치: OVR 80 = 약 10000만(10억) 기준
-  const baseValue = ovr * 125;
+  // 기본 가치: OVR 80 = 약 16000만(16억) 기준
+  const baseValue = ovr * 200;
   const value = baseValue * ageFactor * potentialFactor * popFactor;
 
-  return Math.round(Math.max(value, 500)); // 최소 500만 원
+  return Math.round(Math.max(value, 1000)); // 최소 1000만 원
 }
 
 /**
@@ -80,11 +83,11 @@ export function calculateFairSalary(player: Player): number {
   const ovr = getPlayerOverall(player);
   const ageFactor = getAgeFactor(player.age);
 
-  // OVR 80 기준 약 3000만 원/년
-  const baseSalary = ovr * 37.5;
+  // OVR 80 기준 약 4000만 원/년
+  const baseSalary = ovr * 50;
   const salary = baseSalary * ageFactor;
 
-  return Math.round(Math.max(salary, 300)); // 최소 300만 원
+  return Math.round(Math.max(salary, 500)); // 최소 500만 원
 }
 
 // ─────────────────────────────────────────
@@ -107,14 +110,16 @@ export async function validateTransferOffer(
 ): Promise<TransferValidation> {
   // 1. 팀 예산 확인
   const db = await getDatabase();
-  const teamRows = await db.select<{ budget: number }[]>(
-    'SELECT budget FROM teams WHERE id = $1',
+  const teamRows = await db.select<{ budget: number; region: string }[]>(
+    'SELECT budget, region FROM teams WHERE id = $1',
     [fromTeamId],
   );
 
   if (!teamRows.length) return { valid: false, reason: '팀을 찾을 수 없습니다.' };
 
   const teamBudget = teamRows[0].budget;
+  const teamRegion = teamRows[0].region as Region;
+
   if (teamBudget < transferFee) {
     return { valid: false, reason: `예산 부족: 보유 ${teamBudget.toLocaleString()}만 / 필요 ${transferFee.toLocaleString()}만` };
   }
@@ -139,6 +144,26 @@ export async function validateTransferOffer(
     return { valid: false, reason: '해당 선수에 대한 진행중인 제안이 있습니다.' };
   }
 
+  // 4. 외국인 선수 규정 체크
+  const player = await getPlayerById(playerId);
+  if (player) {
+    const REGION_LOCAL: Record<Region, string[]> = {
+      LCK: ['KR'],
+      LPL: ['CN'],
+      LEC: ['DE', 'FR', 'ES', 'PL', 'SE', 'DK', 'CZ', 'RO', 'BG', 'IT', 'PT', 'NL', 'BE', 'AT', 'GR', 'FI', 'NO', 'HU', 'SK', 'SI', 'HR', 'LT', 'LV', 'EE', 'IE', 'GB', 'EU'],
+      LCS: ['US', 'CA', 'NA'],
+    };
+    const localNats = REGION_LOCAL[teamRegion] ?? [];
+    const isForeign = !localNats.includes(player.nationality.toUpperCase());
+
+    if (isForeign) {
+      const foreignCheck = await canSignForeignPlayer(fromTeamId, teamRegion);
+      if (!foreignCheck.allowed) {
+        return { valid: false, reason: foreignCheck.reason ?? '외국인 선수 규정 위반' };
+      }
+    }
+  }
+
   return { valid: true };
 }
 
@@ -148,6 +173,7 @@ export async function validateTransferOffer(
 
 /**
  * 자유계약 선수 영입 제안
+ * - 에이전트 협상 단계 포함
  */
 export async function offerFreeAgent(params: {
   seasonId: number;
@@ -156,13 +182,27 @@ export async function offerFreeAgent(params: {
   offeredSalary: number;
   contractYears: number;
   offerDate: string;
-}): Promise<{ success: boolean; offerId?: number; reason?: string }> {
+}): Promise<{ success: boolean; offerId?: number; reason?: string; agentMessage?: string }> {
   const validation = await validateTransferOffer(
     params.fromTeamId, params.playerId, 0, params.offeredSalary,
   );
 
   if (!validation.valid) {
     return { success: false, reason: validation.reason };
+  }
+
+  // 에이전트 협상
+  const fairSalary = calculateFairSalary(
+    await getPlayerForAgent(params.playerId),
+  );
+  const agentResult = await agentNegotiate(params.playerId, params.offeredSalary, fairSalary);
+
+  if (!agentResult.accepted) {
+    return {
+      success: false,
+      reason: agentResult.message,
+      agentMessage: `에이전트 요구 연봉: ${agentResult.counterOffer.toLocaleString()}만`,
+    };
   }
 
   const offerId = await createTransferOffer({
@@ -176,11 +216,12 @@ export async function offerFreeAgent(params: {
     offerDate: params.offerDate,
   });
 
-  return { success: true, offerId };
+  return { success: true, offerId, agentMessage: agentResult.message };
 }
 
 /**
  * 타 팀 선수에게 이적 제안
+ * - 에이전트 협상 단계 포함
  */
 export async function offerTransfer(params: {
   seasonId: number;
@@ -191,13 +232,27 @@ export async function offerTransfer(params: {
   offeredSalary: number;
   contractYears: number;
   offerDate: string;
-}): Promise<{ success: boolean; offerId?: number; reason?: string }> {
+}): Promise<{ success: boolean; offerId?: number; reason?: string; agentMessage?: string }> {
   const validation = await validateTransferOffer(
     params.fromTeamId, params.playerId, params.transferFee, params.offeredSalary,
   );
 
   if (!validation.valid) {
     return { success: false, reason: validation.reason };
+  }
+
+  // 에이전트 협상
+  const fairSalary = calculateFairSalary(
+    await getPlayerForAgent(params.playerId),
+  );
+  const agentResult = await agentNegotiate(params.playerId, params.offeredSalary, fairSalary);
+
+  if (!agentResult.accepted) {
+    return {
+      success: false,
+      reason: agentResult.message,
+      agentMessage: `에이전트 요구 연봉: ${agentResult.counterOffer.toLocaleString()}만`,
+    };
   }
 
   const offerId = await createTransferOffer({
@@ -211,7 +266,7 @@ export async function offerTransfer(params: {
     offerDate: params.offerDate,
   });
 
-  return { success: true, offerId };
+  return { success: true, offerId, agentMessage: agentResult.message };
 }
 
 /**
@@ -360,6 +415,12 @@ export async function getFreeAgents(): Promise<Player[]> {
 /** 5개 포지션 */
 const POSITIONS: Position[] = ['top', 'jungle', 'mid', 'adc', 'support'];
 
+/** AI 이적 시도 확률 (팀당 10%) */
+const AI_TRANSFER_ATTEMPT_RATE = 0.1;
+
+/** 약한 포지션 OVR 기준 (이하일 때 이적 시도) */
+const WEAK_POSITION_THRESHOLD = 60;
+
 /**
  * 팀 로스터에서 가장 약한 포지션 판별
  * 해당 포지션에 선수가 없거나, 선수의 OVR이 가장 낮은 포지션을 반환
@@ -469,4 +530,180 @@ export async function processAIFreeAgentSignings(
   }
 
   return signedPlayerIds;
+}
+
+// ─────────────────────────────────────────
+// AI 팀 간 이적 거래
+// ─────────────────────────────────────────
+
+/**
+ * AI 팀이 다른 팀의 벤치 선수에게 이적 제안
+ * - 각 AI 팀의 약한 포지션(OVR 60 이하) 식별
+ * - 다른 팀의 벤치(sub) 선수 중 더 나은 선수 검색
+ * - 유저 팀 선수에 대한 제안은 자동 수락 안 함
+ * - 주 1회 호출, 팀당 10% 확률로 이적 시도
+ */
+export async function processAITransfers(
+  seasonId: number,
+  currentDate: string,
+  userTeamId: string,
+): Promise<{ fromTeam: string; toTeam: string; playerId: string; playerName: string }[]> {
+  const db = await getDatabase();
+  const teams = await getAllTeams();
+  const completedTransfers: { fromTeam: string; toTeam: string; playerId: string; playerName: string }[] = [];
+
+  // AI 팀만 필터 (유저 팀 제외)
+  const aiTeams = teams.filter(t => t.id !== userTeamId);
+  const shuffledTeams = aiTeams.sort(() => Math.random() - 0.5);
+
+  for (const buyingTeam of shuffledTeams) {
+    // 팀당 10% 확률로 이적 시도
+    if (Math.random() >= AI_TRANSFER_ATTEMPT_RATE) continue;
+
+    const roster = await getPlayersByTeamId(buyingTeam.id);
+    const weak = findWeakestPosition(roster);
+
+    if (!weak) continue;
+    // OVR 60 이하인 포지션만 이적 시도
+    if (weak.currentOvr > WEAK_POSITION_THRESHOLD) continue;
+
+    // 다른 팀의 벤치(sub) 선수 중 해당 포지션 검색
+    const benchCandidates: { player: Player; sellingTeamId: string }[] = [];
+
+    for (const otherTeam of teams) {
+      if (otherTeam.id === buyingTeam.id) continue;
+
+      const otherRoster = await getPlayersByTeamId(otherTeam.id);
+      const subs = otherRoster.filter(
+        p => (p as { division?: string }).division === 'sub'
+          && p.position === weak.position
+          && getPlayerOverall(p) > weak.currentOvr,
+      );
+
+      for (const sub of subs) {
+        benchCandidates.push({ player: sub, sellingTeamId: otherTeam.id });
+      }
+    }
+
+    if (benchCandidates.length === 0) continue;
+
+    // OVR 높은 순으로 정렬, 상위 3명 중 랜덤 선택
+    benchCandidates.sort((a, b) => getPlayerOverall(b.player) - getPlayerOverall(a.player));
+    const topCandidates = benchCandidates.slice(0, Math.min(3, benchCandidates.length));
+    const selected = topCandidates[Math.floor(Math.random() * topCandidates.length)];
+
+    const transferFee = calculatePlayerValue(selected.player);
+    const offeredSalary = Math.round(calculateFairSalary(selected.player) * 1.2);
+
+    // 영입팀 예산 확인
+    if (buyingTeam.budget < transferFee) continue;
+
+    // 영입팀 샐러리캡 확인
+    const buyingTotalSalary = await getTeamTotalSalary(buyingTeam.id);
+    if (buyingTotalSalary + offeredSalary > SALARY_CAP) continue;
+
+    // 판매 팀 수락 조건 체크
+    const sellingTeam = teams.find(t => t.id === selected.sellingTeamId);
+    if (!sellingTeam) continue;
+
+    // 수락 조건 1: 이적료 >= 시장가치 * 0.8
+    const playerMarketValue = calculatePlayerValue(selected.player);
+    if (transferFee < playerMarketValue * 0.8) continue;
+
+    // 수락 조건 2: 판매 팀에 해당 포지션 대체 선수 있음
+    const sellingRoster = await getPlayersByTeamId(selected.sellingTeamId);
+    const positionPlayers = sellingRoster.filter(p => p.position === weak.position);
+    if (positionPlayers.length <= 1) continue; // 대체 선수 없으면 거절
+
+    // 유저 팀 선수에 대한 제안은 자동 수락 안 함 (제안만 생성)
+    if (selected.sellingTeamId === userTeamId) {
+      const contractYears = Math.floor(Math.random() * 2) + 1;
+      await createTransferOffer({
+        seasonId,
+        fromTeamId: buyingTeam.id,
+        toTeamId: selected.sellingTeamId,
+        playerId: selected.player.id,
+        transferFee,
+        offeredSalary,
+        contractYears,
+        offerDate: currentDate,
+      });
+      // 유저 팀이므로 completedTransfers에 추가하지 않음 (UI에서 처리)
+      continue;
+    }
+
+    // AI 팀 간 이적: 제안 생성 + 즉시 수락
+    const contractYears = Math.floor(Math.random() * 2) + 1;
+    const offerId = await createTransferOffer({
+      seasonId,
+      fromTeamId: buyingTeam.id,
+      toTeamId: selected.sellingTeamId,
+      playerId: selected.player.id,
+      transferFee,
+      offeredSalary,
+      contractYears,
+      offerDate: currentDate,
+    });
+
+    const offer: TransferOffer = {
+      id: offerId,
+      seasonId,
+      fromTeamId: buyingTeam.id,
+      toTeamId: selected.sellingTeamId,
+      playerId: selected.player.id,
+      transferFee,
+      offeredSalary,
+      contractYears,
+      status: 'pending',
+      offerDate: currentDate,
+    };
+
+    await acceptTransferOffer(offer, seasonId, currentDate);
+
+    // 선수 이름 조회
+    const playerRows = await db.select<{ name: string }[]>(
+      'SELECT name FROM players WHERE id = $1',
+      [selected.player.id],
+    );
+    const playerName = playerRows[0]?.name ?? selected.player.id;
+
+    completedTransfers.push({
+      fromTeam: selected.sellingTeamId,
+      toTeam: buyingTeam.id,
+      playerId: selected.player.id,
+      playerName,
+    });
+  }
+
+  return completedTransfers;
+}
+
+// ─────────────────────────────────────────
+// 에이전트 협상용 선수 조회 헬퍼
+// ─────────────────────────────────────────
+
+/**
+ * 에이전트 협상을 위해 playerId로 Player 객체 조회
+ * 조회 실패 시 기본값 반환 (에이전트 협상은 계속 진행)
+ */
+async function getPlayerForAgent(playerId: string): Promise<Player> {
+  const player = await getPlayerById(playerId);
+  if (player) return player;
+
+  // 폴백: 최소한의 Player 객체
+  return {
+    id: playerId,
+    name: 'Unknown',
+    teamId: null,
+    position: 'mid',
+    age: 22,
+    nationality: 'KR',
+    stats: { mechanical: 60, gameSense: 60, teamwork: 60, consistency: 60, laning: 60, aggression: 60 },
+    mental: { mental: 50, stamina: 50, morale: 50 },
+    contract: { salary: 1000, contractEndSeason: 1 },
+    championPool: [],
+    potential: 50,
+    peakAge: 23,
+    popularity: 30,
+  };
 }

@@ -1,4 +1,6 @@
 import type React from 'react';
+import type { GameResult } from '../../engine/match/matchSimulator';
+import { MatchHighlights } from './MatchHighlights';
 
 interface SeriesResultProps {
   homeTeamShortName: string | undefined;
@@ -7,6 +9,7 @@ interface SeriesResultProps {
   awayTeamName: string | undefined;
   seriesScore: { home: number; away: number };
   postMatchComment?: { headline: string; coachComment: string } | null;
+  gameResults?: GameResult[];
   onReturn: () => void;
 }
 
@@ -17,6 +20,7 @@ export function SeriesResult({
   awayTeamName,
   seriesScore,
   postMatchComment,
+  gameResults,
   onReturn,
 }: SeriesResultProps) {
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -40,6 +44,15 @@ export function SeriesResult({
             : awayTeamName}{' '}
           승리!
         </p>
+        {gameResults && gameResults.length > 0 && (
+          <div style={{ maxHeight: '300px', overflowY: 'auto', textAlign: 'left', marginBottom: '16px' }}>
+            <MatchHighlights
+              gameResults={gameResults}
+              homeTeamName={homeTeamShortName}
+              awayTeamName={awayTeamShortName}
+            />
+          </div>
+        )}
         {postMatchComment && (
           <div style={styles.commentSection}>
             <p style={styles.headline}>{postMatchComment.headline}</p>
