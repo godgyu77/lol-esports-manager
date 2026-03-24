@@ -46,18 +46,18 @@ const INTERACTIONS: InteractionType[] = [
   },
 ];
 
-function getSynergyDescription(affinity: number): { text: string; color: string } {
-  if (affinity >= 80) return { text: '최고 시너지 — 팀워크 +5, 일관성 +3', color: '#ffd700' };
-  if (affinity >= 60) return { text: '좋은 시너지 — 팀워크 +3, 일관성 +1', color: '#50c878' };
-  if (affinity >= 40) return { text: '보통 — 특별한 효과 없음', color: '#8a8a9a' };
-  if (affinity >= 20) return { text: '서먹함 — 팀워크 -1', color: '#c89b3c' };
-  return { text: '갈등 — 팀워크 -3, 사기 -2', color: '#dc3c3c' };
+function getSynergyDescription(affinity: number): { text: string; colorClass: string } {
+  if (affinity >= 80) return { text: '최고 시너지 -- 팀워크 +5, 일관성 +3', colorClass: 'fm-text-warning' };
+  if (affinity >= 60) return { text: '좋은 시너지 -- 팀워크 +3, 일관성 +1', colorClass: 'fm-text-success' };
+  if (affinity >= 40) return { text: '보통 -- 특별한 효과 없음', colorClass: 'fm-text-muted' };
+  if (affinity >= 20) return { text: '서먹함 -- 팀워크 -1', colorClass: 'fm-text-accent' };
+  return { text: '갈등 -- 팀워크 -3, 사기 -2', colorClass: 'fm-text-danger' };
 }
 
-function getAffinityBarColor(value: number): string {
-  if (value >= 70) return '#50c878';
-  if (value >= 40) return '#c89b3c';
-  return '#dc3c3c';
+function getAffinityBarClass(value: number): string {
+  if (value >= 70) return 'fm-bar__fill--green';
+  if (value >= 40) return 'fm-bar__fill--accent';
+  return 'fm-bar__fill--red';
 }
 
 function getOvr(player: Player): number {
@@ -142,7 +142,7 @@ export function PlayerRelations() {
   }, [interactionsUsed, userTeam, myPlayer, currentDate]);
 
   if (!userTeam || !myPlayer || !dbLoaded) {
-    return <p style={{ color: '#6a6a7a' }}>데이터를 불러오는 중...</p>;
+    return <p className="fm-text-muted fm-p-lg">데이터를 불러오는 중...</p>;
   }
 
   // 1군 위주 팀원 (본인 제외)
@@ -154,80 +154,81 @@ export function PlayerRelations() {
 
   return (
     <div>
-      <h1 style={styles.title}>팀원 관계</h1>
+      <div className="fm-page-header">
+        <h1 className="fm-page-title">팀원 관계</h1>
+      </div>
 
       {/* 상호작용 잔여 횟수 */}
-      <div style={styles.interactionCounter}>
-        <span style={styles.counterLabel}>오늘 남은 상호작용</span>
-        <span style={styles.counterValue}>
-          {MAX_INTERACTIONS - interactionsUsed} / {MAX_INTERACTIONS}
-        </span>
+      <div className="fm-panel fm-mb-md">
+        <div className="fm-panel__body fm-flex fm-justify-between fm-items-center">
+          <span className="fm-text-md fm-text-secondary">오늘 남은 상호작용</span>
+          <span className="fm-text-xl fm-font-semibold fm-text-accent">
+            {MAX_INTERACTIONS - interactionsUsed} / {MAX_INTERACTIONS}
+          </span>
+        </div>
       </div>
 
       {/* 최근 행동 알림 */}
       {lastAction && (
-        <div style={styles.actionNotice}>{lastAction}</div>
+        <div className="fm-alert fm-alert--success fm-mb-md">
+          <span className="fm-alert__text">{lastAction}</span>
+        </div>
       )}
 
       {/* 팀원 목록 */}
-      <div style={styles.teammateList}>
+      <div className="fm-flex-col fm-gap-md">
         {displayTeammates.map((teammate) => {
           const affinity = affinities[teammate.id] ?? 50;
           const synergy = getSynergyDescription(affinity);
           const ovr = getOvr(teammate);
 
           return (
-            <div key={teammate.id} style={styles.card}>
-              {/* 팀원 정보 */}
-              <div style={styles.teammateHeader}>
-                <div style={styles.teammateInfo}>
-                  <span style={styles.posTag}>
+            <div key={teammate.id} className="fm-panel">
+              <div className="fm-panel__body fm-flex-col fm-gap-md">
+                {/* 팀원 정보 */}
+                <div className="fm-flex fm-items-center fm-gap-md">
+                  <span className="fm-badge fm-badge--accent">
                     {POSITION_LABELS[teammate.position] ?? teammate.position}
                   </span>
-                  <span style={styles.teammateName}>{teammate.name}</span>
-                  <span style={styles.teammateOvr}>OVR {ovr}</span>
+                  <span className="fm-text-lg fm-font-semibold fm-text-primary">{teammate.name}</span>
+                  <span className="fm-text-md fm-font-semibold fm-text-info">OVR {ovr}</span>
                 </div>
-              </div>
 
-              {/* 친밀도 바 */}
-              <div style={styles.affinityRow}>
-                <span style={styles.affinityLabel}>친밀도</span>
-                <div style={styles.affinityBarBg}>
-                  <div
-                    style={{
-                      ...styles.affinityBarFill,
-                      width: `${affinity}%`,
-                      background: getAffinityBarColor(affinity),
-                    }}
-                  />
+                {/* 친밀도 바 */}
+                <div className="fm-flex fm-items-center fm-gap-md">
+                  <span className="fm-text-sm fm-text-muted" style={{ minWidth: 44 }}>친밀도</span>
+                  <div className="fm-bar fm-flex-1">
+                    <div className="fm-bar__track" style={{ height: 8 }}>
+                      <div
+                        className={`fm-bar__fill ${getAffinityBarClass(affinity)}`}
+                        style={{ width: `${affinity}%` }}
+                      />
+                    </div>
+                    <span className="fm-bar__value">{affinity}</span>
+                  </div>
                 </div>
-                <span style={styles.affinityValue}>{affinity}</span>
-              </div>
 
-              {/* 시너지 효과 */}
-              <div style={styles.synergyRow}>
-                <span style={{ fontSize: '12px', color: synergy.color }}>
-                  {synergy.text}
-                </span>
-              </div>
+                {/* 시너지 효과 */}
+                <div className="fm-p-sm" style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-sm)' }}>
+                  <span className={`fm-text-sm ${synergy.colorClass}`}>
+                    {synergy.text}
+                  </span>
+                </div>
 
-              {/* 상호작용 버튼 */}
-              <div style={styles.interactionBtns}>
-                {INTERACTIONS.map((interaction) => (
-                  <button
-                    key={interaction.id}
-                    style={{
-                      ...styles.interactionBtn,
-                      opacity: interactionsUsed >= MAX_INTERACTIONS ? 0.4 : 1,
-                      cursor: interactionsUsed >= MAX_INTERACTIONS ? 'default' : 'pointer',
-                    }}
-                    onClick={() => handleInteract(teammate.id, interaction)}
-                    disabled={interactionsUsed >= MAX_INTERACTIONS}
-                    title={interaction.description}
-                  >
-                    {interaction.name}
-                  </button>
-                ))}
+                {/* 상호작용 버튼 */}
+                <div className="fm-flex fm-gap-sm">
+                  {INTERACTIONS.map((interaction) => (
+                    <button
+                      key={interaction.id}
+                      className="fm-btn fm-flex-1"
+                      onClick={() => handleInteract(teammate.id, interaction)}
+                      disabled={interactionsUsed >= MAX_INTERACTIONS}
+                      title={interaction.description}
+                    >
+                      {interaction.name}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           );
@@ -236,129 +237,3 @@ export function PlayerRelations() {
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  title: {
-    fontSize: '24px',
-    fontWeight: 700,
-    color: '#f0e6d2',
-    marginBottom: '24px',
-  },
-  interactionCounter: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '12px 16px',
-    background: 'rgba(255,255,255,0.03)',
-    border: '1px solid #2a2a4a',
-    borderRadius: '8px',
-    marginBottom: '12px',
-  },
-  counterLabel: {
-    fontSize: '13px',
-    color: '#8a8a9a',
-  },
-  counterValue: {
-    fontSize: '15px',
-    fontWeight: 600,
-    color: '#c89b3c',
-  },
-  actionNotice: {
-    padding: '10px 16px',
-    marginBottom: '12px',
-    border: '1px solid rgba(80,200,120,0.2)',
-    borderRadius: '6px',
-    fontSize: '13px',
-    color: '#50c878',
-    background: 'rgba(80,200,120,0.05)',
-  },
-  teammateList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '12px',
-  },
-  card: {
-    background: 'rgba(255,255,255,0.03)',
-    border: '1px solid #2a2a4a',
-    borderRadius: '10px',
-    padding: '16px 20px',
-  },
-  teammateHeader: {
-    marginBottom: '12px',
-  },
-  teammateInfo: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-  },
-  posTag: {
-    fontSize: '11px',
-    fontWeight: 600,
-    color: '#c89b3c',
-    background: 'rgba(200,155,60,0.1)',
-    padding: '2px 8px',
-    borderRadius: '4px',
-  },
-  teammateName: {
-    fontSize: '15px',
-    fontWeight: 600,
-    color: '#e0e0e0',
-  },
-  teammateOvr: {
-    fontSize: '13px',
-    fontWeight: 600,
-    color: '#a0d0ff',
-  },
-  affinityRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    marginBottom: '8px',
-  },
-  affinityLabel: {
-    fontSize: '12px',
-    color: '#6a6a7a',
-    minWidth: '44px',
-  },
-  affinityBarBg: {
-    flex: 1,
-    height: '8px',
-    background: 'rgba(255,255,255,0.06)',
-    borderRadius: '4px',
-    overflow: 'hidden',
-  },
-  affinityBarFill: {
-    height: '100%',
-    borderRadius: '4px',
-    transition: 'width 0.3s ease',
-  },
-  affinityValue: {
-    fontSize: '13px',
-    fontWeight: 600,
-    color: '#8a8a9a',
-    minWidth: '30px',
-    textAlign: 'right',
-  },
-  synergyRow: {
-    marginBottom: '12px',
-    padding: '6px 10px',
-    background: 'rgba(255,255,255,0.02)',
-    borderRadius: '4px',
-  },
-  interactionBtns: {
-    display: 'flex',
-    gap: '8px',
-  },
-  interactionBtn: {
-    flex: 1,
-    padding: '8px 12px',
-    fontSize: '13px',
-    fontWeight: 500,
-    color: '#e0e0e0',
-    background: 'rgba(255,255,255,0.05)',
-    border: '1px solid #3a3a5c',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    transition: 'all 0.2s',
-  },
-};

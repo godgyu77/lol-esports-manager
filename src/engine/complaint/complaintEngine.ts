@@ -80,6 +80,11 @@ const COMPLAINT_MESSAGES: Record<ComplaintType, string[]> = {
     '최근 경기 결과에 의욕이 떨어집니다.',
     '팀의 방향성에 의문이 듭니다.',
   ],
+  conflict: [
+    '선수 간 성격 충돌로 인한 갈등입니다.',
+    '팀원과의 관계에 심각한 문제가 있습니다.',
+    '팀 내 불화를 더 이상 참을 수 없습니다.',
+  ],
 };
 
 function getRandomMessage(type: ComplaintType): string {
@@ -312,7 +317,7 @@ async function createComplaint(
   );
 
   return {
-    id: result.lastInsertId,
+    id: result.lastInsertId ?? 0,
     playerId,
     teamId,
     seasonId,
@@ -371,16 +376,45 @@ export async function resolveComplaint(
   );
 
   // 선수 morale 변경
-  if (moraleChange >= 0) {
-    await db.execute(
-      `UPDATE players SET morale = MIN(100, morale + $1) WHERE id = $2`,
-      [moraleChange, complaint.player_id],
-    );
-  } else {
-    await db.execute(
-      `UPDATE players SET morale = MAX(0, morale + $1) WHERE id = $2`,
-      [moraleChange, complaint.player_id],
-    );
+  await db.execute(
+    `UPDATE players SET morale = MAX(0, MIN(100, morale + $1)) WHERE id = $2`,
+    [moraleChange, complaint.player_id],
+  );
+
+  // 실질 효과 적용
+  try {
+    switch (resolution) {
+      case 'salary_raise': {
+        // 현재 연봉의 10% 인상
+        await db.execute(
+          `UPDATE players SET salary = ROUND(salary * 1.1) WHERE id = $1`,
+          [complaint.player_id],
+        );
+        break;
+      }
+      case 'promise_starter': {
+        // 주전 약속 → promise 시스템에 기록
+        const { makePromise } = await import('../promise/promiseEngine');
+        await makePromise(
+          complaint.player_id,
+          complaint.team_id,
+          'starter_guarantee',
+          resolvedDate,
+          60, // 60일 내 이행
+        ).catch(() => {});
+        break;
+      }
+      case 'allow_transfer': {
+        // 이적 허용 플래그
+        await db.execute(
+          'UPDATE players SET transfer_listed = 1 WHERE id = $1',
+          [complaint.player_id],
+        ).catch(() => {});
+        break;
+      }
+    }
+  } catch (e) {
+    console.warn('[complaintEngine] 해결 효과 적용 실패:', e);
   }
 }
 

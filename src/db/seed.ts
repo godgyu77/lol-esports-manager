@@ -8,7 +8,7 @@ import { FINANCIAL_CONSTANTS, MATCH_CONSTANTS } from '../data/systemPrompt';
 import { LCK_TEAMS, LCS_TEAMS, LEC_TEAMS, LPL_TEAMS } from '../data/rosterDb';
 import type { Role, RosterPlayer, TeamData } from '../data/rosterDb';
 import type { Position, Region } from '../types';
-import { getDatabase } from './database';
+import { getDatabase, withTransaction } from './database';
 import { insertChampion, insertPlayer, insertPlayerTrait, insertTeam } from './queries';
 
 // ─────────────────────────────────────────
@@ -146,8 +146,9 @@ async function seedTeams(
       const stats = convertToPlayerStats(rosterPlayer.stats);
       const division = rosterPlayer.div === '1군' ? 'main' : 'sub';
 
-      // 잠재력: 나이가 어릴수록 높음
-      const potential = clamp(80 - (rosterPlayer.age - 18) * 3);
+      // 잠재력: 나이가 어릴수록 높음 (하한 30 보장)
+      const MIN_POTENTIAL = 30;
+      const potential = clamp(80 - (rosterPlayer.age - 18) * 3, MIN_POTENTIAL, 100);
 
       // 최적 나이: 포지션 기반 기본값
       const peakAgeMap: Record<Position, number> = {
@@ -222,11 +223,6 @@ function seededRandom(seed: string): () => number {
   };
 }
 
-/** 배열에서 n개를 시드 기반으로 선택 */
-function pickN<T>(arr: T[], n: number, rand: () => number): T[] {
-  const shuffled = [...arr].sort(() => rand() - 0.5);
-  return shuffled.slice(0, n);
-}
 
 /**
  * 특성 → 선호 챔피언 태그 매핑
@@ -369,10 +365,7 @@ async function seedChampionProficiency(
  * 전체 데이터 시딩 (트랜잭션)
  */
 export async function seedAllData(): Promise<void> {
-  const db = await getDatabase();
-
-  await db.execute('BEGIN TRANSACTION');
-  try {
+  await withTransaction(async () => {
     await seedChampions();
     await seedTeams(LCK_TEAMS, 'LCK');
     await seedTeams(LPL_TEAMS, 'LPL');
@@ -383,9 +376,5 @@ export async function seedAllData(): Promise<void> {
     await seedChampionProficiency(LPL_TEAMS, 'LPL');
     await seedChampionProficiency(LCS_TEAMS, 'LCS');
     await seedChampionProficiency(LEC_TEAMS, 'LEC');
-    await db.execute('COMMIT');
-  } catch (error) {
-    await db.execute('ROLLBACK');
-    throw error;
-  }
+  });
 }

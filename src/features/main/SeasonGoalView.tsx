@@ -75,9 +75,9 @@ export function SeasonGoalView() {
 
   if (!pendingTeamId) {
     return (
-      <div style={styles.container}>
-        <p style={styles.errorText}>팀이 선택되지 않았습니다.</p>
-        <button style={styles.backBtn} onClick={() => navigate('/team-select')}>
+      <div className="fm-content fm-flex-col fm-items-center fm-justify-center" style={{ minHeight: '100vh' }}>
+        <p className="fm-alert fm-alert--danger fm-mb-md">팀이 선택되지 않았습니다.</p>
+        <button className="fm-btn fm-btn--ghost" onClick={() => navigate('/team-select')}>
           ← 팀 선택으로 돌아가기
         </button>
       </div>
@@ -89,9 +89,9 @@ export function SeasonGoalView() {
 
   if (!teamData || !region) {
     return (
-      <div style={styles.container}>
-        <p style={styles.errorText}>팀 데이터를 찾을 수 없습니다.</p>
-        <button style={styles.backBtn} onClick={() => navigate('/team-select')}>
+      <div className="fm-content fm-flex-col fm-items-center fm-justify-center" style={{ minHeight: '100vh' }}>
+        <p className="fm-alert fm-alert--danger fm-mb-md">팀 데이터를 찾을 수 없습니다.</p>
+        <button className="fm-btn fm-btn--ghost" onClick={() => navigate('/team-select')}>
           ← 팀 선택으로 돌아가기
         </button>
       </div>
@@ -117,8 +117,9 @@ export function SeasonGoalView() {
         navigate('/player');
       }
     } catch (err) {
-      console.error('게임 초기화 실패:', err);
-      setError(err instanceof Error ? err.message : '게임 초기화에 실패했습니다');
+      const errMsg = err instanceof Error ? `${err.message}\n${err.stack}` : String(err);
+      console.error('게임 초기화 실패:', errMsg);
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLocalLoading(false);
       setLoading(false);
@@ -134,98 +135,121 @@ export function SeasonGoalView() {
   const isManagerMode = mode === 'manager';
 
   return (
-    <div style={styles.container}>
-      <h1 style={styles.title}>2026 시즌 시작</h1>
+    <div className="fm-content fm-flex-col fm-items-center" style={{ minHeight: '100vh' }}>
+      <h1 className="fm-text-2xl fm-font-bold fm-text-primary fm-mb-lg">2026 시즌 시작</h1>
 
-      <div style={styles.card}>
+      <div className="fm-flex-col fm-gap-lg" style={{ maxWidth: 540, width: '100%' }}>
         {/* 팀 정보 */}
-        <div style={styles.teamHeader}>
-          <h2 style={styles.teamName}>{teamData.teamName}</h2>
-          <span style={styles.regionTag}>{region}</span>
-        </div>
+        <div className="fm-panel">
+          <div className="fm-panel__header">
+            <span className="fm-panel__title">{teamData.teamName}</span>
+            <span className="fm-badge fm-badge--accent">{region}</span>
+          </div>
 
-        {/* 감독 프로필 (매니저 모드) */}
-        {isManagerMode && pendingManager && (
-          <div style={styles.section}>
-            <h3 style={styles.sectionLabel}>감독 프로필</h3>
-            <div style={styles.profileGrid}>
-              <div style={styles.profileRow}>
-                <span style={styles.profileLabel}>이름</span>
-                <span style={styles.profileValue}>{pendingManager.name}</span>
-              </div>
-              <div style={styles.profileRow}>
-                <span style={styles.profileLabel}>배경</span>
-                <span style={styles.profileValue}>{MANAGER_BG_LABELS[pendingManager.background]}</span>
-              </div>
-              <div style={styles.profileRow}>
-                <span style={styles.profileLabel}>전술 지식</span>
-                <span style={styles.profileValue}>{pendingManager.stats.tacticalKnowledge}</span>
-              </div>
-              <div style={styles.profileRow}>
-                <span style={styles.profileLabel}>동기부여</span>
-                <span style={styles.profileValue}>{pendingManager.stats.motivation}</span>
-              </div>
-              <div style={styles.profileRow}>
-                <span style={styles.profileLabel}>규율</span>
-                <span style={styles.profileValue}>{pendingManager.stats.discipline}</span>
+          {/* 감독 프로필 (매니저 모드) */}
+          {isManagerMode && pendingManager && (
+            <div className="fm-panel__body">
+              <h3 className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">감독 프로필</h3>
+              <div className="fm-flex-col">
+                <div className="fm-info-row">
+                  <span className="fm-info-row__label">이름</span>
+                  <span className="fm-info-row__value">{pendingManager.name}</span>
+                </div>
+                <div className="fm-info-row">
+                  <span className="fm-info-row__label">배경</span>
+                  <span className="fm-info-row__value">{MANAGER_BG_LABELS[pendingManager.background]}</span>
+                </div>
+                <div className="fm-info-row">
+                  <span className="fm-info-row__label">전술 지식</span>
+                  <span className="fm-info-row__value">{pendingManager.stats.tacticalKnowledge}</span>
+                </div>
+                <div className="fm-info-row">
+                  <span className="fm-info-row__label">동기부여</span>
+                  <span className="fm-info-row__value">{pendingManager.stats.motivation}</span>
+                </div>
+                <div className="fm-info-row">
+                  <span className="fm-info-row__label">규율</span>
+                  <span className="fm-info-row__value">{pendingManager.stats.discipline}</span>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* 로스터 요약 */}
-        <div style={styles.section}>
-          <h3 style={styles.sectionLabel}>1군 로스터</h3>
-          <div style={styles.rosterList}>
-            {starters.map((p) => (
-              <div key={p.name} style={styles.rosterRow}>
-                <span style={styles.rosterPos}>{p.role}</span>
-                <span style={styles.rosterName}>{p.name}</span>
-                <span style={styles.rosterOvr}>{p.stats.ovr}</span>
-              </div>
-            ))}
+        <div className="fm-panel">
+          <div className="fm-panel__header">
+            <span className="fm-panel__title">1군 로스터</span>
+          </div>
+          <div className="fm-panel__body--flush">
+            <table className="fm-table fm-table--striped">
+              <thead>
+                <tr>
+                  <th>포지션</th>
+                  <th>이름</th>
+                  <th className="text-right">OVR</th>
+                </tr>
+              </thead>
+              <tbody>
+                {starters.map((p) => (
+                  <tr key={p.name}>
+                    <td><span className="fm-text-accent fm-font-bold fm-text-xs">{p.role}</span></td>
+                    <td className="fm-cell--name">{p.name}</td>
+                    <td className="text-right fm-font-bold">{p.stats.ovr}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
 
         {/* 구단 기대치 (매니저 모드만) */}
         {isManagerMode && (
-          <div style={styles.section}>
-            <h3 style={styles.sectionLabel}>구단 기대치</h3>
-            <div style={styles.goalBox}>
-              <div style={styles.goalRow}>
-                <span style={styles.goalLabel}>목표</span>
-                <span style={styles.goalValue}>{currentGoal.label}</span>
-              </div>
-              <div style={styles.goalRow}>
-                <span style={styles.goalLabel}>목표 순위</span>
-                <span style={styles.goalValue}>{currentGoal.standing}위 이내</span>
-              </div>
-              <div style={styles.goalRow}>
-                <span style={styles.goalLabel}>플레이오프 진출</span>
-                <span style={styles.goalValue}>{currentGoal.playoff ? '필수' : '선택'}</span>
-              </div>
-              <div style={styles.goalRow}>
-                <span style={styles.goalLabel}>국제대회 기대</span>
-                <span style={styles.goalValue}>{currentGoal.international ? '있음' : '없음'}</span>
-              </div>
+          <div className="fm-panel">
+            <div className="fm-panel__header">
+              <span className="fm-panel__title">구단 기대치</span>
             </div>
-
-            {negotiated && (
-              <div style={styles.warning}>
-                구단 만족도 -10으로 시작합니다
+            <div className="fm-panel__body">
+              <div className="fm-flex-col">
+                <div className="fm-info-row">
+                  <span className="fm-info-row__label">목표</span>
+                  <span className="fm-info-row__value fm-text-accent">{currentGoal.label}</span>
+                </div>
+                <div className="fm-info-row">
+                  <span className="fm-info-row__label">목표 순위</span>
+                  <span className="fm-info-row__value">{currentGoal.standing}위 이내</span>
+                </div>
+                <div className="fm-info-row">
+                  <span className="fm-info-row__label">플레이오프 진출</span>
+                  <span className="fm-info-row__value">{currentGoal.playoff ? '필수' : '선택'}</span>
+                </div>
+                <div className="fm-info-row">
+                  <span className="fm-info-row__label">국제대회 기대</span>
+                  <span className="fm-info-row__value">{currentGoal.international ? '있음' : '없음'}</span>
+                </div>
               </div>
-            )}
+
+              {negotiated && (
+                <div className="fm-alert fm-alert--danger fm-mt-md">
+                  <span className="fm-alert__text">구단 만족도 -10으로 시작합니다</span>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
-        {error && <p style={styles.errorText}>{error}</p>}
+        {error && (
+          <div className="fm-alert fm-alert--danger">
+            <span className="fm-alert__text">{error}</span>
+          </div>
+        )}
 
         {/* 버튼 */}
-        <div style={styles.actions}>
+        <div className="fm-flex fm-gap-md">
           {isManagerMode ? (
             <>
               <button
-                style={styles.acceptBtn}
+                className="fm-btn fm-btn--primary fm-btn--lg fm-flex-1"
                 onClick={handleAccept}
                 disabled={isLoading}
               >
@@ -233,7 +257,7 @@ export function SeasonGoalView() {
               </button>
               {!negotiated && (
                 <button
-                  style={styles.negotiateBtn}
+                  className="fm-btn fm-btn--lg fm-flex-1"
                   onClick={handleNegotiate}
                 >
                   협상
@@ -242,7 +266,7 @@ export function SeasonGoalView() {
             </>
           ) : (
             <button
-              style={styles.acceptBtn}
+              className="fm-btn fm-btn--primary fm-btn--lg fm-flex-1"
               onClick={handleAccept}
               disabled={isLoading}
             >
@@ -252,194 +276,9 @@ export function SeasonGoalView() {
         </div>
       </div>
 
-      <button style={styles.backBtn} onClick={() => navigate('/team-select')}>
+      <button className="fm-btn fm-btn--ghost fm-mt-lg" onClick={() => navigate('/team-select')}>
         ← 팀 선택으로 돌아가기
       </button>
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    minHeight: '100vh',
-    background: 'linear-gradient(135deg, #0a0a1a 0%, #1a1a3e 50%, #0a0a1a 100%)',
-    color: '#e0e0e0',
-    padding: '40px',
-  },
-  title: {
-    fontSize: '32px',
-    fontWeight: 700,
-    color: '#f0e6d2',
-    marginBottom: '24px',
-  },
-  card: {
-    maxWidth: '540px',
-    width: '100%',
-    background: 'rgba(255,255,255,0.03)',
-    border: '1px solid #3a3a5c',
-    borderRadius: '12px',
-    padding: '32px',
-  },
-  teamHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    marginBottom: '24px',
-  },
-  teamName: {
-    fontSize: '24px',
-    fontWeight: 700,
-    color: '#f0e6d2',
-    margin: 0,
-  },
-  regionTag: {
-    padding: '4px 10px',
-    borderRadius: '4px',
-    background: 'rgba(200, 155, 60, 0.15)',
-    color: '#c89b3c',
-    fontSize: '12px',
-    fontWeight: 600,
-  },
-  section: {
-    marginBottom: '20px',
-  },
-  sectionLabel: {
-    fontSize: '13px',
-    fontWeight: 600,
-    color: '#8a8a9a',
-    marginBottom: '8px',
-    marginTop: 0,
-    textTransform: 'uppercase' as const,
-    letterSpacing: '0.5px',
-  },
-  profileGrid: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '4px',
-  },
-  profileRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    padding: '4px 0',
-  },
-  profileLabel: {
-    color: '#8a8a9a',
-    fontSize: '13px',
-  },
-  profileValue: {
-    color: '#e0e0e0',
-    fontSize: '13px',
-    fontWeight: 600,
-  },
-  rosterList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '4px',
-  },
-  rosterRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    padding: '6px 8px',
-    borderRadius: '4px',
-    background: 'rgba(255,255,255,0.02)',
-  },
-  rosterPos: {
-    fontSize: '11px',
-    fontWeight: 700,
-    color: '#c89b3c',
-    minWidth: '32px',
-  },
-  rosterName: {
-    flex: 1,
-    fontSize: '13px',
-    color: '#e0e0e0',
-  },
-  rosterOvr: {
-    fontSize: '13px',
-    fontWeight: 700,
-    color: '#f0e6d2',
-  },
-  goalBox: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '6px',
-    padding: '12px',
-    borderRadius: '8px',
-    background: 'rgba(200, 155, 60, 0.05)',
-    border: '1px solid rgba(200, 155, 60, 0.2)',
-  },
-  goalRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-  },
-  goalLabel: {
-    color: '#8a8a9a',
-    fontSize: '13px',
-  },
-  goalValue: {
-    color: '#f0e6d2',
-    fontSize: '13px',
-    fontWeight: 600,
-  },
-  warning: {
-    marginTop: '8px',
-    padding: '8px 12px',
-    borderRadius: '6px',
-    background: 'rgba(255, 107, 107, 0.1)',
-    border: '1px solid rgba(255, 107, 107, 0.3)',
-    color: '#ff6b6b',
-    fontSize: '13px',
-    textAlign: 'center',
-  },
-  errorText: {
-    color: '#ff6b6b',
-    fontSize: '14px',
-    marginBottom: '12px',
-    padding: '8px 16px',
-    background: 'rgba(255, 107, 107, 0.1)',
-    borderRadius: '6px',
-  },
-  actions: {
-    display: 'flex',
-    gap: '12px',
-    marginTop: '8px',
-  },
-  acceptBtn: {
-    flex: 1,
-    padding: '14px',
-    border: 'none',
-    borderRadius: '8px',
-    background: 'linear-gradient(135deg, #c89b3c, #a67c2e)',
-    color: '#0a0a1a',
-    fontSize: '15px',
-    fontWeight: 700,
-    cursor: 'pointer',
-    transition: 'all 0.2s',
-  },
-  negotiateBtn: {
-    flex: 1,
-    padding: '14px',
-    border: '1px solid #3a3a5c',
-    borderRadius: '8px',
-    background: 'transparent',
-    color: '#8a8a9a',
-    fontSize: '15px',
-    fontWeight: 600,
-    cursor: 'pointer',
-    transition: 'all 0.2s',
-  },
-  backBtn: {
-    marginTop: '32px',
-    padding: '10px 20px',
-    border: 'none',
-    borderRadius: '6px',
-    background: 'transparent',
-    color: '#6a6a7a',
-    fontSize: '14px',
-    cursor: 'pointer',
-  },
-};

@@ -24,7 +24,6 @@ const NATIONALITIES = [
 
 const BACKGROUNDS: ManagerBackground[] = ['ex_player', 'analyst', 'rookie', 'academy_coach'];
 const MAX_BONUS_POINTS = 5;
-const STAT_MIN = 1;
 const STAT_MAX = 20;
 
 const STAT_KEYS: (keyof ManagerStats)[] = [
@@ -71,7 +70,6 @@ export function ManagerCreate() {
 
   const handleBackgroundChange = (bg: ManagerBackground) => {
     setBackground(bg);
-    // 배경 변경 시 보너스 포인트 초기화
     setBonusPoints({
       tacticalKnowledge: 0,
       motivation: 0,
@@ -108,138 +106,156 @@ export function ManagerCreate() {
   };
 
   return (
-    <div style={styles.container}>
-      <h1 style={styles.title}>감독 프로필 생성</h1>
+    <div className="fm-content fm-flex-col fm-items-center" style={{ minHeight: '100vh' }}>
+      <h1 className="fm-text-2xl fm-font-bold fm-text-accent fm-mb-lg">감독 프로필 생성</h1>
 
-      <div style={styles.form}>
+      <div className="fm-flex-col fm-gap-lg" style={{ width: 520 }}>
         {/* 이름 */}
-        <div style={styles.field}>
-          <label style={styles.label}>이름</label>
-          <input
-            style={styles.input}
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="감독 이름을 입력하세요"
-          />
-        </div>
+        <div className="fm-panel">
+          <div className="fm-panel__header">
+            <span className="fm-panel__title">기본 정보</span>
+          </div>
+          <div className="fm-panel__body fm-flex-col fm-gap-md">
+            {/* 이름 필드 */}
+            <div className="fm-flex-col fm-gap-xs">
+              <label className="fm-text-sm fm-font-semibold fm-text-secondary">이름</label>
+              <input
+                className="fm-input"
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="감독 이름을 입력하세요"
+                style={{ padding: '10px 14px', fontSize: 14 }}
+              />
+            </div>
 
-        {/* 국적 */}
-        <div style={styles.field}>
-          <label style={styles.label}>국적</label>
-          <select
-            style={styles.select}
-            value={nationality}
-            onChange={(e) => setNationality(e.target.value)}
-          >
-            {NATIONALITIES.map((n) => (
-              <option key={n.value} value={n.value}>
-                {n.label}
-              </option>
-            ))}
-          </select>
-        </div>
+            {/* 국적 필드 */}
+            <div className="fm-flex-col fm-gap-xs">
+              <label className="fm-text-sm fm-font-semibold fm-text-secondary">국적</label>
+              <select
+                className="fm-select"
+                value={nationality}
+                onChange={(e) => setNationality(e.target.value)}
+                style={{ padding: '10px 32px 10px 14px', fontSize: 14 }}
+              >
+                {NATIONALITIES.map((n) => (
+                  <option key={n.value} value={n.value}>
+                    {n.label}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-        {/* 나이 */}
-        <div style={styles.field}>
-          <label style={styles.label}>나이</label>
-          <div style={styles.ageRow}>
-            <input
-              style={styles.ageInput}
-              type="range"
-              min={30}
-              max={60}
-              value={age}
-              onChange={(e) => setAge(Number(e.target.value))}
-            />
-            <span style={styles.ageValue}>{age}세</span>
+            {/* 나이 필드 */}
+            <div className="fm-flex-col fm-gap-xs">
+              <label className="fm-text-sm fm-font-semibold fm-text-secondary">나이</label>
+              <div className="fm-flex fm-items-center fm-gap-md">
+                <input
+                  type="range"
+                  min={30}
+                  max={60}
+                  value={age}
+                  onChange={(e) => setAge(Number(e.target.value))}
+                  style={{ flex: 1, accentColor: 'var(--accent)', cursor: 'pointer' }}
+                  aria-label="나이 선택"
+                />
+                <span className="fm-text-xl fm-font-semibold fm-text-accent" style={{ minWidth: 48, textAlign: 'right' }}>
+                  {age}세
+                </span>
+              </div>
+            </div>
           </div>
         </div>
 
         {/* 배경 선택 */}
-        <div style={styles.field}>
-          <label style={styles.label}>배경</label>
-          <div style={styles.bgGrid}>
-            {BACKGROUNDS.map((bg) => (
-              <button
-                key={bg}
-                style={{
-                  ...styles.bgCard,
-                  ...(background === bg ? styles.bgCardActive : {}),
-                }}
-                onClick={() => handleBackgroundChange(bg)}
-              >
-                <strong style={styles.bgCardTitle}>{MANAGER_BG_LABELS[bg]}</strong>
-                <span style={styles.bgCardDesc}>{MANAGER_BG_DESC[bg]}</span>
-                <span style={styles.bgCardRep}>
-                  명성: {MANAGER_BG_STATS[bg].reputation}
-                </span>
-              </button>
-            ))}
+        <div className="fm-panel">
+          <div className="fm-panel__header">
+            <span className="fm-panel__title">배경</span>
+          </div>
+          <div className="fm-panel__body">
+            <div className="fm-grid fm-grid--2">
+              {BACKGROUNDS.map((bg) => (
+                <button
+                  key={bg}
+                  className={`fm-card fm-card--clickable fm-flex-col fm-gap-xs ${
+                    background === bg ? 'fm-card--highlight' : ''
+                  }`}
+                  onClick={() => handleBackgroundChange(bg)}
+                >
+                  <strong className="fm-text-lg fm-text-primary">{MANAGER_BG_LABELS[bg]}</strong>
+                  <span className="fm-text-xs fm-text-muted" style={{ lineHeight: 1.4 }}>
+                    {MANAGER_BG_DESC[bg]}
+                  </span>
+                  <span className="fm-text-xs fm-text-accent fm-mt-sm">
+                    명성: {MANAGER_BG_STATS[bg].reputation}
+                  </span>
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
         {/* 능력치 */}
-        <div style={styles.field}>
-          <label style={styles.label}>
-            능력치{' '}
-            <span style={styles.pointsBadge}>
+        <div className="fm-panel">
+          <div className="fm-panel__header">
+            <span className="fm-panel__title">능력치</span>
+            <span className="fm-badge fm-badge--accent">
               남은 포인트: {remainingPoints}/{MAX_BONUS_POINTS}
             </span>
-          </label>
-          <div style={styles.statsGrid}>
+          </div>
+          <div className="fm-panel__body fm-flex-col fm-gap-sm">
             {STAT_KEYS.map((key) => {
               const base = baseData.stats[key];
               const bonus = bonusPoints[key];
               const total = finalStats[key];
               return (
-                <div key={key} style={styles.statRow}>
-                  <span style={styles.statName}>{MANAGER_STAT_LABELS[key]}</span>
-                  <div style={styles.statControls}>
+                <div key={key} className="fm-flex fm-items-center fm-gap-md">
+                  <span className="fm-text-sm fm-text-secondary" style={{ width: 80, flexShrink: 0 }}>
+                    {MANAGER_STAT_LABELS[key]}
+                  </span>
+                  <div className="fm-flex fm-items-center fm-gap-sm fm-flex-1">
                     <button
-                      style={{
-                        ...styles.statBtn,
-                        ...(bonus <= 0 ? styles.statBtnDisabled : {}),
-                      }}
+                      className="fm-btn fm-btn--sm fm-text-accent"
+                      style={{ width: 28, height: 28, padding: 0 }}
                       onClick={() => handleRemovePoint(key)}
                       disabled={bonus <= 0}
+                      aria-label={`${MANAGER_STAT_LABELS[key]} 감소`}
                     >
                       -
                     </button>
-                    <div style={styles.statBarWrapper}>
-                      <div style={styles.statBarBg}>
+                    <div className="fm-bar fm-flex-1">
+                      <div className="fm-bar__track" style={{ position: 'relative', height: 8 }}>
                         <div
-                          style={{
-                            ...styles.statBarBase,
-                            width: `${(base / STAT_MAX) * 100}%`,
-                          }}
+                          className="fm-bar__fill fm-bar__fill--blue"
+                          style={{ width: `${(base / STAT_MAX) * 100}%`, position: 'absolute', top: 0, left: 0, height: '100%' }}
                         />
                         {bonus > 0 && (
                           <div
+                            className="fm-bar__fill fm-bar__fill--accent"
                             style={{
-                              ...styles.statBarBonus,
+                              position: 'absolute',
+                              top: 0,
                               left: `${(base / STAT_MAX) * 100}%`,
                               width: `${(bonus / STAT_MAX) * 100}%`,
+                              height: '100%',
+                              borderRadius: '0 3px 3px 0',
                             }}
                           />
                         )}
                       </div>
-                      <span style={styles.statValue}>
+                      <span className="fm-bar__value fm-text-lg" style={{ minWidth: 50, textAlign: 'right' }}>
                         {total}
                         {bonus > 0 && (
-                          <span style={styles.statBonusText}> (+{bonus})</span>
+                          <span className="fm-text-accent fm-text-xs"> (+{bonus})</span>
                         )}
                       </span>
                     </div>
                     <button
-                      style={{
-                        ...styles.statBtn,
-                        ...(remainingPoints <= 0 || total >= STAT_MAX
-                          ? styles.statBtnDisabled
-                          : {}),
-                      }}
+                      className="fm-btn fm-btn--sm fm-text-accent"
+                      style={{ width: 28, height: 28, padding: 0 }}
                       onClick={() => handleAddPoint(key)}
                       disabled={remainingPoints <= 0 || total >= STAT_MAX}
+                      aria-label={`${MANAGER_STAT_LABELS[key]} 증가`}
                     >
                       +
                     </button>
@@ -251,243 +267,24 @@ export function ManagerCreate() {
         </div>
 
         {/* 다음 버튼 */}
+        {remainingPoints > 0 && (
+          <p className="fm-text-sm fm-text-warning fm-text-center">
+            보너스 포인트 {remainingPoints}점을 모두 배분해야 진행할 수 있습니다.
+          </p>
+        )}
         <button
-          style={{
-            ...styles.createBtn,
-            ...(name.trim() ? {} : { opacity: 0.4, cursor: 'not-allowed' }),
-          }}
+          className="fm-btn fm-btn--primary fm-btn--lg"
+          style={{ width: '100%' }}
           onClick={handleCreate}
-          disabled={!name.trim()}
+          disabled={!name.trim() || remainingPoints > 0}
         >
           다음 →
         </button>
       </div>
 
-      <button style={styles.back} onClick={() => navigate('/mode-select')}>
+      <button className="fm-btn fm-btn--ghost fm-mt-lg" onClick={() => navigate('/mode-select')}>
         ← 돌아가기
       </button>
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    minHeight: '100vh',
-    background: 'linear-gradient(135deg, #0a0a1a 0%, #1a1a3e 50%, #0a0a1a 100%)',
-    color: '#e0e0e0',
-    padding: '40px',
-  },
-  title: {
-    fontSize: '32px',
-    fontWeight: 700,
-    color: '#f0e6d2',
-    marginBottom: '32px',
-  },
-  form: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '24px',
-    width: '520px',
-  },
-  field: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px',
-  },
-  label: {
-    fontSize: '14px',
-    fontWeight: 600,
-    color: '#a0a0b0',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-  },
-  input: {
-    padding: '12px 16px',
-    border: '1px solid #3a3a5c',
-    borderRadius: '8px',
-    background: 'rgba(255,255,255,0.05)',
-    color: '#e0e0e0',
-    fontSize: '16px',
-    outline: 'none',
-  },
-  select: {
-    padding: '12px 16px',
-    border: '1px solid #3a3a5c',
-    borderRadius: '8px',
-    background: '#1a1a2e',
-    color: '#e0e0e0',
-    fontSize: '16px',
-    outline: 'none',
-    cursor: 'pointer',
-  },
-  ageRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-  },
-  ageInput: {
-    flex: 1,
-    accentColor: '#c89b3c',
-    cursor: 'pointer',
-  },
-  ageValue: {
-    fontSize: '16px',
-    fontWeight: 600,
-    color: '#c89b3c',
-    minWidth: '40px',
-    textAlign: 'right' as const,
-  },
-  bgGrid: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    gap: '10px',
-  },
-  bgCard: {
-    padding: '14px',
-    border: '1px solid #3a3a5c',
-    borderRadius: '8px',
-    background: 'rgba(255,255,255,0.03)',
-    color: '#e0e0e0',
-    cursor: 'pointer',
-    textAlign: 'left' as const,
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '4px',
-    transition: 'all 0.2s',
-  },
-  bgCardActive: {
-    borderColor: '#c89b3c',
-    background: 'rgba(200,155,60,0.1)',
-  },
-  bgCardTitle: {
-    fontSize: '14px',
-    color: '#f0e6d2',
-  },
-  bgCardDesc: {
-    fontSize: '11px',
-    color: '#6a6a7a',
-    lineHeight: '1.4',
-  },
-  bgCardRep: {
-    fontSize: '11px',
-    color: '#c89b3c',
-    marginTop: '4px',
-  },
-  pointsBadge: {
-    fontSize: '12px',
-    fontWeight: 700,
-    color: '#c89b3c',
-    background: 'rgba(200,155,60,0.15)',
-    padding: '2px 8px',
-    borderRadius: '10px',
-  },
-  statsGrid: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '10px',
-  },
-  statRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-  },
-  statName: {
-    fontSize: '13px',
-    color: '#a0a0b0',
-    width: '80px',
-    flexShrink: 0,
-  },
-  statControls: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    flex: 1,
-  },
-  statBtn: {
-    width: '28px',
-    height: '28px',
-    borderRadius: '6px',
-    border: '1px solid #3a3a5c',
-    background: 'rgba(255,255,255,0.05)',
-    color: '#c89b3c',
-    fontSize: '16px',
-    fontWeight: 700,
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    transition: 'all 0.15s',
-    flexShrink: 0,
-  },
-  statBtnDisabled: {
-    opacity: 0.3,
-    cursor: 'not-allowed',
-  },
-  statBarWrapper: {
-    flex: 1,
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-  },
-  statBarBg: {
-    flex: 1,
-    height: '8px',
-    borderRadius: '4px',
-    background: 'rgba(255,255,255,0.08)',
-    position: 'relative' as const,
-    overflow: 'hidden',
-  },
-  statBarBase: {
-    position: 'absolute' as const,
-    top: 0,
-    left: 0,
-    height: '100%',
-    borderRadius: '4px',
-    background: 'linear-gradient(90deg, #3a5a8c, #5a8ac0)',
-    transition: 'width 0.3s',
-  },
-  statBarBonus: {
-    position: 'absolute' as const,
-    top: 0,
-    height: '100%',
-    borderRadius: '0 4px 4px 0',
-    background: 'linear-gradient(90deg, #c89b3c, #e0b94e)',
-    transition: 'all 0.3s',
-  },
-  statValue: {
-    fontSize: '14px',
-    fontWeight: 600,
-    color: '#e0e0e0',
-    minWidth: '50px',
-    textAlign: 'right' as const,
-  },
-  statBonusText: {
-    color: '#c89b3c',
-    fontSize: '12px',
-  },
-  createBtn: {
-    padding: '14px',
-    border: 'none',
-    borderRadius: '8px',
-    background: 'linear-gradient(135deg, #c89b3c, #a67c2e)',
-    color: '#0a0a1a',
-    fontWeight: 700,
-    fontSize: '16px',
-    cursor: 'pointer',
-    marginTop: '8px',
-  },
-  back: {
-    marginTop: '32px',
-    padding: '10px 20px',
-    border: 'none',
-    borderRadius: '6px',
-    background: 'transparent',
-    color: '#6a6a7a',
-    fontSize: '14px',
-    cursor: 'pointer',
-  },
-};

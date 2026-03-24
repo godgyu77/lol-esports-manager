@@ -6,6 +6,7 @@
 
 import { getDatabase } from '../../db/database';
 import type { CoachRivalry, InterviewType, PreMatchInterview } from '../../types/rivalry';
+import type { MatchType } from '../../types/match';
 
 // ─────────────────────────────────────────
 // Row 매핑
@@ -116,6 +117,30 @@ export async function getRivalry(
 }
 
 // ─────────────────────────────────────────
+// 매치 타입 판별 유틸
+// ─────────────────────────────────────────
+
+const PLAYOFF_MATCH_TYPES: ReadonlySet<string> = new Set([
+  'playoff_quarters', 'playoff_semis', 'playoff_finals',
+  'lck_cup_playoff_quarters', 'lck_cup_playoff_semis', 'lck_cup_playoff_finals',
+]);
+
+const INTERNATIONAL_MATCH_TYPES: ReadonlySet<string> = new Set([
+  'msi_group', 'msi_semis', 'msi_final',
+  'worlds_swiss', 'worlds_quarter', 'worlds_semi', 'worlds_final',
+  'first_stand_group', 'first_stand_playoff',
+  'ewc_group', 'ewc_playoff',
+]);
+
+function isPlayoffMatch(matchType?: MatchType): boolean {
+  return matchType ? PLAYOFF_MATCH_TYPES.has(matchType) : false;
+}
+
+function isInternationalMatch(matchType?: MatchType): boolean {
+  return matchType ? INTERNATIONAL_MATCH_TYPES.has(matchType) : false;
+}
+
+// ─────────────────────────────────────────
 // 경기 후 라이벌 수치 갱신
 // ─────────────────────────────────────────
 
@@ -124,6 +149,14 @@ export async function updateRivalryAfterMatch(
   teamBId: string,
   winnerTeamId: string,
   date: string,
+  options?: {
+    /** 승리팀 세트 스코어 */
+    winnerScore?: number;
+    /** 패배팀 세트 스코어 */
+    loserScore?: number;
+    /** 매치 타입 (플레이오프/국제전 판별용) */
+    matchType?: MatchType;
+  },
 ): Promise<CoachRivalry> {
   const db = await getDatabase();
   const [a, b] = orderTeamIds(teamAId, teamBId);
@@ -136,30 +169,27 @@ export async function updateRivalryAfterMatch(
 
   let currentLevel = 0;
   let history = '';
-  let consecutiveMatches = 0;
 
   if (existing.length > 0) {
     currentLevel = existing[0].rivalry_level;
     history = existing[0].history ?? '';
-
-    // 연속 대결 카운트 (최근 매치가 가까울수록 변동 증가)
-    if (existing[0].last_match_date) {
-      const lastDate = new Date(existing[0].last_match_date);
-      const currentDate = new Date(date);
-      const daysDiff = Math.abs(
-        (currentDate.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24),
-      );
-      if (daysDiff < 30) consecutiveMatches = 2;
-      else if (daysDiff < 60) consecutiveMatches = 1;
-    }
   }
 
-  // 패배팀 rivalry -5, 연속 대결 시 추가 변동
-  const loserId = winnerTeamId === teamAId ? teamBId : teamAId;
-  const baseChange = -5;
-  const multiplier = 1 + consecutiveMatches * 0.5;
-  const change = Math.round(baseChange * multiplier);
+  // 점수 차이에 따른 기본 라이벌 변동량
+  const winnerScore = options?.winnerScore ?? 2;
+  const loserScore = options?.loserScore ?? 0;
+  const scoreDiff = winnerScore - loserScore;
+  const baseChange = scoreDiff <= 1 ? 10 : 3; // 접전 +10, 대패 +3
 
+  // 매치 타입별 배율
+  let typeMultiplier = 1.0;
+  if (isPlayoffMatch(options?.matchType)) {
+    typeMultiplier = 2.0;
+  } else if (isInternationalMatch(options?.matchType)) {
+    typeMultiplier = 1.5;
+  }
+
+  const change = Math.round(baseChange * typeMultiplier);
   const newLevel = clamp(currentLevel + change, -100, 100);
 
   // 이력 업데이트
@@ -196,6 +226,39 @@ export async function updateRivalryAfterMatch(
   };
 }
 
+/**
+ * 복수전 보너스 조회
+ * 최근 2경기 연속 패배 시 "설욕전" 사기 보너스 +3% 반환
+ * @returns 복수전 사기 보너스 (0 또는 3)
+ */
+export async function getRevengeBonus(
+  teamId: string,
+  opponentId: string,
+): Promise<number> {
+  const [a, b] = orderTeamIds(teamId, opponentId);
+  const db = await getDatabase();
+
+  const rows = await db.select<RivalryRow[]>(
+    'SELECT * FROM coach_rivalries WHERE team_a_id = ? AND team_b_id = ?',
+    [a, b],
+  );
+
+  if (rows.length === 0 || !rows[0].history) return 0;
+
+  const historyEntries = rows[0].history.split('|');
+  if (historyEntries.length < 2) return 0;
+
+  // 최근 2경기 확인
+  const teamLabel = teamId === a ? 'A' : 'B';
+  const recent2 = historyEntries.slice(-2);
+  const lostBoth = recent2.every(entry => {
+    const winner = entry.split(':')[1] ?? '';
+    return winner !== teamLabel; // 해당 팀이 이기지 못한 경기
+  });
+
+  return lostBoth ? 3 : 0;
+}
+
 // ─────────────────────────────────────────
 // 경기 전 인터뷰
 // ─────────────────────────────────────────
@@ -212,21 +275,23 @@ export async function conductPreMatchInterview(
   const responseText = generateInterviewText(type);
 
   // 인터뷰 타입별 효과
+  // provocative: rivalry +15, 상대 morale -3 (자팀 사기 반영 없음 → moraleChange = -3 은 상대에 적용)
+  // respect: rivalry -5, 양측 morale +2
   let rivalryChange = 0;
   let moraleChange = 0;
 
   switch (type) {
     case 'respect':
-      rivalryChange = 5;
-      moraleChange = 2;
+      rivalryChange = -5;
+      moraleChange = 2; // 양측 +2
       break;
     case 'confident':
       rivalryChange = 0;
       moraleChange = 5;
       break;
     case 'provocative':
-      rivalryChange = -10;
-      moraleChange = 8;
+      rivalryChange = 15;
+      moraleChange = -3; // 상대 morale -3
       break;
   }
 
@@ -259,7 +324,7 @@ export async function conductPreMatchInterview(
   }
 
   return {
-    id: result.lastInsertId,
+    id: result.lastInsertId ?? 0,
     matchId,
     teamId,
     interviewType: type,

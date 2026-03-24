@@ -1,5 +1,6 @@
-import type React from 'react';
 import type { LiveGameState } from '../../engine/match/liveMatch';
+import type { DragonType } from '../../types/match';
+import './match.css';
 
 interface ScoreboardProps {
   gameState: LiveGameState;
@@ -10,6 +11,63 @@ interface ScoreboardProps {
   phaseLabels: Record<string, string>;
 }
 
+const DRAGON_COLORS: Record<DragonType, string> = {
+  infernal: '#e74c3c',
+  ocean: '#3498db',
+  mountain: '#a0522d',
+  cloud: '#8e8e9e',
+};
+
+const DRAGON_LABELS: Record<DragonType, string> = {
+  infernal: '화염',
+  ocean: '바다',
+  mountain: '대지',
+  cloud: '바람',
+};
+
+function DragonStacks({
+  stacks,
+  hasSoul,
+  soulType,
+}: {
+  stacks: number;
+  hasSoul: boolean;
+  soulType?: DragonType;
+}) {
+  const soulColor = soulType ? DRAGON_COLORS[soulType] : '#c89b3c';
+
+  return (
+    <div className="sb-dragon-stacks">
+      <div className="sb-dragon-dots">
+        {[0, 1, 2, 3].map((i) => (
+          <div
+            key={i}
+            className="sb-dragon-dot"
+            style={{
+              background: i < stacks ? soulColor : 'transparent',
+              border: `2px solid ${i < stacks ? soulColor : 'var(--border)'}`,
+              boxShadow: hasSoul && i < stacks ? `0 0 6px ${soulColor}` : 'none',
+            }}
+          />
+        ))}
+      </div>
+      {hasSoul && soulType && (
+        <span className="sb-dragon-soul-label" style={{ color: soulColor }}>
+          {DRAGON_LABELS[soulType]} 소울
+        </span>
+      )}
+    </div>
+  );
+}
+
+function GrubCounter({ count }: { count: number }) {
+  return (
+    <span className="sb-grub-text">
+      {'\uD83D\uDC1B'} {count}/6
+    </span>
+  );
+}
+
 export function Scoreboard({
   gameState,
   homeTeamShortName,
@@ -18,182 +76,109 @@ export function Scoreboard({
   currentGameNum,
   phaseLabels,
 }: ScoreboardProps) {
+  const { dragonSoul } = gameState;
+  const homeSoul = dragonSoul.soulTeam === 'home';
+  const awaySoul = dragonSoul.soulTeam === 'away';
+
   return (
     <>
       {/* 상단: 시리즈 스코어 */}
-      <div style={styles.seriesBar}>
-        <span style={styles.seriesTeam}>{homeTeamShortName}</span>
+      <div className="sb-series-bar">
+        <span className="sb-series-team">{homeTeamShortName}</span>
         <span
           key={`${seriesScore.home}-${seriesScore.away}`}
-          className="animate-pulse"
-          style={styles.seriesScore}
+          className="sb-series-score animate-pulse"
         >
           {seriesScore.home} - {seriesScore.away}
         </span>
-        <span style={styles.seriesTeam}>{awayTeamShortName}</span>
-        <span style={styles.gameNum}>SET {currentGameNum}</span>
+        <span className="sb-series-team">{awayTeamShortName}</span>
+        <span className="sb-game-num">SET {currentGameNum}</span>
       </div>
 
       {/* 스코어보드 */}
-      <div style={styles.scoreboard}>
-        <div style={styles.teamScore}>
-          <span style={{ ...styles.scoreTeamName, color: '#3498db' }}>
+      <div className="sb-board">
+        <div className="sb-team-score">
+          <span className="sb-team-name sb-team-name--blue">
             {homeTeamShortName}
           </span>
-          <div style={styles.statColumn}>
-            <span style={styles.bigStat}>{gameState.killsHome}</span>
-            <span style={styles.statLabel}>킬</span>
+          <div className="sb-stat-col">
+            <span className="sb-big-stat">{gameState.killsHome}</span>
+            <span className="sb-stat-label">킬</span>
           </div>
-          <div style={styles.statColumn}>
-            <span style={styles.bigStat}>{Math.round(gameState.goldHome / 100) / 10}k</span>
-            <span style={styles.statLabel}>골드</span>
+          <div className="sb-stat-col">
+            <span className="sb-big-stat">{Math.round(gameState.goldHome / 100) / 10}k</span>
+            <span className="sb-stat-label">골드</span>
           </div>
-          <div style={styles.statColumn}>
-            <span style={styles.bigStat}>{gameState.towersHome}</span>
-            <span style={styles.statLabel}>타워</span>
+          <div className="sb-stat-col">
+            <span className="sb-big-stat">{gameState.towersHome}</span>
+            <span className="sb-stat-label">타워</span>
           </div>
-          <div style={styles.statColumn}>
-            <span style={styles.bigStat}>{gameState.dragonsHome}</span>
-            <span style={styles.statLabel}>드래곤</span>
+          <div className="sb-stat-col">
+            <span className="sb-big-stat">{gameState.dragonsHome}</span>
+            <span className="sb-stat-label">드래곤</span>
+          </div>
+          <div className="sb-stat-col">
+            <DragonStacks
+              stacks={dragonSoul.homeStacks}
+              hasSoul={homeSoul}
+              soulType={dragonSoul.soulType}
+            />
+            <span className="sb-stat-label">소울</span>
+          </div>
+          <div className="sb-stat-col">
+            <GrubCounter count={gameState.grubsHome} />
+            <span className="sb-stat-label">그럽</span>
           </div>
         </div>
 
-        <div style={styles.centerInfo}>
-          <span style={styles.timeDisplay}>{gameState.currentTick}:00</span>
-          <span style={styles.phaseDisplay}>{phaseLabels[gameState.phase]}</span>
-          <div style={styles.winRateBar}>
+        <div className="sb-center-info">
+          <span className="sb-time-display">{gameState.currentTick}:00</span>
+          <span className="sb-phase-display">{phaseLabels[gameState.phase]}</span>
+          <div className="sb-winrate-bar">
             <div
-              style={{
-                ...styles.winRateFill,
-                width: `${Math.round(gameState.currentWinRate * 100)}%`,
-              }}
+              className="sb-winrate-fill"
+              style={{ width: `${Math.round(gameState.currentWinRate * 100)}%` }}
             />
           </div>
-          <span style={styles.winRateText}>
+          <span className="sb-winrate-text">
             {Math.round(gameState.currentWinRate * 100)}% — {Math.round((1 - gameState.currentWinRate) * 100)}%
           </span>
         </div>
 
-        <div style={styles.teamScore}>
-          <span style={{ ...styles.scoreTeamName, color: '#e74c3c' }}>
+        <div className="sb-team-score">
+          <span className="sb-team-name sb-team-name--red">
             {awayTeamShortName}
           </span>
-          <div style={styles.statColumn}>
-            <span style={styles.bigStat}>{gameState.killsAway}</span>
-            <span style={styles.statLabel}>킬</span>
+          <div className="sb-stat-col">
+            <span className="sb-big-stat">{gameState.killsAway}</span>
+            <span className="sb-stat-label">킬</span>
           </div>
-          <div style={styles.statColumn}>
-            <span style={styles.bigStat}>{Math.round(gameState.goldAway / 100) / 10}k</span>
-            <span style={styles.statLabel}>골드</span>
+          <div className="sb-stat-col">
+            <span className="sb-big-stat">{Math.round(gameState.goldAway / 100) / 10}k</span>
+            <span className="sb-stat-label">골드</span>
           </div>
-          <div style={styles.statColumn}>
-            <span style={styles.bigStat}>{gameState.towersAway}</span>
-            <span style={styles.statLabel}>타워</span>
+          <div className="sb-stat-col">
+            <span className="sb-big-stat">{gameState.towersAway}</span>
+            <span className="sb-stat-label">타워</span>
           </div>
-          <div style={styles.statColumn}>
-            <span style={styles.bigStat}>{gameState.dragonsAway}</span>
-            <span style={styles.statLabel}>드래곤</span>
+          <div className="sb-stat-col">
+            <span className="sb-big-stat">{gameState.dragonsAway}</span>
+            <span className="sb-stat-label">드래곤</span>
+          </div>
+          <div className="sb-stat-col">
+            <DragonStacks
+              stacks={dragonSoul.awayStacks}
+              hasSoul={awaySoul}
+              soulType={dragonSoul.soulType}
+            />
+            <span className="sb-stat-label">소울</span>
+          </div>
+          <div className="sb-stat-col">
+            <GrubCounter count={gameState.grubsAway} />
+            <span className="sb-stat-label">그럽</span>
           </div>
         </div>
       </div>
     </>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  seriesBar: {
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: '20px',
-    padding: '10px',
-    background: 'rgba(255,255,255,0.03)',
-    borderRadius: '8px',
-    marginBottom: '16px',
-  },
-  seriesTeam: {
-    fontSize: '16px',
-    fontWeight: 700,
-    color: '#f0e6d2',
-  },
-  seriesScore: {
-    fontSize: '24px',
-    fontWeight: 800,
-    color: '#c89b3c',
-  },
-  gameNum: {
-    fontSize: '12px',
-    color: '#6a6a7a',
-    marginLeft: 'auto',
-  },
-  scoreboard: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    background: 'linear-gradient(135deg, #1a1a3a 0%, #12122a 100%)',
-    border: '1px solid #2a2a4a',
-    borderRadius: '12px',
-    padding: '20px',
-    marginBottom: '16px',
-  },
-  teamScore: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '12px',
-  },
-  scoreTeamName: {
-    fontSize: '14px',
-    fontWeight: 700,
-  },
-  statColumn: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '2px',
-  },
-  bigStat: {
-    fontSize: '20px',
-    fontWeight: 700,
-    color: '#f0e6d2',
-  },
-  statLabel: {
-    fontSize: '10px',
-    color: '#6a6a7a',
-  },
-  centerInfo: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '6px',
-    flex: 1,
-  },
-  timeDisplay: {
-    fontSize: '32px',
-    fontWeight: 800,
-    color: '#f0e6d2',
-    fontFamily: 'monospace',
-  },
-  phaseDisplay: {
-    fontSize: '12px',
-    color: '#c89b3c',
-    fontWeight: 600,
-  },
-  winRateBar: {
-    width: '200px',
-    height: '6px',
-    background: '#e74c3c44',
-    borderRadius: '3px',
-    overflow: 'hidden',
-  },
-  winRateFill: {
-    height: '100%',
-    background: '#3498db',
-    borderRadius: '3px',
-    transition: 'width 0.3s',
-  },
-  winRateText: {
-    fontSize: '11px',
-    color: '#6a6a7a',
-  },
-};

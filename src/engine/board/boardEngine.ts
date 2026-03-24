@@ -191,6 +191,8 @@ export async function processMatchResult(
   const expectations = await getBoardExpectations(teamId, seasonId);
   if (!expectations) return null;
 
+  const db = await getDatabase();
+
   let satisfactionDelta = isWin ? 4 : -3;
   let fanDelta = isWin ? 5 : -3;
 
@@ -199,22 +201,37 @@ export async function processMatchResult(
     fanDelta = isWin ? 8 : -6;
   }
 
-  // 연패 체크 (최근 팬 반응에서 패배 연속 확인)
+  // 연패/연승 체크 (최근 팬 반응에서 확인)
+  const recentReactions = await getFanReactions(teamId, 5);
   if (!isWin) {
-    const recentReactions = await getFanReactions(teamId, 5);
     const recentLosses = recentReactions.filter(
       (r) => r.eventType === 'match_loss',
     );
     if (recentLosses.length >= 2) {
       satisfactionDelta -= 2;
       fanDelta -= 4;
+      // 3연패 이상 시 팬 반응 뉴스 생성
+      if (recentLosses.length >= 3) {
+        try {
+          const { generateFanReactionNews } = await import('../news/newsEngine');
+          const teamRows = await db.select<{ name: string }[]>('SELECT name FROM teams WHERE id = $1', [teamId]);
+          await generateFanReactionNews(seasonId, new Date().toISOString().slice(0, 10), teamRows[0]?.name ?? teamId, 'lose_streak', 'negative', teamId);
+        } catch { /* 무시 */ }
+      }
+    }
+  } else {
+    const recentWins = recentReactions.filter((r) => r.eventType === 'match_win');
+    if (recentWins.length >= 3) {
+      try {
+        const { generateFanReactionNews } = await import('../news/newsEngine');
+        const teamRows = await db.select<{ name: string }[]>('SELECT name FROM teams WHERE id = $1', [teamId]);
+        await generateFanReactionNews(seasonId, new Date().toISOString().slice(0, 10), teamRows[0]?.name ?? teamId, 'win_streak', 'positive', teamId);
+      } catch { /* 무시 */ }
     }
   }
 
   const newSatisfaction = clamp(expectations.satisfaction + satisfactionDelta);
   const newFanHappiness = clamp(expectations.fanHappiness + fanDelta);
-
-  const db = await getDatabase();
   await db.execute(
     `UPDATE board_expectations SET satisfaction = $1, fan_happiness = $2 WHERE team_id = $3 AND season_id = $4`,
     [newSatisfaction, newFanHappiness, teamId, seasonId],

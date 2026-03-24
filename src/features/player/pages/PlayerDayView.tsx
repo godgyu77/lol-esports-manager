@@ -13,15 +13,16 @@ import { useMatchStore } from '../../../stores/matchStore';
 import { advanceDay, skipToNextMatchDay } from '../../../engine/season/dayAdvancer';
 import type { DayResult } from '../../../engine/season/dayAdvancer';
 import type { DayType } from '../../../engine/season/calendar';
+import { useSettingsStore } from '../../../stores/settingsStore';
 
 const DAY_NAMES = ['일', '월', '화', '수', '목', '금', '토'];
 
-const DAY_TYPE_LABELS: Record<DayType, { label: string; color: string }> = {
-  match_day: { label: '경기일', color: '#e74c3c' },
-  training: { label: '훈련', color: '#3498db' },
-  scrim: { label: '스크림', color: '#9b59b6' },
-  rest: { label: '휴식', color: '#2ecc71' },
-  event: { label: '이벤트', color: '#f39c12' },
+const DAY_TYPE_LABELS: Record<DayType, { label: string; badge: string }> = {
+  match_day: { label: '경기일', badge: 'fm-badge--danger' },
+  training: { label: '훈련', badge: 'fm-badge--info' },
+  scrim: { label: '스크림', badge: 'fm-badge--accent' },
+  rest: { label: '휴식', badge: 'fm-badge--success' },
+  event: { label: '이벤트', badge: 'fm-badge--warning' },
 };
 
 export function PlayerDayView() {
@@ -29,7 +30,6 @@ export function PlayerDayView() {
   const save = useGameStore((s) => s.save);
   const season = useGameStore((s) => s.season);
   const teams = useGameStore((s) => s.teams);
-  const dayPhase = useGameStore((s) => s.dayPhase);
   const setDayPhase = useGameStore((s) => s.setDayPhase);
   const setSeason = useGameStore((s) => s.setSeason);
   const setPendingUserMatch = useGameStore((s) => s.setPendingUserMatch);
@@ -65,6 +65,8 @@ export function PlayerDayView() {
         userTeamId,
         save.mode,
         'training', // 선수 모드는 기본 훈련
+        undefined,
+        useSettingsStore.getState().difficulty,
       );
 
       setDayResult(result);
@@ -110,6 +112,7 @@ export function PlayerDayView() {
         save.mode,
         season.endDate,
         'training',
+        useSettingsStore.getState().difficulty,
       );
 
       setSkipResults(results);
@@ -146,58 +149,57 @@ export function PlayerDayView() {
   }, [season, save, currentDate, userTeamId, navigate, setDayPhase, setSeason, setPendingUserMatch, setCurrentDate, setDayType, resetSeries, setFearlessPool]);
 
   if (!season || !save || !userTeam) {
-    return <p style={{ color: '#6a6a7a' }}>데이터를 불러오는 중...</p>;
+    return <p className="fm-text-secondary fm-text-md">데이터를 불러오는 중...</p>;
   }
 
   return (
     <div>
-      <h1 style={styles.title}>시즌 진행</h1>
+      <div className="fm-page-header">
+        <h1 className="fm-page-title">시즌 진행</h1>
+      </div>
 
       {/* 날짜 카드 */}
-      <div style={styles.dateCard}>
-        <div style={styles.dateMain}>
-          <span style={styles.dateYear}>{currentDate.slice(0, 4)}년</span>
-          <span style={styles.dateDay}>
-            {currentDate.slice(5, 7)}월 {currentDate.slice(8)}일
-          </span>
-          <span style={styles.dateDow}>({DAY_NAMES[dayOfWeek]}요일)</span>
-        </div>
-        <div style={styles.dateInfo}>
-          <span style={styles.weekLabel}>{season.currentWeek}주차</span>
-          {myPlayer && (
-            <span style={styles.playerLabel}>{myPlayer.name}</span>
-          )}
-          <span style={styles.teamLabel}>{userTeam.shortName}</span>
+      <div className="fm-panel">
+        <div className="fm-panel__body">
+          <div className="fm-flex fm-justify-between fm-items-center">
+            <div className="fm-flex fm-items-center fm-gap-sm">
+              <span className="fm-text-md fm-text-muted">{currentDate.slice(0, 4)}년</span>
+              <span className="fm-text-2xl fm-font-bold fm-text-primary">
+                {currentDate.slice(5, 7)}월 {currentDate.slice(8)}일
+              </span>
+              <span className="fm-text-xl fm-text-secondary">({DAY_NAMES[dayOfWeek]}요일)</span>
+            </div>
+            <div className="fm-flex fm-gap-md fm-items-center">
+              <span className="fm-badge fm-badge--default">{season.currentWeek}주차</span>
+              {myPlayer && (
+                <span className="fm-text-lg fm-font-semibold fm-text-info">{myPlayer.name}</span>
+              )}
+              <span className="fm-text-lg fm-font-semibold fm-text-accent">{userTeam.shortName}</span>
+            </div>
+          </div>
         </div>
       </div>
 
       {/* 선수 안내 메시지 */}
-      <div style={styles.infoPanel}>
-        <span style={styles.infoText}>
+      <div className="fm-alert fm-alert--info">
+        <span className="fm-alert__icon">i</span>
+        <span className="fm-alert__text">
           선수 모드에서는 팀 일정에 따라 자동으로 훈련이 진행됩니다.
           경기일에는 밴픽(AI 자동) 후 라이브 경기를 관전합니다.
         </span>
       </div>
 
       {/* 액션 버튼 */}
-      <div style={styles.actionRow}>
+      <div className="fm-flex fm-gap-sm fm-mb-lg">
         <button
-          style={{
-            ...styles.btn,
-            ...styles.btnPrimary,
-            opacity: isProcessing ? 0.5 : 1,
-          }}
+          className="fm-btn fm-btn--primary fm-btn--lg"
           onClick={handleNextDay}
           disabled={isProcessing}
         >
           {isProcessing ? '진행 중...' : '다음 날 →'}
         </button>
         <button
-          style={{
-            ...styles.btn,
-            ...styles.btnSecondary,
-            opacity: isProcessing ? 0.5 : 1,
-          }}
+          className="fm-btn fm-btn--lg"
           onClick={handleSkipToMatch}
           disabled={isProcessing}
         >
@@ -207,270 +209,89 @@ export function PlayerDayView() {
 
       {/* 하루 결과 */}
       {dayResult && (
-        <div style={styles.card}>
-          <div style={styles.resultHeader}>
-            <span style={styles.resultDate}>
-              {dayResult.date} ({dayResult.dayName})
-            </span>
-            <span
-              style={{
-                ...styles.dayTypeBadge,
-                background: DAY_TYPE_LABELS[dayResult.dayType].color + '22',
-                color: DAY_TYPE_LABELS[dayResult.dayType].color,
-              }}
-            >
-              {DAY_TYPE_LABELS[dayResult.dayType].label}
-            </span>
-          </div>
-
-          {dayResult.events.map((evt, i) => (
-            <p key={i} style={styles.eventText}>• {evt}</p>
-          ))}
-
-          {/* 경기 결과 */}
-          {dayResult.matchResults.length > 0 && (
-            <div style={styles.matchResults}>
-              <h3 style={styles.subTitle}>오늘의 경기 결과</h3>
-              {dayResult.matchResults.map((mr) => {
-                const home = teams.find((t) => t.id === mr.homeTeamId);
-                const away = teams.find((t) => t.id === mr.awayTeamId);
-                const isMyMatch = mr.isUserMatch;
-                return (
-                  <div
-                    key={mr.matchId}
-                    style={{
-                      ...styles.matchRow,
-                      ...(isMyMatch ? styles.matchRowHighlight : {}),
-                    }}
-                  >
-                    {isMyMatch && <span style={styles.myMatchTag}>내 팀</span>}
-                    <span style={styles.matchTeam}>{home?.shortName ?? mr.homeTeamId}</span>
-                    <span style={styles.matchScore}>
-                      {mr.result.scoreHome} : {mr.result.scoreAway}
-                    </span>
-                    <span style={styles.matchTeam}>{away?.shortName ?? mr.awayTeamId}</span>
-                  </div>
-                );
-              })}
+        <div className="fm-panel">
+          <div className="fm-panel__header">
+            <div className="fm-flex fm-items-center fm-gap-sm">
+              <span className="fm-panel__title">
+                {dayResult.date} ({dayResult.dayName})
+              </span>
+              <span className={`fm-badge ${DAY_TYPE_LABELS[dayResult.dayType].badge}`}>
+                {DAY_TYPE_LABELS[dayResult.dayType].label}
+              </span>
             </div>
-          )}
+          </div>
+          <div className="fm-panel__body">
+            {dayResult.events.map((evt, i) => (
+              <p key={i} className="fm-text-md fm-text-secondary fm-mb-sm">• {evt}</p>
+            ))}
+
+            {/* 경기 결과 */}
+            {dayResult.matchResults.length > 0 && (
+              <div>
+                <div className="fm-divider" />
+                <h3 className="fm-text-lg fm-font-semibold fm-text-accent fm-mb-sm">오늘의 경기 결과</h3>
+                {dayResult.matchResults.map((mr) => {
+                  const home = teams.find((t) => t.id === mr.homeTeamId);
+                  const away = teams.find((t) => t.id === mr.awayTeamId);
+                  const isMyMatch = mr.isUserMatch;
+                  return (
+                    <div
+                      key={mr.matchId}
+                      className={`fm-match-row ${isMyMatch ? 'fm-table__row--selected' : ''}`}
+                    >
+                      {isMyMatch && <span className="fm-badge fm-badge--accent">내 팀</span>}
+                      <span className="fm-text-lg fm-font-medium fm-text-primary" style={{ minWidth: '60px', textAlign: 'center' }}>
+                        {home?.shortName ?? mr.homeTeamId}
+                      </span>
+                      <span className="fm-text-xl fm-font-bold fm-text-primary" style={{ minWidth: '60px', textAlign: 'center' }}>
+                        {mr.result.scoreHome} : {mr.result.scoreAway}
+                      </span>
+                      <span className="fm-text-lg fm-font-medium fm-text-primary" style={{ minWidth: '60px', textAlign: 'center' }}>
+                        {away?.shortName ?? mr.awayTeamId}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
       {/* 스킵 결과 요약 */}
       {skipResults.length > 1 && (
-        <div style={styles.card}>
-          <h3 style={styles.subTitle}>{skipResults.length}일 스킵 완료</h3>
-          {skipResults.map((dr, i) => (
-            <div key={i} style={styles.skipRow}>
-              <span style={styles.skipDate}>{dr.date} ({dr.dayName})</span>
-              <span
-                style={{
-                  ...styles.dayTypeBadgeSmall,
-                  color: DAY_TYPE_LABELS[dr.dayType].color,
-                }}
-              >
-                {DAY_TYPE_LABELS[dr.dayType].label}
-              </span>
-              {dr.matchResults.length > 0 && (
-                <span style={styles.skipExtra}>
-                  {dr.matchResults.length}경기
-                </span>
-              )}
-            </div>
-          ))}
+        <div className="fm-panel">
+          <div className="fm-panel__header">
+            <span className="fm-panel__title">{skipResults.length}일 스킵 완료</span>
+          </div>
+          <div className="fm-panel__body--flush">
+            <table className="fm-table fm-table--striped">
+              <thead>
+                <tr>
+                  <th>날짜</th>
+                  <th>유형</th>
+                  <th className="text-right">비고</th>
+                </tr>
+              </thead>
+              <tbody>
+                {skipResults.map((dr, i) => (
+                  <tr key={i}>
+                    <td className="fm-cell--name">{dr.date} ({dr.dayName})</td>
+                    <td>
+                      <span className={`fm-badge ${DAY_TYPE_LABELS[dr.dayType].badge}`}>
+                        {DAY_TYPE_LABELS[dr.dayType].label}
+                      </span>
+                    </td>
+                    <td className="text-right fm-text-muted">
+                      {dr.matchResults.length > 0 ? `${dr.matchResults.length}경기` : ''}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  title: {
-    fontSize: '24px',
-    fontWeight: 700,
-    color: '#f0e6d2',
-    marginBottom: '24px',
-  },
-  dateCard: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    background: 'linear-gradient(135deg, #1a1a3a 0%, #12122a 100%)',
-    border: '1px solid #c89b3c44',
-    borderRadius: '12px',
-    padding: '24px 28px',
-    marginBottom: '20px',
-  },
-  dateMain: {
-    display: 'flex',
-    alignItems: 'baseline',
-    gap: '8px',
-  },
-  dateYear: {
-    fontSize: '14px',
-    color: '#6a6a7a',
-  },
-  dateDay: {
-    fontSize: '28px',
-    fontWeight: 700,
-    color: '#f0e6d2',
-  },
-  dateDow: {
-    fontSize: '16px',
-    color: '#8a8a9a',
-  },
-  dateInfo: {
-    display: 'flex',
-    gap: '16px',
-    alignItems: 'center',
-  },
-  weekLabel: {
-    fontSize: '14px',
-    color: '#8a8a9a',
-    background: 'rgba(255,255,255,0.05)',
-    padding: '4px 10px',
-    borderRadius: '4px',
-  },
-  playerLabel: {
-    fontSize: '14px',
-    fontWeight: 600,
-    color: '#a0d0ff',
-  },
-  teamLabel: {
-    fontSize: '14px',
-    fontWeight: 600,
-    color: '#c89b3c',
-  },
-  infoPanel: {
-    background: 'rgba(52,152,219,0.08)',
-    border: '1px solid rgba(52,152,219,0.2)',
-    borderRadius: '8px',
-    padding: '12px 16px',
-    marginBottom: '16px',
-  },
-  infoText: {
-    fontSize: '13px',
-    color: '#8a8a9a',
-    lineHeight: '1.5',
-  },
-  actionRow: {
-    display: 'flex',
-    gap: '12px',
-    marginBottom: '24px',
-  },
-  btn: {
-    padding: '12px 24px',
-    borderRadius: '8px',
-    border: 'none',
-    fontSize: '14px',
-    fontWeight: 600,
-    cursor: 'pointer',
-    transition: 'all 0.2s',
-  },
-  btnPrimary: {
-    background: '#c89b3c',
-    color: '#0d0d1a',
-  },
-  btnSecondary: {
-    background: 'transparent',
-    border: '1px solid #3a3a5c',
-    color: '#8a8a9a',
-  },
-  card: {
-    background: 'rgba(255,255,255,0.03)',
-    border: '1px solid #2a2a4a',
-    borderRadius: '10px',
-    padding: '20px',
-    marginBottom: '16px',
-  },
-  resultHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    marginBottom: '12px',
-  },
-  resultDate: {
-    fontSize: '16px',
-    fontWeight: 600,
-    color: '#e0e0e0',
-  },
-  dayTypeBadge: {
-    fontSize: '12px',
-    fontWeight: 600,
-    padding: '3px 10px',
-    borderRadius: '12px',
-  },
-  dayTypeBadgeSmall: {
-    fontSize: '11px',
-    fontWeight: 500,
-  },
-  eventText: {
-    fontSize: '13px',
-    color: '#8a8a9a',
-    marginBottom: '4px',
-  },
-  matchResults: {
-    marginTop: '16px',
-    borderTop: '1px solid #2a2a4a',
-    paddingTop: '12px',
-  },
-  subTitle: {
-    fontSize: '14px',
-    fontWeight: 600,
-    color: '#c89b3c',
-    marginBottom: '10px',
-  },
-  matchRow: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '16px',
-    padding: '8px 0',
-    borderBottom: '1px solid rgba(255,255,255,0.03)',
-  },
-  matchRowHighlight: {
-    background: 'rgba(200,155,60,0.08)',
-    borderRadius: '6px',
-    padding: '8px 12px',
-  },
-  myMatchTag: {
-    fontSize: '11px',
-    fontWeight: 700,
-    color: '#c89b3c',
-    background: 'rgba(200,155,60,0.15)',
-    padding: '2px 8px',
-    borderRadius: '4px',
-  },
-  matchTeam: {
-    fontSize: '14px',
-    fontWeight: 500,
-    color: '#e0e0e0',
-    minWidth: '60px',
-    textAlign: 'center',
-  },
-  matchScore: {
-    fontSize: '18px',
-    fontWeight: 700,
-    color: '#f0e6d2',
-    minWidth: '60px',
-    textAlign: 'center',
-  },
-  skipRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    padding: '6px 0',
-    borderBottom: '1px solid rgba(255,255,255,0.02)',
-  },
-  skipDate: {
-    fontSize: '13px',
-    color: '#8a8a9a',
-    minWidth: '120px',
-  },
-  skipExtra: {
-    fontSize: '12px',
-    color: '#6a6a7a',
-    marginLeft: 'auto',
-  },
-};

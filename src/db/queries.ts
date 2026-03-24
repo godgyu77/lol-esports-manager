@@ -3,11 +3,24 @@
  * snake_case DB row ↔ camelCase TypeScript 객체 매핑 포함
  */
 import type { GameMode, GameSave, Position, Region, Season, Split } from '../types';
-import type { Champion } from '../types/champion';
+import type { Champion, ChampionTag } from '../types/champion';
 import type { Match, PlayerGameStats } from '../types/match';
 import type { ChampionProficiency, Player, PlayerContract, PlayerMental, PlayerStats } from '../types/player';
 import type { PlayStyle, Team } from '../types/team';
 import { getDatabase } from './database';
+
+// ─────────────────────────────────────────
+// 유틸
+// ─────────────────────────────────────────
+
+function safeJsonParse<T>(json: string | null | undefined, fallback: T): T {
+  if (!json) return fallback;
+  try {
+    return JSON.parse(json) as T;
+  } catch {
+    return fallback;
+  }
+}
 
 // ─────────────────────────────────────────
 // Row → TypeScript 매핑 유틸
@@ -101,6 +114,7 @@ export function mapRowToPlayer(row: PlayerRow): Player & { division: string } {
     name: row.name,
     teamId: row.team_id,
     position: row.position,
+    secondaryPosition: null,
     age: row.age,
     nationality: row.nationality,
     stats,
@@ -110,6 +124,10 @@ export function mapRowToPlayer(row: PlayerRow): Player & { division: string } {
     potential: row.potential,
     peakAge: row.peak_age,
     popularity: row.popularity,
+    playstyle: 'versatile' as const,
+    careerGames: 0,
+    chemistry: {},
+    formHistory: [],
     division: row.division,
   };
 }
@@ -404,6 +422,7 @@ export async function createSeason(year: number, split: Split): Promise<number> 
     `INSERT INTO seasons (year, split, current_week, is_active) VALUES ($1, $2, 1, TRUE)`,
     [year, split],
   );
+  if (!result.lastInsertId) throw new Error('시즌 생성 실패: lastInsertId 없음');
   return result.lastInsertId;
 }
 
@@ -432,6 +451,7 @@ export async function createSave(
      VALUES ($1, $2, $3, $4)`,
     [mode, teamId, playerId, seasonId],
   );
+  if (!result.lastInsertId) throw new Error('세이브 생성 실패: lastInsertId 없음');
   return result.lastInsertId;
 }
 
@@ -476,6 +496,7 @@ export async function createManualSave(
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
     [mode, teamId, playerId, seasonId, slotNumber, saveName, teamName, seasonInfo],
   );
+  if (!result.lastInsertId) throw new Error('수동 세이브 생성 실패: lastInsertId 없음');
   return result.lastInsertId;
 }
 
@@ -576,9 +597,9 @@ export function mapRowToChampion(row: ChampionRow): Champion {
     name: row.name,
     nameKo: row.name_ko,
     primaryRole: row.primary_role,
-    secondaryRoles: JSON.parse(row.secondary_roles) as Position[],
+    secondaryRoles: safeJsonParse<Position[]>(row.secondary_roles, []),
     tier: row.tier,
-    tags: JSON.parse(row.tags),
+    tags: safeJsonParse<ChampionTag[]>(row.tags, []),
     stats: {
       earlyGame: row.early_game,
       lateGame: row.late_game,
@@ -586,6 +607,9 @@ export function mapRowToChampion(row: ChampionRow): Champion {
       splitPush: row.split_push,
       difficulty: row.difficulty,
     },
+    primaryBuild: 'bruiser_ad',
+    secondaryBuild: null,
+    damageProfile: 'physical',
   };
 }
 
@@ -768,6 +792,7 @@ export async function getStandings(seasonId: number): Promise<{
         COUNT(*) as wins,
         SUM(CASE WHEN score_home > score_away THEN score_home ELSE score_away END) as set_wins
       FROM matches WHERE season_id = $1 AND is_played = TRUE AND match_type = 'regular'
+        AND score_home <> score_away
       GROUP BY tid
     ) w ON t.id = w.tid
     LEFT JOIN (
@@ -776,13 +801,16 @@ export async function getStandings(seasonId: number): Promise<{
         COUNT(*) as losses,
         SUM(CASE WHEN score_home < score_away THEN score_home ELSE score_away END) as set_losses
       FROM matches WHERE season_id = $1 AND is_played = TRUE AND match_type = 'regular'
+        AND score_home <> score_away
       GROUP BY tid
     ) l ON t.id = l.tid
     WHERE EXISTS (
       SELECT 1 FROM matches m WHERE m.season_id = $1
         AND (m.team_home_id = t.id OR m.team_away_id = t.id)
     )
-    ORDER BY wins DESC, (COALESCE(w.set_wins, 0) - COALESCE(l.set_losses, 0)) DESC`,
+    ORDER BY wins DESC,
+      (COALESCE(w.set_wins, 0) - COALESCE(l.set_losses, 0)) DESC,
+      COALESCE(w.set_wins, 0) DESC`,
     [seasonId],
   );
 
@@ -1236,21 +1264,27 @@ export async function processWeeklySalaries(
     `SELECT team_id, SUM(salary) as total_salary FROM players WHERE team_id IS NOT NULL GROUP BY team_id`,
   );
 
-  for (const row of rows) {
-    const weeklySalary = Math.round(row.total_salary / 4);
-    if (weeklySalary <= 0) continue;
+  await db.execute('BEGIN TRANSACTION');
+  try {
+    for (const row of rows) {
+      const weeklySalary = Math.round(row.total_salary / 4);
+      if (weeklySalary <= 0) continue;
 
-    await db.execute(
-      `INSERT INTO team_finance_log (team_id, season_id, game_date, type, category, amount, description)
-       VALUES ($1, $2, $3, 'expense', 'salary', $4, $5)`,
-      [row.team_id, seasonId, gameDate, weeklySalary, '주급 지급'],
-    );
+      await db.execute(
+        `INSERT INTO team_finance_log (team_id, season_id, game_date, type, category, amount, description)
+         VALUES ($1, $2, $3, 'expense', 'salary', $4, $5)`,
+        [row.team_id, seasonId, gameDate, weeklySalary, '주급 지급'],
+      );
 
-    // 팀 budget 차감
-    await db.execute(
-      `UPDATE teams SET budget = budget - $1 WHERE id = $2`,
-      [weeklySalary, row.team_id],
-    );
+      await db.execute(
+        `UPDATE teams SET budget = budget - $1 WHERE id = $2`,
+        [weeklySalary, row.team_id],
+      );
+    }
+    await db.execute('COMMIT');
+  } catch (error) {
+    await db.execute('ROLLBACK');
+    throw error;
   }
 }
 
@@ -1299,6 +1333,7 @@ export async function createTransferOffer(offer: {
     [offer.seasonId, offer.fromTeamId, offer.toTeamId, offer.playerId,
      offer.transferFee, offer.offeredSalary, offer.contractYears, offer.offerDate],
   );
+  if (!result.lastInsertId) throw new Error('이적 제안 생성 실패: lastInsertId 없음');
   return result.lastInsertId;
 }
 
@@ -1489,6 +1524,7 @@ export async function insertSponsor(sponsor: {
     [sponsor.seasonId, sponsor.teamId, sponsor.name, sponsor.tier,
      sponsor.weeklyPayout, sponsor.startDate, sponsor.endDate],
   );
+  if (!result.lastInsertId) throw new Error('스폰서 생성 실패: lastInsertId 없음');
   return result.lastInsertId;
 }
 
@@ -1838,4 +1874,326 @@ export async function updateTeamPlayStyle(
     'UPDATE teams SET play_style = $1 WHERE id = $2',
     [style, teamId],
   );
+}
+
+// ═════════════════════════════════════════
+// player_career_stats CRUD
+// ═════════════════════════════════════════
+
+export interface PlayerCareerStats {
+  playerId: string;
+  teamId: string | null;
+  totalGames: number;
+  totalKills: number;
+  totalDeaths: number;
+  totalAssists: number;
+  totalCs: number;
+  totalDamage: number;
+}
+
+export async function getPlayerCareerStats(playerId: string): Promise<PlayerCareerStats | null> {
+  const db = await getDatabase();
+  const rows = await db.select<{
+    player_id: string; team_id: string | null;
+    total_games: number; total_kills: number; total_deaths: number;
+    total_assists: number; total_cs: number; total_damage: number;
+  }[]>(
+    'SELECT * FROM player_career_stats WHERE player_id = $1',
+    [playerId],
+  );
+  if (rows.length === 0) return null;
+  const r = rows[0];
+  return {
+    playerId: r.player_id,
+    teamId: r.team_id,
+    totalGames: r.total_games,
+    totalKills: r.total_kills,
+    totalDeaths: r.total_deaths,
+    totalAssists: r.total_assists,
+    totalCs: r.total_cs,
+    totalDamage: r.total_damage,
+  };
+}
+
+export async function upsertPlayerCareerStats(
+  playerId: string,
+  teamId: string | null,
+  gameStats: { kills: number; deaths: number; assists: number; cs: number; damage: number },
+): Promise<void> {
+  const db = await getDatabase();
+  await db.execute(
+    `INSERT INTO player_career_stats (player_id, team_id, total_games, total_kills, total_deaths, total_assists, total_cs, total_damage)
+     VALUES ($1, $2, 1, $3, $4, $5, $6, $7)
+     ON CONFLICT(player_id) DO UPDATE SET
+       team_id = $2,
+       total_games = total_games + 1,
+       total_kills = total_kills + $3,
+       total_deaths = total_deaths + $4,
+       total_assists = total_assists + $5,
+       total_cs = total_cs + $6,
+       total_damage = total_damage + $7`,
+    [playerId, teamId, gameStats.kills, gameStats.deaths, gameStats.assists, gameStats.cs, gameStats.damage],
+  );
+}
+
+// ═════════════════════════════════════════
+// player_form_history CRUD
+// ═════════════════════════════════════════
+
+export interface PlayerFormEntry {
+  id: number;
+  playerId: string;
+  gameDate: string;
+  formScore: number;
+}
+
+export async function insertPlayerFormHistory(
+  playerId: string,
+  gameDate: string,
+  formScore: number,
+): Promise<void> {
+  const db = await getDatabase();
+  await db.execute(
+    'INSERT INTO player_form_history (player_id, game_date, form_score) VALUES ($1, $2, $3)',
+    [playerId, gameDate, formScore],
+  );
+
+  // 최근 10개만 유지 (롤링)
+  await db.execute(
+    `DELETE FROM player_form_history WHERE player_id = $1 AND id NOT IN (
+       SELECT id FROM player_form_history WHERE player_id = $1 ORDER BY id DESC LIMIT 10
+     )`,
+    [playerId],
+  );
+}
+
+export async function getPlayerFormHistory(playerId: string): Promise<PlayerFormEntry[]> {
+  const db = await getDatabase();
+  const rows = await db.select<{
+    id: number; player_id: string; game_date: string; form_score: number;
+  }[]>(
+    'SELECT * FROM player_form_history WHERE player_id = $1 ORDER BY id DESC LIMIT 10',
+    [playerId],
+  );
+  return rows.map(r => ({
+    id: r.id,
+    playerId: r.player_id,
+    gameDate: r.game_date,
+    formScore: r.form_score,
+  }));
+}
+
+// ═════════════════════════════════════════
+// player_chemistry CRUD
+// ═════════════════════════════════════════
+
+export interface PlayerChemistryRow {
+  playerAId: string;
+  playerBId: string;
+  chemistryScore: number;
+}
+
+export async function upsertPlayerChemistry(
+  playerAId: string,
+  playerBId: string,
+  score: number,
+): Promise<void> {
+  const db = await getDatabase();
+  // ID 순서 정규화 (항상 작은 ID가 A)
+  const [a, b] = playerAId < playerBId ? [playerAId, playerBId] : [playerBId, playerAId];
+  const clamped = Math.max(0, Math.min(100, score));
+  await db.execute(
+    `INSERT INTO player_chemistry (player_a_id, player_b_id, chemistry_score)
+     VALUES ($1, $2, $3)
+     ON CONFLICT(player_a_id, player_b_id) DO UPDATE SET chemistry_score = $3`,
+    [a, b, clamped],
+  );
+}
+
+export async function adjustPlayerChemistry(
+  playerAId: string,
+  playerBId: string,
+  delta: number,
+): Promise<void> {
+  const db = await getDatabase();
+  const [a, b] = playerAId < playerBId ? [playerAId, playerBId] : [playerBId, playerAId];
+  await db.execute(
+    `INSERT INTO player_chemistry (player_a_id, player_b_id, chemistry_score)
+     VALUES ($1, $2, $3)
+     ON CONFLICT(player_a_id, player_b_id) DO UPDATE SET
+       chemistry_score = MAX(0, MIN(100, chemistry_score + $4))`,
+    [a, b, 50 + delta, delta],
+  );
+}
+
+export async function getTeamChemistryPairs(teamId: string): Promise<PlayerChemistryRow[]> {
+  const db = await getDatabase();
+  const players = await getPlayersByTeamId(teamId);
+  const ids = players.map(p => p.id);
+  if (ids.length < 2) return [];
+
+  const phA = ids.map((_, i) => `$${i + 1}`).join(', ');
+  const phB = ids.map((_, i) => `$${i + 1 + ids.length}`).join(', ');
+  const rows = await db.select<{
+    player_a_id: string; player_b_id: string; chemistry_score: number;
+  }[]>(
+    `SELECT * FROM player_chemistry
+     WHERE player_a_id IN (${phA}) AND player_b_id IN (${phB})`,
+    [...ids, ...ids],
+  );
+  return rows.map(r => ({
+    playerAId: r.player_a_id,
+    playerBId: r.player_b_id,
+    chemistryScore: r.chemistry_score,
+  }));
+}
+
+// ═════════════════════════════════════════
+// solo_rank_daily_log CRUD
+// ═════════════════════════════════════════
+
+export interface SoloRankDailyLog {
+  id: number;
+  playerId: string;
+  gameDate: string;
+  gamesPlayed: number;
+  wins: number;
+  losses: number;
+  lpChange: number;
+  tierChanged: boolean;
+  newTier: string | null;
+  practiceChampionId: string | null;
+  proficiencyGain: number;
+}
+
+export async function insertSoloRankDailyLog(params: {
+  playerId: string;
+  gameDate: string;
+  gamesPlayed: number;
+  wins: number;
+  losses: number;
+  lpChange: number;
+  tierChanged: boolean;
+  newTier?: string;
+  practiceChampionId?: string;
+  proficiencyGain?: number;
+}): Promise<void> {
+  const db = await getDatabase();
+  await db.execute(
+    `INSERT INTO solo_rank_daily_log
+     (player_id, game_date, games_played, wins, losses, lp_change, tier_changed, new_tier, practice_champion_id, proficiency_gain)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+     ON CONFLICT(player_id, game_date) DO UPDATE SET
+       games_played = $3, wins = $4, losses = $5, lp_change = $6,
+       tier_changed = $7, new_tier = $8, practice_champion_id = $9, proficiency_gain = $10`,
+    [
+      params.playerId, params.gameDate, params.gamesPlayed, params.wins, params.losses,
+      params.lpChange, params.tierChanged ? 1 : 0, params.newTier ?? null,
+      params.practiceChampionId ?? null, params.proficiencyGain ?? 0,
+    ],
+  );
+}
+
+export async function getSoloRankDailyLogs(
+  playerId: string,
+  limit = 30,
+): Promise<SoloRankDailyLog[]> {
+  const db = await getDatabase();
+  const rows = await db.select<{
+    id: number; player_id: string; game_date: string;
+    games_played: number; wins: number; losses: number;
+    lp_change: number; tier_changed: number; new_tier: string | null;
+    practice_champion_id: string | null; proficiency_gain: number;
+  }[]>(
+    'SELECT * FROM solo_rank_daily_log WHERE player_id = $1 ORDER BY game_date DESC LIMIT $2',
+    [playerId, limit],
+  );
+  return rows.map(r => ({
+    id: r.id,
+    playerId: r.player_id,
+    gameDate: r.game_date,
+    gamesPlayed: r.games_played,
+    wins: r.wins,
+    losses: r.losses,
+    lpChange: r.lp_change,
+    tierChanged: r.tier_changed === 1,
+    newTier: r.new_tier,
+    practiceChampionId: r.practice_champion_id,
+    proficiencyGain: r.proficiency_gain,
+  }));
+}
+
+// ═════════════════════════════════════════
+// patch_meta_modifiers CRUD
+// ═════════════════════════════════════════
+
+export interface PatchMetaModifiersRow {
+  seasonId: number;
+  patchNumber: number;
+  teamfightEfficiency: number;
+  splitPushEfficiency: number;
+  earlyAggroEfficiency: number;
+  objectiveEfficiency: number;
+}
+
+export async function upsertPatchMetaModifiers(params: {
+  seasonId: number;
+  patchNumber: number;
+  teamfightEfficiency: number;
+  splitPushEfficiency: number;
+  earlyAggroEfficiency: number;
+  objectiveEfficiency: number;
+}): Promise<void> {
+  const db = await getDatabase();
+  await db.execute(
+    `INSERT OR REPLACE INTO patch_meta_modifiers
+     (season_id, patch_number, teamfight_efficiency, split_push_efficiency, early_aggro_efficiency, objective_efficiency)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [params.seasonId, params.patchNumber, params.teamfightEfficiency, params.splitPushEfficiency, params.earlyAggroEfficiency, params.objectiveEfficiency],
+  );
+}
+
+export async function getLatestPatchMetaModifiers(): Promise<PatchMetaModifiersRow | null> {
+  const db = await getDatabase();
+  const rows = await db.select<{
+    season_id: number; patch_number: number;
+    teamfight_efficiency: number; split_push_efficiency: number;
+    early_aggro_efficiency: number; objective_efficiency: number;
+  }[]>(
+    'SELECT * FROM patch_meta_modifiers ORDER BY season_id DESC, patch_number DESC LIMIT 1',
+  );
+  if (rows.length === 0) return null;
+  const r = rows[0];
+  return {
+    seasonId: r.season_id,
+    patchNumber: r.patch_number,
+    teamfightEfficiency: r.teamfight_efficiency,
+    splitPushEfficiency: r.split_push_efficiency,
+    earlyAggroEfficiency: r.early_aggro_efficiency,
+    objectiveEfficiency: r.objective_efficiency,
+  };
+}
+
+// ═════════════════════════════════════════
+// 팀 승률 조회 (재계약 협상 등에서 사용)
+// ═════════════════════════════════════════
+
+export async function getTeamRecentWinRate(
+  teamId: string,
+  seasonId: number,
+): Promise<number> {
+  const db = await getDatabase();
+  const rows = await db.select<{ wins: number; total: number }[]>(
+    `SELECT
+       COALESCE(SUM(CASE WHEN score_home > score_away AND team_home_id = $1 THEN 1
+                         WHEN score_away > score_home AND team_away_id = $1 THEN 1
+                         ELSE 0 END), 0) as wins,
+       COUNT(*) as total
+     FROM matches
+     WHERE season_id = $2 AND is_played = 1
+       AND (team_home_id = $1 OR team_away_id = $1)`,
+    [teamId, seasonId],
+  );
+  if (rows.length === 0 || rows[0].total === 0) return 0.5;
+  return Math.round((rows[0].wins / rows[0].total) * 100) / 100;
 }

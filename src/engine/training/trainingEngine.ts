@@ -15,7 +15,7 @@ import type {
   PlayerTrainingAssignment,
 } from '../../types/training';
 import { TRAINING_STAT_MAP } from '../../types/training';
-import { calculateStaffBonuses } from '../staff/staffEngine';
+import { calculateStaffBonuses, getPhilosophyBonus, getChemistryTrainingBonus } from '../staff/staffEngine';
 import { calculateFacilityBonuses } from '../facility/facilityEngine';
 
 // ─────────────────────────────────────────
@@ -31,6 +31,16 @@ const INTENSITY_CONFIG: Record<TrainingIntensity, { statMultiplier: number; stam
 
 /** 기본 일간 스탯 성장량 (0.1~0.3 수준으로 미세 성장) */
 const BASE_DAILY_GROWTH = 0.08;
+
+/** SQL 컬럼명 화이트리스트 (SQL 인젝션 방지) */
+const STAT_TO_COLUMN: Record<string, string> = {
+  mechanical: 'mechanical',
+  gameSense: 'game_sense',
+  teamwork: 'teamwork',
+  consistency: 'consistency',
+  laning: 'laning',
+  aggression: 'aggression',
+};
 
 /** 챔피언 풀 훈련 시 숙련도 상승량 */
 const CHAMPION_PROFICIENCY_GAIN = 2;
@@ -133,6 +143,10 @@ export interface TrainingDayResult {
   formEffect: number;
   statChanges: { playerId: string; stat: string; delta: number }[];
   championChanges: { playerId: string; championId: string; delta: number }[];
+  /** 과훈련 위험 플래그된 선수 목록 */
+  overtrainingRisks: { playerId: string; stamina: number; risk: 'warning' | 'critical' }[];
+  /** 시설 카페테리아 사기 보너스 (적용된 값) */
+  moraleBonus: number;
 }
 
 /**
@@ -156,16 +170,34 @@ export async function processTrainingDay(
   const intensity = (scheduleRows[0]?.intensity ?? 'normal') as TrainingIntensity;
   const config = INTENSITY_CONFIG[intensity];
 
-  // 스태프 + 시설 보정 적용
+  // 스태프 + 시설 + 코칭 철학 보정 적용
   let staffMultiplier = 1.0;
   let facilityMultiplier = 1.0;
+  let moraleBonus = 0;
+  let philosophyBonus: Awaited<ReturnType<typeof getPhilosophyBonus>> | null = null;
   try {
     const staffBonuses = await calculateStaffBonuses(teamId);
     staffMultiplier = staffBonuses.trainingEfficiency;
     const facilityBonuses = await calculateFacilityBonuses(teamId);
     facilityMultiplier = 1 + (facilityBonuses.trainingEfficiency + facilityBonuses.statGrowthSpeed) / 100;
+    moraleBonus = facilityBonuses.moraleBoost; // 카페테리아 효과
+    philosophyBonus = await getPhilosophyBonus(teamId);
   } catch { /* 스태프/시설 테이블 미생성 시 기본값 */ }
-  const totalMultiplier = staffMultiplier * facilityMultiplier;
+
+  // 코치-선수 케미스트리 보너스
+  let chemistryBonus = 0;
+  try {
+    const playerNats: Record<string, string> = {};
+    const playerRows = await db.select<{ id: string; nationality: string }[]>(
+      'SELECT id, nationality FROM players WHERE team_id = $1', [teamId],
+    );
+    for (const p of playerRows) playerNats[p.id] = p.nationality;
+    chemistryBonus = await getChemistryTrainingBonus(teamId, playerNats);
+  } catch { /* 무시 */ }
+
+  // 가산 방식 보너스 (+30% 상한)
+  const additiveBonus = (staffMultiplier - 1) + (facilityMultiplier - 1) + chemistryBonus;
+  const totalMultiplier = 1 + Math.min(0.30, Math.max(-0.15, additiveBonus));
 
   // 선수 개별 훈련 배정 조회
   const assignments = await getPlayerTraining(teamId);
@@ -182,6 +214,7 @@ export async function processTrainingDay(
 
   const statChanges: { playerId: string; stat: string; delta: number }[] = [];
   const championChanges: { playerId: string; championId: string; delta: number }[] = [];
+  const overtrainingRisks: { playerId: string; stamina: number; risk: 'warning' | 'critical' }[] = [];
 
   for (const player of players) {
     const individual = assignmentMap.get(player.id);
@@ -235,10 +268,13 @@ export async function processTrainingDay(
       const statsToTrain = targetStat ? [targetStat] : relatedStats;
 
       for (const stat of statsToTrain) {
-        const delta = Math.round(BASE_DAILY_GROWTH * config.statMultiplier * totalMultiplier * (targetStat ? 1.5 : 1.0) * 100) / 100;
+        // 코칭 철학 배율 적용
+        const philosophyMul = philosophyBonus?.statMultipliers[stat] ?? 1.0;
+        const delta = Math.round(BASE_DAILY_GROWTH * config.statMultiplier * totalMultiplier * philosophyMul * (targetStat ? 1.5 : 1.0) * 100) / 100;
 
-        // DB 컬럼명 매핑
-        const colName = stat === 'gameSense' ? 'game_sense' : stat;
+        // DB 컬럼명 매핑 (화이트리스트 검증)
+        const colName = STAT_TO_COLUMN[stat];
+        if (!colName) continue;
         await db.execute(
           `UPDATE players SET ${colName} = MIN(100, ${colName} + $1) WHERE id = $2`,
           [delta, player.id],
@@ -254,11 +290,117 @@ export async function processTrainingDay(
     }
   }
 
+  // 과훈련 위험 체크: 현재 스태미나 기준 (훈련 후 예상치)
+  for (const player of players) {
+    // player_daily_condition에서 현재 스태미나 조회
+    try {
+      const condRows = await db.select<{ stamina: number }[]>(
+        `SELECT stamina FROM player_daily_condition WHERE player_id = $1 ORDER BY game_date DESC LIMIT 1`,
+        [player.id],
+      );
+      const currentStamina = condRows[0]?.stamina ?? 70;
+      const estimatedStamina = currentStamina + config.staminaCost;
+
+      if (estimatedStamina < 10) {
+        overtrainingRisks.push({ playerId: player.id, stamina: estimatedStamina, risk: 'critical' });
+      } else if (estimatedStamina < 20) {
+        overtrainingRisks.push({ playerId: player.id, stamina: estimatedStamina, risk: 'warning' });
+      }
+    } catch { /* 컨디션 테이블 없으면 무시 */ }
+  }
+
   return {
     staminaEffect: config.staminaCost,
     formEffect: config.formGain,
     statChanges,
     championChanges,
+    overtrainingRisks,
+    moraleBonus,
+  };
+}
+
+// ─────────────────────────────────────────
+// 개인 코칭 세션
+// ─────────────────────────────────────────
+
+export interface CoachingSessionResult {
+  playerId: string;
+  stat: string;
+  delta: number;
+  coachName: string;
+}
+
+/**
+ * 개인 코칭 세션 (1:1 훈련)
+ * 코치 능력 + 전문 분야 매칭 시 추가 보너스
+ */
+export async function processIndividualCoaching(
+  playerId: string,
+  teamId: string,
+  coachId: number,
+  targetStat: TrainableStat,
+  trainingDate: string,
+): Promise<CoachingSessionResult | null> {
+  const db = await getDatabase();
+
+  const coachRows = await db.select<{ name: string; ability: number; specialty: string | null }[]>(
+    'SELECT name, ability, specialty FROM staff WHERE id = $1 AND team_id = $2',
+    [coachId, teamId],
+  );
+  if (coachRows.length === 0) return null;
+
+  const coach = coachRows[0];
+  const baseGrowth = BASE_DAILY_GROWTH * 2; // 개인 코칭은 기본의 2배
+  const coachMul = 1 + coach.ability / 100;
+  const specialtyMul = coach.specialty === 'training' ? 1.2 : 1.0;
+  const delta = Math.round(baseGrowth * coachMul * specialtyMul * 100) / 100;
+
+  const colName = STAT_TO_COLUMN[targetStat];
+  if (!colName) return null;
+  await db.execute(
+    `UPDATE players SET ${colName} = MIN(100, ${colName} + $1) WHERE id = $2`,
+    [delta, playerId],
+  );
+
+  await db.execute(
+    `INSERT INTO training_logs (player_id, team_id, training_date, training_type, stat_changed, stat_delta)
+     VALUES ($1, $2, $3, 'individual_coaching', $4, $5)`,
+    [playerId, teamId, trainingDate, targetStat, delta],
+  );
+
+  return { playerId, stat: targetStat, delta, coachName: coach.name };
+}
+
+// ─────────────────────────────────────────
+// 휴식일 처리 (시설 보너스 반영)
+// ─────────────────────────────────────────
+
+export interface RestDayResult {
+  staminaRecovery: number;
+  moraleRecovery: number;
+  facilityGymBonus: number;
+  facilityCafeteriaBonus: number;
+}
+
+/**
+ * 휴식일 효과 처리 — 시설 보너스 반영
+ * gym: 스태미나 회복 증가, cafeteria: 사기 회복 증가
+ */
+export async function processRestDay(teamId: string): Promise<RestDayResult> {
+  let gymBonus = 0;
+  let cafeteriaBonus = 0;
+
+  try {
+    const facilityBonuses = await calculateFacilityBonuses(teamId);
+    gymBonus = facilityBonuses.staminaRecovery; // gym 레벨당 +4
+    cafeteriaBonus = facilityBonuses.moraleBoost; // cafeteria 레벨당 +3
+  } catch { /* 시설 없으면 기본값 */ }
+
+  return {
+    staminaRecovery: 12 + gymBonus,
+    moraleRecovery: 4 + cafeteriaBonus,
+    facilityGymBonus: gymBonus,
+    facilityCafeteriaBonus: cafeteriaBonus,
   };
 }
 
@@ -275,7 +417,7 @@ export async function getRecentTrainingLogs(
     `SELECT player_id, training_date, training_type, stat_changed, stat_delta
      FROM training_logs WHERE team_id = $1 ORDER BY training_date DESC LIMIT $2`,
     [teamId, limit],
-  ).then((rows: any[]) => rows.map(r => ({
+  ).then((rows: unknown) => (rows as { player_id: string; training_date: string; training_type: string; stat_changed: string | null; stat_delta: number }[]).map(r => ({
     playerId: r.player_id,
     trainingDate: r.training_date,
     trainingType: r.training_type,

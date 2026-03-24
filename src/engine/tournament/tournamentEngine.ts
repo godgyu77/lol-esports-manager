@@ -73,7 +73,7 @@ export async function createTournament(
   const db = await getDatabase();
   const id = `${type}_${year}`;
   await db.execute(
-    `INSERT INTO tournaments (id, type, year, season_id, start_date, end_date, status)
+    `INSERT OR IGNORE INTO tournaments (id, type, year, season_id, start_date, end_date, status)
      VALUES ($1, $2, $3, $4, $5, $6, 'scheduled')`,
     [id, type, year, seasonId, startDate, endDate],
   );
@@ -939,13 +939,13 @@ export async function advanceSwissStage(
   const activeCount = updatedRecords.filter(r => r.status === 'active').length;
   const advancedTeams = updatedRecords.filter(r => r.status === 'advanced').map(r => r.teamId);
 
-  if (activeCount === 0 || advancedTeams.length >= 8) {
-    // 스위스 완료 → 녹아웃 팀 배정
+  if (activeCount === 0) {
+    // 모든 active 팀이 결정됨 → 스위스 완료, 녹아웃 팀 배정
     await assignWorldsKnockout(tournamentId, advancedTeams.slice(0, 8));
     return { isSwissComplete: true, advancedTeams: advancedTeams.slice(0, 8) };
   }
 
-  // 다음 라운드 생성
+  // 8팀 이상 진출했더라도 아직 active 팀이 남아있으면 다음 라운드 계속 진행
   const currentRound = Math.max(...updatedRecords.map(r => r.round)) + 1;
   const tournament = await getTournament(tournamentId);
   if (tournament) {
@@ -1239,7 +1239,7 @@ async function processLCKCupResult(
 
 /** 싱글 엘리미네이션 결과 처리 (FST / EWC 공통) */
 async function processSingleElimResult(
-  tournamentId: string, matchId: string, prefix: string,
+  tournamentId: string, matchId: string, _prefix: string,
   db: Awaited<ReturnType<typeof getDatabase>>,
 ): Promise<void> {
   if (matchId.includes('_qf')) {

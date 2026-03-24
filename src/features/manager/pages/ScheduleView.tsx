@@ -60,11 +60,11 @@ export function ScheduleView() {
   }, [season, save]);
 
   if (!season || !save) {
-    return <p style={{ color: '#6a6a7a' }}>데이터를 불러오는 중...</p>;
+    return <p className="fm-text-muted fm-text-md">데이터를 불러오는 중...</p>;
   }
 
   if (isLoading) {
-    return <p style={{ color: '#6a6a7a' }}>일정을 불러오는 중...</p>;
+    return <p className="fm-text-muted fm-text-md">일정을 불러오는 중...</p>;
   }
 
   const getTeamName = (teamId: string) => {
@@ -93,23 +93,29 @@ export function ScheduleView() {
   const losses = playedMatches - wins;
 
   return (
-    <div>
-      <h1 style={styles.title}>경기 일정</h1>
+    <div className="fm-animate-in">
+      <div className="fm-page-header">
+        <h1 className="fm-page-title">경기 일정</h1>
+      </div>
 
       {/* 시즌 요약 */}
-      <div style={styles.summary}>
-        <span style={styles.summaryItem}>
-          전체: <strong>{totalMatches}경기</strong>
-        </span>
-        <span style={styles.summaryItem}>
-          진행: <strong>{playedMatches}/{totalMatches}</strong>
-        </span>
-        <span style={{ ...styles.summaryItem, color: '#90ee90' }}>
-          {wins}승
-        </span>
-        <span style={{ ...styles.summaryItem, color: '#ff6b6b' }}>
-          {losses}패
-        </span>
+      <div className="fm-panel fm-mb-lg">
+        <div className="fm-panel__body--compact">
+          <div className="fm-flex fm-gap-lg fm-text-md fm-text-secondary">
+            <span>
+              전체: <strong className="fm-text-primary">{totalMatches}경기</strong>
+            </span>
+            <span>
+              진행: <strong className="fm-text-primary">{playedMatches}/{totalMatches}</strong>
+            </span>
+            <span className="fm-text-success fm-font-bold">
+              {wins}승
+            </span>
+            <span className="fm-text-danger fm-font-bold">
+              {losses}패
+            </span>
+          </div>
+        </div>
       </div>
 
       {/* 주차별 경기 */}
@@ -122,166 +128,66 @@ export function ScheduleView() {
           : `${week}주차`;
 
         return (
-          <div key={week} style={{
-            ...styles.weekBlock,
-            ...(isCurrentWeek ? styles.currentWeek : {}),
-          }}>
-            <div style={styles.weekHeader}>
-              <span style={{
-                ...styles.weekLabel,
-                color: isPlayoff ? '#c89b3c' : isCurrentWeek ? '#f0e6d2' : '#8a8a9a',
-              }}>
+          <div
+            key={week}
+            className={`fm-panel fm-mb-sm ${isCurrentWeek ? 'fm-card--highlight' : ''}`}
+          >
+            <div className="fm-panel__header">
+              <span className={`fm-font-semibold fm-text-md ${
+                isPlayoff ? 'fm-text-accent' : isCurrentWeek ? 'fm-text-primary' : 'fm-text-secondary'
+              }`}>
                 {weekLabel}
               </span>
               {isCurrentWeek && (
-                <span style={styles.currentBadge}>현재</span>
+                <span className="fm-badge fm-badge--accent">현재</span>
               )}
             </div>
+            <div className="fm-panel__body--flush">
+              {weekMatches.map(match => {
+                const isHome = match.teamHomeId === save.userTeamId;
+                const opponent = isHome ? match.teamAwayId : match.teamHomeId;
+                const userScore = isHome ? match.scoreHome : match.scoreAway;
+                const opponentScore = isHome ? match.scoreAway : match.scoreHome;
+                const isWin = match.isPlayed && userScore > opponentScore;
+                const isLoss = match.isPlayed && userScore < opponentScore;
 
-            {weekMatches.map(match => {
-              const isHome = match.teamHomeId === save.userTeamId;
-              const opponent = isHome ? match.teamAwayId : match.teamHomeId;
-              const userScore = isHome ? match.scoreHome : match.scoreAway;
-              const opponentScore = isHome ? match.scoreAway : match.scoreHome;
-              const isWin = match.isPlayed && userScore > opponentScore;
-              const isLoss = match.isPlayed && userScore < opponentScore;
-
-              return (
-                <div key={match.id} style={styles.matchRow}>
-                  <span style={styles.matchDate}>
-                    {match.matchDate ?? '-'}
-                  </span>
-                  <span style={{
-                    ...styles.matchType,
-                    color: match.matchType !== 'regular' ? '#c89b3c' : '#6a6a7a',
-                  }}>
-                    {MATCH_TYPE_LABELS[match.matchType] ?? match.matchType}
-                  </span>
-                  <span style={styles.matchVs}>
-                    {isHome ? 'vs' : '@'}
-                  </span>
-                  <span style={styles.matchOpponent}>
-                    {getTeamName(opponent)}
-                  </span>
-                  <span style={styles.matchFormat}>
-                    {match.boFormat}
-                  </span>
-                  {match.isPlayed ? (
-                    <span style={{
-                      ...styles.matchResult,
-                      color: isWin ? '#90ee90' : isLoss ? '#ff6b6b' : '#8a8a9a',
-                    }}>
-                      {isWin ? 'W' : 'L'} {userScore}:{opponentScore}
+                return (
+                  <div key={match.id} className="fm-match-row">
+                    <span className="fm-text-base fm-text-muted" style={{ minWidth: '90px' }}>
+                      {match.matchDate ?? '-'}
                     </span>
-                  ) : (
-                    <span style={styles.matchPending}>예정</span>
-                  )}
-                </div>
-              );
-            })}
+                    <span className={`fm-text-sm fm-font-semibold ${
+                      match.matchType !== 'regular' ? 'fm-text-accent' : 'fm-text-muted'
+                    }`} style={{ minWidth: '40px' }}>
+                      {MATCH_TYPE_LABELS[match.matchType] ?? match.matchType}
+                    </span>
+                    <span className="fm-text-base fm-text-muted">
+                      {isHome ? 'vs' : '@'}
+                    </span>
+                    <span className="fm-text-md fm-font-medium fm-text-primary" style={{ minWidth: '60px' }}>
+                      {getTeamName(opponent)}
+                    </span>
+                    <span className="fm-badge fm-badge--default">
+                      {match.boFormat}
+                    </span>
+                    {match.isPlayed ? (
+                      <span className={`fm-font-bold fm-text-md ${isWin ? 'fm-text-success' : isLoss ? 'fm-text-danger' : 'fm-text-secondary'}`} style={{ marginLeft: 'auto' }}>
+                        {isWin ? 'W' : 'L'} {userScore}:{opponentScore}
+                      </span>
+                    ) : (
+                      <span className="fm-text-base fm-text-muted" style={{ marginLeft: 'auto' }}>예정</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         );
       })}
 
       {matches.length === 0 && (
-        <p style={{ color: '#6a6a7a', fontSize: '13px' }}>등록된 경기가 없습니다.</p>
+        <p className="fm-text-muted fm-text-md">등록된 경기가 없습니다.</p>
       )}
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  title: {
-    fontSize: '24px',
-    fontWeight: 700,
-    color: '#f0e6d2',
-    marginBottom: '16px',
-  },
-  summary: {
-    display: 'flex',
-    gap: '20px',
-    marginBottom: '20px',
-    padding: '12px 16px',
-    background: '#12122a',
-    border: '1px solid #2a2a4a',
-    borderRadius: '8px',
-    fontSize: '13px',
-    color: '#c0c0d0',
-  },
-  summaryItem: {
-    color: '#c0c0d0',
-  },
-  weekBlock: {
-    marginBottom: '12px',
-    padding: '12px 16px',
-    background: 'rgba(255,255,255,0.02)',
-    border: '1px solid #2a2a4a',
-    borderRadius: '8px',
-  },
-  currentWeek: {
-    borderColor: '#c89b3c44',
-    background: 'rgba(200,155,60,0.05)',
-  },
-  weekHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    marginBottom: '8px',
-  },
-  weekLabel: {
-    fontSize: '13px',
-    fontWeight: 600,
-  },
-  currentBadge: {
-    fontSize: '10px',
-    fontWeight: 600,
-    color: '#c89b3c',
-    background: 'rgba(200,155,60,0.15)',
-    padding: '2px 6px',
-    borderRadius: '4px',
-  },
-  matchRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    padding: '6px 0',
-    borderBottom: '1px solid rgba(255,255,255,0.03)',
-    fontSize: '13px',
-  },
-  matchDate: {
-    color: '#6a6a7a',
-    minWidth: '90px',
-    fontSize: '12px',
-  },
-  matchType: {
-    fontSize: '11px',
-    fontWeight: 600,
-    minWidth: '40px',
-  },
-  matchVs: {
-    color: '#6a6a7a',
-    fontSize: '12px',
-  },
-  matchOpponent: {
-    color: '#e0e0e0',
-    fontWeight: 500,
-    minWidth: '60px',
-  },
-  matchFormat: {
-    color: '#6a6a7a',
-    fontSize: '11px',
-    background: 'rgba(255,255,255,0.05)',
-    padding: '1px 6px',
-    borderRadius: '3px',
-  },
-  matchResult: {
-    fontWeight: 700,
-    fontSize: '13px',
-    marginLeft: 'auto',
-  },
-  matchPending: {
-    color: '#4a4a6a',
-    fontSize: '12px',
-    marginLeft: 'auto',
-  },
-};

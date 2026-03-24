@@ -88,21 +88,20 @@ export function SocialFeedView() {
     setExpandedIds(newExpanded);
   };
 
-  if (!season) return <p style={{ color: '#6a6a7a' }}>데이터를 불러오는 중...</p>;
+  if (!season) return <p className="fm-text-muted fm-text-md">데이터를 불러오는 중...</p>;
 
   return (
-    <div>
-      <h1 style={styles.title}>커뮤니티</h1>
+    <div className="fm-animate-in">
+      <div className="fm-page-header">
+        <h1 className="fm-page-title">커뮤니티</h1>
+      </div>
 
       {/* 필터 바 */}
-      <div style={styles.filterBar}>
+      <div className="fm-tabs">
         {SOURCES.map(source => (
           <button
             key={source}
-            style={{
-              ...styles.filterBtn,
-              ...(activeFilter === source ? styles.filterBtnActive : {}),
-            }}
+            className={`fm-tab ${activeFilter === source ? 'fm-tab--active' : ''}`}
             onClick={() => setActiveFilter(source)}
           >
             {SOURCE_FILTER_LABELS[source]}
@@ -111,64 +110,77 @@ export function SocialFeedView() {
       </div>
 
       {isLoading ? (
-        <p style={{ color: '#6a6a7a' }}>피드를 불러오는 중...</p>
+        <p className="fm-text-muted fm-text-md">피드를 불러오는 중...</p>
       ) : reactions.length === 0 ? (
-        <div style={styles.emptyState}>
-          <p style={{ color: '#6a6a7a', fontSize: '14px' }}>아직 커뮤니티 반응이 없습니다.</p>
-          <p style={{ color: '#4a4a6a', fontSize: '12px' }}>이적, 스태프 변동, 경기 결과에 따라 반응이 생성됩니다.</p>
+        <div className="fm-panel">
+          <div className="fm-panel__body fm-text-center fm-p-lg">
+            <p className="fm-text-muted fm-text-md fm-mb-sm">아직 커뮤니티 반응이 없습니다.</p>
+            <p className="fm-text-muted fm-text-sm">이적, 스태프 변동, 경기 결과에 따라 반응이 생성됩니다.</p>
+          </div>
         </div>
       ) : (
-        <div style={styles.feedList}>
+        <div className="fm-flex-col fm-gap-sm">
           {reactions.map(reaction => (
-            <div key={reaction.id} style={styles.feedCard}>
-              {/* 카드 헤더 */}
-              <div style={styles.cardTop}>
-                <span style={styles.sourceBadge}>
-                  {COMMUNITY_LABELS[reaction.communitySource]}
-                </span>
-                <span style={styles.eventBadge}>
-                  {EVENT_TYPE_LABELS[reaction.eventType] ?? reaction.eventType}
-                </span>
-                <span style={styles.dateText}>{reaction.eventDate}</span>
-              </div>
-
-              {/* 뉴스 본문 */}
-              <h3 style={styles.newsTitle}>{reaction.title}</h3>
-              <p style={styles.newsContent}>{reaction.content}</p>
-
-              {/* 댓글 토글 */}
-              <button
-                style={styles.commentToggle}
-                onClick={() => toggleComments(reaction.id)}
-              >
-                {expandedIds.has(reaction.id) ? '댓글 접기' : '댓글 보기'}
-              </button>
-
-              {/* 댓글 목록 */}
-              {expandedIds.has(reaction.id) && expandedComments[reaction.id] && (
-                <div style={styles.commentSection}>
-                  {expandedComments[reaction.id].map(comment => (
-                    <div key={comment.id} style={styles.commentRow}>
-                      <div style={styles.commentHeader}>
-                        <span style={styles.commentUser}>{comment.username}</span>
-                        <span style={{
-                          ...styles.sentimentDot,
-                          background: SENTIMENT_COLORS[comment.sentiment],
-                        }} />
-                        <span style={styles.commentLikes}>
-                          +{comment.likes}
-                        </span>
-                      </div>
-                      <p style={{
-                        ...styles.commentText,
-                        color: SENTIMENT_COLORS[comment.sentiment],
-                      }}>
-                        {comment.comment}
-                      </p>
-                    </div>
-                  ))}
+            <div key={reaction.id} className="fm-panel">
+              <div className="fm-panel__body">
+                {/* 카드 헤더 */}
+                <div className="fm-flex fm-items-center fm-gap-sm fm-mb-md">
+                  <span className="fm-badge fm-badge--info">
+                    {COMMUNITY_LABELS[reaction.communitySource]}
+                  </span>
+                  <span className="fm-badge fm-badge--accent">
+                    {EVENT_TYPE_LABELS[reaction.eventType] ?? reaction.eventType}
+                  </span>
+                  <span className="fm-text-sm fm-text-muted" style={{ marginLeft: 'auto' }}>
+                    {reaction.eventDate}
+                  </span>
                 </div>
-              )}
+
+                {/* 뉴스 본문 */}
+                <h3 className="fm-text-lg fm-font-bold fm-text-primary fm-mb-sm">
+                  {reaction.title}
+                </h3>
+                <p className="fm-text-md fm-text-secondary fm-mb-md" style={{ lineHeight: '1.5' }}>
+                  {reaction.content}
+                </p>
+
+                {/* 댓글 토글 */}
+                <button
+                  className="fm-btn fm-btn--sm"
+                  onClick={() => toggleComments(reaction.id)}
+                >
+                  {expandedIds.has(reaction.id) ? '댓글 접기' : '댓글 보기'}
+                </button>
+
+                {/* 댓글 목록 */}
+                {expandedIds.has(reaction.id) && expandedComments[reaction.id] && (
+                  <div className="fm-flex-col fm-gap-sm fm-mt-md" style={{ borderTop: '1px solid var(--border)', paddingTop: '12px' }}>
+                    {expandedComments[reaction.id].map(comment => (
+                      <div key={comment.id} className="fm-card">
+                        <div className="fm-flex fm-items-center fm-gap-sm fm-mb-sm">
+                          <span className="fm-text-base fm-font-semibold fm-text-muted">
+                            {comment.username}
+                          </span>
+                          <span
+                            style={{
+                              width: '6px',
+                              height: '6px',
+                              borderRadius: '50%',
+                              background: SENTIMENT_COLORS[comment.sentiment],
+                            }}
+                          />
+                          <span className="fm-text-sm fm-text-muted" style={{ marginLeft: 'auto' }}>
+                            +{comment.likes}
+                          </span>
+                        </div>
+                        <p className="fm-text-md" style={{ color: SENTIMENT_COLORS[comment.sentiment], margin: 0, lineHeight: '1.4' }}>
+                          {comment.comment}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -176,69 +188,3 @@ export function SocialFeedView() {
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  title: { fontSize: '24px', fontWeight: 700, color: '#f0e6d2', marginBottom: '16px' },
-  filterBar: {
-    display: 'flex', gap: '6px', marginBottom: '20px', flexWrap: 'wrap',
-  },
-  filterBtn: {
-    padding: '6px 14px', background: 'rgba(255,255,255,0.03)', border: '1px solid #2a2a4a',
-    borderRadius: '20px', color: '#6a6a7a', fontSize: '12px', cursor: 'pointer',
-    transition: 'all 0.2s',
-  },
-  filterBtnActive: {
-    background: 'rgba(200,155,60,0.15)', borderColor: '#c89b3c', color: '#c89b3c',
-  },
-  emptyState: {
-    textAlign: 'center', padding: '60px 20px',
-    background: '#12122a', border: '1px solid #2a2a4a', borderRadius: '8px',
-  },
-  feedList: { display: 'flex', flexDirection: 'column', gap: '12px' },
-  feedCard: {
-    background: '#12122a', border: '1px solid #2a2a4a', borderRadius: '8px',
-    padding: '16px',
-  },
-  cardTop: {
-    display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px',
-  },
-  sourceBadge: {
-    fontSize: '11px', fontWeight: 600, color: '#0d0d1a', background: '#4ecdc4',
-    padding: '2px 8px', borderRadius: '4px',
-  },
-  eventBadge: {
-    fontSize: '11px', fontWeight: 600, color: '#c89b3c',
-    background: 'rgba(200,155,60,0.15)', padding: '2px 8px', borderRadius: '4px',
-  },
-  dateText: { fontSize: '11px', color: '#6a6a7a', marginLeft: 'auto' },
-  newsTitle: {
-    fontSize: '15px', fontWeight: 700, color: '#e0e0e0', margin: '0 0 6px 0',
-  },
-  newsContent: {
-    fontSize: '13px', color: '#8a8a9a', lineHeight: '1.5', margin: '0 0 12px 0',
-  },
-  commentToggle: {
-    background: 'none', border: '1px solid #2a2a4a', borderRadius: '4px',
-    color: '#6a6a7a', fontSize: '12px', padding: '4px 12px', cursor: 'pointer',
-  },
-  commentSection: {
-    marginTop: '12px', borderTop: '1px solid #2a2a4a', paddingTop: '12px',
-    display: 'flex', flexDirection: 'column', gap: '8px',
-  },
-  commentRow: {
-    padding: '8px 12px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px',
-  },
-  commentHeader: {
-    display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px',
-  },
-  commentUser: { fontSize: '12px', fontWeight: 600, color: '#6a6a7a' },
-  sentimentDot: {
-    width: '6px', height: '6px', borderRadius: '50%', display: 'inline-block',
-  },
-  commentLikes: {
-    fontSize: '11px', color: '#4a4a6a', marginLeft: 'auto',
-  },
-  commentText: {
-    fontSize: '13px', margin: 0, lineHeight: '1.4',
-  },
-};

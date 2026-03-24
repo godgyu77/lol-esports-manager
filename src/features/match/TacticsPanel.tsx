@@ -6,13 +6,13 @@
  */
 
 import { useState, useCallback } from 'react';
-import type React from 'react';
 import type {
   LiveMatchEngine,
   InGamePlayStyle,
   ObjectivePriority,
   TeamfightAggression,
 } from '../../engine/match/liveMatch';
+import './match.css';
 
 interface TacticsPanelProps {
   engine: LiveMatchEngine;
@@ -60,9 +60,9 @@ export function TacticsPanel({ engine, onTacticsChanged }: TacticsPanelProps) {
     teamfight !== tactics.teamfightAggression;
 
   return (
-    <div style={styles.wrapper}>
+    <div className="match-tactics-wrapper">
       <button
-        style={styles.toggleBtn}
+        className="match-tactics-toggle"
         onClick={() => setIsOpen(!isOpen)}
         aria-label={isOpen ? '전술 패널 닫기' : '전술 패널 열기'}
       >
@@ -70,25 +70,22 @@ export function TacticsPanel({ engine, onTacticsChanged }: TacticsPanelProps) {
       </button>
 
       {isOpen && (
-        <div style={styles.panel}>
-          <h4 style={styles.title}>전술 변경</h4>
+        <div className="match-tactics-panel">
+          <h4 className="match-tactics-title">전술 변경</h4>
 
           {cooldown > 0 && (
-            <div style={styles.cooldownBadge}>
+            <div className="match-tactics-cooldown">
               쿨다운: {cooldown}분 남음
             </div>
           )}
 
-          <div style={styles.section}>
-            <span style={styles.sectionLabel}>플레이 스타일</span>
-            <div style={styles.btnGroup}>
+          <div className="match-tactics-section">
+            <span className="match-tactics-section-label">플레이 스타일</span>
+            <div className="match-tactics-btn-group">
               {playStyleOptions.map((opt) => (
                 <button
                   key={opt.value}
-                  style={{
-                    ...styles.optBtn,
-                    ...(playStyle === opt.value ? styles.optBtnActive : {}),
-                  }}
+                  className={`match-tactics-opt-btn ${playStyle === opt.value ? 'match-tactics-opt-btn--active' : ''}`}
                   onClick={() => setPlayStyle(opt.value)}
                   title={opt.desc}
                   aria-label={`${opt.label}: ${opt.desc}`}
@@ -99,16 +96,13 @@ export function TacticsPanel({ engine, onTacticsChanged }: TacticsPanelProps) {
             </div>
           </div>
 
-          <div style={styles.section}>
-            <span style={styles.sectionLabel}>오브젝트 우선순위</span>
-            <div style={styles.btnGroup}>
+          <div className="match-tactics-section">
+            <span className="match-tactics-section-label">오브젝트 우선순위</span>
+            <div className="match-tactics-btn-group">
               {objectiveOptions.map((opt) => (
                 <button
                   key={opt.value}
-                  style={{
-                    ...styles.optBtn,
-                    ...(objective === opt.value ? styles.optBtnActive : {}),
-                  }}
+                  className={`match-tactics-opt-btn ${objective === opt.value ? 'match-tactics-opt-btn--active' : ''}`}
                   onClick={() => setObjective(opt.value)}
                   title={opt.desc}
                   aria-label={`${opt.label}: ${opt.desc}`}
@@ -119,16 +113,13 @@ export function TacticsPanel({ engine, onTacticsChanged }: TacticsPanelProps) {
             </div>
           </div>
 
-          <div style={styles.section}>
-            <span style={styles.sectionLabel}>팀파이트 성향</span>
-            <div style={styles.btnGroup}>
+          <div className="match-tactics-section">
+            <span className="match-tactics-section-label">팀파이트 성향</span>
+            <div className="match-tactics-btn-group">
               {teamfightOptions.map((opt) => (
                 <button
                   key={opt.value}
-                  style={{
-                    ...styles.optBtn,
-                    ...(teamfight === opt.value ? styles.optBtnActive : {}),
-                  }}
+                  className={`match-tactics-opt-btn ${teamfight === opt.value ? 'match-tactics-opt-btn--active' : ''}`}
                   onClick={() => setTeamfight(opt.value)}
                   title={opt.desc}
                   aria-label={`${opt.label}: ${opt.desc}`}
@@ -140,13 +131,10 @@ export function TacticsPanel({ engine, onTacticsChanged }: TacticsPanelProps) {
           </div>
 
           <button
-            style={{
-              ...styles.applyBtn,
-              opacity: (!hasChanges || cooldown > 0) ? 0.4 : 1,
-              cursor: (!hasChanges || cooldown > 0) ? 'not-allowed' : 'pointer',
-            }}
+            className="fm-btn fm-btn--primary"
             onClick={handleApply}
             disabled={!hasChanges || cooldown > 0}
+            style={{ width: '100%' }}
           >
             {cooldown > 0 ? `쿨다운 (${cooldown}분)` : '전술 적용'}
           </button>
@@ -155,89 +143,3 @@ export function TacticsPanel({ engine, onTacticsChanged }: TacticsPanelProps) {
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  wrapper: {
-    position: 'relative',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'flex-end',
-  },
-  toggleBtn: {
-    padding: '6px 14px',
-    background: '#1a1a3a',
-    border: '1px solid #3a3a5c',
-    borderRadius: '6px',
-    color: '#c89b3c',
-    fontSize: '12px',
-    fontWeight: 600,
-    cursor: 'pointer',
-  },
-  panel: {
-    marginTop: '6px',
-    background: '#1a1a3a',
-    border: '1px solid #3a3a5c',
-    borderRadius: '10px',
-    padding: '16px',
-    width: '220px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '12px',
-  },
-  title: {
-    fontSize: '14px',
-    fontWeight: 700,
-    color: '#c89b3c',
-    margin: 0,
-  },
-  cooldownBadge: {
-    fontSize: '11px',
-    color: '#e74c3c',
-    background: 'rgba(231,76,60,0.15)',
-    padding: '4px 8px',
-    borderRadius: '4px',
-    textAlign: 'center',
-  },
-  section: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '4px',
-  },
-  sectionLabel: {
-    fontSize: '11px',
-    color: '#8a8a9a',
-    fontWeight: 600,
-  },
-  btnGroup: {
-    display: 'flex',
-    gap: '4px',
-  },
-  optBtn: {
-    flex: 1,
-    padding: '5px 4px',
-    background: 'rgba(255,255,255,0.03)',
-    border: '1px solid #3a3a5c',
-    borderRadius: '4px',
-    color: '#8a8a9a',
-    fontSize: '11px',
-    fontWeight: 500,
-    cursor: 'pointer',
-    transition: 'all 0.15s',
-  },
-  optBtnActive: {
-    background: 'rgba(200,155,60,0.2)',
-    borderColor: '#c89b3c',
-    color: '#f0e6d2',
-    fontWeight: 700,
-  },
-  applyBtn: {
-    padding: '7px 0',
-    background: '#c89b3c',
-    border: 'none',
-    borderRadius: '6px',
-    color: '#0d0d1a',
-    fontSize: '12px',
-    fontWeight: 700,
-    cursor: 'pointer',
-  },
-};

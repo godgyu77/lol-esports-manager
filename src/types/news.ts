@@ -4,7 +4,13 @@ export type NewsCategory =
   | 'player_complaint'  // 선수 불만
   | 'team_analysis'     // 팀 분석
   | 'interview'         // 인터뷰
-  | 'social_media';     // SNS 반응
+  | 'social_media'      // SNS 반응
+  | 'injury_report'     // 부상 보도
+  | 'transfer_complete' // 이적 확정
+  | 'scandal'           // 스캔들
+  | 'fan_reaction'      // 팬 반응
+  | 'award_news'        // 수상 뉴스
+  | 'patch_notes';      // 패치 노트
 
 export interface NewsArticle {
   id: number;
@@ -26,4 +32,10 @@ export const NEWS_CATEGORY_LABELS: Record<NewsCategory, string> = {
   team_analysis: '팀 분석',
   interview: '인터뷰',
   social_media: 'SNS',
+  injury_report: '부상 보도',
+  transfer_complete: '이적 확정',
+  scandal: '스캔들',
+  fan_reaction: '팬 반응',
+  award_news: '수상',
+  patch_notes: '패치 노트',
 };

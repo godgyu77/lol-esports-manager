@@ -22,14 +22,14 @@ const UPGRADE_COSTS: Record<number, number> = {
   4: 50000,   // 4→5
 };
 
-/** 시설별 레벨당 기본 효과값 */
+/** 시설별 레벨당 기본 효과값 (체감 가능하도록 강화) */
 const BASE_EFFECT_PER_LEVEL: Record<FacilityType, number> = {
-  gaming_house: 5,    // 훈련 효율 +5%/lv
-  training_room: 8,   // 스탯 성장 속도 +8%/lv
-  analysis_lab: 3,    // 밴픽 정확도 +3/lv
-  gym: 4,             // 스태미나 회복 +4/lv
-  media_room: 6,      // 팬/스폰서십 +6%/lv
-  cafeteria: 3,       // 사기 보정 +3/lv
+  gaming_house: 8,    // 훈련 효율 +8%/lv
+  training_room: 12,  // 스탯 성장 속도 +12%/lv
+  analysis_lab: 5,    // 밴픽 정확도 +5/lv
+  gym: 7,             // 스태미나 회복 +7/lv
+  media_room: 10,     // 팬/스폰서십 +10%/lv
+  cafeteria: 5,       // 사기 보정 +5/lv
 };
 
 const MAX_LEVEL = 5;
@@ -182,27 +182,109 @@ export const calculateFacilityBonuses = async (teamId: string): Promise<Facility
   };
 
   for (const f of facilities) {
+    // 컨디션에 따른 효과 감소 (condition 필드 없으면 100% 효율)
+    const condition = (f as unknown as { condition?: number }).condition ?? 100;
+    let conditionMul = 1.0;
+    if (condition < 25) conditionMul = 0.5;
+    else if (condition < 50) conditionMul = 0.75;
+
+    const effectiveValue = f.effectValue * conditionMul;
+
     switch (f.facilityType) {
       case 'gaming_house':
-        bonuses.trainingEfficiency = f.effectValue;
+        bonuses.trainingEfficiency = effectiveValue;
         break;
       case 'training_room':
-        bonuses.statGrowthSpeed = f.effectValue;
+        bonuses.statGrowthSpeed = effectiveValue;
         break;
       case 'analysis_lab':
-        bonuses.draftAccuracy = f.effectValue;
+        bonuses.draftAccuracy = effectiveValue;
         break;
       case 'gym':
-        bonuses.staminaRecovery = f.effectValue;
+        bonuses.staminaRecovery = effectiveValue;
         break;
       case 'media_room':
-        bonuses.fanSponsorBonus = f.effectValue;
+        bonuses.fanSponsorBonus = effectiveValue;
         break;
       case 'cafeteria':
-        bonuses.moraleBoost = f.effectValue;
+        bonuses.moraleBoost = effectiveValue;
         break;
     }
   }
 
   return bonuses;
+};
+
+// ─────────────────────────────────────────
+// 시설 노후화 & 유지보수
+// ─────────────────────────────────────────
+
+// -- MIGRATION: ALTER TABLE team_facilities ADD COLUMN condition INTEGER DEFAULT 100;
+
+/**
+ * 주간 시설 노후화 처리
+ * 각 시설에 2% 확률로 컨디션 -5~-15 감소
+ */
+export const processFacilityDecay = async (teamId: string): Promise<string[]> => {
+  const db = await getDatabase();
+  const facilities = await getTeamFacilities(teamId);
+  const events: string[] = [];
+
+  for (const f of facilities) {
+    if (Math.random() < 0.02) {
+      const decay = 5 + Math.floor(Math.random() * 11); // 5~15
+      await db.execute(
+        `UPDATE team_facilities SET condition = MAX(0, COALESCE(condition, 100) - $1) WHERE team_id = $2 AND facility_type = $3`,
+        [decay, teamId, f.facilityType],
+      );
+      events.push(`${f.facilityType} 시설 노후화 (-${decay})`);
+    }
+  }
+
+  return events;
+};
+
+/**
+ * 주간 시설 유지보수 비용 계산
+ * 레벨당 100만 원/주
+ */
+export const calculateMaintenanceCost = async (teamId: string): Promise<number> => {
+  const facilities = await getTeamFacilities(teamId);
+  return facilities.reduce((sum, f) => sum + f.level * 100, 0);
+};
+
+/**
+ * 시설 수리 (컨디션 복구)
+ * 비용: (100 - 현재 컨디션) * 레벨 * 50 만 원
+ */
+export const repairFacility = async (
+  teamId: string,
+  facilityType: FacilityType,
+): Promise<{ success: boolean; message: string; cost: number }> => {
+  const db = await getDatabase();
+
+  const rows = await db.select<FacilityRow[]>(
+    'SELECT team_id, facility_type, level, upgrade_cost, effect_value, last_upgraded FROM team_facilities WHERE team_id = ? AND facility_type = ?',
+    [teamId, facilityType],
+  );
+  if (rows.length === 0) return { success: false, message: '시설을 찾을 수 없습니다.', cost: 0 };
+
+  const facility = rows[0];
+  const condition = (facility as unknown as { condition?: number }).condition ?? 100;
+  if (condition >= 95) return { success: false, message: '수리가 필요하지 않습니다.', cost: 0 };
+
+  const cost = Math.round((100 - condition) * facility.level * 50);
+
+  const teamRows = await db.select<{ budget: number }[]>('SELECT budget FROM teams WHERE id = ?', [teamId]);
+  if (teamRows.length === 0 || teamRows[0].budget < cost) {
+    return { success: false, message: `예산 부족 (필요: ${cost.toLocaleString()}만)`, cost };
+  }
+
+  await db.execute(
+    `UPDATE team_facilities SET condition = 100 WHERE team_id = ? AND facility_type = ?`,
+    [teamId, facilityType],
+  );
+  await db.execute('UPDATE teams SET budget = budget - ? WHERE id = ?', [cost, teamId]);
+
+  return { success: true, message: `${facilityType} 수리 완료 (비용: ${cost.toLocaleString()}만)`, cost };
 };

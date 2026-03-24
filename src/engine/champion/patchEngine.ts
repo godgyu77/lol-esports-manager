@@ -8,6 +8,7 @@
 
 import { CHAMPION_DB } from '../../data/championDb';
 import type { Champion } from '../../types/champion';
+import type { PatchMetaModifiers } from '../../types/tactics';
 import {
   insertChampionPatch,
   upsertChampionStatModifier,
@@ -42,6 +43,8 @@ export interface PatchResult {
   entries: PatchEntry[];
   /** 한국어 패치 노트 */
   patchNote: string;
+  /** 패치 메타 전략 효율 보정 */
+  metaModifiers: PatchMetaModifiers;
 }
 
 // ─────────────────────────────────────────
@@ -94,8 +97,9 @@ function randInt(min: number, max: number): number {
 }
 
 /** 배열에서 랜덤 요소 선택 */
-function pickRandom<T>(arr: T[]): T {
-  return arr[Math.floor(Math.random() * arr.length)];
+function pickRandom<T>(arr: readonly T[]): T {
+  if (arr.length === 0) throw new Error('pickRandom: empty array');
+  return arr[Math.floor(Math.random() * arr.length)]!;
 }
 
 /** 배열에서 중복 없이 n개 선택 (Fisher-Yates 셔플 기반) */
@@ -123,16 +127,6 @@ function tierToIndex(tier: Champion['tier']): number {
   return TIER_ORDER.indexOf(tier);
 }
 
-/** camelCase 스탯키를 snake_case PatchStatKey로 변환 */
-function toStatKey(camel: keyof Champion['stats']): PatchStatKey {
-  const map: Record<string, PatchStatKey> = {
-    earlyGame: 'early_game',
-    lateGame: 'late_game',
-    teamfight: 'teamfight',
-    splitPush: 'split_push',
-  };
-  return map[camel];
-}
 
 /** snake_case → camelCase 스탯 키 */
 function toCamelStat(snake: PatchStatKey): keyof Champion['stats'] | null {
@@ -254,7 +248,7 @@ function generateChampionPatchEntries(champ: Champion): PatchEntry[] {
 // ─────────────────────────────────────────
 
 /** 패치 노트 텍스트 생성 (한국어) */
-function buildPatchNote(patchNumber: number, week: number, entries: PatchEntry[]): string {
+function buildPatchNote(patchNumber: number, week: number, entries: PatchEntry[], meta?: PatchMetaModifiers): string {
   const lines: string[] = [];
   lines.push(`── 패치 ${patchNumber} (${week}주차) ──`);
   lines.push('');
@@ -267,7 +261,7 @@ function buildPatchNote(patchNumber: number, week: number, entries: PatchEntry[]
     byChampion.set(entry.championId, existing);
   }
 
-  for (const [champId, champEntries] of byChampion) {
+  for (const [_champId, champEntries] of byChampion) {
     const nameKo = champEntries[0].championNameKo;
     const isBuff = champEntries[0].delta > 0;
     const icon = isBuff ? '[BUFF]' : '[NERF]';
@@ -285,6 +279,28 @@ function buildPatchNote(patchNumber: number, week: number, entries: PatchEntry[]
     }
 
     lines.push(`  사유: ${champEntries[0].reason}`);
+    lines.push('');
+  }
+
+  // 메타 전략 변동 정보
+  if (meta) {
+    lines.push('── 메타 전략 변동 ──');
+    const formatMeta = (label: string, value: number) => {
+      if (Math.abs(value) < 0.005) return null;
+      const sign = value > 0 ? '▲' : '▼';
+      return `  ${sign} ${label}: ${value > 0 ? '+' : ''}${(value * 100).toFixed(1)}%`;
+    };
+    const metaLines = [
+      formatMeta('한타 전략 효율', meta.teamfightEfficiency),
+      formatMeta('스플릿 전략 효율', meta.splitPushEfficiency),
+      formatMeta('초반 어그로 효율', meta.earlyAggroEfficiency),
+      formatMeta('오브젝트 컨트롤 효율', meta.objectiveEfficiency),
+    ].filter(Boolean);
+    if (metaLines.length > 0) {
+      lines.push(...metaLines as string[]);
+    } else {
+      lines.push('  전략 메타 변동 없음');
+    }
     lines.push('');
   }
 
@@ -369,8 +385,24 @@ export async function generatePatch(
     }
   }
 
-  // 4. 패치 노트 생성
-  const patchNote = buildPatchNote(patchNumber, week, allEntries);
+  // 4. 패치 메타 전략 효율 생성 (패치마다 전략 밸런스 변동)
+  const metaModifiers: PatchMetaModifiers = generateMetaModifiers(allEntries);
+
+  // DB에 메타 보정값 저장
+  try {
+    const { upsertPatchMetaModifiers } = await import('../../db/queries');
+    await upsertPatchMetaModifiers({
+      seasonId,
+      patchNumber,
+      teamfightEfficiency: metaModifiers.teamfightEfficiency,
+      splitPushEfficiency: metaModifiers.splitPushEfficiency,
+      earlyAggroEfficiency: metaModifiers.earlyAggroEfficiency,
+      objectiveEfficiency: metaModifiers.objectiveEfficiency,
+    });
+  } catch (e) { console.warn('[patchEngine] 메타 보정값 저장 실패:', e); }
+
+  // 5. 패치 노트 생성
+  const patchNote = buildPatchNote(patchNumber, week, allEntries, metaModifiers);
 
   return {
     seasonId,
@@ -378,6 +410,39 @@ export async function generatePatch(
     patchNumber,
     entries: allEntries,
     patchNote,
+    metaModifiers,
+  };
+}
+
+/**
+ * 패치 항목을 분석하여 전략 메타 효율 보정값 생성
+ * 한타 챔피언 버프가 많으면 한타 메타, 스플릿 챔피언 버프가 많으면 스플릿 메타
+ */
+function generateMetaModifiers(entries: PatchEntry[]): PatchMetaModifiers {
+  let teamfightBias = 0;
+  let splitBias = 0;
+  let earlyBias = 0;
+  let objectiveBias = 0;
+
+  for (const entry of entries) {
+    if (entry.statKey === 'tier') continue;
+    const direction = entry.delta > 0 ? 1 : -1;
+    switch (entry.statKey) {
+      case 'teamfight': teamfightBias += direction * 0.01; break;
+      case 'split_push': splitBias += direction * 0.01; break;
+      case 'early_game': earlyBias += direction * 0.01; break;
+      case 'late_game': earlyBias -= direction * 0.005; break;
+    }
+  }
+
+  // 랜덤 노이즈 추가 (패치마다 미세한 메타 변동)
+  const noise = () => (Math.random() - 0.5) * 0.02;
+
+  return {
+    teamfightEfficiency: Math.max(-0.1, Math.min(0.1, teamfightBias + noise())),
+    splitPushEfficiency: Math.max(-0.1, Math.min(0.1, splitBias + noise())),
+    earlyAggroEfficiency: Math.max(-0.1, Math.min(0.1, earlyBias + noise())),
+    objectiveEfficiency: Math.max(-0.1, Math.min(0.1, objectiveBias + noise())),
   };
 }
 
@@ -392,4 +457,318 @@ function statKeyToModKey(
     split_push: 'splitPushMod',
   };
   return map[statKey] ?? null;
+}
+
+// ─────────────────────────────────────────
+// 역할군 메타 시프트 시스템
+// ─────────────────────────────────────────
+
+/** 역할군(태그) 기반 메타 상태 */
+export interface RoleMetaState {
+  /** 각 태그별 메타 강도 (-1.0 ~ +1.0, 0이 중립) */
+  tagStrength: Record<string, number>;
+  /** 현재 지배적 메타 유형 */
+  dominantMeta: 'tank' | 'assassin' | 'mage' | 'marksman' | 'fighter' | 'balanced';
+  /** 메타 안정도 (0~1, 높을수록 급변 위험) */
+  volatility: number;
+}
+
+/** 챔피언 태그별 가중치 → 메타 지표 */
+const META_TAG_WEIGHTS: Record<string, string[]> = {
+  tank: ['tank', 'engage'],
+  assassin: ['assassin'],
+  mage: ['mage', 'poke'],
+  marksman: ['marksman'],
+  fighter: ['fighter', 'splitpush'],
+};
+
+/**
+ * 패치 결과를 분석하여 역할군 메타 상태 계산
+ * 버프된 챔피언의 태그 → 해당 역할군 메타 강도 상승
+ */
+export function analyzeRoleMeta(entries: PatchEntry[], allChampions: readonly Champion[]): RoleMetaState {
+  const tagImpact: Record<string, number> = {};
+
+  for (const entry of entries) {
+    if (entry.statKey === 'tier') continue;
+    const champ = allChampions.find(c => c.id === entry.championId);
+    if (!champ) continue;
+
+    const direction = entry.delta > 0 ? 1 : -1;
+    const magnitude = Math.abs(entry.delta) / STAT_DELTA_MAX; // 0~1 정규화
+
+    for (const tag of champ.tags) {
+      tagImpact[tag] = (tagImpact[tag] ?? 0) + direction * magnitude * 0.1;
+    }
+  }
+
+  // 태그 강도 클램프 (-1 ~ 1)
+  const tagStrength: Record<string, number> = {};
+  for (const [tag, val] of Object.entries(tagImpact)) {
+    tagStrength[tag] = Math.max(-1, Math.min(1, val));
+  }
+
+  // 지배적 메타 결정
+  let bestMeta: RoleMetaState['dominantMeta'] = 'balanced';
+  let bestScore = 0;
+  for (const [metaType, tags] of Object.entries(META_TAG_WEIGHTS)) {
+    const score = tags.reduce((sum, t) => sum + (tagStrength[t] ?? 0), 0);
+    if (score > bestScore) {
+      bestScore = score;
+      bestMeta = metaType as RoleMetaState['dominantMeta'];
+    }
+  }
+
+  // 변동성: 패치 항목 수에 비례
+  const volatility = Math.min(1, entries.filter(e => e.statKey !== 'tier').length / 10);
+
+  return { tagStrength, dominantMeta: bestMeta, volatility };
+}
+
+// ─────────────────────────────────────────
+// 팀 메타 적응도 시스템
+// ─────────────────────────────────────────
+
+/** 팀의 메타 적응 상태 */
+export interface TeamMetaFitness {
+  teamId: string;
+  /** 현재 메타 적합도 (0~100) */
+  fitness: number;
+  /** 메타와 잘 맞는 선수 수 */
+  fittingPlayers: number;
+  /** 메타와 안 맞는 선수 수 */
+  misfitPlayers: number;
+  /** 적응 필요 일수 (0이면 완전 적응) */
+  adaptationDaysLeft: number;
+}
+
+/**
+ * 팀의 현재 메타 적합도 계산
+ * - 팀의 전술 스타일 + 선수 챔피언 풀이 현재 메타와 얼마나 맞는지
+ * - 패치 직후에는 적합도가 낮고, 시간이 지나면 적응
+ *
+ * @param teamTactics 팀 전술 (earlyStrategy, midStrategy, lateStrategy)
+ * @param playerChampionTags 선수들이 주로 사용하는 챔피언 태그 목록
+ * @param roleMeta 현재 역할군 메타 상태
+ * @param daysSincePatch 패치 이후 경과 일수
+ */
+export function calculateTeamMetaFitness(
+  teamId: string,
+  teamTactics: { earlyStrategy: string; midStrategy: string; lateStrategy: string },
+  playerChampionTags: string[][],
+  roleMeta: RoleMetaState,
+  daysSincePatch: number,
+): TeamMetaFitness {
+  // 1. 전술-메타 매칭 점수 (0~50)
+  let tacticsScore = 25; // 기본 50%
+
+  // 지배적 메타와 전술 시너지
+  const metaTacticsMap: Record<string, string[]> = {
+    tank: ['teamfight', 'objective_control'],
+    assassin: ['pick_comp', 'invade'],
+    mage: ['siege', 'balanced'],
+    marksman: ['teamfight', 'safe_farm'],
+    fighter: ['split_push', 'lane_swap'],
+    balanced: [],
+  };
+
+  const synergisticTactics = metaTacticsMap[roleMeta.dominantMeta] ?? [];
+  if (synergisticTactics.includes(teamTactics.midStrategy) ||
+      synergisticTactics.includes(teamTactics.lateStrategy) ||
+      synergisticTactics.includes(teamTactics.earlyStrategy)) {
+    tacticsScore += 15;
+  }
+
+  // 2. 선수 챔피언 풀-메타 매칭 점수 (0~50)
+  let fittingPlayers = 0;
+  let misfitPlayers = 0;
+  const strongTags = Object.entries(roleMeta.tagStrength)
+    .filter(([_, v]) => v > 0.05)
+    .map(([t]) => t);
+
+  for (const playerTags of playerChampionTags) {
+    const hasMetaChamp = playerTags.some(t => strongTags.includes(t));
+    if (hasMetaChamp) fittingPlayers++;
+    else misfitPlayers++;
+  }
+
+  const playerScore = playerChampionTags.length > 0
+    ? (fittingPlayers / playerChampionTags.length) * 50
+    : 25;
+
+  // 3. 시간 기반 적응 보정
+  // 패치 직후 0~7일: 적응 중 (-20% ~ 0%), 7일 후: 완전 적응
+  const ADAPTATION_DAYS = 7;
+  const adaptationDaysLeft = Math.max(0, ADAPTATION_DAYS - daysSincePatch);
+  const adaptationPenalty = (adaptationDaysLeft / ADAPTATION_DAYS) * 20;
+
+  const rawFitness = tacticsScore + playerScore - adaptationPenalty;
+  const fitness = Math.max(0, Math.min(100, Math.round(rawFitness)));
+
+  return {
+    teamId,
+    fitness,
+    fittingPlayers,
+    misfitPlayers,
+    adaptationDaysLeft,
+  };
+}
+
+// ─────────────────────────────────────────
+// 챔피언 클래스 연쇄 효과
+// ─────────────────────────────────────────
+
+/** 간접 영향 결과 */
+export interface IndirectEffect {
+  championId: string;
+  championNameKo: string;
+  /** 영향 유형 */
+  effectType: 'counter_value_up' | 'counter_value_down' | 'synergy_boost' | 'synergy_weaken';
+  /** 원인 챔피언 */
+  causedBy: string;
+  /** 영향 크기 (0~1) */
+  magnitude: number;
+  description: string;
+}
+
+/**
+ * 패치로 인한 간접(연쇄) 효과 계산
+ * - 챔피언 A가 버프되면 → A의 카운터 챔피언 가치 상승
+ * - 챔피언 A가 너프되면 → A에게 카운터당하던 챔피언 가치 상승
+ */
+export function calculateIndirectEffects(
+  entries: PatchEntry[],
+  allChampions: readonly Champion[],
+  synergies: { championA: string; championB: string; synergy: number }[],
+): IndirectEffect[] {
+  const effects: IndirectEffect[] = [];
+
+  for (const entry of entries) {
+    if (entry.statKey === 'tier') continue;
+
+    const buffed = entry.delta > 0;
+    const magnitude = Math.min(1, Math.abs(entry.delta) / STAT_DELTA_MAX);
+
+    // 상성 데이터에서 관련 챔피언 찾기
+    for (const syn of synergies) {
+      const isA = syn.championA === entry.championId;
+      const isB = syn.championB === entry.championId;
+      if (!isA && !isB) continue;
+
+      const relatedId = isA ? syn.championB : syn.championA;
+      const relatedChamp = allChampions.find(c => c.id === relatedId);
+      if (!relatedChamp) continue;
+
+      const isCounter = syn.synergy < -30; // 강한 카운터 관계
+      const isSynergy = syn.synergy > 30;  // 강한 시너지 관계
+
+      if (isCounter) {
+        if (buffed) {
+          // A 버프 → A의 카운터 가치 상승
+          effects.push({
+            championId: relatedId,
+            championNameKo: relatedChamp.nameKo,
+            effectType: 'counter_value_up',
+            causedBy: entry.championId,
+            magnitude: magnitude * 0.5,
+            description: `${entry.championNameKo} 버프로 카운터인 ${relatedChamp.nameKo}의 픽 가치 상승`,
+          });
+        } else {
+          // A 너프 → A의 카운터 가치 하락
+          effects.push({
+            championId: relatedId,
+            championNameKo: relatedChamp.nameKo,
+            effectType: 'counter_value_down',
+            causedBy: entry.championId,
+            magnitude: magnitude * 0.3,
+            description: `${entry.championNameKo} 너프로 카운터인 ${relatedChamp.nameKo}의 픽 가치 하락`,
+          });
+        }
+      }
+
+      if (isSynergy) {
+        effects.push({
+          championId: relatedId,
+          championNameKo: relatedChamp.nameKo,
+          effectType: buffed ? 'synergy_boost' : 'synergy_weaken',
+          causedBy: entry.championId,
+          magnitude: magnitude * 0.3,
+          description: buffed
+            ? `${entry.championNameKo} 버프로 시너지 파트너 ${relatedChamp.nameKo}의 조합 가치 상승`
+            : `${entry.championNameKo} 너프로 시너지 파트너 ${relatedChamp.nameKo}의 조합 가치 하락`,
+        });
+      }
+    }
+  }
+
+  // 중복 제거 (같은 챔피언에 대한 여러 효과 → 가장 큰 것만)
+  const deduped = new Map<string, IndirectEffect>();
+  for (const effect of effects) {
+    const key = `${effect.championId}_${effect.effectType}`;
+    const existing = deduped.get(key);
+    if (!existing || effect.magnitude > existing.magnitude) {
+      deduped.set(key, effect);
+    }
+  }
+
+  return Array.from(deduped.values());
+}
+
+// ─────────────────────────────────────────
+// 메타 스냅샷 (전체 메타 상태 요약)
+// ─────────────────────────────────────────
+
+/** 시즌 중 특정 시점의 메타 상태 */
+export interface MetaSnapshot {
+  seasonId: number;
+  patchNumber: number;
+  week: number;
+  /** 역할군 메타 */
+  roleMeta: RoleMetaState;
+  /** 간접 효과 목록 */
+  indirectEffects: IndirectEffect[];
+  /** S/A 티어 챔피언 수 */
+  highTierCount: number;
+  /** 메타 요약 한국어 텍스트 */
+  summary: string;
+}
+
+/**
+ * 패치 후 전체 메타 스냅샷 생성
+ */
+export function createMetaSnapshot(
+  patchResult: PatchResult,
+  allChampions: readonly Champion[],
+  synergies: { championA: string; championB: string; synergy: number }[],
+): MetaSnapshot {
+  const roleMeta = analyzeRoleMeta(patchResult.entries, allChampions);
+  const indirectEffects = calculateIndirectEffects(patchResult.entries, allChampions, synergies);
+
+  const highTierCount = allChampions.filter(c => c.tier === 'S' || c.tier === 'A').length;
+
+  // 메타 요약 생성
+  const metaName: Record<string, string> = {
+    tank: '탱크 메타',
+    assassin: '암살자 메타',
+    mage: '마법사 메타',
+    marksman: '원거리 딜러 메타',
+    fighter: '전사 메타',
+    balanced: '균형 메타',
+  };
+
+  const indirectSummary = indirectEffects.length > 0
+    ? `간접 영향 ${indirectEffects.length}건 발생.`
+    : '';
+
+  const summary = `패치 ${patchResult.patchNumber}: ${metaName[roleMeta.dominantMeta] ?? '균형 메타'} (변동성 ${Math.round(roleMeta.volatility * 100)}%). ${indirectSummary}`;
+
+  return {
+    seasonId: patchResult.seasonId,
+    patchNumber: patchResult.patchNumber,
+    week: patchResult.week,
+    roleMeta,
+    indirectEffects,
+    highTierCount,
+    summary,
+  };
 }

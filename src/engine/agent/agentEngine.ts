@@ -6,7 +6,7 @@
  */
 
 import { getDatabase } from '../../db/database';
-import { calculateFairSalary, calculatePlayerValue } from '../economy/transferEngine';
+import { calculateFairSalary } from '../economy/transferEngine';
 import type { Player } from '../../types/player';
 import type { PlayerAgent, AgentNegotiationResult, AgentBringOfferResult } from '../../types/agent';
 
@@ -92,7 +92,7 @@ export async function getPlayerAgent(playerId: string): Promise<PlayerAgent> {
   );
 
   return {
-    id: result.lastInsertId,
+    id: result.lastInsertId ?? 0,
     playerId,
     agentName,
     greedLevel,

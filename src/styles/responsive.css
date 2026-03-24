@@ -1,27 +1,13 @@
-/* ===== Responsive Layout for Desktop (1280x720 ~ 1920x1080+) ===== */
-
-/* --- Sidebar --- */
-.dashboard-sidebar {
-  min-width: 180px;
-  transition: width 0.2s ease;
-}
-
-.dashboard-sidebar .sidebar-label {
-  display: inline;
-  white-space: nowrap;
-  overflow: hidden;
-}
-
-/* --- Main Content --- */
-.dashboard-main {
-  min-width: 0;
-}
+/* ═══════════════════════════════════════════════════
+   Responsive Layout — FM Dashboard
+   Desktop: 1280x720 ~ 1920x1080+
+   ═══════════════════════════════════════════════════ */
 
 /* --- Card Grid --- */
 .card-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
+  gap: 12px;
 }
 
 /* --- Table overflow --- */
@@ -39,68 +25,11 @@
   .card-grid {
     grid-template-columns: repeat(2, 1fr);
   }
-
-  .dashboard-sidebar {
-    width: 180px !important;
-    min-width: 140px;
-    padding: 16px 12px !important;
-  }
-
-  .dashboard-main {
-    padding: 24px !important;
-  }
 }
 
 /* ===== Narrow window (max-width: 800px) ===== */
 @media (max-width: 800px) {
   .card-grid {
     grid-template-columns: 1fr;
-  }
-
-  .dashboard-sidebar {
-    width: 56px !important;
-    min-width: 56px;
-    padding: 16px 8px !important;
-    align-items: center;
-  }
-
-  .dashboard-sidebar .sidebar-title {
-    font-size: 0 !important;
-    overflow: hidden;
-    width: 0;
-    height: 0;
-    margin: 0 !important;
-    padding: 0;
-  }
-
-  .dashboard-sidebar .sidebar-label {
-    display: none;
-  }
-
-  .dashboard-sidebar .nav-icon {
-    display: inline-block;
-    font-size: 18px;
-    text-align: center;
-  }
-
-  .dashboard-sidebar .nav-item {
-    display: flex;
-    justify-content: center;
-    padding: 10px 4px !important;
-  }
-
-  .dashboard-sidebar .back-btn {
-    font-size: 0 !important;
-    padding: 10px 4px !important;
-    text-align: center;
-  }
-
-  .dashboard-sidebar .back-btn::before {
-    content: "\2190";
-    font-size: 16px;
-  }
-
-  .dashboard-main {
-    padding: 16px !important;
   }
 }

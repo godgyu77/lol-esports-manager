@@ -18,7 +18,7 @@ export function Skeleton({
       style={{
         width: width ?? '100%',
         height: height ?? '16px',
-        background: 'linear-gradient(90deg, #1a1a2e 25%, #2a2a4a 50%, #1a1a2e 75%)',
+        background: 'linear-gradient(90deg, var(--bg-tertiary) 25%, var(--bg-elevated) 50%, var(--bg-tertiary) 75%)',
         backgroundSize: '200% 100%',
         borderRadius: variant === 'circle' ? '50%' : variant === 'text' ? '4px' : '8px',
       }}
@@ -34,16 +34,16 @@ export function SkeletonTable({
   cols?: number;
 }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+    <div className="fm-flex-col fm-gap-sm">
       {/* 헤더 */}
-      <div style={{ display: 'flex', gap: '12px', marginBottom: '4px' }}>
+      <div className="fm-flex fm-gap-md fm-mb-sm">
         {Array.from({ length: cols }).map((_, c) => (
           <Skeleton key={`h-${c}`} width={`${100 / cols}%`} height="14px" variant="text" />
         ))}
       </div>
       {/* 행 */}
       {Array.from({ length: rows }).map((_, r) => (
-        <div key={`r-${r}`} style={{ display: 'flex', gap: '12px' }}>
+        <div key={`r-${r}`} className="fm-flex fm-gap-md">
           {Array.from({ length: cols }).map((_, c) => (
             <Skeleton key={`r-${r}-c-${c}`} width={`${100 / cols}%`} height="16px" variant="text" />
           ))}
@@ -59,20 +59,9 @@ export function SkeletonCards({
   count?: number;
 }) {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '16px' }}>
+    <div className="fm-grid fm-grid--auto">
       {Array.from({ length: count }).map((_, i) => (
-        <div
-          key={i}
-          style={{
-            background: 'rgba(255,255,255,0.03)',
-            border: '1px solid #2a2a4a',
-            borderRadius: '8px',
-            padding: '16px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '10px',
-          }}
-        >
+        <div key={i} className="fm-card fm-flex-col fm-gap-sm" style={{ padding: 16 }}>
           <Skeleton width="60%" height="12px" variant="text" />
           <Skeleton width="40%" height="24px" variant="text" />
           <Skeleton width="80%" height="12px" variant="text" />

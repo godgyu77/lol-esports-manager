@@ -8,7 +8,6 @@ import { getDatabase } from '../../db/database';
 import { getPlayersByTeamId } from '../../db/queries';
 import type { Player, PlayerStats } from '../../types/player';
 import type { PlayerGoal, PlayerGoalType } from '../../types/playerGoal';
-import type { Team } from '../../types/team';
 
 // ─────────────────────────────────────────
 // DB 매핑

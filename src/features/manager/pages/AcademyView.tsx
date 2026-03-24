@@ -1,11 +1,12 @@
 /**
  * 아카데미 페이지
- * - 탭 1: 아카데미 — 현재 아카데미 선수 목록, 훈련/승격
- * - 탭 2: 신인 드래프트 — 드래프트 풀 목록, 드래프트 버튼
- * - 탭 3: 스카우팅 발굴 — 아카데미 선수 랜덤 추가
+ * - 탭 1: 아카데미 -- 현재 아카데미 선수 목록, 훈련/승격
+ * - 탭 2: 신인 드래프트 -- 드래프트 풀 목록, 드래프트 버튼
+ * - 탭 3: 스카우팅 발굴 -- 아카데미 선수 랜덤 추가
+ * - 탭 4: 멘토링 현황 -- 활성 멘토링 쌍별 진행도 표시
  */
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useGameStore } from '../../../stores/gameStore';
 import {
   getAcademyPlayers,
@@ -16,12 +17,22 @@ import {
   draftRookie,
   addAcademyPlayer,
 } from '../../../engine/academy/academyEngine';
+import { getMentoringProgress } from '../../../engine/mentoring/mentoringEngine';
+import type { MentoringProgress } from '../../../engine/mentoring/mentoringEngine';
 import type { AcademyPlayer, RookieDraftEntry } from '../../../types/academy';
 
-type Tab = 'academy' | 'draft' | 'scouting';
+type Tab = 'academy' | 'draft' | 'scouting' | 'mentoring';
 
 const POSITION_LABELS: Record<string, string> = {
   top: 'TOP', jungle: 'JGL', mid: 'MID', adc: 'ADC', support: 'SUP',
+};
+
+const POS_CLASS: Record<string, string> = {
+  top: 'fm-pos-badge--top',
+  jungle: 'fm-pos-badge--jgl',
+  mid: 'fm-pos-badge--mid',
+  adc: 'fm-pos-badge--adc',
+  support: 'fm-pos-badge--sup',
 };
 
 export function AcademyView() {
@@ -33,25 +44,34 @@ export function AcademyView() {
   const [draftPool, setDraftPool] = useState<RookieDraftEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const [mentoringProgress, setMentoringProgress] = useState<MentoringProgress[]>([]);
 
   const userTeamId = save?.userTeamId ?? '';
   const seasonId = season?.id ?? 0;
+  const messageTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  useEffect(() => {
+    return () => { clearTimeout(messageTimerRef.current); };
+  }, []);
 
   const showMessage = (text: string, type: 'success' | 'error') => {
+    clearTimeout(messageTimerRef.current);
     setMessage({ text, type });
-    setTimeout(() => setMessage(null), 3000);
+    messageTimerRef.current = setTimeout(() => setMessage(null), 3000);
   };
 
   const loadData = useCallback(async () => {
     if (!save || !season) return;
     setIsLoading(true);
     try {
-      const [players, pool] = await Promise.all([
+      const [players, pool, progress] = await Promise.all([
         getAcademyPlayers(userTeamId),
         getRookieDraftPool(seasonId),
+        getMentoringProgress(userTeamId).catch(() => [] as MentoringProgress[]),
       ]);
       setAcademyPlayers(players);
       setDraftPool(pool);
+      setMentoringProgress(progress);
     } catch (err) {
       console.error('아카데미 데이터 로딩 실패:', err);
     } finally {
@@ -121,135 +141,141 @@ export function AcademyView() {
   };
 
   if (!season || !save) {
-    return <p style={{ color: '#6a6a7a' }}>데이터를 불러오는 중...</p>;
+    return <p className="fm-text-muted">데이터를 불러오는 중...</p>;
   }
 
   if (isLoading) {
-    return <p style={{ color: '#6a6a7a' }}>아카데미 정보를 불러오는 중...</p>;
+    return <p className="fm-text-muted">아카데미 정보를 불러오는 중...</p>;
   }
 
   const availableDraft = draftPool.filter(r => !r.isDrafted);
 
   return (
     <div>
-      <h1 style={styles.title}>아카데미</h1>
+      <div className="fm-page-header">
+        <h1 className="fm-page-title">아카데미</h1>
+      </div>
 
       {message && (
-        <div style={{
-          ...styles.message,
-          borderColor: message.type === 'success' ? '#2ecc71' : '#e74c3c',
-          color: message.type === 'success' ? '#2ecc71' : '#e74c3c',
-        }}>
-          {message.text}
+        <div className={`fm-alert ${message.type === 'success' ? 'fm-alert--success' : 'fm-alert--danger'} fm-mb-md`}>
+          <span className="fm-alert__text">{message.text}</span>
         </div>
       )}
 
       {/* 탭 */}
-      <div style={styles.tabs}>
+      <div className="fm-tabs">
         <button
-          style={{ ...styles.tab, ...(tab === 'academy' ? styles.activeTab : {}) }}
+          className={`fm-tab ${tab === 'academy' ? 'fm-tab--active' : ''}`}
           onClick={() => setTab('academy')}
         >
           아카데미 ({academyPlayers.length})
         </button>
         <button
-          style={{ ...styles.tab, ...(tab === 'draft' ? styles.activeTab : {}) }}
+          className={`fm-tab ${tab === 'draft' ? 'fm-tab--active' : ''}`}
           onClick={() => setTab('draft')}
         >
           신인 드래프트 ({availableDraft.length})
         </button>
         <button
-          style={{ ...styles.tab, ...(tab === 'scouting' ? styles.activeTab : {}) }}
+          className={`fm-tab ${tab === 'scouting' ? 'fm-tab--active' : ''}`}
           onClick={() => setTab('scouting')}
         >
           스카우팅 발굴
+        </button>
+        <button
+          className={`fm-tab ${tab === 'mentoring' ? 'fm-tab--active' : ''}`}
+          onClick={() => setTab('mentoring')}
+        >
+          멘토링 현황 ({mentoringProgress.length})
         </button>
       </div>
 
       {/* 탭 1: 아카데미 */}
       {tab === 'academy' && (
         <div>
-          <h2 style={styles.subTitle}>아카데미 선수 목록</h2>
+          <h2 className="fm-text-lg fm-font-semibold fm-text-accent fm-mb-md">아카데미 선수 목록</h2>
           {academyPlayers.length === 0 ? (
-            <p style={styles.empty}>아카데미 선수가 없습니다. 스카우팅 발굴이나 신인 드래프트를 통해 선수를 추가하세요.</p>
+            <p className="fm-text-muted fm-text-md">아카데미 선수가 없습니다. 스카우팅 발굴이나 신인 드래프트를 통해 선수를 추가하세요.</p>
           ) : (
-            <div style={styles.cardGrid}>
+            <div className="fm-grid fm-grid--auto">
               {academyPlayers.map(player => {
                 const avgStat = Math.round(
                   (player.stats.mechanical + player.stats.gameSense + player.stats.teamwork +
                    player.stats.consistency + player.stats.laning + player.stats.aggression) / 6,
                 );
                 return (
-                  <div key={player.id} style={styles.card}>
-                    <div style={styles.cardHeader}>
-                      <span style={styles.positionBadge}>
+                  <div key={player.id} className="fm-card">
+                    <div className="fm-flex fm-items-center fm-gap-sm fm-mb-md">
+                      <span className={`fm-pos-badge ${POS_CLASS[player.position] ?? ''}`}>
                         {POSITION_LABELS[player.position] ?? player.position}
                       </span>
-                      <span style={styles.playerName}>{player.name}</span>
-                      <span style={styles.playerAge}>{player.age}세</span>
+                      <span className="fm-text-lg fm-font-semibold fm-text-primary">{player.name}</span>
+                      <span className="fm-text-xs fm-text-secondary" style={{ marginLeft: 'auto' }}>{player.age}세</span>
                     </div>
 
-                    <div style={styles.statsGrid}>
-                      <div style={styles.statItem}>
-                        <span style={styles.statLabel}>기계적</span>
-                        <span style={styles.statValue}>{player.stats.mechanical}</span>
+                    <div className="fm-grid fm-grid--3 fm-gap-xs fm-mb-sm">
+                      <div className="fm-info-row">
+                        <span className="fm-info-row__label">기계적</span>
+                        <span className="fm-info-row__value">{player.stats.mechanical}</span>
                       </div>
-                      <div style={styles.statItem}>
-                        <span style={styles.statLabel}>판단력</span>
-                        <span style={styles.statValue}>{player.stats.gameSense}</span>
+                      <div className="fm-info-row">
+                        <span className="fm-info-row__label">판단력</span>
+                        <span className="fm-info-row__value">{player.stats.gameSense}</span>
                       </div>
-                      <div style={styles.statItem}>
-                        <span style={styles.statLabel}>팀워크</span>
-                        <span style={styles.statValue}>{player.stats.teamwork}</span>
+                      <div className="fm-info-row">
+                        <span className="fm-info-row__label">팀워크</span>
+                        <span className="fm-info-row__value">{player.stats.teamwork}</span>
                       </div>
-                      <div style={styles.statItem}>
-                        <span style={styles.statLabel}>일관성</span>
-                        <span style={styles.statValue}>{player.stats.consistency}</span>
+                      <div className="fm-info-row">
+                        <span className="fm-info-row__label">일관성</span>
+                        <span className="fm-info-row__value">{player.stats.consistency}</span>
                       </div>
-                      <div style={styles.statItem}>
-                        <span style={styles.statLabel}>라인전</span>
-                        <span style={styles.statValue}>{player.stats.laning}</span>
+                      <div className="fm-info-row">
+                        <span className="fm-info-row__label">라인전</span>
+                        <span className="fm-info-row__value">{player.stats.laning}</span>
                       </div>
-                      <div style={styles.statItem}>
-                        <span style={styles.statLabel}>공격성</span>
-                        <span style={styles.statValue}>{player.stats.aggression}</span>
+                      <div className="fm-info-row">
+                        <span className="fm-info-row__label">공격성</span>
+                        <span className="fm-info-row__value">{player.stats.aggression}</span>
                       </div>
                     </div>
 
-                    <div style={styles.metaRow}>
-                      <span style={styles.metaLabel}>잠재력</span>
-                      <span style={{ ...styles.metaValue, color: '#c89b3c' }}>{player.potential}</span>
+                    <div className="fm-info-row">
+                      <span className="fm-info-row__label">잠재력</span>
+                      <span className="fm-info-row__value fm-text-accent">{player.potential}</span>
                     </div>
-                    <div style={styles.metaRow}>
-                      <span style={styles.metaLabel}>평균 스탯</span>
-                      <span style={styles.metaValue}>{avgStat}</span>
+                    <div className="fm-info-row">
+                      <span className="fm-info-row__label">평균 스탯</span>
+                      <span className="fm-info-row__value">{avgStat}</span>
                     </div>
 
                     {/* 훈련 진행도 바 */}
-                    <div style={styles.progressContainer}>
-                      <div style={styles.progressLabel}>
+                    <div className="fm-mt-sm fm-mb-md">
+                      <div className="fm-flex fm-justify-between fm-text-xs fm-text-secondary fm-mb-sm">
                         <span>훈련 진행도</span>
                         <span>{player.trainingProgress}%</span>
                       </div>
-                      <div style={styles.progressBar}>
-                        <div style={{
-                          ...styles.progressFill,
-                          width: `${player.trainingProgress}%`,
-                          background: player.promotionReady ? '#2ecc71' : '#c89b3c',
-                        }} />
+                      <div className="fm-bar">
+                        <div className="fm-bar__track">
+                          <div
+                            className={`fm-bar__fill ${player.promotionReady ? 'fm-bar__fill--green' : 'fm-bar__fill--accent'}`}
+                            style={{ width: `${player.trainingProgress}%` }}
+                          />
+                        </div>
                       </div>
                     </div>
 
-                    <div style={styles.cardActions}>
+                    <div className="fm-flex fm-gap-sm">
                       <button
-                        style={styles.trainBtn}
+                        className="fm-btn fm-btn--sm"
+                        style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}
                         onClick={() => handleTrain(player.id)}
                       >
                         훈련
                       </button>
                       {player.promotionReady && (
                         <button
-                          style={styles.promoteBtn}
+                          className="fm-btn fm-btn--sm fm-btn--success"
                           onClick={() => handlePromote(player.id, player.name)}
                         >
                           1군 승격
@@ -267,71 +293,75 @@ export function AcademyView() {
       {/* 탭 2: 신인 드래프트 */}
       {tab === 'draft' && (
         <div>
-          <div style={styles.sectionHeader}>
-            <h2 style={styles.subTitle}>신인 드래프트 풀</h2>
+          <div className="fm-flex fm-justify-between fm-items-center fm-mb-md">
+            <h2 className="fm-text-lg fm-font-semibold fm-text-accent">신인 드래프트 풀</h2>
             {draftPool.length === 0 && (
-              <button style={styles.generateBtn} onClick={handleGenerateDraftPool}>
+              <button className="fm-btn fm-btn--primary" onClick={handleGenerateDraftPool}>
                 드래프트 풀 생성
               </button>
             )}
           </div>
 
           {draftPool.length === 0 ? (
-            <p style={styles.empty}>드래프트 풀이 아직 생성되지 않았습니다.</p>
+            <p className="fm-text-muted fm-text-md">드래프트 풀이 아직 생성되지 않았습니다.</p>
           ) : (
-            <table style={styles.table}>
-              <thead>
-                <tr>
-                  <th style={styles.th}>포지션</th>
-                  <th style={styles.th}>이름</th>
-                  <th style={styles.th}>나이</th>
-                  <th style={styles.th}>예상 능력</th>
-                  <th style={styles.th}>국적</th>
-                  <th style={styles.th}>상태</th>
-                  <th style={styles.th}></th>
-                </tr>
-              </thead>
-              <tbody>
-                {draftPool.map(rookie => (
-                  <tr key={rookie.id} style={styles.tr}>
-                    <td style={{ ...styles.td, color: '#c89b3c', fontWeight: 600 }}>
-                      {POSITION_LABELS[rookie.position] ?? rookie.position}
-                    </td>
-                    <td style={{ ...styles.td, fontWeight: 500, color: '#e0e0e0' }}>
-                      {rookie.name}
-                    </td>
-                    <td style={styles.td}>{rookie.age}세</td>
-                    <td style={{ ...styles.td, fontWeight: 600 }}>
-                      <span style={{
-                        color: rookie.estimatedAbility >= 70 ? '#c89b3c'
-                             : rookie.estimatedAbility >= 50 ? '#4ecdc4'
-                             : '#8a8a9a',
-                      }}>
-                        {rookie.estimatedAbility}
-                      </span>
-                    </td>
-                    <td style={styles.td}>{rookie.nationality}</td>
-                    <td style={styles.td}>
-                      {rookie.isDrafted ? (
-                        <span style={{ color: '#6a6a7a' }}>드래프트됨</span>
-                      ) : (
-                        <span style={{ color: '#2ecc71' }}>가능</span>
-                      )}
-                    </td>
-                    <td style={styles.td}>
-                      {!rookie.isDrafted && (
-                        <button
-                          style={styles.draftBtn}
-                          onClick={() => handleDraft(rookie.id, rookie.name)}
-                        >
-                          드래프트
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="fm-panel">
+              <div className="fm-panel__body--flush fm-table-wrap">
+                <table className="fm-table fm-table--striped">
+                  <thead>
+                    <tr>
+                      <th>포지션</th>
+                      <th>이름</th>
+                      <th>나이</th>
+                      <th>예상 능력</th>
+                      <th>국적</th>
+                      <th>상태</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {draftPool.map(rookie => (
+                      <tr key={rookie.id}>
+                        <td>
+                          <span className={`fm-pos-badge ${POS_CLASS[rookie.position] ?? ''}`}>
+                            {POSITION_LABELS[rookie.position] ?? rookie.position}
+                          </span>
+                        </td>
+                        <td className="fm-cell--name">{rookie.name}</td>
+                        <td>{rookie.age}세</td>
+                        <td>
+                          <span className={
+                            rookie.estimatedAbility >= 70 ? 'fm-ovr fm-ovr--elite'
+                              : rookie.estimatedAbility >= 50 ? 'fm-ovr fm-ovr--high'
+                              : 'fm-ovr fm-ovr--low'
+                          }>
+                            {rookie.estimatedAbility}
+                          </span>
+                        </td>
+                        <td>{rookie.nationality}</td>
+                        <td>
+                          {rookie.isDrafted ? (
+                            <span className="fm-badge fm-badge--default">드래프트됨</span>
+                          ) : (
+                            <span className="fm-badge fm-badge--success">가능</span>
+                          )}
+                        </td>
+                        <td>
+                          {!rookie.isDrafted && (
+                            <button
+                              className="fm-btn fm-btn--primary fm-btn--sm"
+                              onClick={() => handleDraft(rookie.id, rookie.name)}
+                            >
+                              드래프트
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           )}
         </div>
       )}
@@ -339,61 +369,122 @@ export function AcademyView() {
       {/* 탭 3: 스카우팅 발굴 */}
       {tab === 'scouting' && (
         <div>
-          <h2 style={styles.subTitle}>스카우팅 발굴</h2>
-          <p style={styles.description}>
+          <h2 className="fm-text-lg fm-font-semibold fm-text-accent fm-mb-md">스카우팅 발굴</h2>
+          <p className="fm-text-md fm-text-secondary fm-mb-md" style={{ lineHeight: '1.6' }}>
             랜덤으로 아카데미 유망주를 발굴하여 팀의 아카데미에 추가합니다.
             발굴된 선수는 훈련을 통해 성장시킨 후 1군으로 승격할 수 있습니다.
           </p>
 
-          <button style={styles.scoutBtn} onClick={handleAddAcademyPlayer}>
+          <button className="fm-btn fm-btn--primary fm-btn--lg" onClick={handleAddAcademyPlayer}>
             유망주 발굴
           </button>
 
           {academyPlayers.length > 0 && (
-            <div style={{ marginTop: '24px' }}>
-              <h3 style={styles.subTitle}>현재 아카데미 ({academyPlayers.length}명)</h3>
-              <table style={styles.table}>
-                <thead>
-                  <tr>
-                    <th style={styles.th}>포지션</th>
-                    <th style={styles.th}>이름</th>
-                    <th style={styles.th}>나이</th>
-                    <th style={styles.th}>잠재력</th>
-                    <th style={styles.th}>평균 스탯</th>
-                    <th style={styles.th}>진행도</th>
-                    <th style={styles.th}>상태</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {academyPlayers.map(player => {
-                    const avgStat = Math.round(
-                      (player.stats.mechanical + player.stats.gameSense + player.stats.teamwork +
-                       player.stats.consistency + player.stats.laning + player.stats.aggression) / 6,
-                    );
-                    return (
-                      <tr key={player.id} style={styles.tr}>
-                        <td style={{ ...styles.td, color: '#c89b3c', fontWeight: 600 }}>
-                          {POSITION_LABELS[player.position] ?? player.position}
-                        </td>
-                        <td style={{ ...styles.td, fontWeight: 500, color: '#e0e0e0' }}>
-                          {player.name}
-                        </td>
-                        <td style={styles.td}>{player.age}세</td>
-                        <td style={{ ...styles.td, color: '#c89b3c' }}>{player.potential}</td>
-                        <td style={styles.td}>{avgStat}</td>
-                        <td style={styles.td}>{player.trainingProgress}%</td>
-                        <td style={styles.td}>
-                          {player.promotionReady ? (
-                            <span style={{ color: '#2ecc71', fontWeight: 600 }}>승격 가능</span>
-                          ) : (
-                            <span style={{ color: '#8a8a9a' }}>훈련중</span>
-                          )}
-                        </td>
+            <div className="fm-mt-lg">
+              <h3 className="fm-text-lg fm-font-semibold fm-text-accent fm-mb-md">현재 아카데미 ({academyPlayers.length}명)</h3>
+              <div className="fm-panel">
+                <div className="fm-panel__body--flush fm-table-wrap">
+                  <table className="fm-table fm-table--striped">
+                    <thead>
+                      <tr>
+                        <th>포지션</th>
+                        <th>이름</th>
+                        <th>나이</th>
+                        <th>잠재력</th>
+                        <th>평균 스탯</th>
+                        <th>진행도</th>
+                        <th>상태</th>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                    </thead>
+                    <tbody>
+                      {academyPlayers.map(player => {
+                        const avgStat = Math.round(
+                          (player.stats.mechanical + player.stats.gameSense + player.stats.teamwork +
+                           player.stats.consistency + player.stats.laning + player.stats.aggression) / 6,
+                        );
+                        return (
+                          <tr key={player.id}>
+                            <td>
+                              <span className={`fm-pos-badge ${POS_CLASS[player.position] ?? ''}`}>
+                                {POSITION_LABELS[player.position] ?? player.position}
+                              </span>
+                            </td>
+                            <td className="fm-cell--name">{player.name}</td>
+                            <td>{player.age}세</td>
+                            <td className="fm-cell--accent">{player.potential}</td>
+                            <td>{avgStat}</td>
+                            <td>{player.trainingProgress}%</td>
+                            <td>
+                              {player.promotionReady ? (
+                                <span className="fm-badge fm-badge--success">승격 가능</span>
+                              ) : (
+                                <span className="fm-badge fm-badge--default">훈련중</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 탭 4: 멘토링 현황 */}
+      {tab === 'mentoring' && (
+        <div>
+          <h2 className="fm-text-lg fm-font-semibold fm-text-accent fm-mb-md">멘토링 현황</h2>
+          {mentoringProgress.length === 0 ? (
+            <p className="fm-text-muted fm-text-md">활성 멘토링이 없습니다.</p>
+          ) : (
+            <div className="fm-grid fm-grid--auto">
+              {mentoringProgress.map(pair => {
+                const statusBadgeClass = pair.status === 'excellent' ? 'fm-badge--success'
+                  : pair.status === 'good' ? 'fm-badge--warning'
+                  : 'fm-badge--danger';
+                const statusLabel = pair.status === 'excellent' ? '우수'
+                  : pair.status === 'good' ? '양호'
+                  : '부진';
+                return (
+                  <div key={`${pair.mentorId}-${pair.menteeId}`} className="fm-card">
+                    {/* 멘토 -> 멘티 헤더 */}
+                    <div className="fm-flex fm-items-center fm-gap-sm fm-mb-md">
+                      <span className="fm-text-lg fm-font-semibold fm-text-primary">{pair.mentorName}</span>
+                      <span className="fm-text-xl fm-font-bold fm-text-accent">→</span>
+                      <span className="fm-text-lg fm-font-semibold fm-text-primary">{pair.menteeName}</span>
+                    </div>
+
+                    {/* 호환성 상태 뱃지 */}
+                    <div className="fm-flex fm-items-center fm-gap-sm fm-mb-md">
+                      <span className={`fm-badge ${statusBadgeClass}`}>{statusLabel}</span>
+                      <span className="fm-text-xs fm-text-secondary">
+                        호환성 {pair.compatibility > 0 ? '+' : ''}{pair.compatibility}
+                      </span>
+                    </div>
+
+                    {/* 상세 정보 */}
+                    <div className="fm-flex-col fm-gap-xs">
+                      <div className="fm-info-row">
+                        <span className="fm-info-row__label">보너스 스탯</span>
+                        <span className="fm-info-row__value">{pair.bonusStat}</span>
+                      </div>
+                      <div className="fm-info-row">
+                        <span className="fm-info-row__label">활성 일수</span>
+                        <span className="fm-info-row__value">{pair.daysActive}일</span>
+                      </div>
+                      <div className="fm-info-row">
+                        <span className="fm-info-row__label">누적 성장량</span>
+                        <span className="fm-info-row__value fm-text-success fm-font-bold">
+                          +{pair.totalGrowth.toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -401,97 +492,3 @@ export function AcademyView() {
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  title: { fontSize: '24px', fontWeight: 700, color: '#f0e6d2', marginBottom: '16px' },
-  message: {
-    padding: '10px 16px', marginBottom: '12px', border: '1px solid',
-    borderRadius: '6px', fontSize: '13px', background: 'rgba(255,255,255,0.02)',
-  },
-  tabs: { display: 'flex', gap: '4px', marginBottom: '16px', borderBottom: '1px solid #2a2a4a' },
-  tab: {
-    padding: '10px 20px', background: 'none', border: 'none',
-    borderBottom: '2px solid transparent', color: '#6a6a7a',
-    fontSize: '13px', fontWeight: 500, cursor: 'pointer',
-  },
-  activeTab: { color: '#c89b3c', borderBottomColor: '#c89b3c' },
-  subTitle: { fontSize: '15px', fontWeight: 600, color: '#c89b3c', marginBottom: '12px' },
-  empty: { color: '#6a6a7a', fontSize: '13px' },
-  description: { color: '#8a8a9a', fontSize: '13px', marginBottom: '16px', lineHeight: '1.6' },
-  sectionHeader: {
-    display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px',
-  },
-  // 카드 그리드
-  cardGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '12px' },
-  card: {
-    background: '#12122a', border: '1px solid #2a2a4a', borderRadius: '8px', padding: '16px',
-  },
-  cardHeader: {
-    display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px',
-  },
-  positionBadge: {
-    fontSize: '11px', fontWeight: 700, color: '#c89b3c',
-    background: 'rgba(200,155,60,0.15)', padding: '2px 8px', borderRadius: '4px',
-  },
-  playerName: { fontSize: '15px', fontWeight: 600, color: '#e0e0e0' },
-  playerAge: { fontSize: '12px', color: '#8a8a9a', marginLeft: 'auto' },
-  // 스탯 그리드
-  statsGrid: {
-    display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px', marginBottom: '10px',
-  },
-  statItem: {
-    display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#8a8a9a',
-    padding: '2px 4px',
-  },
-  statLabel: { color: '#6a6a7a' },
-  statValue: { fontWeight: 600, color: '#c0c0d0' },
-  metaRow: {
-    display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#8a8a9a',
-    padding: '2px 0',
-  },
-  metaLabel: { color: '#6a6a7a' },
-  metaValue: { fontWeight: 600, color: '#c0c0d0' },
-  // 진행도 바
-  progressContainer: { marginTop: '10px', marginBottom: '12px' },
-  progressLabel: {
-    display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#8a8a9a',
-    marginBottom: '4px',
-  },
-  progressBar: {
-    height: '6px', background: '#2a2a4a', borderRadius: '3px', overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%', borderRadius: '3px', transition: 'width 0.3s',
-  },
-  // 카드 액션
-  cardActions: { display: 'flex', gap: '8px' },
-  trainBtn: {
-    padding: '6px 14px', background: 'rgba(200,155,60,0.15)', border: '1px solid #c89b3c',
-    borderRadius: '4px', color: '#c89b3c', fontSize: '12px', cursor: 'pointer',
-  },
-  promoteBtn: {
-    padding: '6px 14px', background: '#2ecc71', border: 'none',
-    borderRadius: '4px', color: '#0d0d1a', fontSize: '12px', fontWeight: 600, cursor: 'pointer',
-  },
-  // 테이블
-  table: { width: '100%', borderCollapse: 'collapse' as const, fontSize: '13px' },
-  th: {
-    padding: '8px 10px', textAlign: 'left' as const, borderBottom: '1px solid #3a3a5c',
-    color: '#6a6a7a', fontSize: '12px', fontWeight: 500,
-  },
-  tr: { borderBottom: '1px solid rgba(255,255,255,0.04)' },
-  td: { padding: '8px 10px', color: '#c0c0d0' },
-  // 버튼
-  generateBtn: {
-    padding: '8px 16px', background: '#c89b3c', color: '#0d0d1a', border: 'none',
-    borderRadius: '6px', fontSize: '13px', fontWeight: 600, cursor: 'pointer',
-  },
-  draftBtn: {
-    padding: '4px 12px', background: '#c89b3c', color: '#0d0d1a', border: 'none',
-    borderRadius: '4px', fontSize: '12px', fontWeight: 600, cursor: 'pointer',
-  },
-  scoutBtn: {
-    padding: '10px 24px', background: '#c89b3c', color: '#0d0d1a', border: 'none',
-    borderRadius: '6px', fontSize: '14px', fontWeight: 600, cursor: 'pointer',
-  },
-};

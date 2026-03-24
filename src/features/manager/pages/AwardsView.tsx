@@ -68,11 +68,11 @@ export function AwardsView() {
   }, [season]);
 
   if (!season) {
-    return <p style={{ color: '#6a6a7a' }}>시즌 데이터를 불러오는 중...</p>;
+    return <p className="fm-text-muted">시즌 데이터를 불러오는 중...</p>;
   }
 
   if (isLoading) {
-    return <p style={{ color: '#6a6a7a' }}>어워드 데이터를 불러오는 중...</p>;
+    return <p className="fm-text-muted">어워드 데이터를 불러오는 중...</p>;
   }
 
   const getTeamName = (teamId: string) => {
@@ -98,12 +98,14 @@ export function AwardsView() {
 
   return (
     <div>
-      <h1 style={styles.title}>
-        {season.year}년 {season.split === 'spring' ? '스프링' : '서머'} 어워드
-      </h1>
+      <div className="fm-page-header">
+        <h1 className="fm-page-title">
+          {season.year}년 {season.split === 'spring' ? '스프링' : '서머'} 어워드
+        </h1>
+      </div>
 
       {/* 탭 네비게이션 */}
-      <div style={styles.tabRow}>
+      <div className="fm-tabs">
         {([
           ['overview', '시즌 어워드'],
           ['allpro', 'All-Pro Team'],
@@ -111,10 +113,7 @@ export function AwardsView() {
         ] as [TabType, string][]).map(([tab, label]) => (
           <button
             key={tab}
-            style={{
-              ...styles.tabBtn,
-              ...(activeTab === tab ? styles.tabBtnActive : {}),
-            }}
+            className={`fm-tab ${activeTab === tab ? 'fm-tab--active' : ''}`}
             onClick={() => setActiveTab(tab)}
           >
             {label}
@@ -126,79 +125,113 @@ export function AwardsView() {
       {activeTab === 'overview' && (
         <div>
           {!hasSeasonAwards && (
-            <div style={styles.card}>
-              <p style={styles.emptyText}>
-                시즌 어워드는 시즌 종료 후 산출됩니다. 아래 MVP 레이스 탭에서 현재 순위를 확인하세요.
-              </p>
+            <div className="fm-panel">
+              <div className="fm-panel__body">
+                <p className="fm-text-lg fm-text-muted fm-text-center fm-p-lg">
+                  시즌 어워드는 시즌 종료 후 산출됩니다. 아래 MVP 레이스 탭에서 현재 순위를 확인하세요.
+                </p>
+              </div>
             </div>
           )}
 
           {mvpAward && (
-            <div style={styles.card}>
-              <div style={styles.awardHeader}>
-                <span style={styles.awardIcon}>MVP</span>
-                <h2 style={styles.awardTitle}>{AWARD_TYPE_LABELS.mvp}</h2>
-              </div>
-              <div style={styles.mvpDisplay}>
-                <span style={styles.mvpName}>
-                  {mvpAward.playerId ? getPlayerName(mvpAward.playerId) : '-'}
-                </span>
-                <span style={styles.mvpTeam}>
-                  {mvpAward.teamId ? getTeamName(mvpAward.teamId) : ''}
-                </span>
-                {mvpAward.value != null && (
-                  <span style={styles.mvpScore}>점수: {mvpAward.value}</span>
-                )}
+            <div className="fm-panel fm-mb-md">
+              <div className="fm-panel__body">
+                <div className="fm-flex fm-items-center fm-gap-md fm-mb-md">
+                  <span
+                    className="fm-flex fm-items-center fm-justify-center fm-font-bold fm-text-lg"
+                    style={{
+                      width: 48,
+                      height: 48,
+                      borderRadius: '50%',
+                      background: 'linear-gradient(135deg, var(--accent), #e0c068)',
+                      color: 'var(--bg-primary)',
+                    }}
+                  >
+                    MVP
+                  </span>
+                  <h2 className="fm-text-xl fm-font-bold fm-text-primary">{AWARD_TYPE_LABELS.mvp}</h2>
+                </div>
+                <div className="fm-flex fm-items-center fm-gap-md" style={{ paddingLeft: 60 }}>
+                  <span className="fm-text-2xl fm-font-bold fm-text-primary">
+                    {mvpAward.playerId ? getPlayerName(mvpAward.playerId) : '-'}
+                  </span>
+                  <span className="fm-text-lg fm-text-secondary">
+                    {mvpAward.teamId ? getTeamName(mvpAward.teamId) : ''}
+                  </span>
+                  {mvpAward.value != null && (
+                    <span className="fm-text-md fm-text-muted" style={{ marginLeft: 'auto' }}>점수: {mvpAward.value}</span>
+                  )}
+                </div>
               </div>
             </div>
           )}
 
           {rookieAward && (
-            <div style={styles.card}>
-              <div style={styles.awardHeader}>
-                <span style={styles.awardIconRookie}>ROY</span>
-                <h2 style={styles.awardTitle}>{AWARD_TYPE_LABELS.rookie_of_year}</h2>
-              </div>
-              <div style={styles.mvpDisplay}>
-                <span style={styles.mvpName}>
-                  {rookieAward.playerId ? getPlayerName(rookieAward.playerId) : '-'}
-                </span>
-                <span style={styles.mvpTeam}>
-                  {rookieAward.teamId ? getTeamName(rookieAward.teamId) : ''}
-                </span>
+            <div className="fm-panel fm-mb-md">
+              <div className="fm-panel__body">
+                <div className="fm-flex fm-items-center fm-gap-md fm-mb-md">
+                  <span
+                    className="fm-flex fm-items-center fm-justify-center fm-font-bold fm-text-lg"
+                    style={{
+                      width: 48,
+                      height: 48,
+                      borderRadius: '50%',
+                      background: 'linear-gradient(135deg, var(--success), #27ae60)',
+                      color: 'var(--bg-primary)',
+                    }}
+                  >
+                    ROY
+                  </span>
+                  <h2 className="fm-text-xl fm-font-bold fm-text-primary">{AWARD_TYPE_LABELS.rookie_of_year}</h2>
+                </div>
+                <div className="fm-flex fm-items-center fm-gap-md" style={{ paddingLeft: 60 }}>
+                  <span className="fm-text-2xl fm-font-bold fm-text-primary">
+                    {rookieAward.playerId ? getPlayerName(rookieAward.playerId) : '-'}
+                  </span>
+                  <span className="fm-text-lg fm-text-secondary">
+                    {rookieAward.teamId ? getTeamName(rookieAward.teamId) : ''}
+                  </span>
+                </div>
               </div>
             </div>
           )}
 
           {monthlyMvps.length > 0 && (
-            <div style={styles.card}>
-              <h2 style={styles.sectionTitle}>{AWARD_TYPE_LABELS.monthly_mvp}</h2>
-              <table style={styles.table}>
-                <thead>
-                  <tr>
-                    <th style={styles.th}>구간</th>
-                    <th style={styles.th}>선수</th>
-                    <th style={styles.th}>팀</th>
-                    <th style={styles.th}>KDA</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {monthlyMvps.map((award, idx) => (
-                    <tr key={award.id} style={styles.tr}>
-                      <td style={styles.td}>W{idx * 4 + 1}~W{(idx + 1) * 4}</td>
-                      <td style={{ ...styles.td, ...styles.nameCell }}>
-                        {award.playerId ? getPlayerName(award.playerId) : '-'}
-                      </td>
-                      <td style={styles.td}>
-                        {award.teamId ? getTeamName(award.teamId) : ''}
-                      </td>
-                      <td style={{ ...styles.td, color: '#c89b3c', fontWeight: 600 }}>
-                        {award.value?.toFixed(2) ?? '-'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="fm-panel">
+              <div className="fm-panel__header">
+                <span className="fm-panel__title">{AWARD_TYPE_LABELS.monthly_mvp}</span>
+              </div>
+              <div className="fm-panel__body--flush">
+                <div className="fm-table-wrap">
+                  <table className="fm-table fm-table--striped">
+                    <thead>
+                      <tr>
+                        <th>구간</th>
+                        <th>선수</th>
+                        <th>팀</th>
+                        <th>KDA</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {monthlyMvps.map((award, idx) => (
+                        <tr key={award.id}>
+                          <td>W{idx * 4 + 1}~W{(idx + 1) * 4}</td>
+                          <td className="fm-cell--name">
+                            {award.playerId ? getPlayerName(award.playerId) : '-'}
+                          </td>
+                          <td>
+                            {award.teamId ? getTeamName(award.teamId) : ''}
+                          </td>
+                          <td className="fm-cell--accent">
+                            {award.value?.toFixed(2) ?? '-'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -208,66 +241,76 @@ export function AwardsView() {
       {activeTab === 'allpro' && (
         <div>
           {allPro1st.length === 0 && allPro2nd.length === 0 ? (
-            <div style={styles.card}>
-              <p style={styles.emptyText}>
-                All-Pro Team은 시즌 종료 후 산출됩니다.
-              </p>
+            <div className="fm-panel">
+              <div className="fm-panel__body">
+                <p className="fm-text-lg fm-text-muted fm-text-center fm-p-lg">
+                  All-Pro Team은 시즌 종료 후 산출됩니다.
+                </p>
+              </div>
             </div>
           ) : (
             <>
               {/* 1st Team */}
-              <div style={styles.card}>
-                <h2 style={styles.sectionTitle}>All-Pro 1st Team</h2>
-                <div style={styles.allProGrid}>
-                  {(['top', 'jungle', 'mid', 'adc', 'support'] as Position[]).map((pos) => {
-                    const award = allPro1st.find((a) => {
-                      if (!a.playerId) return false;
-                      for (const team of teams) {
-                        const player = team.roster?.find((p) => p.id === a.playerId);
-                        if (player && player.position === pos) return true;
-                      }
-                      return false;
-                    });
-                    return (
-                      <div key={pos} style={styles.allProCard}>
-                        <span style={styles.posLabel}>{POSITION_LABELS[pos]}</span>
-                        <span style={styles.allProName}>
-                          {award?.playerId ? getPlayerName(award.playerId) : '-'}
-                        </span>
-                        <span style={styles.allProTeam}>
-                          {award?.teamId ? getTeamName(award.teamId) : ''}
-                        </span>
-                      </div>
-                    );
-                  })}
+              <div className="fm-panel fm-mb-md">
+                <div className="fm-panel__header">
+                  <span className="fm-panel__title">All-Pro 1st Team</span>
+                </div>
+                <div className="fm-panel__body">
+                  <div className="fm-grid" style={{ gridTemplateColumns: 'repeat(5, 1fr)' }}>
+                    {(['top', 'jungle', 'mid', 'adc', 'support'] as Position[]).map((pos) => {
+                      const award = allPro1st.find((a) => {
+                        if (!a.playerId) return false;
+                        for (const team of teams) {
+                          const player = team.roster?.find((p) => p.id === a.playerId);
+                          if (player && player.position === pos) return true;
+                        }
+                        return false;
+                      });
+                      return (
+                        <div key={pos} className="fm-card fm-card--highlight fm-flex-col fm-items-center fm-gap-sm">
+                          <span className="fm-text-sm fm-text-muted fm-text-upper fm-font-semibold">{POSITION_LABELS[pos]}</span>
+                          <span className="fm-text-lg fm-font-semibold fm-text-primary fm-text-center">
+                            {award?.playerId ? getPlayerName(award.playerId) : '-'}
+                          </span>
+                          <span className="fm-text-base fm-text-secondary">
+                            {award?.teamId ? getTeamName(award.teamId) : ''}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
 
               {/* 2nd Team */}
-              <div style={styles.card}>
-                <h2 style={styles.sectionTitle}>All-Pro 2nd Team</h2>
-                <div style={styles.allProGrid}>
-                  {(['top', 'jungle', 'mid', 'adc', 'support'] as Position[]).map((pos) => {
-                    const award = allPro2nd.find((a) => {
-                      if (!a.playerId) return false;
-                      for (const team of teams) {
-                        const player = team.roster?.find((p) => p.id === a.playerId);
-                        if (player && player.position === pos) return true;
-                      }
-                      return false;
-                    });
-                    return (
-                      <div key={pos} style={{ ...styles.allProCard, borderColor: '#3a3a5c' }}>
-                        <span style={styles.posLabel}>{POSITION_LABELS[pos]}</span>
-                        <span style={styles.allProName}>
-                          {award?.playerId ? getPlayerName(award.playerId) : '-'}
-                        </span>
-                        <span style={styles.allProTeam}>
-                          {award?.teamId ? getTeamName(award.teamId) : ''}
-                        </span>
-                      </div>
-                    );
-                  })}
+              <div className="fm-panel fm-mb-md">
+                <div className="fm-panel__header">
+                  <span className="fm-panel__title">All-Pro 2nd Team</span>
+                </div>
+                <div className="fm-panel__body">
+                  <div className="fm-grid" style={{ gridTemplateColumns: 'repeat(5, 1fr)' }}>
+                    {(['top', 'jungle', 'mid', 'adc', 'support'] as Position[]).map((pos) => {
+                      const award = allPro2nd.find((a) => {
+                        if (!a.playerId) return false;
+                        for (const team of teams) {
+                          const player = team.roster?.find((p) => p.id === a.playerId);
+                          if (player && player.position === pos) return true;
+                        }
+                        return false;
+                      });
+                      return (
+                        <div key={pos} className="fm-card fm-flex-col fm-items-center fm-gap-sm">
+                          <span className="fm-text-sm fm-text-muted fm-text-upper fm-font-semibold">{POSITION_LABELS[pos]}</span>
+                          <span className="fm-text-lg fm-font-semibold fm-text-primary fm-text-center">
+                            {award?.playerId ? getPlayerName(award.playerId) : '-'}
+                          </span>
+                          <span className="fm-text-base fm-text-secondary">
+                            {award?.teamId ? getTeamName(award.teamId) : ''}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             </>
@@ -279,52 +322,56 @@ export function AwardsView() {
       {activeTab === 'candidates' && (
         <div>
           {candidates.length === 0 ? (
-            <div style={styles.card}>
-              <p style={styles.emptyText}>
-                경기 데이터가 부족합니다. 시즌이 진행되면 순위가 표시됩니다.
-              </p>
+            <div className="fm-panel">
+              <div className="fm-panel__body">
+                <p className="fm-text-lg fm-text-muted fm-text-center fm-p-lg">
+                  경기 데이터가 부족합니다. 시즌이 진행되면 순위가 표시됩니다.
+                </p>
+              </div>
             </div>
           ) : (
-            <div style={styles.card}>
-              <h2 style={styles.sectionTitle}>MVP 후보 순위</h2>
-              <table style={styles.table}>
-                <thead>
-                  <tr>
-                    <th style={styles.th}>#</th>
-                    <th style={styles.th}>선수</th>
-                    <th style={styles.th}>팀</th>
-                    <th style={styles.th}>포지션</th>
-                    <th style={styles.th}>경기</th>
-                    <th style={styles.th}>KDA</th>
-                    <th style={styles.th}>MVP 점수</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {candidates.slice(0, 20).map((c, idx) => (
-                    <tr key={c.playerId} style={styles.tr}>
-                      <td style={{
-                        ...styles.td,
-                        color: idx < 3 ? '#c89b3c' : '#c0c0d0',
-                        fontWeight: idx < 3 ? 700 : 400,
-                      }}>
-                        {idx + 1}
-                      </td>
-                      <td style={{ ...styles.td, ...styles.nameCell }}>
-                        {c.playerName}
-                      </td>
-                      <td style={styles.td}>{getTeamName(c.teamId)}</td>
-                      <td style={styles.td}>{POSITION_LABELS[c.position as Position] ?? c.position}</td>
-                      <td style={styles.td}>{c.games}</td>
-                      <td style={{ ...styles.td, color: '#c89b3c', fontWeight: 600 }}>
-                        {c.kda.toFixed(2)}
-                      </td>
-                      <td style={{ ...styles.td, fontWeight: 700, color: '#f0e6d2' }}>
-                        {c.score.toFixed(2)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="fm-panel">
+              <div className="fm-panel__header">
+                <span className="fm-panel__title">MVP 후보 순위</span>
+              </div>
+              <div className="fm-panel__body--flush">
+                <div className="fm-table-wrap">
+                  <table className="fm-table fm-table--striped">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>선수</th>
+                        <th>팀</th>
+                        <th>포지션</th>
+                        <th>경기</th>
+                        <th>KDA</th>
+                        <th>MVP 점수</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {candidates.slice(0, 20).map((c, idx) => (
+                        <tr key={c.playerId}>
+                          <td className={idx < 3 ? 'fm-cell--gold' : ''}>
+                            {idx + 1}
+                          </td>
+                          <td className="fm-cell--name">
+                            {c.playerName}
+                          </td>
+                          <td>{getTeamName(c.teamId)}</td>
+                          <td>{POSITION_LABELS[c.position as Position] ?? c.position}</td>
+                          <td>{c.games}</td>
+                          <td className="fm-cell--accent">
+                            {c.kda.toFixed(2)}
+                          </td>
+                          <td className="fm-cell--name fm-font-bold">
+                            {c.score.toFixed(2)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -332,169 +379,3 @@ export function AwardsView() {
     </div>
   );
 }
-
-// ─────────────────────────────────────────
-// 스타일
-// ─────────────────────────────────────────
-
-const styles: Record<string, React.CSSProperties> = {
-  title: {
-    fontSize: '24px',
-    fontWeight: 700,
-    color: '#f0e6d2',
-    marginBottom: '24px',
-  },
-  tabRow: {
-    display: 'flex',
-    gap: '8px',
-    marginBottom: '20px',
-  },
-  tabBtn: {
-    padding: '8px 20px',
-    fontSize: '13px',
-    fontWeight: 500,
-    background: 'rgba(255,255,255,0.05)',
-    border: '1px solid #3a3a5c',
-    borderRadius: '6px',
-    color: '#8a8a9a',
-    cursor: 'pointer',
-  },
-  tabBtnActive: {
-    background: 'rgba(200,155,60,0.15)',
-    borderColor: '#c89b3c',
-    color: '#c89b3c',
-    fontWeight: 700,
-  },
-  card: {
-    background: 'rgba(255,255,255,0.03)',
-    border: '1px solid #2a2a4a',
-    borderRadius: '10px',
-    padding: '20px',
-    marginBottom: '16px',
-  },
-  sectionTitle: {
-    fontSize: '16px',
-    fontWeight: 600,
-    color: '#c89b3c',
-    marginBottom: '16px',
-    borderBottom: '1px solid #3a3a5c',
-    paddingBottom: '8px',
-  },
-  emptyText: {
-    fontSize: '14px',
-    color: '#6a6a7a',
-    textAlign: 'center',
-    padding: '24px 0',
-  },
-  awardHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    marginBottom: '16px',
-  },
-  awardIcon: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '48px',
-    height: '48px',
-    borderRadius: '50%',
-    background: 'linear-gradient(135deg, #c89b3c, #e0c068)',
-    color: '#0d0d1a',
-    fontWeight: 800,
-    fontSize: '14px',
-  },
-  awardIconRookie: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '48px',
-    height: '48px',
-    borderRadius: '50%',
-    background: 'linear-gradient(135deg, #2ecc71, #27ae60)',
-    color: '#0d0d1a',
-    fontWeight: 800,
-    fontSize: '14px',
-  },
-  awardTitle: {
-    fontSize: '18px',
-    fontWeight: 700,
-    color: '#f0e6d2',
-  },
-  mvpDisplay: {
-    display: 'flex',
-    alignItems: 'baseline',
-    gap: '12px',
-    paddingLeft: '60px',
-  },
-  mvpName: {
-    fontSize: '20px',
-    fontWeight: 700,
-    color: '#f0e6d2',
-  },
-  mvpTeam: {
-    fontSize: '14px',
-    color: '#8a8a9a',
-  },
-  mvpScore: {
-    fontSize: '13px',
-    color: '#6a6a7a',
-    marginLeft: 'auto',
-  },
-  allProGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(5, 1fr)',
-    gap: '12px',
-  },
-  allProCard: {
-    background: 'rgba(200,155,60,0.06)',
-    border: '1px solid rgba(200,155,60,0.2)',
-    borderRadius: '8px',
-    padding: '16px',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '8px',
-  },
-  posLabel: {
-    fontSize: '11px',
-    color: '#6a6a7a',
-    textTransform: 'uppercase',
-    fontWeight: 600,
-    letterSpacing: '0.5px',
-  },
-  allProName: {
-    fontSize: '14px',
-    fontWeight: 600,
-    color: '#f0e6d2',
-    textAlign: 'center',
-  },
-  allProTeam: {
-    fontSize: '12px',
-    color: '#8a8a9a',
-  },
-  table: {
-    width: '100%',
-    borderCollapse: 'collapse',
-    fontSize: '13px',
-  },
-  th: {
-    padding: '8px 10px',
-    textAlign: 'left',
-    borderBottom: '1px solid #3a3a5c',
-    color: '#6a6a7a',
-    fontSize: '12px',
-    fontWeight: 500,
-  },
-  tr: {
-    borderBottom: '1px solid rgba(255,255,255,0.04)',
-  },
-  td: {
-    padding: '8px 10px',
-    color: '#c0c0d0',
-  },
-  nameCell: {
-    fontWeight: 500,
-    color: '#e0e0e0',
-  },
-};

@@ -12,17 +12,22 @@ import { useNavigate } from 'react-router-dom';
 import { useGameStore } from '../../stores/gameStore';
 import { useMatchStore } from '../../stores/matchStore';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { useBgm } from '../../hooks/useBgm';
 import {
   LiveMatchEngine,
   type LiveGameState,
   type Decision,
 } from '../../engine/match/liveMatch';
+import { conductTeamTalk } from '../../engine/teamTalk/teamTalkEngine';
 import { buildLineup } from '../../engine/match/teamRating';
 import { getPlayersByTeamId, getTraitsByTeamId, getFormByTeamId, getTeamPlayStyle } from '../../db/queries';
+import { calculateChemistryBonus } from '../../engine/chemistry/chemistryEngine';
+import { calculateTeamSoloRankBonus } from '../../engine/soloRank/soloRankEngine';
 import { saveUserMatchResult } from '../../engine/season/dayAdvancer';
 import { processPlayoffMatchResult } from '../../engine/season/playoffGenerator';
 import { processTournamentMatchResult } from '../../engine/tournament/tournamentEngine';
 import { generatePostMatchComment, type PostMatchComment } from '../../ai/gameAiService';
+import { generateMatchCommentary, generateLiveChatMessages, type LiveChatMessage } from '../../ai/advancedAiService';
 import { accumulateFearlessChampions } from '../../engine/draft/draftEngine';
 import type { MatchResult, GameResult } from '../../engine/match/matchSimulator';
 
@@ -33,7 +38,30 @@ import { SeriesResult } from './SeriesResult';
 import { TacticsPanel } from './TacticsPanel';
 import { PlayerInstructions } from './PlayerInstructions';
 import { soundManager } from '../../audio/soundManager';
+import './match.css';
 const MatchMinimap = lazy(() => import('./MatchMinimap').then((m) => ({ default: m.MatchMinimap })));
+
+const AI_COMMENTARY_EVENT_TYPES = new Set(['kill', 'dragon', 'baron', 'tower_destroy', 'teamfight']);
+const AI_COMMENTARY_COOLDOWN_MS = 30_000;
+const LIVE_CHAT_COOLDOWN_MS = 20_000;
+
+/** 엔진 이벤트 타입 -> 라이브 채팅 이벤트 매핑 */
+const EVENT_TO_CHAT: Record<string, string> = {
+  kill: 'firstBlood',
+  dragon: 'dragon',
+  baron: 'baron',
+  teamfight: 'teamfight',
+  tower_destroy: 'teamfight',
+};
+
+/** 채팅 타입별 색상 */
+const CHAT_TYPE_COLORS: Record<string, string> = {
+  cheer: '#2ecc71',
+  flame: '#e74c3c',
+  meme: '#f39c12',
+  analysis: '#60a5fa',
+  neutral: '#8a8a9a',
+};
 
 const phaseLabels: Record<string, string> = {
   loading: '로딩',
@@ -44,6 +72,7 @@ const phaseLabels: Record<string, string> = {
 };
 
 export function LiveMatchView() {
+  useBgm('match');
   const navigate = useNavigate();
   const save = useGameStore((s) => s.save);
   const pendingMatch = useGameStore((s) => s.pendingUserMatch);
@@ -67,6 +96,8 @@ export function LiveMatchView() {
   const setCurrentGameNum = useMatchStore((s) => s.setCurrentGameNum);
   const gameResults = useMatchStore((s) => s.gameResults);
   const setGameResults = useMatchStore((s) => s.setGameResults);
+  const betweenGames = useMatchStore((s) => s.betweenGames);
+  const setBetweenGames = useMatchStore((s) => s.setBetweenGames);
   const resetSeries = useMatchStore((s) => s.resetSeries);
 
   const [engine, setEngine] = useState<LiveMatchEngine | null>(null);
@@ -77,9 +108,18 @@ export function LiveMatchView() {
   const [postMatchComment, setPostMatchComment] = useState<PostMatchComment | null>(null);
   const [homePlayerIds, setHomePlayerIds] = useState<string[]>([]);
   const [awayPlayerIds, setAwayPlayerIds] = useState<string[]>([]);
+  const [teamTalkResult, setTeamTalkResult] = useState<string | null>(null);
+  const [teamTalkDone, setTeamTalkDone] = useState(false);
+  const [liveChatMessages, setLiveChatMessages] = useState<LiveChatMessage[]>([]);
+  const [matchError, setMatchError] = useState<string | null>(null);
 
   const commentaryRef = useRef<HTMLDivElement>(null);
+  const chatRef = useRef<HTMLDivElement>(null);
   const tickTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastAiCommentaryTime = useRef<number>(0);
+  const lastProcessedEventCount = useRef<number>(0);
+  const lastChatEventCount = useRef<number>(0);
+  const lastChatTime = useRef<number>(0);
 
   const homeTeam = teams.find((t) => t.id === pendingMatch?.teamHomeId);
   const awayTeam = teams.find((t) => t.id === pendingMatch?.teamAwayId);
@@ -96,7 +136,10 @@ export function LiveMatchView() {
     const homeLineup = buildLineup(homePlayers);
     const awayLineup = buildLineup(awayPlayers);
 
-    if (!homeLineup || !awayLineup) return;
+    if (!homeLineup || !awayLineup) {
+      setMatchError('출전 가능한 선수가 부족하여 경기를 진행할 수 없습니다.');
+      return;
+    }
 
     // 미니맵용 플레이어 ID 저장
     const positions: Array<'top' | 'jungle' | 'mid' | 'adc' | 'support'> = ['top', 'jungle', 'mid', 'adc', 'support'];
@@ -111,6 +154,20 @@ export function LiveMatchView() {
     const homePlayStyle = await getTeamPlayStyle(pendingMatch.teamHomeId);
     const awayPlayStyle = await getTeamPlayStyle(pendingMatch.teamAwayId);
 
+    // 케미스트리 + 솔로랭크 보너스
+    let homeExtraBonus = 0;
+    let awayExtraBonus = 0;
+    try {
+      const [homeChem, awayChem, homeSolo, awaySolo] = await Promise.all([
+        calculateChemistryBonus(pendingMatch.teamHomeId),
+        calculateChemistryBonus(pendingMatch.teamAwayId),
+        calculateTeamSoloRankBonus(pendingMatch.teamHomeId),
+        calculateTeamSoloRankBonus(pendingMatch.teamAwayId),
+      ]);
+      homeExtraBonus = homeChem + homeSolo;
+      awayExtraBonus = awayChem + awaySolo;
+    } catch { /* 보너스 계산 실패 시 0 사용 */ }
+
     const newEngine = new LiveMatchEngine({
       homeLineup,
       awayLineup,
@@ -123,6 +180,8 @@ export function LiveMatchView() {
       draftResult,
       homePlayStyle,
       awayPlayStyle,
+      homeExtraBonus,
+      awayExtraBonus,
     });
 
     // 설정의 기본 속도를 경기 속도로 적용
@@ -156,6 +215,7 @@ export function LiveMatchView() {
       }
 
       if (state.isFinished) {
+        if (tickTimer.current) clearInterval(tickTimer.current);
         setIsRunning(false);
       }
     }, interval);
@@ -164,6 +224,99 @@ export function LiveMatchView() {
       if (tickTimer.current) clearInterval(tickTimer.current);
     };
   }, [engine, isRunning, matchSpeed, currentDecision]);
+
+  // AI 경기 중계: 주요 이벤트(kill, dragon, baron, tower_destroy, teamfight) 발생 시 호출
+  // 최소 30초(실시간) 간격 제한
+  useEffect(() => {
+    let cancelled = false;
+    if (!gameState || !engine || gameState.isFinished) return;
+
+    const events = gameState.events;
+    const prevCount = lastProcessedEventCount.current;
+    if (events.length <= prevCount) return;
+
+    // 새 이벤트 중 주요 이벤트 필터링
+    const newEvents = events.slice(prevCount);
+    lastProcessedEventCount.current = events.length;
+
+    const majorEvent = newEvents.find(e => AI_COMMENTARY_EVENT_TYPES.has(e.type));
+    if (!majorEvent) return;
+
+    const now = Date.now();
+    if (now - lastAiCommentaryTime.current < AI_COMMENTARY_COOLDOWN_MS) return;
+    lastAiCommentaryTime.current = now;
+
+    // 게임 페이즈 매핑
+    const phase = gameState.phase === 'laning' ? 'laning'
+      : gameState.phase === 'mid_game' ? 'mid_game' : 'late_game';
+
+    // 비동기 AI 중계 호출 (fire-and-forget, 실패 시 무시)
+    generateMatchCommentary({
+      phase,
+      event: majorEvent.type,
+      details: majorEvent.description,
+      goldDiff: gameState.goldHome - gameState.goldAway,
+      gameTime: gameState.currentTick,
+      kills: { home: gameState.killsHome, away: gameState.killsAway },
+    }).then(result => {
+      if (cancelled || !engine) return;
+      const state = engine.getState();
+      // 불변성 유지: 새 배열 생성
+      const newCommentary = [...state.commentary, {
+        tick: state.currentTick,
+        message: result.text,
+        type: (majorEvent.type === 'kill' || majorEvent.type === 'teamfight' ? 'highlight' : 'info') as 'highlight' | 'info',
+      }];
+      setGameState({ ...state, commentary: newCommentary });
+    }).catch(() => { /* AI 실패 시 기존 중계 유지 */ });
+
+    return () => { cancelled = true; };
+  }, [gameState?.events.length]);
+
+  // 라이브 채팅: 주요 이벤트 시 커뮤니티 채팅 생성
+  useEffect(() => {
+    let cancelled = false;
+    if (!gameState || !engine || gameState.isFinished) return;
+
+    const events = gameState.events;
+    const prevCount = lastChatEventCount.current;
+    if (events.length <= prevCount) return;
+
+    const newEvents = events.slice(prevCount);
+    lastChatEventCount.current = events.length;
+
+    const majorEvent = newEvents.find(e => AI_COMMENTARY_EVENT_TYPES.has(e.type));
+    if (!majorEvent) return;
+
+    const now = Date.now();
+    if (now - lastChatTime.current < LIVE_CHAT_COOLDOWN_MS) return;
+    lastChatTime.current = now;
+
+    const chatEvent = EVENT_TO_CHAT[majorEvent.type] ?? 'teamfight';
+    const isWinning = gameState.goldHome >= gameState.goldAway;
+
+    generateLiveChatMessages({
+      teamName: homeTeam?.shortName ?? '블루',
+      opponentName: awayTeam?.shortName ?? '레드',
+      event: chatEvent,
+      isWinning,
+      goldDiff: gameState.goldHome - gameState.goldAway,
+      gameTime: gameState.currentTick,
+      count: 4,
+    }).then(messages => {
+      if (cancelled) return;
+      setLiveChatMessages(prev => [...prev, ...messages].slice(-30));
+    }).catch(() => { /* 채팅 생성 실패 무시 */ });
+
+    return () => { cancelled = true; };
+  }, [gameState?.events.length]);
+
+  // 채팅 패널 자동 스크롤
+  useEffect(() => {
+    if (chatRef.current) {
+      chatRef.current.scrollTop = chatRef.current.scrollHeight;
+    }
+  }, [liveChatMessages.length]);
 
   // 중계 메시지 자동 스크롤
   useEffect(() => {
@@ -189,11 +342,11 @@ export function LiveMatchView() {
 
   // 게임 종료 → 다음 세트 or 시리즈 종료
   const handleGameEnd = useCallback(async () => {
-    if (!gameState || !pendingMatch) return;
+    if (!gameState || !pendingMatch || !engine || !gameState.winner) return;
 
-    const playerStatLines = engine!.getPlayerStatLines();
+    const playerStatLines = engine.getPlayerStatLines();
     const result: GameResult = {
-      winnerSide: gameState.winner!,
+      winnerSide: gameState.winner,
       durationMinutes: gameState.maxTick,
       goldDiffAt15: gameState.goldHome - gameState.goldAway,
       killsHome: gameState.killsHome,
@@ -201,6 +354,9 @@ export function LiveMatchView() {
       events: gameState.events,
       playerStatsHome: playerStatLines.home,
       playerStatsAway: playerStatLines.away,
+      dragonSoul: gameState.dragonSoul,
+      grubsHome: gameState.grubsHome,
+      grubsAway: gameState.grubsAway,
     };
 
     const newResults = [...gameResults, result];
@@ -211,8 +367,9 @@ export function LiveMatchView() {
     setSeriesScore(newScore);
     setGameResults(newResults);
 
-    // Bo3: 2승 필요
-    if (newScore.home >= 2 || newScore.away >= 2) {
+    // Bo 포맷별 승수 계산 (Bo3: 2승, Bo5: 3승)
+    const winsNeeded = pendingMatch.boFormat === 'Bo5' ? 3 : 2;
+    if (newScore.home >= winsNeeded || newScore.away >= winsNeeded) {
       // 시리즈 종료
       setSeriesComplete(true);
 
@@ -228,6 +385,8 @@ export function LiveMatchView() {
         scoreAway: newScore.away,
         winner: newScore.home > newScore.away ? 'home' : 'away',
         games: newResults,
+        substitutions: [],
+        sideSelections: [],
       };
       await saveUserMatchResult(pendingMatch, matchResult, pendingMatch.seasonId, save?.userTeamId);
 
@@ -261,22 +420,46 @@ export function LiveMatchView() {
         }
       }
     } else {
-      // 다음 세트
-      const nextGame = currentGameNum + 1;
-      setCurrentGameNum(nextGame);
-
-      // 피어리스 드래프트: 사용된 챔피언 풀 누적 → 재드래프트
-      if (pendingMatch.fearlessDraft && draftResult) {
-        const newPool = accumulateFearlessChampions(fearlessPool, draftResult);
-        setFearlessPool(newPool);
-        setDayPhase('banpick');
-        navigate(`${basePath}/draft`);
-        return;
-      }
-
-      await initGame(nextGame);
+      // 세트 간 휴식 화면 진입
+      setBetweenGames(true);
+      setTeamTalkResult(null);
+      setTeamTalkDone(false);
     }
-  }, [engine, gameState, pendingMatch, gameResults, seriesScore, currentGameNum, initGame, draftResult, fearlessPool, setFearlessPool, setDayPhase, navigate, basePath]);
+  }, [engine, gameState, pendingMatch, gameResults, seriesScore, currentGameNum, setBetweenGames]);
+
+  // 세트 간 팀 토크 실행
+  const handleBetweenGamesTalk = useCallback(async (tone: 'motivate' | 'calm' | 'warn') => {
+    if (!pendingMatch || !save || teamTalkDone) return;
+    const result = await conductTeamTalk(
+      pendingMatch.id,
+      save.userTeamId,
+      'between_games',
+      tone,
+      null,
+    );
+    setTeamTalkResult(result.message);
+    setTeamTalkDone(true);
+  }, [pendingMatch, save, teamTalkDone]);
+
+  // 세트 간 휴식 → 다음 세트 진행
+  const handleProceedToNextGame = useCallback(async () => {
+    if (!pendingMatch) return;
+    setBetweenGames(false);
+
+    const nextGame = currentGameNum + 1;
+    setCurrentGameNum(nextGame);
+
+    // 피어리스 드래프트: 사용된 챔피언 풀 누적 → 재드래프트
+    if (pendingMatch.fearlessDraft && draftResult) {
+      const newPool = accumulateFearlessChampions(fearlessPool, draftResult);
+      setFearlessPool(newPool);
+      setDayPhase('banpick');
+      navigate(`${basePath}/draft`);
+      return;
+    }
+
+    await initGame(nextGame);
+  }, [pendingMatch, currentGameNum, initGame, draftResult, fearlessPool, setFearlessPool, setDayPhase, navigate, basePath, setBetweenGames, setCurrentGameNum]);
 
   // 시리즈 완료 → 대시보드 복귀
   const handleReturnToDashboard = useCallback(() => {
@@ -288,12 +471,21 @@ export function LiveMatchView() {
     navigate(`${basePath}/day`);
   }, [navigate, basePath, setDayPhase, setPendingUserMatch, setDraftResult, setFearlessPool, resetSeries]);
 
+  if (matchError) {
+    return (
+      <div className="fm-panel fm-p-lg">
+        <p className="fm-text-danger fm-text-md fm-mb-md">{matchError}</p>
+        <button className="fm-btn fm-btn--secondary" onClick={handleReturnToDashboard}>돌아가기</button>
+      </div>
+    );
+  }
+
   if (!pendingMatch || !gameState) {
-    return <p style={{ color: '#6a6a7a' }}>경기 데이터 로딩 중...</p>;
+    return <p className="fm-text-muted fm-text-md">경기 데이터 로딩 중...</p>;
   }
 
   return (
-    <div style={styles.container}>
+    <div className="match-container">
       <Scoreboard
         gameState={gameState}
         homeTeamShortName={homeTeam?.shortName ?? '블루'}
@@ -304,14 +496,11 @@ export function LiveMatchView() {
       />
 
       {/* 컨트롤 바 */}
-      <div style={styles.controlBar}>
+      <div className="match-control-bar">
         {!gameState.isFinished ? (
           <>
             <button
-              style={{
-                ...styles.ctrlBtn,
-                background: isRunning ? '#e74c3c' : '#2ecc71',
-              }}
+              className={`fm-btn ${isRunning ? 'fm-btn--danger' : 'fm-btn--success'}`}
               onClick={() => {
                 if (!isRunning && gameState?.phase === 'loading') {
                   soundManager.play('match_start');
@@ -322,15 +511,11 @@ export function LiveMatchView() {
             >
               {isRunning ? '일시정지' : '재생'}
             </button>
-            <div style={styles.speedRow}>
+            <div className="match-speed-row">
               {[1, 2, 4].map((s) => (
                 <button
                   key={s}
-                  style={{
-                    ...styles.speedBtn,
-                    background: matchSpeed === s ? '#c89b3c' : 'transparent',
-                    color: matchSpeed === s ? '#0d0d1a' : '#8a8a9a',
-                  }}
+                  className={`match-speed-btn ${matchSpeed === s ? 'match-speed-btn--active' : ''}`}
                   onClick={() => setSpeed(s)}
                   aria-label={`속도 ${s}배`}
                 >
@@ -343,8 +528,8 @@ export function LiveMatchView() {
             )}
           </>
         ) : (
-          <button style={styles.nextBtn} onClick={handleGameEnd}>
-            {seriesScore.home >= 2 || seriesScore.away >= 2
+          <button className="fm-btn fm-btn--primary fm-btn--lg" onClick={handleGameEnd}>
+            {seriesScore.home >= (pendingMatch?.boFormat === 'Bo5' ? 3 : 2) || seriesScore.away >= (pendingMatch?.boFormat === 'Bo5' ? 3 : 2)
               ? '시리즈 결과 확인'
               : `다음 세트 (SET ${currentGameNum + 1})`}
           </button>
@@ -360,7 +545,7 @@ export function LiveMatchView() {
 
       {/* 개별 선수 지시 (감독 모드, 경기 진행 중) */}
       {mode === 'manager' && engine && !gameState.isFinished && (
-        <div style={styles.instructionsRow}>
+        <div className="match-instructions-row">
           <PlayerInstructions
             engine={engine}
             playerStats={gameState.playerStatsHome}
@@ -378,19 +563,111 @@ export function LiveMatchView() {
         </div>
       )}
 
-      <div style={styles.matchContent}>
+      <div className="match-content">
         <CommentaryPanel
           commentary={gameState.commentary}
           panelRef={commentaryRef}
         />
-        <Suspense fallback={<div style={{ width: 280, height: 280, background: '#0a1a0a', borderRadius: '8px' }} />}>
+        <Suspense fallback={<div className="match-minimap-placeholder" />}>
           <MatchMinimap
             gameState={gameState}
             homePlayerIds={homePlayerIds}
             awayPlayerIds={awayPlayerIds}
           />
         </Suspense>
+
+        {/* 라이브 채팅 패널 */}
+        <div className="match-chat-panel" ref={chatRef}>
+          <h3 className="match-chat-title">라이브 채팅</h3>
+          {liveChatMessages.length === 0 ? (
+            <p className="match-chat-empty">이벤트 발생 시 채팅이 표시됩니다</p>
+          ) : (
+            liveChatMessages.map((msg, i) => (
+              <div key={i} className="match-chat-item">
+                <span
+                  className="match-chat-username"
+                  style={{ color: CHAT_TYPE_COLORS[msg.type] ?? '#8a8a9a' }}
+                >
+                  {msg.username}
+                </span>
+                <span className="match-chat-message">{msg.message}</span>
+              </div>
+            ))
+          )}
+        </div>
       </div>
+
+      {betweenGames && gameState && (
+        <div className="fm-overlay">
+          <div className="match-between-modal">
+            <h2 className="match-between-title">세트 간 휴식</h2>
+
+            {/* 이전 세트 결과 */}
+            <div className="match-between-result">
+              <span className="match-between-result-label">SET {currentGameNum} 결과</span>
+              <div className="match-between-score-line">
+                <span className="fm-font-bold fm-text-info">{homeTeam?.shortName ?? '블루'}</span>
+                <span className="match-between-score-value">
+                  {gameState.killsHome} - {gameState.killsAway}
+                </span>
+                <span className="fm-font-bold fm-text-danger">{awayTeam?.shortName ?? '레드'}</span>
+              </div>
+              <span className="match-between-winner">
+                {gameState.winner === 'home' ? homeTeam?.shortName : awayTeam?.shortName} 승리
+              </span>
+              <div className="match-between-stats">
+                <span>골드: {Math.round(gameState.goldHome / 100) / 10}k vs {Math.round(gameState.goldAway / 100) / 10}k</span>
+                <span>타워: {gameState.towersHome} vs {gameState.towersAway}</span>
+                <span>경기 시간: {gameState.maxTick}분</span>
+              </div>
+            </div>
+
+            {/* 시리즈 스코어 */}
+            <div className="match-between-series-score">
+              <span className="match-between-series-label">시리즈 스코어</span>
+              <span className="match-between-series-value">
+                {seriesScore.home} - {seriesScore.away}
+              </span>
+            </div>
+
+            {/* 팀 토크 */}
+            {mode === 'manager' && (
+              <div className="match-between-talk-section">
+                <span className="match-between-talk-label">팀 토크</span>
+                {!teamTalkDone ? (
+                  <div className="match-between-talk-btns">
+                    <button
+                      className="fm-btn fm-btn--success"
+                      onClick={() => handleBetweenGamesTalk('motivate')}
+                    >
+                      격려
+                    </button>
+                    <button
+                      className="fm-btn fm-btn--info"
+                      onClick={() => handleBetweenGamesTalk('calm')}
+                    >
+                      진정
+                    </button>
+                    <button
+                      className="fm-btn fm-btn--warning"
+                      onClick={() => handleBetweenGamesTalk('warn')}
+                    >
+                      경고
+                    </button>
+                  </div>
+                ) : (
+                  <p className="match-between-talk-result">{teamTalkResult}</p>
+                )}
+              </div>
+            )}
+
+            {/* 다음 세트 버튼 */}
+            <button className="fm-btn fm-btn--primary fm-btn--lg" onClick={handleProceedToNextGame}>
+              다음 세트 시작 (SET {currentGameNum + 1})
+            </button>
+          </div>
+        </div>
+      )}
 
       {seriesComplete && (
         <SeriesResult
@@ -407,58 +684,3 @@ export function LiveMatchView() {
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    maxWidth: '900px',
-    margin: '0 auto',
-  },
-  instructionsRow: {
-    display: 'flex',
-    gap: '12px',
-    marginBottom: '12px',
-  },
-  matchContent: {
-    display: 'flex',
-    gap: '16px',
-    marginBottom: '16px',
-  },
-  controlBar: {
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: '16px',
-    marginBottom: '16px',
-  },
-  ctrlBtn: {
-    padding: '8px 24px',
-    border: 'none',
-    borderRadius: '6px',
-    color: '#fff',
-    fontSize: '14px',
-    fontWeight: 600,
-    cursor: 'pointer',
-  },
-  speedRow: {
-    display: 'flex',
-    gap: '6px',
-  },
-  speedBtn: {
-    padding: '6px 12px',
-    border: '1px solid #3a3a5c',
-    borderRadius: '4px',
-    fontSize: '12px',
-    fontWeight: 600,
-    cursor: 'pointer',
-  },
-  nextBtn: {
-    padding: '10px 32px',
-    background: '#c89b3c',
-    color: '#0d0d1a',
-    border: 'none',
-    borderRadius: '6px',
-    fontSize: '14px',
-    fontWeight: 700,
-    cursor: 'pointer',
-  },
-};

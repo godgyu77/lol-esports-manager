@@ -1,6 +1,10 @@
 mod commands;
+mod ollama_manager;
 
 use tauri_plugin_sql::{Migration, MigrationKind};
+use ollama_manager::OllamaState;
+use std::sync::Mutex;
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -96,6 +100,42 @@ pub fn run() {
             kind: MigrationKind::Up,
         },
         Migration {
+            version: 16,
+            description: "scouting system",
+            sql: include_str!("../migrations/016_scouting.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 17,
+            description: "training system",
+            sql: include_str!("../migrations/017_training.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 18,
+            description: "staff system",
+            sql: include_str!("../migrations/018_staff.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 19,
+            description: "board expectations",
+            sql: include_str!("../migrations/019_board_expectations.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 20,
+            description: "tactics system",
+            sql: include_str!("../migrations/020_tactics.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 21,
+            description: "awards system",
+            sql: include_str!("../migrations/021_awards.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
             version: 22,
             description: "create academy and rookie draft tables",
             sql: include_str!("../migrations/022_academy.sql"),
@@ -105,6 +145,30 @@ pub fn run() {
             version: 23,
             description: "create news articles table",
             sql: include_str!("../migrations/023_news_system.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 24,
+            description: "player complaints",
+            sql: include_str!("../migrations/024_player_complaints.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 25,
+            description: "save slots",
+            sql: include_str!("../migrations/025_save_slots.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 26,
+            description: "records system",
+            sql: include_str!("../migrations/026_records.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 27,
+            description: "facilities system",
+            sql: include_str!("../migrations/027_facilities.sql"),
             kind: MigrationKind::Up,
         },
         Migration {
@@ -120,9 +184,27 @@ pub fn run() {
             kind: MigrationKind::Up,
         },
         Migration {
+            version: 30,
+            description: "rivalry system",
+            sql: include_str!("../migrations/030_rivalry.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
             version: 31,
             description: "create manager profiles table",
             sql: include_str!("../migrations/031_manager_profile.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 32,
+            description: "injuries system",
+            sql: include_str!("../migrations/032_injuries.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 33,
+            description: "retirement system",
+            sql: include_str!("../migrations/033_retirement.sql"),
             kind: MigrationKind::Up,
         },
         Migration {
@@ -149,6 +231,78 @@ pub fn run() {
             sql: include_str!("../migrations/037_nationality_rules.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 38,
+            description: "team talks system",
+            sql: include_str!("../migrations/038_team_talks.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 39,
+            description: "promises system",
+            sql: include_str!("../migrations/039_promises.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 40,
+            description: "board requests",
+            sql: include_str!("../migrations/040_board_requests.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 41,
+            description: "buyout personality inbox",
+            sql: include_str!("../migrations/041_buyout_personality_inbox.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 42,
+            description: "mentoring system",
+            sql: include_str!("../migrations/042_mentoring.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 43,
+            description: "ownership system",
+            sql: include_str!("../migrations/043_ownership.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 44,
+            description: "contract clauses",
+            sql: include_str!("../migrations/044_contract_clauses.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 45,
+            description: "career chemistry form history",
+            sql: include_str!("../migrations/045_career_chemistry_form.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 46,
+            description: "lol esports systems",
+            sql: include_str!("../migrations/046_lol_esports_systems.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 47,
+            description: "advanced systems",
+            sql: include_str!("../migrations/047_advanced_systems.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 48,
+            description: "contract negotiations",
+            sql: include_str!("../migrations/048_contract_negotiations.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 49,
+            description: "missing tables fix",
+            sql: include_str!("../migrations/049_missing_tables.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -158,10 +312,32 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_process::init())
+        .manage(OllamaState {
+            process: Mutex::new(None),
+        })
+        .setup(|app| {
+            // Ollama sidecar 자동 시작 시도 (실패해도 앱은 계속 실행)
+            let handle = app.handle().clone();
+            if let Err(e) = ollama_manager::start_ollama(&handle) {
+                eprintln!("Ollama 자동 시작 실패 (수동 시작 필요): {}", e);
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::llm::check_ollama_status,
             commands::llm::chat_with_llm,
+            ollama_manager::pull_model,
+            ollama_manager::list_models,
+            ollama_manager::delete_model,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            if let tauri::RunEvent::Exit = event {
+                if let Some(state) = app_handle.try_state::<OllamaState>() {
+                    ollama_manager::stop_ollama(&state);
+                }
+            }
+        });
 }

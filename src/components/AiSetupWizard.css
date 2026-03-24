@@ -1,0 +1,126 @@
+/* ═══════════════════════════════════════════════════
+   AI Setup Wizard — FM-style scoped styles
+   Covers layout/effects that FM utility classes cannot express
+   ═══════════════════════════════════════════════════ */
+
+.wizard-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--bg-primary) 0%, #1a1a3e 50%, var(--bg-primary) 100%);
+  z-index: 9999;
+}
+
+.wizard-container {
+  width: 100%;
+  max-width: 720px;
+  padding: 40px;
+  color: var(--text-primary);
+}
+
+/* Gradient title */
+.wizard-title {
+  font-size: 32px;
+  font-weight: 800;
+  background: linear-gradient(90deg, var(--accent), #f0e6d2);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin: 0 0 12px 0;
+}
+
+/* Cards grid — 2 columns */
+.wizard-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-bottom: var(--space-xl);
+}
+
+/* Model card — extends .fm-card--clickable */
+.wizard-model-card {
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.wizard-model-card--selected {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  box-shadow: 0 0 20px rgba(200, 155, 60, 0.1);
+}
+
+/* Model tag (monospace label) */
+.wizard-model-tag {
+  display: inline-block;
+  width: fit-content;
+  padding: 2px 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+/* Spec row inside model card */
+.wizard-spec-row {
+  display: flex;
+  gap: 12px;
+  margin-top: var(--space-xs);
+  padding-top: var(--space-sm);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Checkmark icon */
+.wizard-checkmark {
+  color: var(--accent);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+/* Progress bar (download) */
+.wizard-progress-track {
+  width: 100%;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  margin-bottom: var(--space-md);
+}
+
+.wizard-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), #f0e6d2);
+  border-radius: var(--radius-sm);
+  transition: width 0.3s ease;
+}
+
+/* Complete icon circle */
+.wizard-complete-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--success-dim);
+  border: 2px solid var(--success);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  color: var(--success);
+  margin: 0 auto var(--space-xl);
+  line-height: 64px;
+}
+
+/* Responsive: stack cards on narrow screens */
+@media (max-width: 640px) {
+  .wizard-cards-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .wizard-container {
+    padding: 24px 16px;
+  }
+}

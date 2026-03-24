@@ -9,6 +9,9 @@
 import { useEffect, useState } from 'react';
 import { useGameStore } from '../../../stores/gameStore';
 import { getTeamConditions } from '../../../db/queries';
+import { isAiAvailable } from '../../../ai/gameAiService';
+import { chatWithLlmJson } from '../../../ai/provider';
+import { buildPlayerContext } from '../../../ai/contextBuilder';
 import type { Player } from '../../../types/player';
 
 const POSITION_LABELS: Record<string, string> = {
@@ -42,10 +45,34 @@ function getOvr(player: Player): number {
   );
 }
 
-function getBarColor(value: number): string {
-  if (value > 70) return '#50c878';
-  if (value > 40) return '#c89b3c';
-  return '#dc3c3c';
+function getOvrClass(ovr: number): string {
+  if (ovr >= 90) return 'fm-ovr--elite';
+  if (ovr >= 80) return 'fm-ovr--high';
+  if (ovr >= 70) return 'fm-ovr--mid';
+  return 'fm-ovr--low';
+}
+
+function getBarFillClass(value: number): string {
+  if (value > 70) return 'fm-bar__fill--green';
+  if (value > 40) return 'fm-bar__fill--yellow';
+  return 'fm-bar__fill--red';
+}
+
+function getStatBarFillClass(value: number): string {
+  if (value >= 80) return 'fm-bar__fill--blue';
+  if (value >= 60) return 'fm-bar__fill--green';
+  return 'fm-bar__fill--yellow';
+}
+
+function getPosBadgeClass(pos: string): string {
+  const map: Record<string, string> = {
+    top: 'fm-pos-badge--top',
+    jungle: 'fm-pos-badge--jgl',
+    mid: 'fm-pos-badge--mid',
+    adc: 'fm-pos-badge--adc',
+    support: 'fm-pos-badge--sup',
+  };
+  return map[pos] ?? '';
 }
 
 export function PlayerHome() {
@@ -56,6 +83,7 @@ export function PlayerHome() {
 
   const [conditions, setConditions] = useState<Map<string, { stamina: number; morale: number; form: number }>>(new Map());
   const [loading, setLoading] = useState(true);
+  const [narrative, setNarrative] = useState<string | null>(null);
 
   const userTeam = teams.find((t) => t.id === save?.userTeamId);
   const myPlayer = userTeam?.roster.find((p) => p.id === save?.userPlayerId);
@@ -70,6 +98,34 @@ export function PlayerHome() {
       try {
         const cond = await getTeamConditions(userTeam.id, season.currentDate);
         if (!cancelled) setConditions(cond);
+
+        // AI 일간 내러티브 생성
+        if (save?.userPlayerId) {
+          try {
+            const aiReady = await isAiAvailable();
+            if (aiReady) {
+              const playerCtx = await buildPlayerContext(save.userPlayerId);
+              const result = await chatWithLlmJson<{ narrative: string }>(
+                `당신은 프로 LoL 선수입니다. 오늘 하루를 1인칭 시점으로 짧게 일기를 쓰세요 (50자 이내).\n\n[나의 상태]\n${playerCtx}\n\nJSON: {"narrative": "일기 내용"}`,
+              );
+              if (!cancelled) setNarrative(result.narrative);
+            } else {
+              // 폴백: 컨디션 기반 내러티브
+              const c = cond.get(save.userPlayerId);
+              const form = c?.form ?? 50;
+              const morale = c?.morale ?? 50;
+              if (form >= 70 && morale >= 70) {
+                if (!cancelled) setNarrative('컨디션이 최고다. 오늘 경기가 있다면 자신 있다.');
+              } else if (form < 40) {
+                if (!cancelled) setNarrative('최근 폼이 좋지 않다. 더 집중해서 훈련해야겠다.');
+              } else if (morale < 40) {
+                if (!cancelled) setNarrative('마음이 무겁다. 팀원들과 이야기를 나눠야겠다.');
+              } else {
+                if (!cancelled) setNarrative('평범한 하루. 꾸준히 노력하자.');
+              }
+            }
+          } catch { /* AI 실패 무시 */ }
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -80,10 +136,10 @@ export function PlayerHome() {
     return () => {
       cancelled = true;
     };
-  }, [userTeam?.id, season?.id, season?.currentDate]);
+  }, [userTeam?.id, season?.id, season?.currentDate, save?.userPlayerId]);
 
   if (!userTeam || !season || !myPlayer) {
-    return <p style={{ color: '#6a6a7a' }}>데이터를 불러오는 중...</p>;
+    return <p className="fm-text-secondary fm-text-md">데이터를 불러오는 중...</p>;
   }
 
   const ovr = getOvr(myPlayer);
@@ -102,382 +158,187 @@ export function PlayerHome() {
 
   return (
     <div>
-      <h1 style={styles.title}>선수 대시보드</h1>
+      <div className="fm-page-header">
+        <h1 className="fm-page-title">선수 대시보드</h1>
+      </div>
+
+      {/* AI 일간 내러티브 */}
+      {narrative && (
+        <div className="fm-alert fm-alert--warning">
+          <span className="fm-alert__icon">💭</span>
+          <p className="fm-alert__text" style={{ fontStyle: 'italic' }}>
+            &ldquo;{narrative}&rdquo;
+          </p>
+        </div>
+      )}
 
       {/* 내 선수 정보 카드 */}
-      <div style={styles.card}>
-        <h2 style={styles.cardTitle}>내 선수 정보</h2>
-        <div style={styles.profileRow}>
-          <div style={styles.profileMain}>
-            <span style={styles.playerName}>{myPlayer.name}</span>
-            <span style={styles.posTag}>
-              {POSITION_LABELS[myPlayer.position] ?? myPlayer.position}
-            </span>
-          </div>
-          <div style={styles.profileMeta}>
-            <span style={styles.metaItem}>{myPlayer.age}세</span>
-            <span style={styles.metaItem}>{myPlayer.nationality}</span>
-            <span style={styles.ovrBadge}>OVR {ovr}</span>
-          </div>
+      <div className="fm-panel">
+        <div className="fm-panel__header">
+          <span className="fm-panel__title">내 선수 정보</span>
         </div>
-
-        {/* 스탯 그리드 */}
-        <div style={styles.statGrid}>
-          {Object.entries(myPlayer.stats).map(([key, value]) => (
-            <div key={key} style={styles.statItem}>
-              <span style={styles.statLabel}>{STAT_LABELS[key] ?? key}</span>
-              <div style={styles.statBarBg}>
-                <div
-                  style={{
-                    ...styles.statBarFill,
-                    width: `${value}%`,
-                    background: value >= 80 ? '#a0d0ff' : value >= 60 ? '#50c878' : '#c89b3c',
-                  }}
-                />
-              </div>
-              <span style={styles.statValue}>{value}</span>
+        <div className="fm-panel__body">
+          <div className="fm-flex fm-items-center fm-justify-between fm-mb-md">
+            <div className="fm-flex fm-items-center fm-gap-md">
+              <span className="fm-text-2xl fm-font-bold fm-text-primary">{myPlayer.name}</span>
+              <span className={`fm-pos-badge ${getPosBadgeClass(myPlayer.position)}`}>
+                {POSITION_LABELS[myPlayer.position] ?? myPlayer.position}
+              </span>
             </div>
-          ))}
+            <div className="fm-flex fm-items-center fm-gap-md">
+              <span className="fm-text-md fm-text-muted">{myPlayer.age}세</span>
+              <span className="fm-text-md fm-text-muted">{myPlayer.nationality}</span>
+              <span className={`fm-ovr ${getOvrClass(ovr)} fm-text-xl`}>OVR {ovr}</span>
+            </div>
+          </div>
+
+          {/* 스탯 그리드 */}
+          <div className="fm-flex-col fm-gap-xs">
+            {Object.entries(myPlayer.stats).map(([key, value]) => (
+              <div key={key} className="fm-bar">
+                <span className="fm-text-sm fm-text-muted" style={{ minWidth: '100px' }}>
+                  {STAT_LABELS[key] ?? key}
+                </span>
+                <div className="fm-bar__track">
+                  <div
+                    className={`fm-bar__fill ${getStatBarFillClass(value)}`}
+                    style={{ width: `${value}%` }}
+                  />
+                </div>
+                <span className="fm-bar__value">{value}</span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
       {/* 위젯 그리드 */}
-      <div style={styles.widgetGrid}>
+      <div className="fm-grid fm-grid--2">
         {/* 오늘의 일정 */}
-        <div style={styles.card}>
-          <h2 style={styles.cardTitle}>오늘의 일정</h2>
-          <div style={styles.scheduleInfo}>
-            <span style={styles.scheduleDate}>{season.currentDate}</span>
-            <span style={styles.scheduleWeek}>{season.currentWeek}주차</span>
+        <div className="fm-panel">
+          <div className="fm-panel__header">
+            <span className="fm-panel__title">오늘의 일정</span>
           </div>
-          <div style={styles.scheduleType}>
-            {dayType ? (DAY_TYPE_LABELS[dayType] ?? dayType) : '대기 중'}
+          <div className="fm-panel__body">
+            <div className="fm-flex fm-justify-between fm-mb-sm">
+              <span className="fm-text-lg fm-text-primary fm-font-medium">{season.currentDate}</span>
+              <span className="fm-text-md fm-text-muted">{season.currentWeek}주차</span>
+            </div>
+            <div className="fm-card fm-card--highlight fm-text-center">
+              <span className="fm-text-xl fm-font-bold fm-text-primary">
+                {dayType ? (DAY_TYPE_LABELS[dayType] ?? dayType) : '대기 중'}
+              </span>
+            </div>
           </div>
         </div>
 
         {/* 현재 컨디션 */}
-        <div style={styles.card}>
-          <h2 style={styles.cardTitle}>현재 컨디션</h2>
-          {loading ? (
-            <p style={styles.dimText}>불러오는 중...</p>
-          ) : (
-            <div style={styles.conditionList}>
-              {[
-                { label: '체력', value: stamina },
-                { label: '사기', value: morale },
-                { label: '폼', value: form },
-              ].map((item) => (
-                <div key={item.label} style={styles.conditionRow}>
-                  <span style={styles.conditionLabel}>{item.label}</span>
-                  <div style={styles.conditionBarBg}>
-                    <div
-                      style={{
-                        ...styles.conditionBarFill,
-                        width: `${item.value}%`,
-                        background: getBarColor(item.value),
-                      }}
-                    />
+        <div className="fm-panel">
+          <div className="fm-panel__header">
+            <span className="fm-panel__title">현재 컨디션</span>
+          </div>
+          <div className="fm-panel__body">
+            {loading ? (
+              <p className="fm-text-muted fm-text-md">불러오는 중...</p>
+            ) : (
+              <div className="fm-flex-col fm-gap-sm">
+                {[
+                  { label: '체력', value: stamina },
+                  { label: '사기', value: morale },
+                  { label: '폼', value: form },
+                ].map((item) => (
+                  <div key={item.label} className="fm-bar">
+                    <span className="fm-text-sm fm-text-muted" style={{ minWidth: '40px' }}>
+                      {item.label}
+                    </span>
+                    <div className="fm-bar__track">
+                      <div
+                        className={`fm-bar__fill ${getBarFillClass(item.value)}`}
+                        style={{ width: `${item.value}%` }}
+                      />
+                    </div>
+                    <span className="fm-bar__value">{item.value}</span>
                   </div>
-                  <span style={styles.conditionValue}>{item.value}</span>
-                </div>
-              ))}
-            </div>
-          )}
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* 팀 내 위치 */}
-        <div style={styles.card}>
-          <h2 style={styles.cardTitle}>팀 내 위치</h2>
-          <div style={styles.teamPositionInfo}>
-            <div style={styles.divisionRow}>
-              <span style={styles.infoLabel}>소속</span>
-              <span style={{
-                ...styles.divisionBadge,
-                background: myDivision === '1군' ? 'rgba(80,200,120,0.15)' : 'rgba(220,60,60,0.15)',
-                color: myDivision === '1군' ? '#50c878' : '#dc3c3c',
-              }}>
-                {myDivision}
-              </span>
-            </div>
-            <div style={styles.divisionRow}>
-              <span style={styles.infoLabel}>팀</span>
-              <span style={styles.infoValue}>{userTeam.name}</span>
-            </div>
+        <div className="fm-panel">
+          <div className="fm-panel__header">
+            <span className="fm-panel__title">팀 내 위치</span>
           </div>
-
-          {/* 경쟁자 */}
-          {rivals.length > 0 && (
-            <div style={styles.rivalsSection}>
-              <span style={styles.rivalsSectionTitle}>
-                같은 포지션 경쟁자 ({POSITION_LABELS[myPlayer.position]})
-              </span>
-              {rivals.map((rival) => {
-                const rivalOvr = getOvr(rival);
-                const rivalDiv = (rival as { division?: string }).division === 'main' ? '1군' : '2군';
-                return (
-                  <div key={rival.id} style={styles.rivalItem}>
-                    <span style={styles.rivalName}>{rival.name}</span>
-                    <span style={styles.rivalDiv}>{rivalDiv}</span>
-                    <span style={styles.rivalOvr}>OVR {rivalOvr}</span>
-                  </div>
-                );
-              })}
+          <div className="fm-panel__body">
+            <div className="fm-flex-col fm-gap-xs fm-mb-md">
+              <div className="fm-info-row">
+                <span className="fm-info-row__label">소속</span>
+                <span className={`fm-badge ${myDivision === '1군' ? 'fm-badge--success' : 'fm-badge--danger'}`}>
+                  {myDivision}
+                </span>
+              </div>
+              <div className="fm-info-row">
+                <span className="fm-info-row__label">팀</span>
+                <span className="fm-info-row__value">{userTeam.name}</span>
+              </div>
             </div>
-          )}
-          {rivals.length === 0 && (
-            <p style={styles.dimText}>같은 포지션 경쟁자가 없습니다.</p>
-          )}
+
+            {/* 경쟁자 */}
+            {rivals.length > 0 && (
+              <div>
+                <div className="fm-divider" />
+                <span className="fm-text-xs fm-text-muted fm-text-upper fm-mb-sm" style={{ display: 'block' }}>
+                  같은 포지션 경쟁자 ({POSITION_LABELS[myPlayer.position]})
+                </span>
+                {rivals.map((rival) => {
+                  const rivalOvr = getOvr(rival);
+                  const rivalDiv = (rival as { division?: string }).division === 'main' ? '1군' : '2군';
+                  return (
+                    <div key={rival.id} className="fm-match-row">
+                      <span className="fm-flex-1 fm-text-md fm-font-medium fm-text-primary">{rival.name}</span>
+                      <span className="fm-text-sm fm-text-muted">{rivalDiv}</span>
+                      <span className={`fm-ovr ${getOvrClass(rivalOvr)} fm-text-md`}>OVR {rivalOvr}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {rivals.length === 0 && (
+              <p className="fm-text-muted fm-text-md">같은 포지션 경쟁자가 없습니다.</p>
+            )}
+          </div>
         </div>
 
         {/* 멘탈 스탯 */}
-        <div style={styles.card}>
-          <h2 style={styles.cardTitle}>멘탈</h2>
-          <div style={styles.conditionList}>
-            {[
-              { label: '멘탈 강도', value: myPlayer.mental.mental },
-              { label: '체력', value: myPlayer.mental.stamina },
-              { label: '사기', value: myPlayer.mental.morale },
-            ].map((item) => (
-              <div key={item.label} style={styles.conditionRow}>
-                <span style={styles.conditionLabel}>{item.label}</span>
-                <div style={styles.conditionBarBg}>
-                  <div
-                    style={{
-                      ...styles.conditionBarFill,
-                      width: `${item.value}%`,
-                      background: getBarColor(item.value),
-                    }}
-                  />
+        <div className="fm-panel">
+          <div className="fm-panel__header">
+            <span className="fm-panel__title">멘탈</span>
+          </div>
+          <div className="fm-panel__body">
+            <div className="fm-flex-col fm-gap-sm">
+              {[
+                { label: '멘탈 강도', value: myPlayer.mental.mental },
+                { label: '체력', value: myPlayer.mental.stamina },
+                { label: '사기', value: myPlayer.mental.morale },
+              ].map((item) => (
+                <div key={item.label} className="fm-bar">
+                  <span className="fm-text-sm fm-text-muted" style={{ minWidth: '60px' }}>
+                    {item.label}
+                  </span>
+                  <div className="fm-bar__track">
+                    <div
+                      className={`fm-bar__fill ${getBarFillClass(item.value)}`}
+                      style={{ width: `${item.value}%` }}
+                    />
+                  </div>
+                  <span className="fm-bar__value">{item.value}</span>
                 </div>
-                <span style={styles.conditionValue}>{item.value}</span>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         </div>
       </div>
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  title: {
-    fontSize: '24px',
-    fontWeight: 700,
-    color: '#f0e6d2',
-    marginBottom: '24px',
-  },
-  card: {
-    background: 'rgba(255,255,255,0.03)',
-    border: '1px solid #2a2a4a',
-    borderRadius: '10px',
-    padding: '20px',
-    marginBottom: '16px',
-  },
-  cardTitle: {
-    fontSize: '16px',
-    fontWeight: 600,
-    color: '#c89b3c',
-    marginBottom: '16px',
-  },
-  profileRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '20px',
-  },
-  profileMain: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-  },
-  playerName: {
-    fontSize: '20px',
-    fontWeight: 700,
-    color: '#f0e6d2',
-  },
-  posTag: {
-    fontSize: '12px',
-    fontWeight: 600,
-    color: '#c89b3c',
-    background: 'rgba(200,155,60,0.1)',
-    padding: '4px 10px',
-    borderRadius: '4px',
-  },
-  profileMeta: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '16px',
-  },
-  metaItem: {
-    fontSize: '13px',
-    color: '#8a8a9a',
-  },
-  ovrBadge: {
-    fontSize: '16px',
-    fontWeight: 700,
-    color: '#a0d0ff',
-    background: 'rgba(160,208,255,0.1)',
-    padding: '4px 12px',
-    borderRadius: '6px',
-  },
-  statGrid: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px',
-  },
-  statItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-  },
-  statLabel: {
-    fontSize: '12px',
-    color: '#8a8a9a',
-    minWidth: '100px',
-  },
-  statBarBg: {
-    flex: 1,
-    height: '8px',
-    background: 'rgba(255,255,255,0.06)',
-    borderRadius: '4px',
-    overflow: 'hidden',
-  },
-  statBarFill: {
-    height: '100%',
-    borderRadius: '4px',
-    transition: 'width 0.3s ease',
-  },
-  statValue: {
-    fontSize: '13px',
-    fontWeight: 600,
-    color: '#e0e0e0',
-    minWidth: '30px',
-    textAlign: 'right',
-  },
-  widgetGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(2, 1fr)',
-    gap: '16px',
-  },
-  scheduleInfo: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    marginBottom: '12px',
-  },
-  scheduleDate: {
-    fontSize: '14px',
-    color: '#e0e0e0',
-    fontWeight: 500,
-  },
-  scheduleWeek: {
-    fontSize: '13px',
-    color: '#8a8a9a',
-  },
-  scheduleType: {
-    fontSize: '18px',
-    fontWeight: 700,
-    color: '#f0e6d2',
-    padding: '12px',
-    background: 'rgba(200,155,60,0.08)',
-    borderRadius: '6px',
-    textAlign: 'center',
-  },
-  conditionList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '10px',
-  },
-  conditionRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-  },
-  conditionLabel: {
-    fontSize: '12px',
-    color: '#8a8a9a',
-    minWidth: '60px',
-  },
-  conditionBarBg: {
-    flex: 1,
-    height: '8px',
-    background: 'rgba(255,255,255,0.06)',
-    borderRadius: '4px',
-    overflow: 'hidden',
-  },
-  conditionBarFill: {
-    height: '100%',
-    borderRadius: '4px',
-    transition: 'width 0.3s ease',
-  },
-  conditionValue: {
-    fontSize: '13px',
-    fontWeight: 600,
-    color: '#8a8a9a',
-    minWidth: '30px',
-    textAlign: 'right',
-  },
-  teamPositionInfo: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '10px',
-    marginBottom: '16px',
-  },
-  divisionRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  infoLabel: {
-    fontSize: '12px',
-    color: '#6a6a7a',
-  },
-  infoValue: {
-    fontSize: '14px',
-    fontWeight: 500,
-    color: '#e0e0e0',
-  },
-  divisionBadge: {
-    fontSize: '13px',
-    fontWeight: 700,
-    padding: '3px 10px',
-    borderRadius: '4px',
-  },
-  rivalsSection: {
-    borderTop: '1px solid #2a2a4a',
-    paddingTop: '12px',
-  },
-  rivalsSectionTitle: {
-    fontSize: '12px',
-    color: '#6a6a7a',
-    marginBottom: '8px',
-    display: 'block',
-  },
-  rivalItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    padding: '8px 12px',
-    background: 'rgba(255,255,255,0.02)',
-    borderRadius: '6px',
-    marginBottom: '4px',
-  },
-  rivalName: {
-    flex: 1,
-    fontSize: '13px',
-    fontWeight: 500,
-    color: '#e0e0e0',
-  },
-  rivalDiv: {
-    fontSize: '11px',
-    color: '#8a8a9a',
-  },
-  rivalOvr: {
-    fontSize: '13px',
-    fontWeight: 600,
-    color: '#a0d0ff',
-  },
-  dimText: {
-    fontSize: '13px',
-    color: '#6a6a7a',
-  },
-};

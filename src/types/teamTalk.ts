@@ -1,4 +1,4 @@
-export type TalkType = 'pre_match' | 'halftime' | 'post_match';
+export type TalkType = 'pre_match' | 'between_games' | 'post_match';
 export type TalkTone = 'motivate' | 'calm' | 'warn' | 'praise' | 'criticize' | 'neutral';
 
 export interface TeamTalk {

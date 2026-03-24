@@ -93,21 +93,25 @@ export function TournamentView() {
   }, [season]);
 
   if (!season) {
-    return <p style={{ color: '#6a6a7a' }}>시즌 데이터를 불러오는 중...</p>;
+    return <p className="fm-text-muted fm-text-md">시즌 데이터를 불러오는 중...</p>;
   }
 
   if (isLoading) {
-    return <p style={{ color: '#6a6a7a' }}>대회 정보를 불러오는 중...</p>;
+    return <p className="fm-text-muted fm-text-md">대회 정보를 불러오는 중...</p>;
   }
 
   if (tournaments.length === 0) {
     return (
       <div>
-        <h1 style={styles.title}>국제 대회</h1>
-        <div style={styles.emptyCard}>
-          <p style={{ color: '#6a6a7a', fontSize: '14px' }}>
-            아직 예정된 국제 대회가 없습니다.
-          </p>
+        <div className="fm-page-header">
+          <h1 className="fm-page-title">국제 대회</h1>
+        </div>
+        <div className="fm-panel">
+          <div className="fm-panel__body fm-text-center">
+            <p className="fm-text-muted fm-text-md">
+              아직 예정된 국제 대회가 없습니다.
+            </p>
+          </div>
         </div>
       </div>
     );
@@ -122,19 +126,18 @@ export function TournamentView() {
   };
 
   return (
-    <div>
-      <h1 style={styles.title}>국제 대회</h1>
+    <div className="fm-animate-in">
+      <div className="fm-page-header">
+        <h1 className="fm-page-title">국제 대회</h1>
+      </div>
 
       {/* 대회 탭 */}
-      <div style={styles.tabRow}>
+      <div className="fm-tabs">
         {tournaments.map((td) => (
           <button
             key={td.tournament.id}
             onClick={() => setSelectedId(td.tournament.id)}
-            style={{
-              ...styles.tab,
-              ...(td.tournament.id === selectedId ? styles.tabActive : {}),
-            }}
+            className={`fm-tab ${td.tournament.id === selectedId ? 'fm-tab--active' : ''}`}
           >
             {getTournamentLabel(td.tournament.type)} {td.tournament.year}
           </button>
@@ -145,50 +148,59 @@ export function TournamentView() {
       <TournamentStatusBadge status={selected.tournament.status} />
 
       {/* 대회 정보 카드 */}
-      <div style={styles.card}>
-        <div style={styles.cardHeader}>
-          <h2 style={styles.cardTitle}>
+      <div className="fm-panel fm-mb-md">
+        <div className="fm-panel__header">
+          <span className="fm-panel__title">
             {getTournamentFullName(selected.tournament.type)}{' '}
             {selected.tournament.year}
-          </h2>
-          <span style={styles.dateRange}>
+          </span>
+          <span className="fm-text-sm fm-text-muted">
             {selected.tournament.startDate} ~ {selected.tournament.endDate}
           </span>
         </div>
-
-        {/* 참가팀 */}
-        <ParticipantList
-          participants={selected.participants}
-          getTeamName={getTeamName}
-        />
+        <div className="fm-panel__body">
+          {/* 참가팀 */}
+          <ParticipantList
+            participants={selected.participants}
+            getTeamName={getTeamName}
+          />
+        </div>
       </div>
 
       {/* 그룹 스테이지 */}
       {selected.groupStandings.size > 0 && (
-        <div style={styles.card}>
-          <h3 style={styles.sectionTitle}>그룹 스테이지</h3>
-          <div style={styles.groupContainer}>
-            {[...selected.groupStandings.entries()].map(([groupName, standings]) => (
-              <GroupTable
-                key={groupName}
-                groupName={groupName}
-                standings={standings}
-                getTeamName={getTeamName}
-              />
-            ))}
+        <div className="fm-panel fm-mb-md">
+          <div className="fm-panel__header">
+            <span className="fm-panel__title">그룹 스테이지</span>
+          </div>
+          <div className="fm-panel__body">
+            <div className="fm-grid fm-grid--auto">
+              {[...selected.groupStandings.entries()].map(([groupName, standings]) => (
+                <GroupTable
+                  key={groupName}
+                  groupName={groupName}
+                  standings={standings}
+                  getTeamName={getTeamName}
+                />
+              ))}
+            </div>
           </div>
         </div>
       )}
 
       {/* 녹아웃 스테이지 */}
       {selected.knockoutMatches.length > 0 && (
-        <div style={styles.card}>
-          <h3 style={styles.sectionTitle}>녹아웃 스테이지</h3>
-          <KnockoutBracket
-            matches={selected.knockoutMatches}
-            tournamentType={selected.tournament.type}
-            getTeamName={getTeamName}
-          />
+        <div className="fm-panel fm-mb-md">
+          <div className="fm-panel__header">
+            <span className="fm-panel__title">녹아웃 스테이지</span>
+          </div>
+          <div className="fm-panel__body">
+            <KnockoutBracket
+              matches={selected.knockoutMatches}
+              tournamentType={selected.tournament.type}
+              getTeamName={getTeamName}
+            />
+          </div>
         </div>
       )}
     </div>
@@ -200,29 +212,18 @@ export function TournamentView() {
 // ─────────────────────────────────────────
 
 function TournamentStatusBadge({ status }: { status: string }) {
-  const labelMap: Record<string, { text: string; color: string }> = {
-    scheduled: { text: '예정', color: '#6a6a7a' },
-    group_stage: { text: '그룹 스테이지', color: '#4a9eff' },
-    swiss_stage: { text: '스위스 스테이지', color: '#4a9eff' },
-    knockout: { text: '녹아웃 스테이지', color: '#c89b3c' },
-    completed: { text: '종료', color: '#90ee90' },
+  const badgeMap: Record<string, { text: string; cls: string }> = {
+    scheduled: { text: '예정', cls: 'fm-badge--default' },
+    group_stage: { text: '그룹 스테이지', cls: 'fm-badge--info' },
+    swiss_stage: { text: '스위스 스테이지', cls: 'fm-badge--info' },
+    knockout: { text: '녹아웃 스테이지', cls: 'fm-badge--accent' },
+    completed: { text: '종료', cls: 'fm-badge--success' },
   };
-  const info = labelMap[status] ?? { text: status, color: '#6a6a7a' };
+  const info = badgeMap[status] ?? { text: status, cls: 'fm-badge--default' };
 
   return (
-    <div style={{ marginBottom: '16px' }}>
-      <span
-        style={{
-          display: 'inline-block',
-          padding: '4px 12px',
-          borderRadius: '4px',
-          fontSize: '12px',
-          fontWeight: 600,
-          color: info.color,
-          background: `${info.color}20`,
-          border: `1px solid ${info.color}40`,
-        }}
-      >
+    <div className="fm-mb-md">
+      <span className={`fm-badge ${info.cls}`}>
         {info.text}
       </span>
     </div>
@@ -237,14 +238,18 @@ function ParticipantList({
   getTeamName: (id: string) => string;
 }) {
   return (
-    <div style={styles.participantGrid}>
+    <div className="fm-grid fm-grid--auto">
       {participants.map((p) => (
-        <div key={p.teamId} style={styles.participantCard}>
-          <span style={styles.participantRegion}>{p.region}</span>
-          <span style={styles.participantName}>{getTeamName(p.teamId)}</span>
-          <span style={styles.participantSeed}>#{p.seed}</span>
+        <div key={p.teamId} className="fm-card fm-flex fm-items-center fm-gap-sm">
+          <span className="fm-text-sm fm-font-semibold fm-text-accent" style={{ minWidth: '30px' }}>
+            {p.region}
+          </span>
+          <span className="fm-text-md fm-font-medium fm-text-primary fm-flex-1">
+            {getTeamName(p.teamId)}
+          </span>
+          <span className="fm-text-sm fm-text-muted">#{p.seed}</span>
           {p.groupName && (
-            <span style={styles.participantGroup}>Group {p.groupName}</span>
+            <span className="fm-badge fm-badge--info">Group {p.groupName}</span>
           )}
         </div>
       ))}
@@ -262,41 +267,39 @@ function GroupTable({
   getTeamName: (id: string) => string;
 }) {
   return (
-    <div style={styles.groupCard}>
-      <h4 style={styles.groupTitle}>Group {groupName}</h4>
-      <table style={styles.table}>
-        <thead>
-          <tr>
-            <th style={styles.th}>순위</th>
-            <th style={styles.th}>팀</th>
-            <th style={styles.th}>리전</th>
-            <th style={styles.th}>승</th>
-            <th style={styles.th}>패</th>
-          </tr>
-        </thead>
-        <tbody>
-          {standings.map((s, idx) => {
-            const isAdvancing = idx < 2;
-            return (
-              <tr key={s.teamId} style={styles.tr}>
-                <td style={styles.td}>{idx + 1}</td>
-                <td
-                  style={{
-                    ...styles.td,
-                    ...styles.nameCell,
-                    ...(isAdvancing ? { color: '#c89b3c' } : {}),
-                  }}
-                >
-                  {getTeamName(s.teamId)}
-                </td>
-                <td style={{ ...styles.td, color: '#6a6a7a' }}>{s.region}</td>
-                <td style={{ ...styles.td, color: '#90ee90' }}>{s.wins}</td>
-                <td style={{ ...styles.td, color: '#ff6b6b' }}>{s.losses}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+    <div className="fm-panel">
+      <div className="fm-panel__header">
+        <span className="fm-panel__title">Group {groupName}</span>
+      </div>
+      <div className="fm-panel__body--flush fm-table-wrap">
+        <table className="fm-table fm-table--striped">
+          <thead>
+            <tr>
+              <th>순위</th>
+              <th>팀</th>
+              <th>리전</th>
+              <th>승</th>
+              <th>패</th>
+            </tr>
+          </thead>
+          <tbody>
+            {standings.map((s, idx) => {
+              const isAdvancing = idx < 2;
+              return (
+                <tr key={s.teamId}>
+                  <td>{idx + 1}</td>
+                  <td className={isAdvancing ? 'fm-cell--accent' : 'fm-cell--name'}>
+                    {getTeamName(s.teamId)}
+                  </td>
+                  <td className="fm-text-muted">{s.region}</td>
+                  <td className="fm-cell--green">{s.wins}</td>
+                  <td className="fm-cell--red">{s.losses}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -345,13 +348,15 @@ function KnockoutBracket({
     : ['8강', '준결승', '결승']; // LCK Cup, FST, EWC, Worlds 모두 동일
 
   return (
-    <div style={styles.bracketContainer}>
+    <div className="fm-flex fm-gap-lg" style={{ overflowX: 'auto' }}>
       {order.map((roundLabel) => {
         const roundMatches = rounds.get(roundLabel) ?? [];
         if (roundMatches.length === 0) return null;
         return (
-          <div key={roundLabel} style={styles.bracketRound}>
-            <h4 style={styles.roundTitle}>{roundLabel}</h4>
+          <div key={roundLabel} className="fm-flex-col fm-gap-sm" style={{ minWidth: '220px' }}>
+            <h4 className="fm-text-md fm-font-semibold fm-text-accent fm-text-center fm-mb-sm">
+              {roundLabel}
+            </h4>
             {roundMatches.map((m) => (
               <MatchCard key={m.id} match={m} getTeamName={getTeamName} />
             ))}
@@ -375,28 +380,22 @@ function MatchCard({
   const awayWon = match.isPlayed && match.scoreAway > match.scoreHome;
 
   return (
-    <div style={styles.matchCard}>
-      <div style={styles.matchDate}>{match.matchDate ?? ''} | {match.boFormat}</div>
-      <div style={styles.matchTeamRow}>
-        <span
-          style={{
-            ...styles.matchTeamName,
-            ...(homeWon ? styles.matchWinner : {}),
-            ...(match.isPlayed && !homeWon ? styles.matchLoser : {}),
-          }}
-        >
+    <div className="fm-card">
+      <div className="fm-text-sm fm-text-muted fm-mb-sm">
+        {match.matchDate ?? ''} | {match.boFormat}
+      </div>
+      <div className="fm-flex fm-justify-between fm-items-center fm-gap-sm">
+        <span className={`fm-text-md fm-font-medium fm-flex-1 ${
+          homeWon ? 'fm-text-accent fm-font-bold' : match.isPlayed && !homeWon ? 'fm-text-muted' : 'fm-text-secondary'
+        }`}>
           {homeName}
         </span>
-        <span style={styles.matchScore}>
+        <span className="fm-text-lg fm-font-bold fm-text-primary fm-text-center" style={{ minWidth: '50px' }}>
           {match.isPlayed ? `${match.scoreHome} - ${match.scoreAway}` : 'vs'}
         </span>
-        <span
-          style={{
-            ...styles.matchTeamName,
-            ...(awayWon ? styles.matchWinner : {}),
-            ...(match.isPlayed && !awayWon ? styles.matchLoser : {}),
-          }}
-        >
+        <span className={`fm-text-md fm-font-medium fm-flex-1 fm-text-right ${
+          awayWon ? 'fm-text-accent fm-font-bold' : match.isPlayed && !awayWon ? 'fm-text-muted' : 'fm-text-secondary'
+        }`}>
           {awayName}
         </span>
       </div>
@@ -452,205 +451,3 @@ function getTournamentFullName(type: string): string {
   };
   return names[type] ?? type;
 }
-
-// ─────────────────────────────────────────
-// 스타일
-// ─────────────────────────────────────────
-
-const styles: Record<string, React.CSSProperties> = {
-  title: {
-    fontSize: '24px',
-    fontWeight: 700,
-    color: '#f0e6d2',
-    marginBottom: '24px',
-  },
-  tabRow: {
-    display: 'flex',
-    gap: '8px',
-    marginBottom: '16px',
-  },
-  tab: {
-    padding: '8px 20px',
-    border: '1px solid #3a3a5c',
-    borderRadius: '6px',
-    background: 'transparent',
-    color: '#c0c0d0',
-    fontSize: '13px',
-    fontWeight: 500,
-    cursor: 'pointer',
-  },
-  tabActive: {
-    background: 'rgba(200,155,60,0.15)',
-    borderColor: '#c89b3c',
-    color: '#c89b3c',
-  },
-  card: {
-    background: '#1e1e30',
-    border: '1px solid #2a2a44',
-    borderRadius: '8px',
-    padding: '20px',
-    marginBottom: '16px',
-  },
-  emptyCard: {
-    background: '#1e1e30',
-    border: '1px solid #2a2a44',
-    borderRadius: '8px',
-    padding: '40px',
-    textAlign: 'center' as const,
-  },
-  cardHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '16px',
-  },
-  cardTitle: {
-    fontSize: '18px',
-    fontWeight: 600,
-    color: '#f0e6d2',
-    margin: 0,
-  },
-  dateRange: {
-    fontSize: '12px',
-    color: '#6a6a7a',
-  },
-  sectionTitle: {
-    fontSize: '16px',
-    fontWeight: 600,
-    color: '#f0e6d2',
-    marginTop: 0,
-    marginBottom: '16px',
-  },
-  participantGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
-    gap: '10px',
-  },
-  participantCard: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    padding: '8px 12px',
-    background: 'rgba(255,255,255,0.03)',
-    borderRadius: '6px',
-    border: '1px solid rgba(255,255,255,0.06)',
-  },
-  participantRegion: {
-    fontSize: '11px',
-    fontWeight: 600,
-    color: '#c89b3c',
-    minWidth: '30px',
-  },
-  participantName: {
-    fontSize: '13px',
-    color: '#e0e0e0',
-    fontWeight: 500,
-    flex: 1,
-  },
-  participantSeed: {
-    fontSize: '11px',
-    color: '#6a6a7a',
-  },
-  participantGroup: {
-    fontSize: '11px',
-    color: '#4a9eff',
-  },
-  groupContainer: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
-    gap: '16px',
-  },
-  groupCard: {
-    background: 'rgba(255,255,255,0.02)',
-    borderRadius: '6px',
-    padding: '16px',
-    border: '1px solid rgba(255,255,255,0.06)',
-  },
-  groupTitle: {
-    fontSize: '14px',
-    fontWeight: 600,
-    color: '#c89b3c',
-    marginTop: 0,
-    marginBottom: '12px',
-  },
-  table: {
-    width: '100%',
-    borderCollapse: 'collapse',
-    fontSize: '13px',
-  },
-  th: {
-    padding: '6px 10px',
-    textAlign: 'left' as const,
-    borderBottom: '1px solid #3a3a5c',
-    color: '#6a6a7a',
-    fontSize: '11px',
-    fontWeight: 500,
-  },
-  tr: {
-    borderBottom: '1px solid rgba(255,255,255,0.04)',
-  },
-  td: {
-    padding: '6px 10px',
-    color: '#c0c0d0',
-  },
-  nameCell: {
-    fontWeight: 500,
-    color: '#e0e0e0',
-  },
-  bracketContainer: {
-    display: 'flex',
-    gap: '24px',
-    overflowX: 'auto' as const,
-  },
-  bracketRound: {
-    minWidth: '220px',
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '12px',
-  },
-  roundTitle: {
-    fontSize: '13px',
-    fontWeight: 600,
-    color: '#c89b3c',
-    textAlign: 'center' as const,
-    marginTop: 0,
-    marginBottom: '4px',
-  },
-  matchCard: {
-    background: 'rgba(255,255,255,0.03)',
-    border: '1px solid rgba(255,255,255,0.08)',
-    borderRadius: '6px',
-    padding: '10px 14px',
-  },
-  matchDate: {
-    fontSize: '11px',
-    color: '#6a6a7a',
-    marginBottom: '6px',
-  },
-  matchTeamRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: '8px',
-  },
-  matchTeamName: {
-    fontSize: '13px',
-    color: '#c0c0d0',
-    fontWeight: 500,
-    flex: 1,
-  },
-  matchScore: {
-    fontSize: '14px',
-    fontWeight: 700,
-    color: '#f0e6d2',
-    textAlign: 'center' as const,
-    minWidth: '50px',
-  },
-  matchWinner: {
-    color: '#c89b3c',
-    fontWeight: 700,
-  },
-  matchLoser: {
-    color: '#6a6a7a',
-  },
-};

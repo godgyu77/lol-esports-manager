@@ -6,7 +6,6 @@
  */
 
 import { useState, useCallback } from 'react';
-import type React from 'react';
 import type {
   LiveMatchEngine,
   LivePlayerStat,
@@ -16,6 +15,7 @@ import {
   PLAYER_INSTRUCTION_LABELS,
   PLAYER_INSTRUCTION_DESCRIPTIONS,
 } from '../../engine/match/liveMatch';
+import './match.css';
 
 interface PlayerInstructionsProps {
   engine: LiveMatchEngine;
@@ -75,73 +75,72 @@ export function PlayerInstructions({
   );
 
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <span style={{ ...styles.teamLabel, color: side === 'home' ? '#3498db' : '#e74c3c' }}>
+    <div className="match-instr-container">
+      <div className="match-instr-header">
+        <span className={`match-instr-team-label ${side === 'home' ? 'match-instr-team-label--home' : 'match-instr-team-label--away'}`}>
           {teamShortName}
         </span>
-        <span style={styles.hint}>선수를 클릭하여 지시</span>
+        <span className="match-instr-hint">선수를 클릭하여 지시</span>
       </div>
-      <div style={styles.playerList}>
+      <div className="match-instr-player-list">
         {playerStats.map((stat) => {
           const currentInstruction = instructions.get(stat.playerId);
           const isSelected = selectedPlayerId === stat.playerId;
           const canRoam = stat.position === 'jungle' || stat.position === 'support';
 
+          const btnClass = [
+            'match-instr-player-btn',
+            currentInstruction ? 'match-instr-player-btn--active' : '',
+            isSelected ? 'match-instr-player-btn--selected' : '',
+          ].filter(Boolean).join(' ');
+
           return (
-            <div key={stat.playerId} style={styles.playerRow}>
+            <div key={stat.playerId} className="match-instr-player-row">
               <button
-                style={{
-                  ...styles.playerBtn,
-                  ...(currentInstruction ? styles.playerBtnActive : {}),
-                  ...(isSelected ? styles.playerBtnSelected : {}),
-                }}
+                className={btnClass}
                 onClick={() => handlePlayerClick(stat.playerId)}
                 aria-label={`${positionLabels[stat.position]} 선수 지시`}
               >
-                <span style={styles.posLabel}>{positionLabels[stat.position]}</span>
-                <span style={styles.kda}>
+                <span className="match-instr-pos-label">{positionLabels[stat.position]}</span>
+                <span className="match-instr-kda">
                   {stat.kills}/{stat.deaths}/{stat.assists}
                 </span>
                 {currentInstruction && (
-                  <span style={styles.instructionBadge}>
+                  <span className="match-instr-badge">
                     {PLAYER_INSTRUCTION_LABELS[currentInstruction]}
                   </span>
                 )}
               </button>
 
               {isSelected && (
-                <div style={styles.popup}>
-                  <div style={styles.popupTitle}>지시 선택</div>
+                <div className="match-instr-popup">
+                  <div className="match-instr-popup-title">지시 선택</div>
                   {INSTRUCTION_OPTIONS
                     .filter((opt) => !opt.roamOnly || canRoam)
                     .map((opt) => (
                       <button
                         key={opt.value}
-                        style={{
-                          ...styles.instrBtn,
-                          ...(currentInstruction === opt.value ? styles.instrBtnActive : {}),
-                        }}
+                        className={`match-instr-option-btn ${currentInstruction === opt.value ? 'match-instr-option-btn--active' : ''}`}
                         onClick={() => handleInstruction(stat.playerId, opt.value)}
                         aria-label={PLAYER_INSTRUCTION_LABELS[opt.value]}
                       >
-                        <span style={styles.instrLabel}>
+                        <span className="match-instr-option-label">
                           {PLAYER_INSTRUCTION_LABELS[opt.value]}
                         </span>
-                        <span style={styles.instrDesc}>
+                        <span className="match-instr-option-desc">
                           {PLAYER_INSTRUCTION_DESCRIPTIONS[opt.value]}
                         </span>
                       </button>
                     ))}
                   {currentInstruction && (
                     <button
-                      style={styles.clearBtn}
+                      className="match-instr-clear-btn"
                       onClick={() => handleClear(stat.playerId)}
                     >
                       지시 해제
                     </button>
                   )}
-                  <div style={styles.limitText}>
+                  <div className="match-instr-limit-text">
                     지시 중: {instructions.size}/2
                   </div>
                 </div>
@@ -153,139 +152,3 @@ export function PlayerInstructions({
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    background: 'rgba(255,255,255,0.03)',
-    border: '1px solid #2a2a4a',
-    borderRadius: '8px',
-    padding: '10px',
-    marginBottom: '8px',
-  },
-  header: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '8px',
-  },
-  teamLabel: {
-    fontSize: '13px',
-    fontWeight: 700,
-  },
-  hint: {
-    fontSize: '10px',
-    color: '#6a6a7a',
-  },
-  playerList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '4px',
-  },
-  playerRow: {
-    position: 'relative',
-  },
-  playerBtn: {
-    width: '100%',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    padding: '6px 10px',
-    background: 'transparent',
-    border: '1px solid #2a2a4a',
-    borderRadius: '4px',
-    color: '#e0e0e0',
-    fontSize: '12px',
-    cursor: 'pointer',
-    transition: 'all 0.15s',
-  },
-  playerBtnActive: {
-    borderColor: '#c89b3c',
-    background: 'rgba(200,155,60,0.1)',
-  },
-  playerBtnSelected: {
-    borderColor: '#3498db',
-    background: 'rgba(52,152,219,0.1)',
-  },
-  posLabel: {
-    fontWeight: 700,
-    fontSize: '11px',
-    color: '#c89b3c',
-    width: '30px',
-  },
-  kda: {
-    fontSize: '12px',
-    color: '#8a8a9a',
-    fontFamily: 'monospace',
-  },
-  instructionBadge: {
-    marginLeft: 'auto',
-    fontSize: '10px',
-    color: '#2ecc71',
-    background: 'rgba(46,204,113,0.15)',
-    padding: '2px 6px',
-    borderRadius: '3px',
-  },
-  popup: {
-    position: 'absolute',
-    top: '100%',
-    left: 0,
-    right: 0,
-    zIndex: 10,
-    background: '#1a1a3a',
-    border: '1px solid #3a3a5c',
-    borderRadius: '8px',
-    padding: '10px',
-    marginTop: '4px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '4px',
-    boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
-  },
-  popupTitle: {
-    fontSize: '12px',
-    fontWeight: 700,
-    color: '#c89b3c',
-    marginBottom: '4px',
-  },
-  instrBtn: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'flex-start',
-    padding: '6px 8px',
-    background: 'rgba(255,255,255,0.03)',
-    border: '1px solid #2a2a4a',
-    borderRadius: '4px',
-    color: '#e0e0e0',
-    fontSize: '11px',
-    cursor: 'pointer',
-    transition: 'all 0.15s',
-  },
-  instrBtnActive: {
-    background: 'rgba(200,155,60,0.2)',
-    borderColor: '#c89b3c',
-  },
-  instrLabel: {
-    fontWeight: 600,
-    fontSize: '11px',
-  },
-  instrDesc: {
-    fontSize: '10px',
-    color: '#6a6a7a',
-  },
-  clearBtn: {
-    padding: '5px 8px',
-    background: 'rgba(231,76,60,0.15)',
-    border: '1px solid #e74c3c44',
-    borderRadius: '4px',
-    color: '#e74c3c',
-    fontSize: '11px',
-    fontWeight: 600,
-    cursor: 'pointer',
-  },
-  limitText: {
-    fontSize: '10px',
-    color: '#6a6a7a',
-    textAlign: 'center',
-    marginTop: '4px',
-  },
-};

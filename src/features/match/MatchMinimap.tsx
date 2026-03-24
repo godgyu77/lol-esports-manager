@@ -6,9 +6,10 @@
  * - 오브젝트 카운터 (드래곤, 바론, 타워)
  */
 
-import { useRef, useEffect, useCallback } from 'react';
+import { useRef, useEffect } from 'react';
 import { Application, Graphics, Text, TextStyle } from 'pixi.js';
 import type { MatchEvent, MatchEventType } from '../../types/match';
+import './match.css';
 
 // ─────────────────────────────────────────
 // Props
@@ -16,7 +17,7 @@ import type { MatchEvent, MatchEventType } from '../../types/match';
 
 interface MatchMinimapProps {
   gameState: {
-    tick: number;
+    currentTick: number;
     goldHome: number;
     goldAway: number;
     killsHome: number;
@@ -26,7 +27,7 @@ interface MatchMinimapProps {
     dragonsHome: number;
     dragonsAway: number;
     events: MatchEvent[];
-    commentary: string[];
+    commentary: unknown[];
     isFinished: boolean;
   };
   homePlayerIds: string[];
@@ -212,12 +213,18 @@ export function MatchMinimap({
     const g = graphicsRef.current;
     if (!g) return;
 
-    drawPlayers(g.players, gameState.tick, homePlayerIds, awayPlayerIds, width, height);
-    drawEvents(g.events, gameState.tick, gameState.events, width, height);
+    drawPlayers(g.players, gameState.currentTick, homePlayerIds, awayPlayerIds, width, height);
+    drawEvents(g.events, gameState.currentTick, gameState.events, width, height);
     drawOverlay(g.overlay, gameState, width, height);
   }, [gameState, homePlayerIds, awayPlayerIds, width, height]);
 
-  return <div ref={containerRef} style={getContainerStyle(width, height)} />;
+  return (
+    <div
+      ref={containerRef}
+      className="minimap-container"
+      style={{ width, height }}
+    />
+  );
 }
 
 // ─────────────────────────────────────────
@@ -240,7 +247,7 @@ const drawBackground = (g: Graphics, w: number, h: number) => {
 };
 
 /** 레인 경로 (탑, 미드, 봇) */
-const drawLanes = (g: Graphics, w: number, h: number) => {
+const drawLanes = (g: Graphics, w: number, _h: number) => {
   const margin = 12;
   const usable = w - margin * 2;
 
@@ -276,7 +283,7 @@ const drawPlayers = (
   homeIds: string[],
   awayIds: string[],
   w: number,
-  h: number,
+  _h: number,
 ) => {
   g.clear();
 
@@ -301,7 +308,7 @@ const drawEvents = (
   currentTick: number,
   events: MatchEvent[],
   w: number,
-  h: number,
+  _h: number,
 ) => {
   g.clear();
 
@@ -396,16 +403,3 @@ const drawOverlay = (
     g.addChild(finText);
   }
 };
-
-// ─────────────────────────────────────────
-// 스타일
-// ─────────────────────────────────────────
-
-const getContainerStyle = (w: number, h: number): React.CSSProperties => ({
-  width: w,
-  height: h,
-  border: '1px solid #2a2a4a',
-  borderRadius: '8px',
-  overflow: 'hidden',
-  flexShrink: 0,
-});

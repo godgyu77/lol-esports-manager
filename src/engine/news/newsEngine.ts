@@ -6,6 +6,7 @@
 
 import type { NewsArticle, NewsCategory } from '../../types/news';
 import { getDatabase } from '../../db/database';
+import { generateNewsArticle } from '../../ai/advancedAiService';
 
 // ─────────────────────────────────────────
 // Row 타입
@@ -82,6 +83,19 @@ export async function generateMatchResultNews(
   const loser = scoreHome > scoreAway ? awayTeam : homeTeam;
   const winScore = Math.max(scoreHome, scoreAway);
   const loseScore = Math.min(scoreHome, scoreAway);
+  const importance = winScore === loseScore + 1 ? 2 : 1;
+
+  // AI 뉴스 생성 시도
+  try {
+    const aiNews = await generateNewsArticle({
+      eventType: 'match_result',
+      details: `${homeTeam} vs ${awayTeam}: ${scoreHome}:${scoreAway}`,
+      teamNames: [homeTeam, awayTeam],
+      playerNames: [],
+    });
+    await insertNews(seasonId, date, 'match_result', aiNews.title, aiNews.content, importance);
+    return;
+  } catch { /* AI 실패 시 기존 템플릿 사용 */ }
 
   const templates = [
     `${winner}, ${loser}에 ${winScore}:${loseScore} 승리`,
@@ -110,8 +124,6 @@ export async function generateMatchResultNews(
   ];
 
   const idx = Math.floor(Math.random() * templates.length);
-  const importance = winScore === loseScore + 1 ? 2 : 1; // 접전일수록 중요
-
   await insertNews(seasonId, date, 'match_result', templates[idx], contentTemplates[idx], importance);
 }
 
@@ -282,6 +294,236 @@ export async function generateDailyNews(
       await insertNews(seasonId, date, 'team_analysis', title, content, 1, team.id);
     }
   }
+}
+
+// ─────────────────────────────────────────
+// 부상 뉴스
+// ─────────────────────────────────────────
+
+/** 부상 보도 뉴스 */
+export async function generateInjuryNews(
+  seasonId: number,
+  date: string,
+  playerName: string,
+  teamName: string,
+  injuryType: string,
+  severity: number,
+  daysRemaining: number,
+  teamId: string | null = null,
+  playerId: string | null = null,
+): Promise<void> {
+  // AI 뉴스 생성 시도
+  try {
+    const aiNews = await generateNewsArticle({
+      eventType: 'injury',
+      details: `${playerName}, ${injuryType} 부상으로 ${daysRemaining}일 결장 (심각도: ${severity}/3)`,
+      teamNames: [teamName],
+      playerNames: [playerName],
+    });
+    await insertNews(seasonId, date, 'injury_report', aiNews.title, aiNews.content, severity + 1, teamId, playerId);
+    return;
+  } catch { /* AI 실패 시 기존 템플릿 사용 */ }
+
+  const severityTemplates: Record<number, { title: string[]; content: string[] }> = {
+    1: {
+      title: [
+        `${teamName} ${playerName}, 경미한 부상으로 며칠 결장`,
+        `${playerName}, ${injuryType} 증상으로 단기 이탈`,
+        `${teamName}, ${playerName} 경미한 부상... ${daysRemaining}일 결장 예상`,
+      ],
+      content: [
+        `${teamName} 소속 ${playerName}이 경미한 ${injuryType} 증상으로 약 ${daysRemaining}일간 결장할 예정이다. 팀 관계자는 "큰 문제는 아니다"라고 밝혔다.`,
+        `${playerName}이 ${injuryType}으로 인해 잠시 팀 훈련에서 이탈했다. ${daysRemaining}일 후 복귀가 예상된다.`,
+      ],
+    },
+    2: {
+      title: [
+        `${teamName} ${playerName}, ${injuryType}으로 2~3주 결장`,
+        `${playerName}, 부상으로 장기간 이탈... ${teamName} 비상`,
+        `${teamName}, ${playerName} 부상 소식에 로스터 조정 불가피`,
+      ],
+      content: [
+        `${teamName}의 ${playerName}이 ${injuryType}으로 약 ${daysRemaining}일간 결장할 전망이다. 팀은 대체 선수 기용을 준비 중이다.`,
+        `${playerName}의 부상 소식에 ${teamName} 팬들의 우려가 커지고 있다. 의료진은 약 ${daysRemaining}일 후 복귀를 목표로 재활에 들어갔다고 밝혔다.`,
+      ],
+    },
+    3: {
+      title: [
+        `[속보] ${teamName} ${playerName}, 심각한 부상으로 장기 결장`,
+        `${playerName}, ${injuryType} 심각... ${daysRemaining}일 이상 결장 불가피`,
+        `${teamName} 최대 위기! ${playerName} 장기 부상`,
+      ],
+      content: [
+        `${teamName}의 핵심 선수 ${playerName}이 심각한 ${injuryType}으로 최소 ${daysRemaining}일간 결장한다. 시즌에 큰 타격이 예상된다.`,
+        `${playerName}의 장기 부상 소식이 전해지며 ${teamName}의 시즌 전망에 먹구름이 드리워졌다. 의료진은 완전 회복까지 상당한 시간이 필요하다고 밝혔다.`,
+      ],
+    },
+  };
+
+  const templates = severityTemplates[severity] ?? severityTemplates[1];
+  const titleIdx = Math.floor(Math.random() * templates.title.length);
+  const contentIdx = Math.floor(Math.random() * templates.content.length);
+
+  await insertNews(seasonId, date, 'injury_report', templates.title[titleIdx], templates.content[contentIdx], severity + 1, teamId, playerId);
+}
+
+// ─────────────────────────────────────────
+// 이적 확정 뉴스
+// ─────────────────────────────────────────
+
+export async function generateTransferCompleteNews(
+  seasonId: number,
+  date: string,
+  playerName: string,
+  fromTeam: string,
+  toTeam: string,
+  fee: number,
+  teamId: string | null = null,
+  playerId: string | null = null,
+): Promise<void> {
+  // AI 뉴스 생성 시도
+  try {
+    const aiNews = await generateNewsArticle({
+      eventType: 'transfer',
+      details: `${playerName}, ${fromTeam}에서 ${toTeam}로 이적 (이적료: ${fee.toLocaleString()}만)`,
+      teamNames: [toTeam, fromTeam],
+      playerNames: [playerName],
+    });
+    const isBigTransfer = fee > 10000;
+    await insertNews(seasonId, date, 'transfer_complete', aiNews.title, aiNews.content, isBigTransfer ? 3 : 2, teamId, playerId);
+    return;
+  } catch { /* AI 실패 시 기존 템플릿 사용 */ }
+
+  const isBig = fee > 10000;
+  const feeStr = fee.toLocaleString();
+
+  const titles = isBig ? [
+    `[오피셜] ${toTeam}, ${playerName} 영입 확정! 이적료 ${feeStr}만`,
+    `대어 낚았다! ${toTeam}, ${playerName} ${feeStr}만에 영입`,
+    `${playerName}, ${fromTeam} 떠나 ${toTeam}로... 이적료 ${feeStr}만`,
+  ] : [
+    `${toTeam}, ${playerName} 영입 발표`,
+    `${playerName}, ${fromTeam}에서 ${toTeam}로 이적`,
+    `${toTeam}, ${playerName} 합류 공식 발표`,
+  ];
+
+  const contents = [
+    `${toTeam}이 ${fromTeam}에서 ${playerName}을 이적료 ${feeStr}만 원에 영입했다고 공식 발표했다.`,
+    `${playerName}이 ${fromTeam}을 떠나 ${toTeam}에 합류한다. 이적료는 ${feeStr}만 원으로 알려졌다.`,
+    `${toTeam}의 로스터 보강이 완료되었다. ${playerName}이 ${fromTeam}에서 합류하며 전력 상승이 기대된다.`,
+  ];
+
+  const idx = Math.floor(Math.random() * titles.length);
+  const cIdx = Math.floor(Math.random() * contents.length);
+  await insertNews(seasonId, date, 'transfer_complete', titles[idx], contents[cIdx], isBig ? 3 : 2, teamId, playerId);
+}
+
+// ─────────────────────────────────────────
+// 스캔들/논란 뉴스
+// ─────────────────────────────────────────
+
+export type ScandalType = 'teammate_conflict' | 'social_media' | 'dating' | 'streaming_incident' | 'attitude';
+
+export async function generateScandalNews(
+  seasonId: number,
+  date: string,
+  teams: Array<{ id: string; name: string; shortName: string }>,
+): Promise<{ teamId: string; moralePenalty: number } | null> {
+  // 일일 10% 확률로 스캔들 발생
+  if (Math.random() >= 0.10) return null;
+
+  const team = teams[Math.floor(Math.random() * teams.length)];
+  const scandalTypes: { type: ScandalType; title: string; content: string; penalty: number }[] = [
+    { type: 'teammate_conflict', title: `${team.shortName} 팀 내 불화설... 선수 간 갈등 심화`, content: `${team.name} 내부에서 선수 간 갈등이 심화되고 있다는 소식이 전해졌다. 팀 관계자는 "사실무근"이라고 부인했지만 커뮤니티에서는 관련 루머가 확산 중이다.`, penalty: 10 },
+    { type: 'social_media', title: `${team.shortName} 선수 SNS 논란... 커뮤니티 뜨겁게 달아올라`, content: `${team.name} 소속 선수의 SNS 게시물이 논란이 되고 있다. 해당 선수는 이후 게시물을 삭제했으나 이미 캡처본이 퍼진 상태다.`, penalty: 8 },
+    { type: 'dating', title: `${team.shortName} 선수 열애설... 팬들 반응 엇갈려`, content: `${team.name} 선수의 열애설이 화제다. 일부 팬들은 응원하는 반면, 경기에 집중해달라는 의견도 있다.`, penalty: 5 },
+    { type: 'streaming_incident', title: `${team.shortName} 선수 방송 사고... 게임 중 욕설 논란`, content: `${team.name} 소속 선수가 개인 방송 중 상대에게 욕설을 한 장면이 클립으로 퍼지면서 논란이 되고 있다. 팀은 공식 사과문을 발표할 예정이다.`, penalty: 12 },
+    { type: 'attitude', title: `${team.shortName} 선수 태도 논란... 연습 태만 의혹`, content: `${team.name} 내부에서 특정 선수의 연습 태도에 대한 불만이 제기되고 있다는 소식이다. 해당 선수는 최근 경기에서 부진한 모습을 보인 바 있다.`, penalty: 8 },
+  ];
+
+  const scandal = scandalTypes[Math.floor(Math.random() * scandalTypes.length)];
+
+  // AI 뉴스 생성 시도
+  try {
+    const aiNews = await generateNewsArticle({
+      eventType: 'scandal',
+      details: `${team.name} ${scandal.type} 스캔들`,
+      teamNames: [team.name],
+      playerNames: [],
+    });
+    await insertNews(seasonId, date, 'scandal', aiNews.title, aiNews.content, 2, team.id);
+  } catch {
+    await insertNews(seasonId, date, 'scandal', scandal.title, scandal.content, 2, team.id);
+  }
+
+  return { teamId: team.id, moralePenalty: scandal.penalty };
+}
+
+// ─────────────────────────────────────────
+// 팬 반응 뉴스
+// ─────────────────────────────────────────
+
+export async function generateFanReactionNews(
+  seasonId: number,
+  date: string,
+  teamName: string,
+  event: 'win_streak' | 'lose_streak' | 'big_transfer' | 'scandal' | 'championship',
+  sentiment: 'positive' | 'negative' | 'neutral',
+  teamId: string | null = null,
+): Promise<void> {
+  const templates: Record<string, Record<string, string[]>> = {
+    positive: {
+      win_streak: [`팬들 열광! ${teamName} 연승 질주에 커뮤니티 축제 분위기`, `${teamName} 연승 행진에 팬들 '올해는 우승이다!'`],
+      big_transfer: [`${teamName} 대형 영입에 팬들 환호! '역대급 로스터'`, `팬들 반응 폭발! ${teamName} 로스터 완성에 기대감 MAX`],
+      championship: [`${teamName} 우승에 팬들 감동의 눈물... '기다린 보람이 있었다'`],
+    },
+    negative: {
+      lose_streak: [`${teamName} 연패에 팬들 분노... '로스터 변경 시급'`, `팬들 한숨... ${teamName} 연패 늪에서 빠져나올 수 있을까`],
+      scandal: [`${teamName} 스캔들에 팬들 실망... '프로답지 못하다'`],
+    },
+    neutral: {
+      big_transfer: [`${teamName} 영입 소식에 팬들 반응 엇갈려... 기대와 우려 교차`],
+    },
+  };
+
+  const pool = templates[sentiment]?.[event] ?? [`${teamName} 관련 팬 반응이 뜨겁다.`];
+  const title = pool[Math.floor(Math.random() * pool.length)];
+  const content = `${teamName} 관련 소식에 팬들의 반응이 SNS와 커뮤니티를 뜨겁게 달구고 있다.`;
+
+  await insertNews(seasonId, date, 'fan_reaction', title, content, 1, teamId);
+}
+
+// ─────────────────────────────────────────
+// 수상 뉴스
+// ─────────────────────────────────────────
+
+export async function generateAwardNews(
+  seasonId: number,
+  date: string,
+  playerName: string,
+  awardType: string,
+  teamName: string,
+  teamId: string | null = null,
+  playerId: string | null = null,
+): Promise<void> {
+  const awardLabels: Record<string, string> = {
+    mvp: 'MVP', all_pro: 'All-Pro', rookie: '신인상', finals_mvp: '결승 MVP',
+  };
+  const label = awardLabels[awardType] ?? awardType;
+
+  const titles = [
+    `${teamName} ${playerName}, ${label} 수상!`,
+    `[수상] ${playerName}, ${label} 선정... ${teamName}의 자랑`,
+    `${playerName}, ${label} 영예! ${teamName} 팬들 환호`,
+  ];
+  const contents = [
+    `${teamName} 소속 ${playerName}이 이번 시즌 ${label}로 선정되었다. 뛰어난 활약이 높은 평가를 받았다.`,
+    `${playerName}이 ${label}을 수상하며 최고의 시즌을 보내고 있음을 증명했다. ${teamName} 관계자는 "당연한 결과"라며 축하했다.`,
+  ];
+
+  const idx = Math.floor(Math.random() * titles.length);
+  const cIdx = Math.floor(Math.random() * contents.length);
+  await insertNews(seasonId, date, 'award_news', titles[idx], contents[cIdx], 3, teamId, playerId);
 }
 
 // ─────────────────────────────────────────

@@ -1,4 +1,3 @@
-import type React from 'react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSettingsStore } from '../../stores/settingsStore';
@@ -40,11 +39,11 @@ const TUTORIAL_STEPS: TutorialStep[] = [
 
 const CATEGORIES: TutorialCategory[] = ['기본', '경기', '관리', '경제'];
 
-const CATEGORY_COLORS: Record<TutorialCategory, string> = {
-  '기본': '#4a9eff',
-  '경기': '#ff6b6b',
-  '관리': '#51cf66',
-  '경제': '#fcc419',
+const CATEGORY_BADGE_CLASS: Record<TutorialCategory, string> = {
+  '기본': 'fm-badge--info',
+  '경기': 'fm-badge--danger',
+  '관리': 'fm-badge--success',
+  '경제': 'fm-badge--warning',
 };
 
 export function TutorialOverlay() {
@@ -79,86 +78,87 @@ export function TutorialOverlay() {
   };
 
   return (
-    <div style={styles.overlay}>
-      <div style={styles.card}>
-        <h2 style={styles.title}>게임 가이드</h2>
-
-        {/* 카테고리 탭 */}
-        <div style={styles.categoryRow}>
-          {CATEGORIES.map((cat) => {
-            const isActive = currentStep.category === cat;
-            return (
-              <button
-                key={cat}
-                style={{
-                  ...styles.categoryTab,
-                  background: isActive ? CATEGORY_COLORS[cat] : 'rgba(255,255,255,0.05)',
-                  color: isActive ? '#0d0d1a' : '#8a8a9a',
-                  fontWeight: isActive ? 700 : 400,
-                }}
-                onClick={() => {
-                  const idx = TUTORIAL_STEPS.findIndex((s) => s.category === cat);
-                  if (idx >= 0) setStep(idx);
-                }}
-              >
-                {cat}
-              </button>
-            );
-          })}
+    <div className="fm-overlay">
+      <div className="fm-modal fm-animate-in" style={{ minWidth: 480, maxWidth: 560 }}>
+        <div className="fm-modal__header fm-justify-center">
+          <span className="fm-modal__title fm-text-xl">게임 가이드</span>
         </div>
 
-        {/* 진행률 바 */}
-        <div style={styles.progressBarBg}>
-          <div
-            style={{
-              ...styles.progressBarFill,
-              width: `${progress}%`,
-            }}
-          />
-        </div>
-        <div style={styles.progressText}>
-          {step + 1} / {TUTORIAL_STEPS.length}
-        </div>
-
-        {/* 단계 내용 */}
-        <div style={styles.stepContent}>
-          <div style={styles.stepHeader}>
-            <span
-              style={{
-                ...styles.categoryBadge,
-                background: CATEGORY_COLORS[currentStep.category],
-              }}
-            >
-              {currentStep.category}
-            </span>
-            <h3 style={styles.stepTitle}>{currentStep.title}</h3>
+        <div className="fm-modal__body fm-flex-col fm-gap-md">
+          {/* 카테고리 탭 */}
+          <div className="fm-flex fm-justify-center fm-gap-sm">
+            {CATEGORIES.map((cat) => {
+              const isActive = currentStep.category === cat;
+              return (
+                <button
+                  key={cat}
+                  className={`fm-btn fm-btn--sm ${isActive ? CATEGORY_BADGE_CLASS[cat].replace('fm-badge', 'fm-btn') : ''}`}
+                  style={isActive ? { fontWeight: 700 } : { background: 'transparent' }}
+                  onClick={() => {
+                    const idx = TUTORIAL_STEPS.findIndex((s) => s.category === cat);
+                    if (idx >= 0) setStep(idx);
+                  }}
+                >
+                  {cat}
+                </button>
+              );
+            })}
           </div>
-          <p style={styles.stepDescription}>{currentStep.description}</p>
-        </div>
 
-        {/* 해당 페이지로 이동 */}
-        <button style={styles.navigateBtn} onClick={handleNavigate}>
-          해당 페이지로 이동
-        </button>
+          {/* 진행률 바 */}
+          <div>
+            <div className="fm-bar">
+              <div className="fm-bar__track" style={{ height: 6 }}>
+                <div
+                  className="fm-bar__fill fm-bar__fill--accent"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+              <span className="fm-bar__value fm-text-xs fm-text-muted">
+                {step + 1} / {TUTORIAL_STEPS.length}
+              </span>
+            </div>
+          </div>
+
+          {/* 단계 내용 */}
+          <div className="fm-card fm-flex-col fm-items-center fm-justify-center fm-text-center fm-p-lg" style={{ minHeight: 100 }}>
+            <div className="fm-flex fm-items-center fm-gap-sm fm-mb-md">
+              <span className={`fm-badge ${CATEGORY_BADGE_CLASS[currentStep.category]}`}>
+                {currentStep.category}
+              </span>
+              <h3 className="fm-text-xl fm-font-bold fm-text-primary" style={{ margin: 0 }}>
+                {currentStep.title}
+              </h3>
+            </div>
+            <p className="fm-text-lg fm-text-secondary" style={{ lineHeight: 1.7, margin: 0 }}>
+              {currentStep.description}
+            </p>
+          </div>
+
+          {/* 해당 페이지로 이동 */}
+          <button
+            className="fm-btn fm-btn--lg"
+            style={{ width: '100%', borderColor: 'var(--accent-border)', color: 'var(--accent)' }}
+            onClick={handleNavigate}
+          >
+            해당 페이지로 이동
+          </button>
+        </div>
 
         {/* 하단 버튼 */}
-        <div style={styles.buttonRow}>
-          <button style={styles.skipBtn} onClick={handleSkip}>
+        <div className="fm-modal__footer fm-justify-between">
+          <button className="fm-btn fm-btn--ghost" onClick={handleSkip}>
             건너뛰기
           </button>
-          <div style={styles.navButtons}>
+          <div className="fm-flex fm-gap-sm">
             <button
-              style={{
-                ...styles.prevBtn,
-                opacity: step === 0 ? 0.3 : 1,
-                cursor: step === 0 ? 'default' : 'pointer',
-              }}
+              className="fm-btn"
               onClick={handlePrev}
               disabled={step === 0}
             >
               이전
             </button>
-            <button style={styles.nextBtn} onClick={handleNext}>
+            <button className="fm-btn fm-btn--primary" onClick={handleNext}>
               {step < TUTORIAL_STEPS.length - 1 ? '다음' : '시작하기'}
             </button>
           </div>
@@ -167,154 +167,3 @@ export function TutorialOverlay() {
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  overlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    background: 'rgba(0,0,0,0.7)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 100,
-  },
-  card: {
-    background: '#1a1a3a',
-    border: '2px solid #c89b3c',
-    borderRadius: '16px',
-    padding: '40px',
-    textAlign: 'center',
-    minWidth: '480px',
-    maxWidth: '560px',
-  },
-  title: {
-    fontSize: '24px',
-    fontWeight: 800,
-    color: '#f0e6d2',
-    marginBottom: '20px',
-  },
-  categoryRow: {
-    display: 'flex',
-    justifyContent: 'center',
-    gap: '8px',
-    marginBottom: '16px',
-  },
-  categoryTab: {
-    padding: '6px 14px',
-    border: '1px solid rgba(255,255,255,0.1)',
-    borderRadius: '20px',
-    fontSize: '13px',
-    cursor: 'pointer',
-    transition: 'all 0.2s',
-  },
-  progressBarBg: {
-    width: '100%',
-    height: '6px',
-    background: 'rgba(255,255,255,0.08)',
-    borderRadius: '3px',
-    overflow: 'hidden',
-    marginBottom: '4px',
-  },
-  progressBarFill: {
-    height: '100%',
-    background: '#c89b3c',
-    borderRadius: '3px',
-    transition: 'width 0.3s ease',
-  },
-  progressText: {
-    fontSize: '12px',
-    color: '#6a6a7a',
-    marginBottom: '20px',
-  },
-  stepContent: {
-    background: 'rgba(255,255,255,0.03)',
-    border: '1px solid rgba(255,255,255,0.06)',
-    borderRadius: '12px',
-    padding: '20px',
-    marginBottom: '16px',
-    minHeight: '100px',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stepHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    marginBottom: '12px',
-  },
-  categoryBadge: {
-    padding: '3px 10px',
-    borderRadius: '12px',
-    fontSize: '11px',
-    fontWeight: 700,
-    color: '#0d0d1a',
-  },
-  stepTitle: {
-    fontSize: '18px',
-    fontWeight: 700,
-    color: '#f0e6d2',
-    margin: 0,
-  },
-  stepDescription: {
-    fontSize: '15px',
-    lineHeight: '1.7',
-    color: '#d0d0e0',
-    margin: 0,
-    textAlign: 'center',
-  },
-  navigateBtn: {
-    width: '100%',
-    padding: '10px',
-    background: 'rgba(200,155,60,0.15)',
-    border: '1px solid rgba(200,155,60,0.3)',
-    borderRadius: '8px',
-    color: '#c89b3c',
-    fontSize: '14px',
-    fontWeight: 600,
-    cursor: 'pointer',
-    marginBottom: '20px',
-    transition: 'background 0.2s',
-  },
-  buttonRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  skipBtn: {
-    padding: '10px 20px',
-    border: '1px solid #3a3a5c',
-    borderRadius: '8px',
-    background: 'rgba(255,255,255,0.05)',
-    color: '#8a8a9a',
-    fontSize: '14px',
-    cursor: 'pointer',
-  },
-  navButtons: {
-    display: 'flex',
-    gap: '8px',
-  },
-  prevBtn: {
-    padding: '10px 20px',
-    border: '1px solid #3a3a5c',
-    borderRadius: '8px',
-    background: 'rgba(255,255,255,0.05)',
-    color: '#a0a0b0',
-    fontSize: '14px',
-    cursor: 'pointer',
-  },
-  nextBtn: {
-    padding: '10px 28px',
-    background: '#c89b3c',
-    color: '#0d0d1a',
-    border: 'none',
-    borderRadius: '8px',
-    fontSize: '15px',
-    fontWeight: 700,
-    cursor: 'pointer',
-  },
-};

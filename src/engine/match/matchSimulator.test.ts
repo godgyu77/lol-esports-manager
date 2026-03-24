@@ -44,6 +44,11 @@ function createMockPlayer(overrides: Partial<Player> & { position: Position; id?
     potential: 70,
     peakAge: 23,
     popularity: 50,
+    secondaryPosition: null,
+    playstyle: 'versatile',
+    careerGames: 0,
+    chemistry: {},
+    formHistory: [],
   };
 
   return {

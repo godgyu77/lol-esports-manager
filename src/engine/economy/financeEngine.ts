@@ -5,6 +5,7 @@
 import { FINANCIAL_CONSTANTS } from '../../data/systemPrompt';
 import {
   getAllTeams,
+  getActiveSponsors,
   insertFinanceLog,
   processWeeklySalaries,
   getTeamFinanceSummary,
@@ -50,14 +51,31 @@ export async function processWeeklyFinances(
   seasonId: number,
   gameDate: string,
 ): Promise<void> {
+  // 중복 호출 방어: 해당 주에 이미 주급 지급 기록이 있으면 스킵
+  const db0 = await getDatabase();
+  const weekStart = gameDate; // 월요일 기준
+  const existing = await db0.select<{ cnt: number }[]>(
+    `SELECT COUNT(*) as cnt FROM team_finance_log
+     WHERE season_id = $1 AND game_date = $2 AND category = 'salary'`,
+    [seasonId, weekStart],
+  );
+  if (existing.length > 0 && existing[0].cnt > 0) {
+    return; // 이미 처리된 주
+  }
+
   // 1. 주급 지급 (모든 팀)
   await processWeeklySalaries(seasonId, gameDate);
 
-  // 2. 스폰서십 수입 (모든 팀 — 자동 명성 기반)
+  // 2. [S11] 스폰서십 수입 — 활성 개별 스폰서 계약이 있으면 기본 명성 기반 스폰서십 스킵
+  // 기본 스폰서십과 개별 스폰서 계약의 이중 수입을 방지
   const teams = await getAllTeams();
   const db = await getDatabase();
 
   for (const team of teams) {
+    // 개별 스폰서 계약이 있는지 확인 → 있으면 기본 스폰서십 스킵
+    const activeSponsors = await getActiveSponsors(team.id, seasonId);
+    if (activeSponsors.length > 0) continue;
+
     const weeklyIncome = calculateWeeklySponsorshipIncome(team.reputation);
     if (weeklyIncome <= 0) continue;
 
@@ -68,7 +86,7 @@ export async function processWeeklyFinances(
       'income',
       'sponsorship',
       weeklyIncome,
-      '주간 스폰서십 수입',
+      '주간 스폰서십 수입 (기본)',
     );
 
     // 팀 budget 증가
@@ -86,6 +104,26 @@ export async function processWeeklyFinances(
   // 4. 만료된 스폰서 일괄 정리
   for (const team of teams) {
     await expireSponsors(team.id, seasonId, gameDate);
+  }
+
+  // 5. 구단주 투자 레벨에 따른 주간 지원금
+  for (const team of teams) {
+    try {
+      const ownerRows = await db.select<{ investment_level: string }[]>(
+        'SELECT investment_level FROM club_ownership WHERE team_id = $1 AND is_active = 1',
+        [team.id],
+      );
+      if (ownerRows.length > 0) {
+        const INVESTMENT_WEEKLY_BONUS: Record<string, number> = {
+          low: 0, moderate: 200, high: 500, sugar_daddy: 1500,
+        };
+        const bonus = INVESTMENT_WEEKLY_BONUS[ownerRows[0].investment_level] ?? 0;
+        if (bonus > 0) {
+          await db.execute('UPDATE teams SET budget = budget + $1 WHERE id = $2', [bonus, team.id]);
+          await insertFinanceLog(team.id, seasonId, gameDate, 'income', 'owner_investment', bonus, '구단주 주간 지원금');
+        }
+      }
+    } catch { /* club_owners 테이블 없으면 무시 */ }
   }
 }
 

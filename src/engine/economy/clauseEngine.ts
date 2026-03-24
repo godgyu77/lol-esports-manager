@@ -79,11 +79,40 @@ interface ClauseCheckResult {
 }
 
 /**
+ * 바이아웃 조항 조회
+ * @returns 바이아웃 가격 (없으면 null)
+ */
+export async function checkReleaseClause(playerId: string): Promise<number | null> {
+  const clauses = await getPlayerClauses(playerId);
+  const releaseClause = clauses.find(c => c.clauseType === 'release_clause' && !c.isTriggered);
+  return releaseClause?.clauseValue ?? null;
+}
+
+/**
+ * 바이아웃 조항 실행 (자동 이적 처리용)
+ * @returns 바이아웃 금액
+ */
+export async function triggerReleaseClause(playerId: string): Promise<number | null> {
+  const db = await getDatabase();
+  const clauses = await getPlayerClauses(playerId);
+  const releaseClause = clauses.find(c => c.clauseType === 'release_clause' && !c.isTriggered);
+  if (!releaseClause) return null;
+
+  await db.execute(
+    'UPDATE contract_clauses SET is_triggered = 1 WHERE id = $1',
+    [releaseClause.id],
+  );
+
+  return releaseClause.clauseValue;
+}
+
+/**
  * 시즌 종료 시 팀 선수들의 계약 조항을 체크한다.
  * - appearance_bonus: 20경기 이상 출전 시 보너스 지급
- * - performance_bonus: All-Pro 선정 or MVP 시 보너스 지급
+ * - performance_bonus: All-Pro 선정 or MVP 시 / KDA 5.0+ 시 보너스 지급
  * - loyalty_bonus: 2시즌 이상 잔류 시 보너스 지급
  * - relegation_release: 체크만 (트리거는 강등 로직에서 처리)
+ * - release_clause, signing_bonus: 별도 처리 (체크 대상 아님)
  */
 export async function checkClauses(
   teamId: string,
@@ -100,7 +129,7 @@ export async function checkClauses(
      WHERE p.team_id = $1 AND cc.is_triggered = 0`,
     [teamId],
   );
-  const clauses = rows.map(mapRowToClause);
+  const clauses = rows.map((row, idx) => ({ ...mapRowToClause(row), _rowIdx: idx }));
 
   for (const clause of clauses) {
     let triggered = false;
@@ -127,18 +156,36 @@ export async function checkClauses(
            AND (award_type = 'all_pro' OR award_type = 'mvp')`,
           [clause.playerId, seasonId],
         );
-        triggered = (awardRows[0]?.cnt ?? 0) > 0;
+        const hasAward = (awardRows[0]?.cnt ?? 0) > 0;
+
+        // KDA 5.0 이상 체크
+        const kdaRows = await db.select<{ avg_kda: number }[]>(
+          `SELECT AVG(CAST(kills + assists AS REAL) / MAX(deaths, 1)) as avg_kda
+           FROM player_game_stats pgs
+           JOIN matches m ON m.id = pgs.match_id
+           WHERE pgs.player_id = $1 AND m.season_id = $2`,
+          [clause.playerId, seasonId],
+        );
+        const avgKda = kdaRows[0]?.avg_kda ?? 0;
+
+        triggered = hasAward || avgKda >= 5.0;
         break;
       }
 
       case 'loyalty_bonus': {
-        // 해당 팀에 2시즌 이상 잔류했는지 조회
+        // [W18] 해당 팀에서 현재 계약 기간 내 2시즌 이상 잔류했는지 조회
+        // clause.created_at(조항 생성 시점) 이후의 시즌만 카운트하여
+        // 이적 전 다른 팀 경기가 포함되지 않도록 함
         const seasonRows = await db.select<{ cnt: number }[]>(
           `SELECT COUNT(DISTINCT m.season_id) as cnt FROM player_game_stats pgs
            JOIN matches m ON m.id = pgs.match_id
            JOIN players p ON p.id = pgs.player_id
-           WHERE pgs.player_id = $1 AND p.team_id = $2`,
-          [clause.playerId, teamId],
+           WHERE pgs.player_id = $1 AND p.team_id = $2
+             AND m.season_id >= (
+               SELECT MIN(s.id) FROM seasons s
+               WHERE s.start_date >= $3
+             )`,
+          [clause.playerId, teamId, rows[clause._rowIdx].created_at],
         );
         triggered = (seasonRows[0]?.cnt ?? 0) >= 2;
         break;
@@ -146,6 +193,12 @@ export async function checkClauses(
 
       case 'relegation_release':
         // 강등 시 방출 조항은 강등 로직에서 별도 처리
+        triggered = false;
+        break;
+
+      case 'release_clause':
+      case 'signing_bonus':
+        // 바이아웃/계약보너스는 시즌 종료 체크 대상 아님
         triggered = false;
         break;
     }

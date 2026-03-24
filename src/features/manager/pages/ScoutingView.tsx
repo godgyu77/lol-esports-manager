@@ -22,6 +22,7 @@ import type { Scout, ScoutingReport } from '../../../types/scout';
 import type { Player } from '../../../types/player';
 import { getFreeAgents } from '../../../db/queries';
 import { Skeleton, SkeletonTable } from '../../../components/Skeleton';
+import { generateScoutingReport, type ScoutingReport as AiScoutingReport } from '../../../ai/advancedAiService';
 
 type Tab = 'scouts' | 'reports' | 'watchlist';
 
@@ -29,8 +30,20 @@ const POSITION_LABELS: Record<string, string> = {
   top: 'TOP', jungle: 'JGL', mid: 'MID', adc: 'ADC', support: 'SUP',
 };
 
-const GRADE_COLORS: Record<string, string> = {
-  S: '#ff6b6b', A: '#c89b3c', B: '#4ecdc4', C: '#8a8a9a', D: '#555',
+const POS_CLASS: Record<string, string> = {
+  top: 'fm-pos-badge--top',
+  jungle: 'fm-pos-badge--jgl',
+  mid: 'fm-pos-badge--mid',
+  adc: 'fm-pos-badge--adc',
+  support: 'fm-pos-badge--sup',
+};
+
+const GRADE_BADGE: Record<string, string> = {
+  S: 'fm-badge--danger',
+  A: 'fm-badge--accent',
+  B: 'fm-badge--info',
+  C: 'fm-badge--default',
+  D: 'fm-badge--default',
 };
 
 export function ScoutingView() {
@@ -48,6 +61,8 @@ export function ScoutingView() {
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const [assignModal, setAssignModal] = useState<Scout | null>(null);
   const [posFilter, setPosFilter] = useState<string>('all');
+  const [aiAnalysis, setAiAnalysis] = useState<Record<number, AiScoutingReport>>({});
+  const [aiAnalysisLoading, setAiAnalysisLoading] = useState<Record<number, boolean>>({});
 
   const userTeamId = save?.userTeamId ?? '';
 
@@ -132,6 +147,46 @@ export function ScoutingView() {
     await loadData();
   };
 
+  const handleRequestAiAnalysis = async (report: ScoutingReport) => {
+    if (aiAnalysis[report.id] || aiAnalysisLoading[report.id]) return;
+    const player = findPlayer(report.playerId);
+    if (!player) return;
+
+    setAiAnalysisLoading(prev => ({ ...prev, [report.id]: true }));
+    try {
+      const result = await generateScoutingReport({
+        playerName: player.name,
+        position: player.position,
+        age: player.age,
+        ovr: Math.round((player.stats.mechanical + player.stats.gameSense + player.stats.teamwork + player.stats.consistency + player.stats.laning + player.stats.aggression) / 6),
+        potential: player.potential ?? 50,
+        stats: {
+          mechanical: report.reportedStats.mechanical ?? 50,
+          gameSense: report.reportedStats.gameSense ?? 50,
+          teamwork: report.reportedStats.teamwork ?? 50,
+          consistency: report.reportedStats.consistency ?? 50,
+          laning: report.reportedStats.laning ?? 50,
+          aggression: report.reportedStats.aggression ?? 50,
+        },
+      });
+      setAiAnalysis(prev => ({ ...prev, [report.id]: result }));
+      // AI 분석 결과 DB 저장
+      try {
+        const { getDatabase } = await import('../../../db/database');
+        const db = await getDatabase();
+        await db.execute(
+          `UPDATE scouting_reports SET ai_analysis = $1, ai_analyzed_at = datetime('now')
+           WHERE id = $2`,
+          [JSON.stringify(result), report.id],
+        );
+      } catch { /* ai_analysis 컬럼 없으면 무시 */ }
+    } catch {
+      // AI 분석 실패 시 무시
+    } finally {
+      setAiAnalysisLoading(prev => ({ ...prev, [report.id]: false }));
+    }
+  };
+
   const findPlayer = (playerId: string): Player | undefined =>
     allPlayers.find(p => p.id === playerId) ??
     teams.flatMap(t => t.roster ?? []).find(p => p.id === playerId);
@@ -147,14 +202,14 @@ export function ScoutingView() {
     pendingReports.some(r => r.scoutId === scoutId);
 
   if (!season || !save) {
-    return <p style={{ color: '#6a6a7a' }}>데이터를 불러오는 중...</p>;
+    return <p className="fm-text-muted">데이터를 불러오는 중...</p>;
   }
 
   if (isLoading) {
     return (
       <div>
         <Skeleton width="160px" height="28px" variant="text" />
-        <div style={{ marginTop: '16px', display: 'flex', gap: '4px', marginBottom: '16px' }}>
+        <div className="fm-mt-md fm-flex fm-gap-xs fm-mb-md">
           <Skeleton width="80px" height="36px" variant="rect" />
           <Skeleton width="80px" height="36px" variant="rect" />
           <Skeleton width="80px" height="36px" variant="rect" />
@@ -170,34 +225,32 @@ export function ScoutingView() {
 
   return (
     <div>
-      <h1 style={styles.title}>스카우팅</h1>
+      <div className="fm-page-header">
+        <h1 className="fm-page-title">스카우팅</h1>
+      </div>
 
       {message && (
-        <div style={{
-          ...styles.message,
-          borderColor: message.type === 'success' ? '#2ecc71' : '#e74c3c',
-          color: message.type === 'success' ? '#2ecc71' : '#e74c3c',
-        }}>
-          {message.text}
+        <div className={`fm-alert ${message.type === 'success' ? 'fm-alert--success' : 'fm-alert--danger'} fm-mb-md`}>
+          <span className="fm-alert__text">{message.text}</span>
         </div>
       )}
 
       {/* 탭 */}
-      <div style={styles.tabs}>
+      <div className="fm-tabs">
         <button
-          style={{ ...styles.tab, ...(tab === 'scouts' ? styles.activeTab : {}) }}
+          className={`fm-tab ${tab === 'scouts' ? 'fm-tab--active' : ''}`}
           onClick={() => setTab('scouts')}
         >
           스카우트 ({scouts.length})
         </button>
         <button
-          style={{ ...styles.tab, ...(tab === 'reports' ? styles.activeTab : {}) }}
+          className={`fm-tab ${tab === 'reports' ? 'fm-tab--active' : ''}`}
           onClick={() => setTab('reports')}
         >
           리포트 ({completedReports.length})
         </button>
         <button
-          style={{ ...styles.tab, ...(tab === 'watchlist' ? styles.activeTab : {}) }}
+          className={`fm-tab ${tab === 'watchlist' ? 'fm-tab--active' : ''}`}
           onClick={() => setTab('watchlist')}
         >
           관심 목록 ({watchlist.length})
@@ -207,53 +260,54 @@ export function ScoutingView() {
       {/* 탭 1: 스카우트 관리 */}
       {tab === 'scouts' && (
         <div>
-          <div style={styles.sectionHeader}>
-            <h2 style={styles.subTitle}>소속 스카우트</h2>
-            <button style={styles.hireBtn} onClick={handleHireScout}>
+          <div className="fm-flex fm-justify-between fm-items-center fm-mb-md">
+            <h2 className="fm-text-lg fm-font-semibold fm-text-accent">소속 스카우트</h2>
+            <button className="fm-btn fm-btn--primary" onClick={handleHireScout}>
               + 스카우트 고용
             </button>
           </div>
 
           {scouts.length === 0 ? (
-            <p style={styles.empty}>고용된 스카우트가 없습니다. 스카우트를 고용하세요.</p>
+            <p className="fm-text-muted fm-text-md">고용된 스카우트가 없습니다. 스카우트를 고용하세요.</p>
           ) : (
-            <div style={styles.scoutGrid}>
+            <div className="fm-grid fm-grid--auto">
               {scouts.map(scout => {
                 const busy = isScoutBusy(scout.id);
                 const busyReport = pendingReports.find(r => r.scoutId === scout.id);
                 const busyPlayer = busyReport ? findPlayer(busyReport.playerId) : null;
                 return (
-                  <div key={scout.id} style={styles.scoutCard}>
-                    <div style={styles.scoutHeader}>
-                      <span style={styles.scoutName}>{scout.name}</span>
-                      <span style={styles.scoutAbility}>능력 {scout.ability}</span>
+                  <div key={scout.id} className="fm-card">
+                    <div className="fm-flex fm-justify-between fm-items-center fm-mb-sm">
+                      <span className="fm-text-lg fm-font-semibold fm-text-primary">{scout.name}</span>
+                      <span className="fm-badge fm-badge--accent">능력 {scout.ability}</span>
                     </div>
-                    <div style={styles.scoutDetails}>
+                    <div className="fm-flex-col fm-gap-xs fm-text-xs fm-text-secondary fm-mb-sm">
                       <span>특화 리전: {scout.regionSpecialty ?? '없음'}</span>
                       <span>경험: {scout.experience}건</span>
                       <span>연봉: {scout.salary}만</span>
                     </div>
-                    <div style={styles.scoutStatus}>
+                    <div className="fm-mb-sm">
                       {busy ? (
-                        <span style={{ color: '#f39c12', fontSize: '12px' }}>
+                        <span className="fm-badge fm-badge--warning">
                           스카우팅 중: {busyPlayer?.name ?? '???'} (D-{busyReport?.daysRemaining})
                         </span>
                       ) : (
-                        <span style={{ color: '#2ecc71', fontSize: '12px' }}>대기중</span>
+                        <span className="fm-badge fm-badge--success">대기중</span>
                       )}
                     </div>
-                    <div style={styles.scoutActions}>
+                    <div className="fm-flex fm-gap-sm">
                       <button
-                        style={{
-                          ...styles.assignBtn,
-                          opacity: busy ? 0.4 : 1,
-                        }}
+                        className="fm-btn fm-btn--sm"
+                        style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}
                         disabled={busy}
                         onClick={() => setAssignModal(scout)}
                       >
                         배정
                       </button>
-                      <button style={styles.fireBtn} onClick={() => handleFireScout(scout.id)}>
+                      <button
+                        className="fm-btn fm-btn--sm fm-btn--ghost"
+                        onClick={() => handleFireScout(scout.id)}
+                      >
                         해고
                       </button>
                     </div>
@@ -271,123 +325,147 @@ export function ScoutingView() {
           {/* 진행 중 */}
           {pendingReports.length > 0 && (
             <>
-              <h2 style={styles.subTitle}>진행 중 ({pendingReports.length})</h2>
-              <table style={styles.table}>
-                <thead>
-                  <tr>
-                    <th style={styles.th}>선수</th>
-                    <th style={styles.th}>소속</th>
-                    <th style={styles.th}>스카우트</th>
-                    <th style={styles.th}>남은 일수</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pendingReports.map(report => {
-                    const player = findPlayer(report.playerId);
-                    const scout = scouts.find(s => s.id === report.scoutId);
-                    return (
-                      <tr key={report.id} style={styles.tr}>
-                        <td style={{ ...styles.td, fontWeight: 500, color: '#e0e0e0' }}>
-                          {player?.name ?? report.playerId}
-                        </td>
-                        <td style={styles.td}>{findTeamName(report.playerId)}</td>
-                        <td style={styles.td}>{scout?.name ?? '???'}</td>
-                        <td style={{ ...styles.td, color: '#f39c12', fontWeight: 600 }}>
-                          D-{report.daysRemaining}
-                        </td>
+              <h2 className="fm-text-lg fm-font-semibold fm-text-accent fm-mb-md">진행 중 ({pendingReports.length})</h2>
+              <div className="fm-panel fm-mb-lg">
+                <div className="fm-panel__body--flush fm-table-wrap">
+                  <table className="fm-table fm-table--striped">
+                    <thead>
+                      <tr>
+                        <th>선수</th>
+                        <th>소속</th>
+                        <th>스카우트</th>
+                        <th>남은 일수</th>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                    </thead>
+                    <tbody>
+                      {pendingReports.map(report => {
+                        const player = findPlayer(report.playerId);
+                        const scout = scouts.find(s => s.id === report.scoutId);
+                        return (
+                          <tr key={report.id}>
+                            <td className="fm-cell--name">{player?.name ?? report.playerId}</td>
+                            <td>{findTeamName(report.playerId)}</td>
+                            <td>{scout?.name ?? '???'}</td>
+                            <td><span className="fm-text-warning fm-font-semibold">D-{report.daysRemaining}</span></td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </>
           )}
 
           {/* 완료된 리포트 */}
-          <h2 style={{ ...styles.subTitle, marginTop: pendingReports.length > 0 ? '24px' : '0' }}>
+          <h2 className={`fm-text-lg fm-font-semibold fm-text-accent fm-mb-md ${pendingReports.length > 0 ? '' : ''}`}>
             완료된 리포트 ({completedReports.length})
           </h2>
           {completedReports.length === 0 ? (
-            <p style={styles.empty}>완료된 리포트가 없습니다.</p>
+            <p className="fm-text-muted fm-text-md">완료된 리포트가 없습니다.</p>
           ) : (
-            <div style={styles.reportGrid}>
+            <div className="fm-grid fm-grid--auto">
               {completedReports.map(report => {
                 const player = findPlayer(report.playerId);
                 return (
-                  <div key={report.id} style={styles.reportCard}>
-                    <div style={styles.reportHeader}>
-                      <span style={{
-                        ...styles.reportGrade,
-                        color: GRADE_COLORS[report.overallGrade] ?? '#8a8a9a',
-                      }}>
+                  <div key={report.id} className="fm-card">
+                    <div className="fm-flex fm-items-center fm-gap-sm fm-mb-sm">
+                      <span className={`fm-badge ${GRADE_BADGE[report.overallGrade] ?? 'fm-badge--default'}`} style={{ fontSize: '16px', fontWeight: 800, padding: '4px 10px' }}>
                         {report.overallGrade}
                       </span>
-                      <span style={styles.reportName}>{player?.name ?? report.playerId}</span>
-                      <span style={styles.reportTeam}>{findTeamName(report.playerId)}</span>
+                      <span className="fm-text-lg fm-font-semibold fm-text-primary">{player?.name ?? report.playerId}</span>
+                      <span className="fm-text-xs fm-text-muted" style={{ marginLeft: 'auto' }}>{findTeamName(report.playerId)}</span>
                     </div>
-                    <div style={styles.reportAccuracy}>
-                      정확도: {report.accuracy}%
+                    <div className="fm-mb-sm">
+                      <span className="fm-badge fm-badge--default">정확도: {report.accuracy}%</span>
                     </div>
-                    <div style={styles.reportStats}>
+                    <div className="fm-flex-col fm-gap-xs fm-mb-sm">
                       {report.reportedStats.mechanical != null && (
-                        <div style={styles.statRow}>
-                          <span>기계적</span>
-                          <span style={styles.statValue}>{report.reportedStats.mechanical}</span>
+                        <div className="fm-info-row">
+                          <span className="fm-info-row__label">기계적</span>
+                          <span className="fm-info-row__value">{report.reportedStats.mechanical}</span>
                         </div>
                       )}
                       {report.reportedStats.gameSense != null && (
-                        <div style={styles.statRow}>
-                          <span>판단력</span>
-                          <span style={styles.statValue}>{report.reportedStats.gameSense}</span>
+                        <div className="fm-info-row">
+                          <span className="fm-info-row__label">판단력</span>
+                          <span className="fm-info-row__value">{report.reportedStats.gameSense}</span>
                         </div>
                       )}
                       {report.reportedStats.teamwork != null && (
-                        <div style={styles.statRow}>
-                          <span>팀워크</span>
-                          <span style={styles.statValue}>{report.reportedStats.teamwork}</span>
+                        <div className="fm-info-row">
+                          <span className="fm-info-row__label">팀워크</span>
+                          <span className="fm-info-row__value">{report.reportedStats.teamwork}</span>
                         </div>
                       )}
                       {report.reportedStats.laning != null && (
-                        <div style={styles.statRow}>
-                          <span>라인전</span>
-                          <span style={styles.statValue}>{report.reportedStats.laning}</span>
+                        <div className="fm-info-row">
+                          <span className="fm-info-row__label">라인전</span>
+                          <span className="fm-info-row__value">{report.reportedStats.laning}</span>
                         </div>
                       )}
                       {report.reportedStats.consistency != null && (
-                        <div style={styles.statRow}>
-                          <span>일관성</span>
-                          <span style={styles.statValue}>{report.reportedStats.consistency}</span>
+                        <div className="fm-info-row">
+                          <span className="fm-info-row__label">일관성</span>
+                          <span className="fm-info-row__value">{report.reportedStats.consistency}</span>
                         </div>
                       )}
                       {report.reportedStats.aggression != null && (
-                        <div style={styles.statRow}>
-                          <span>공격성</span>
-                          <span style={styles.statValue}>{report.reportedStats.aggression}</span>
+                        <div className="fm-info-row">
+                          <span className="fm-info-row__label">공격성</span>
+                          <span className="fm-info-row__value">{report.reportedStats.aggression}</span>
                         </div>
                       )}
                       {report.reportedPotential != null && (
-                        <div style={styles.statRow}>
-                          <span>잠재력</span>
-                          <span style={{ ...styles.statValue, color: '#c89b3c' }}>
-                            {report.reportedPotential}
-                          </span>
+                        <div className="fm-info-row">
+                          <span className="fm-info-row__label">잠재력</span>
+                          <span className="fm-info-row__value fm-text-accent">{report.reportedPotential}</span>
                         </div>
                       )}
                       {report.reportedMental != null && (
-                        <div style={styles.statRow}>
-                          <span>멘탈</span>
-                          <span style={styles.statValue}>{report.reportedMental}</span>
+                        <div className="fm-info-row">
+                          <span className="fm-info-row__label">멘탈</span>
+                          <span className="fm-info-row__value">{report.reportedMental}</span>
                         </div>
                       )}
                     </div>
                     {report.scoutComment && (
-                      <div style={styles.reportComment}>
+                      <div className="fm-text-xs fm-text-secondary fm-p-sm fm-mb-sm" style={{ fontStyle: 'italic', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)' }}>
                         "{report.scoutComment}"
                       </div>
                     )}
-                    <div style={styles.reportDate}>
-                      {report.reportDate}
-                    </div>
+                    {/* AI 분석 섹션 */}
+                    {aiAnalysis[report.id] ? (
+                      <div className="fm-card--highlight fm-p-sm fm-flex-col fm-gap-xs" style={{ borderRadius: 'var(--radius-md)', border: '1px solid var(--accent-border)', background: 'var(--accent-dim)' }}>
+                        <span className="fm-text-xs fm-font-bold fm-text-accent">AI 분석</span>
+                        <span className="fm-text-xs fm-font-medium fm-text-primary">{aiAnalysis[report.id].summary}</span>
+                        <div className="fm-flex fm-gap-md">
+                          <div>
+                            <span className="fm-text-xs fm-font-semibold fm-text-success">강점</span>
+                            {aiAnalysis[report.id].strengths.map((s, i) => (
+                              <div key={i} className="fm-text-xs fm-text-secondary">+ {s}</div>
+                            ))}
+                          </div>
+                          <div>
+                            <span className="fm-text-xs fm-font-semibold fm-text-danger">약점</span>
+                            {aiAnalysis[report.id].weaknesses.map((w, i) => (
+                              <div key={i} className="fm-text-xs fm-text-secondary">- {w}</div>
+                            ))}
+                          </div>
+                        </div>
+                        <span className="fm-badge fm-badge--accent">{aiAnalysis[report.id].recommendation}</span>
+                      </div>
+                    ) : (
+                      <button
+                        className="fm-btn fm-btn--sm fm-mt-sm"
+                        style={{ borderColor: 'var(--accent-border)', color: 'var(--accent)' }}
+                        disabled={aiAnalysisLoading[report.id] ?? false}
+                        onClick={() => handleRequestAiAnalysis(report)}
+                      >
+                        {aiAnalysisLoading[report.id] ? '분석 중...' : 'AI 분석 요청'}
+                      </button>
+                    )}
+                    <div className="fm-text-xs fm-text-muted fm-mt-sm">{report.reportDate}</div>
                   </div>
                 );
               })}
@@ -399,135 +477,125 @@ export function ScoutingView() {
       {/* 탭 3: 관심 목록 */}
       {tab === 'watchlist' && (
         <div>
-          <h2 style={styles.subTitle}>관심 선수 목록</h2>
+          <h2 className="fm-text-lg fm-font-semibold fm-text-accent fm-mb-md">관심 선수 목록</h2>
           {watchlist.length === 0 ? (
-            <p style={styles.empty}>관심 목록이 비어있습니다. 선수 배정 화면에서 추가하세요.</p>
+            <p className="fm-text-muted fm-text-md">관심 목록이 비어있습니다. 선수 배정 화면에서 추가하세요.</p>
           ) : (
-            <table style={styles.table}>
-              <thead>
-                <tr>
-                  <th style={styles.th}>포지션</th>
-                  <th style={styles.th}>이름</th>
-                  <th style={styles.th}>소속</th>
-                  <th style={styles.th}>추가일</th>
-                  <th style={styles.th}>최신 리포트</th>
-                  <th style={styles.th}></th>
-                </tr>
-              </thead>
-              <tbody>
-                {watchlist.map(entry => {
-                  const player = findPlayer(entry.playerId);
-                  const report = completedReports.find(r => r.playerId === entry.playerId);
-                  return (
-                    <tr key={entry.playerId} style={styles.tr}>
-                      <td style={{ ...styles.td, color: '#c89b3c', fontWeight: 600 }}>
-                        {player ? POSITION_LABELS[player.position] ?? player.position : '???'}
-                      </td>
-                      <td style={{ ...styles.td, fontWeight: 500, color: '#e0e0e0' }}>
-                        {player?.name ?? entry.playerId}
-                      </td>
-                      <td style={styles.td}>{findTeamName(entry.playerId)}</td>
-                      <td style={styles.td}>{entry.addedDate}</td>
-                      <td style={styles.td}>
-                        {report ? (
-                          <span style={{ color: GRADE_COLORS[report.overallGrade], fontWeight: 600 }}>
-                            {report.overallGrade} ({report.accuracy}%)
-                          </span>
-                        ) : (
-                          <span style={{ color: '#6a6a7a' }}>없음</span>
-                        )}
-                      </td>
-                      <td style={styles.td}>
-                        <button
-                          style={styles.removeBtn}
-                          onClick={() => handleToggleWatchlist(entry.playerId)}
-                        >
-                          제거
-                        </button>
-                      </td>
+            <div className="fm-panel">
+              <div className="fm-panel__body--flush fm-table-wrap">
+                <table className="fm-table fm-table--striped">
+                  <thead>
+                    <tr>
+                      <th>포지션</th>
+                      <th>이름</th>
+                      <th>소속</th>
+                      <th>추가일</th>
+                      <th>최신 리포트</th>
+                      <th></th>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  </thead>
+                  <tbody>
+                    {watchlist.map(entry => {
+                      const player = findPlayer(entry.playerId);
+                      const report = completedReports.find(r => r.playerId === entry.playerId);
+                      return (
+                        <tr key={entry.playerId}>
+                          <td>
+                            {player ? (
+                              <span className={`fm-pos-badge ${POS_CLASS[player.position] ?? ''}`}>
+                                {POSITION_LABELS[player.position] ?? player.position}
+                              </span>
+                            ) : '???'}
+                          </td>
+                          <td className="fm-cell--name">{player?.name ?? entry.playerId}</td>
+                          <td>{findTeamName(entry.playerId)}</td>
+                          <td>{entry.addedDate}</td>
+                          <td>
+                            {report ? (
+                              <span className={`fm-badge ${GRADE_BADGE[report.overallGrade] ?? 'fm-badge--default'}`}>
+                                {report.overallGrade} ({report.accuracy}%)
+                              </span>
+                            ) : (
+                              <span className="fm-text-muted">없음</span>
+                            )}
+                          </td>
+                          <td>
+                            <button
+                              className="fm-btn fm-btn--sm fm-btn--ghost"
+                              onClick={() => handleToggleWatchlist(entry.playerId)}
+                            >
+                              제거
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           )}
         </div>
       )}
 
       {/* 배정 모달 */}
       {assignModal && (
-        <div style={styles.overlay} role="dialog" aria-modal="true" aria-label="스카우팅 배정" onClick={() => setAssignModal(null)}>
-          <div style={styles.modal} onClick={e => e.stopPropagation()}>
-            <h2 style={styles.modalTitle}>
-              스카우팅 배정 — {assignModal.name}
-            </h2>
-
-            <div style={styles.filterRow}>
-              {['all', 'top', 'jungle', 'mid', 'adc', 'support'].map(pos => (
-                <button
-                  key={pos}
-                  style={{ ...styles.filterBtn, ...(posFilter === pos ? styles.filterActive : {}) }}
-                  onClick={() => setPosFilter(pos)}
-                >
-                  {pos === 'all' ? '전체' : POSITION_LABELS[pos]}
-                </button>
-              ))}
+        <div className="fm-overlay" role="dialog" aria-modal="true" aria-label="스카우팅 배정" onClick={() => setAssignModal(null)}>
+          <div className="fm-modal" style={{ width: '600px' }} onClick={e => e.stopPropagation()}>
+            <div className="fm-modal__header">
+              <h2 className="fm-modal__title">스카우팅 배정 -- {assignModal.name}</h2>
+              <button className="fm-modal__close" onClick={() => setAssignModal(null)}>&times;</button>
             </div>
+            <div className="fm-modal__body">
+              <div className="fm-flex fm-gap-xs fm-mb-md">
+                {['all', 'top', 'jungle', 'mid', 'adc', 'support'].map(pos => (
+                  <button
+                    key={pos}
+                    className={`fm-btn fm-btn--sm ${posFilter === pos ? 'fm-btn--primary' : ''}`}
+                    onClick={() => setPosFilter(pos)}
+                  >
+                    {pos === 'all' ? '전체' : POSITION_LABELS[pos]}
+                  </button>
+                ))}
+              </div>
 
-            <div style={styles.playerList}>
-              {filteredPlayers.slice(0, 50).map(player => {
-                const hasReport = completedReports.some(r => r.playerId === player.id);
-                const isPending = pendingReports.some(r => r.playerId === player.id);
-                const inWatchlist = watchlist.some(w => w.playerId === player.id);
-                return (
-                  <div key={player.id} style={styles.playerRow}>
-                    <span style={{ color: '#c89b3c', fontSize: '12px', width: '36px' }}>
-                      {POSITION_LABELS[player.position]}
-                    </span>
-                    <span style={{ flex: 1, color: '#e0e0e0', fontSize: '13px' }}>
-                      {player.name}
-                    </span>
-                    <span style={{ color: '#6a6a7a', fontSize: '12px', width: '60px' }}>
-                      {findTeamName(player.id)}
-                    </span>
-                    <span style={{ color: '#6a6a7a', fontSize: '12px', width: '36px' }}>
-                      {player.age}세
-                    </span>
-                    {hasReport && (
-                      <span style={{ color: '#2ecc71', fontSize: '11px', width: '50px' }}>리포트有</span>
-                    )}
-                    {isPending && (
-                      <span style={{ color: '#f39c12', fontSize: '11px', width: '50px' }}>진행중</span>
-                    )}
-                    <button
-                      style={{
-                        ...styles.watchBtn,
-                        color: inWatchlist ? '#c89b3c' : '#6a6a7a',
-                      }}
-                      onClick={() => handleToggleWatchlist(player.id)}
-                      title={inWatchlist ? '관심 해제' : '관심 등록'}
-                    >
-                      {inWatchlist ? '\u2605' : '\u2606'}
-                    </button>
-                    <button
-                      style={{
-                        ...styles.smallBtn,
-                        opacity: isPending ? 0.4 : 1,
-                      }}
-                      disabled={isPending}
-                      onClick={() => handleAssign(assignModal.id, player.id)}
-                    >
-                      배정
-                    </button>
-                  </div>
-                );
-              })}
+              <div className="fm-flex-col fm-gap-xs" style={{ maxHeight: '400px', overflow: 'auto' }}>
+                {filteredPlayers.slice(0, 50).map(player => {
+                  const hasReport = completedReports.some(r => r.playerId === player.id);
+                  const isPending = pendingReports.some(r => r.playerId === player.id);
+                  const inWatchlist = watchlist.some(w => w.playerId === player.id);
+                  return (
+                    <div key={player.id} className="fm-flex fm-items-center fm-gap-sm fm-p-sm" style={{ background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)' }}>
+                      <span className={`fm-pos-badge ${POS_CLASS[player.position] ?? ''}`} style={{ minWidth: '36px' }}>
+                        {POSITION_LABELS[player.position]}
+                      </span>
+                      <span className="fm-flex-1 fm-text-md fm-text-primary">{player.name}</span>
+                      <span className="fm-text-xs fm-text-muted" style={{ width: '60px' }}>{findTeamName(player.id)}</span>
+                      <span className="fm-text-xs fm-text-muted" style={{ width: '36px' }}>{player.age}세</span>
+                      {hasReport && <span className="fm-badge fm-badge--success">리포트有</span>}
+                      {isPending && <span className="fm-badge fm-badge--warning">진행중</span>}
+                      <button
+                        className="fm-btn fm-btn--sm fm-btn--ghost"
+                        onClick={() => handleToggleWatchlist(player.id)}
+                        title={inWatchlist ? '관심 해제' : '관심 등록'}
+                        style={{ color: inWatchlist ? 'var(--accent)' : 'var(--text-muted)', fontSize: '16px' }}
+                      >
+                        {inWatchlist ? '\u2605' : '\u2606'}
+                      </button>
+                      <button
+                        className="fm-btn fm-btn--primary fm-btn--sm"
+                        disabled={isPending}
+                        onClick={() => handleAssign(assignModal.id, player.id)}
+                      >
+                        배정
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-
-            <div style={{ textAlign: 'right', marginTop: '16px' }}>
-              <button style={styles.modalCancel} onClick={() => setAssignModal(null)}>
-                닫기
-              </button>
+            <div className="fm-modal__footer">
+              <button className="fm-btn" onClick={() => setAssignModal(null)}>닫기</button>
             </div>
           </div>
         </div>
@@ -535,122 +603,3 @@ export function ScoutingView() {
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  title: { fontSize: '24px', fontWeight: 700, color: '#f0e6d2', marginBottom: '16px' },
-  message: {
-    padding: '10px 16px', marginBottom: '12px', border: '1px solid',
-    borderRadius: '6px', fontSize: '13px', background: 'rgba(255,255,255,0.02)',
-  },
-  tabs: { display: 'flex', gap: '4px', marginBottom: '16px', borderBottom: '1px solid #2a2a4a' },
-  tab: {
-    padding: '10px 20px', background: 'none', border: 'none',
-    borderBottom: '2px solid transparent', color: '#6a6a7a',
-    fontSize: '13px', fontWeight: 500, cursor: 'pointer',
-  },
-  activeTab: { color: '#c89b3c', borderBottomColor: '#c89b3c' },
-  subTitle: { fontSize: '15px', fontWeight: 600, color: '#c89b3c', marginBottom: '12px' },
-  empty: { color: '#6a6a7a', fontSize: '13px' },
-  sectionHeader: {
-    display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px',
-  },
-  hireBtn: {
-    padding: '8px 16px', background: '#c89b3c', color: '#0d0d1a', border: 'none',
-    borderRadius: '6px', fontSize: '13px', fontWeight: 600, cursor: 'pointer',
-  },
-  // 스카우트 카드
-  scoutGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '12px' },
-  scoutCard: {
-    background: '#12122a', border: '1px solid #2a2a4a', borderRadius: '8px', padding: '16px',
-  },
-  scoutHeader: {
-    display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px',
-  },
-  scoutName: { fontSize: '15px', fontWeight: 600, color: '#e0e0e0' },
-  scoutAbility: {
-    fontSize: '13px', fontWeight: 700, color: '#c89b3c',
-    background: 'rgba(200,155,60,0.15)', padding: '2px 8px', borderRadius: '4px',
-  },
-  scoutDetails: {
-    display: 'flex', flexDirection: 'column', gap: '2px',
-    fontSize: '12px', color: '#8a8a9a', marginBottom: '8px',
-  },
-  scoutStatus: { marginBottom: '10px' },
-  scoutActions: { display: 'flex', gap: '8px' },
-  assignBtn: {
-    padding: '6px 14px', background: 'rgba(200,155,60,0.15)', border: '1px solid #c89b3c',
-    borderRadius: '4px', color: '#c89b3c', fontSize: '12px', cursor: 'pointer',
-  },
-  fireBtn: {
-    padding: '6px 14px', background: 'none', border: '1px solid #6a6a7a',
-    borderRadius: '4px', color: '#6a6a7a', fontSize: '12px', cursor: 'pointer',
-  },
-  // 리포트 카드
-  reportGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '12px' },
-  reportCard: {
-    background: '#12122a', border: '1px solid #2a2a4a', borderRadius: '8px', padding: '16px',
-  },
-  reportHeader: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' },
-  reportGrade: { fontSize: '20px', fontWeight: 800 },
-  reportName: { fontSize: '14px', fontWeight: 600, color: '#e0e0e0' },
-  reportTeam: { fontSize: '12px', color: '#6a6a7a', marginLeft: 'auto' },
-  reportAccuracy: {
-    fontSize: '11px', color: '#8a8a9a', marginBottom: '10px',
-    padding: '2px 8px', background: 'rgba(255,255,255,0.03)', borderRadius: '4px', display: 'inline-block',
-  },
-  reportStats: { display: 'flex', flexDirection: 'column', gap: '3px', marginBottom: '8px' },
-  statRow: { display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#8a8a9a' },
-  statValue: { fontWeight: 600, color: '#c0c0d0' },
-  reportComment: {
-    fontSize: '12px', color: '#8a8a9a', fontStyle: 'italic',
-    padding: '8px', background: 'rgba(255,255,255,0.02)', borderRadius: '4px', marginBottom: '6px',
-  },
-  reportDate: { fontSize: '11px', color: '#555' },
-  // 테이블
-  table: { width: '100%', borderCollapse: 'collapse', fontSize: '13px' },
-  th: {
-    padding: '8px 10px', textAlign: 'left', borderBottom: '1px solid #3a3a5c',
-    color: '#6a6a7a', fontSize: '12px', fontWeight: 500,
-  },
-  tr: { borderBottom: '1px solid rgba(255,255,255,0.04)' },
-  td: { padding: '8px 10px', color: '#c0c0d0' },
-  removeBtn: {
-    padding: '4px 10px', background: 'none', border: '1px solid #6a6a7a',
-    borderRadius: '4px', color: '#6a6a7a', fontSize: '12px', cursor: 'pointer',
-  },
-  // 필터
-  filterRow: { display: 'flex', gap: '6px', marginBottom: '12px' },
-  filterBtn: {
-    padding: '6px 14px', background: 'rgba(255,255,255,0.03)', border: '1px solid #2a2a4a',
-    borderRadius: '6px', color: '#8a8a9a', fontSize: '12px', cursor: 'pointer',
-  },
-  filterActive: {
-    background: 'rgba(200,155,60,0.15)', borderColor: '#c89b3c', color: '#c89b3c',
-  },
-  // 모달
-  overlay: {
-    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
-    display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100,
-  },
-  modal: {
-    background: '#1a1a2e', border: '1px solid #2a2a4a', borderRadius: '12px',
-    padding: '24px', width: '600px', maxWidth: '90vw', maxHeight: '80vh', overflow: 'auto',
-  },
-  modalTitle: { fontSize: '18px', fontWeight: 700, color: '#f0e6d2', marginBottom: '16px' },
-  modalCancel: {
-    padding: '8px 18px', background: 'none', border: '1px solid #3a3a5c',
-    borderRadius: '6px', color: '#8a8a9a', fontSize: '13px', cursor: 'pointer',
-  },
-  playerList: { display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '400px', overflow: 'auto' },
-  playerRow: {
-    display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px',
-    borderRadius: '4px', background: 'rgba(255,255,255,0.02)',
-  },
-  watchBtn: {
-    background: 'none', border: 'none', fontSize: '16px', cursor: 'pointer', padding: '2px 6px',
-  },
-  smallBtn: {
-    padding: '4px 10px', background: '#c89b3c', color: '#0d0d1a', border: 'none',
-    borderRadius: '4px', fontSize: '11px', fontWeight: 600, cursor: 'pointer',
-  },
-};

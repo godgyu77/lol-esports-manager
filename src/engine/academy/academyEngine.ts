@@ -159,7 +159,7 @@ export async function addAcademyPlayer(
   );
 
   return {
-    id: result.lastInsertId,
+    id: result.lastInsertId ?? 0,
     teamId,
     name: playerName,
     position: playerPosition,
@@ -315,7 +315,7 @@ export async function generateRookieDraftPool(
     );
 
     entries.push({
-      id: result.lastInsertId,
+      id: result.lastInsertId ?? 0,
       seasonId,
       name,
       position,
@@ -392,14 +392,25 @@ export async function advanceAcademyDay(teamId: string): Promise<void> {
     [teamId],
   );
 
+  // 코칭 스태프 보너스 조회 (아카데미 훈련 효율에 반영)
+  let staffTrainingMul = 1.0;
+  try {
+    const { calculateStaffBonuses, getPhilosophyBonus } = await import('../staff/staffEngine');
+    const staffBonuses = await calculateStaffBonuses(teamId);
+    staffTrainingMul = staffBonuses.trainingEfficiency;
+    // 육성형 철학 → 아카데미 선수 추가 보너스
+    const philosophy = await getPhilosophyBonus(teamId);
+    staffTrainingMul *= philosophy.youngPlayerGrowth; // developmental: 1.2배
+  } catch { /* 무시 */ }
+
   for (const row of rows) {
-    // 매일 progress +1~3, 스탯 미세 증가
-    const progressGain = 1 + Math.floor(Math.random() * 3);
+    // 매일 progress +1~3, 스탯 미세 증가 (코칭 스태프 보너스 적용)
+    const progressGain = Math.round((1 + Math.floor(Math.random() * 3)) * staffTrainingMul);
     const newProgress = Math.min(100, row.training_progress + progressGain);
 
     const potentialBonus = row.potential / 100;
-    // 일간 자동 훈련은 수동보다 약함 (0~1)
-    const statGain = () => Math.random() < potentialBonus * 0.3 ? 1 : 0;
+    // 일간 자동 훈련 (스태프 효율 적용)
+    const statGain = () => Math.random() < potentialBonus * 0.3 * staffTrainingMul ? 1 : 0;
 
     const newMech = Math.min(99, row.mechanical + statGain());
     const newGS = Math.min(99, row.game_sense + statGain());

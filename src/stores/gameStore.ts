@@ -8,8 +8,11 @@ import type { DraftState } from '../engine/draft/draftEngine';
 
 export interface PendingPlayer {
   name: string;
+  age: number;
+  nationality: string;
   position: Position;
   background: PlayerBackground;
+  traits: string[];
 }
 
 export interface PendingManager {
@@ -47,6 +50,8 @@ interface GameState {
   pendingUserMatch: Match | null;  // 밴픽/라이브매치 대기 중인 유저 경기
   draftResult: DraftState | null;  // 완료된 밴픽 결과
   fearlessPool: Record<'blue' | 'red', string[]>;  // 피어리스 드래프트 세트 간 누적 풀
+  /** 분석 기반 추천 밴 (AnalysisView → DraftView 연동) */
+  recommendedBans: string[];
 
   // 액션
   setMode: (mode: GameMode) => void;
@@ -64,24 +69,31 @@ interface GameState {
   setPendingUserMatch: (match: Match | null) => void;
   setDraftResult: (draft: DraftState | null) => void;
   setFearlessPool: (pool: Record<'blue' | 'red', string[]>) => void;
+  setRecommendedBans: (bans: string[]) => void;
   reset: () => void;
 }
 
-const initialState = {
-  mode: null as GameMode | null,
-  save: null as GameSave | null,
-  season: null as Season | null,
-  teams: [] as Team[],
+const initialState: Omit<GameState,
+  'setMode' | 'setSave' | 'setSeason' | 'setTeams' | 'setLoading' |
+  'setPendingPlayer' | 'setPendingManager' | 'setPendingTeamId' |
+  'setCurrentDate' | 'setDayType' | 'setDayPhase' | 'setPendingUserMatch' |
+  'setDraftResult' | 'setFearlessPool' | 'setRecommendedBans' | 'reset'
+> = {
+  mode: null,
+  save: null,
+  season: null,
+  teams: [],
   isLoading: false,
-  pendingPlayer: null as PendingPlayer | null,
-  pendingManager: null as PendingManager | null,
-  pendingTeamId: null as string | null,
-  currentDate: null as string | null,
-  dayType: null as DayType | null,
-  dayPhase: 'idle' as DayPhase,
-  pendingUserMatch: null as Match | null,
-  draftResult: null as DraftState | null,
-  fearlessPool: { blue: [], red: [] } as Record<'blue' | 'red', string[]>,
+  pendingPlayer: null,
+  pendingManager: null,
+  pendingTeamId: null,
+  currentDate: null,
+  dayType: null,
+  dayPhase: 'idle',
+  pendingUserMatch: null,
+  draftResult: null,
+  fearlessPool: { blue: [], red: [] },
+  recommendedBans: [],
 };
 
 export const useGameStore = create<GameState>((set) => ({
@@ -89,7 +101,7 @@ export const useGameStore = create<GameState>((set) => ({
 
   setMode: (mode) => set({ mode }),
   setSave: (save) => set({ save }),
-  setSeason: (season) => set({ season, currentDate: season.currentDate }),
+  setSeason: (season) => set({ season }),
   setTeams: (teams) => set({ teams }),
   setLoading: (loading) => set({ isLoading: loading }),
   setPendingPlayer: (player) => set({ pendingPlayer: player }),
@@ -101,5 +113,6 @@ export const useGameStore = create<GameState>((set) => ({
   setPendingUserMatch: (match) => set({ pendingUserMatch: match }),
   setDraftResult: (draft) => set({ draftResult: draft }),
   setFearlessPool: (pool) => set({ fearlessPool: pool }),
+  setRecommendedBans: (bans) => set({ recommendedBans: bans }),
   reset: () => set(initialState),
 }));

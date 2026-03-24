@@ -7,7 +7,7 @@
  */
 
 import type { Position } from '../../types/game';
-import type { Champion } from '../../types/champion';
+import type { Champion, ChampionSynergy } from '../../types/champion';
 import type { ChampionProficiency } from '../../types/player';
 import { getDatabase } from '../../db/database';
 
@@ -333,7 +333,7 @@ export async function aiSelectBan(
   // 상위 3개 중 랜덤 (예측 불가능성)
   const topN = sorted.slice(0, Math.min(3, sorted.length));
   const pick = topN[Math.floor(Math.random() * topN.length)];
-  return pick[0];
+  return pick?.[0] ?? 'aatrox';
 }
 
 /**
@@ -346,10 +346,12 @@ export async function aiSelectPick(
   side: 'blue' | 'red',
   teamInfo: DraftTeamInfo,
   allChampions: Champion[],
+  synergyData: ChampionSynergy[] = [],
 ): Promise<{ championId: string; position: Position }> {
   const tierMap = await getChampionTierMap();
 
   const teamState = side === 'blue' ? state.blue : state.red;
+  const opponentState = side === 'blue' ? state.red : state.blue;
   const pickedPositions = new Set(teamState.picks.map(p => p.position));
   const positions: Position[] = ['top', 'jungle', 'mid', 'adc', 'support'];
 
@@ -367,6 +369,9 @@ export async function aiSelectPick(
     (a, b) => priorityOrder.indexOf(a) - priorityOrder.indexOf(b),
   );
 
+  // 상대 픽 목록 (카운터픽 계산용)
+  const opponentPickIds = opponentState.picks.map(p => p.championId);
+
   for (const pos of sortedRemaining) {
     const pool = teamInfo.playerPools[pos] ?? [];
 
@@ -381,10 +386,20 @@ export async function aiSelectPick(
       // C/D 티어 챔피언은 AI가 픽하지 않음
       if (AI_IGNORE_TIERS.has(currentTier)) continue;
 
-      // 점수 = 숙련도 + 현재 티어 보너스 + 팀 선호 태그 매칭
+      // 기본 점수 = 숙련도 + 현재 티어 보너스 + 팀 선호 태그 매칭
       const tierBonus = getTierBonus(currentTier);
       const tagBonus = champ.tags.some(t => teamInfo.preferredTags.includes(t)) ? 5 : 0;
-      const score = cp.proficiency + tierBonus + tagBonus;
+
+      // 카운터픽 점수 (상대 이미 픽한 챔피언에 대한 상성)
+      const counterpickScore = calculateCounterpickScore(cp.championId, opponentPickIds, synergyData);
+
+      // 팀 구성 점수 (부족한 역할 채우기)
+      const teamCompScore = evaluateTeamCompScore(champ, teamState.picks, allChampions);
+
+      // 긴급도 보너스: 남은 픽이 1~2개면 포지션 채우기 우선
+      const urgencyBonus = remaining.length <= 2 ? 10 : 0;
+
+      const score = cp.proficiency + tierBonus + tagBonus + counterpickScore + teamCompScore + urgencyBonus;
 
       if (score > bestScore) {
         bestScore = score;
@@ -433,9 +448,20 @@ export function buildDraftTeamInfo(
   return { playerPools, preferredTags };
 }
 
+/** 이전 세트 분석 결과 (세트간 밴픽 적응용) */
+export interface PreviousGameAnalysis {
+  /** 이전 세트에서 캐리한 상대 포지션 */
+  enemyCarryPositions: Position[];
+  /** 이전 세트에서 상대가 사용한 핵심 챔피언 (높은 KDA) */
+  enemyKeyChampions: string[];
+  /** 이전 세트 승패 */
+  previousResults: ('win' | 'loss')[];
+}
+
 /**
  * 전체 드래프트를 AI끼리 자동 완료
  * (타 팀 경기 시뮬레이션용)
+ * @param prevAnalysis 이전 세트 분석 (세트간 밴픽 적응)
  */
 export async function autoCompleteDraft(
   blueInfo: DraftTeamInfo,
@@ -443,6 +469,7 @@ export async function autoCompleteDraft(
   allChampions: Champion[],
   fearlessMode = false,
   fearlessPool?: Record<'blue' | 'red', string[]>,
+  prevAnalysis?: { blue?: PreviousGameAnalysis; red?: PreviousGameAnalysis },
 ): Promise<DraftState> {
   const state = createDraftState(fearlessMode, fearlessPool);
   const maxIterations = DRAFT_ORDER.length + 1;
@@ -455,7 +482,9 @@ export async function autoCompleteDraft(
 
     if (step.type === 'ban') {
       const opponentInfo = step.side === 'blue' ? redInfo : blueInfo;
-      const champId = await aiSelectBan(state, opponentInfo, allChampions);
+      // 이전 세트 분석 기반 밴 우선순위 조정
+      const analysis = step.side === 'blue' ? prevAnalysis?.blue : prevAnalysis?.red;
+      const champId = await aiSelectBanAdaptive(state, opponentInfo, allChampions, analysis);
       const success = executeDraftAction(state, champId);
       if (!success) break;
     } else {
@@ -467,6 +496,43 @@ export async function autoCompleteDraft(
   }
 
   return state;
+}
+
+/**
+ * 이전 세트 분석을 반영한 적응형 밴 선택
+ * 상대가 이전 세트에서 캐리한 챔피언을 우선 밴
+ */
+async function aiSelectBanAdaptive(
+  state: DraftState,
+  opponentInfo: DraftTeamInfo,
+  allChampions: Champion[],
+  analysis?: PreviousGameAnalysis,
+): Promise<string> {
+  // 이전 세트 데이터가 없으면 기본 밴
+  if (!analysis || analysis.enemyKeyChampions.length === 0) {
+    return aiSelectBan(state, opponentInfo, allChampions);
+  }
+
+  // 이전 세트에서 상대가 캐리한 챔피언 우선 밴
+  for (const champId of analysis.enemyKeyChampions) {
+    if (isChampionAvailable(state, champId)) {
+      return champId;
+    }
+  }
+
+  // 이전 세트 캐리 포지션의 챔피언풀 우선 밴
+  for (const pos of analysis.enemyCarryPositions) {
+    const pool = opponentInfo.playerPools[pos] ?? [];
+    const sorted = [...pool].sort((a, b) => b.proficiency - a.proficiency);
+    for (const cp of sorted) {
+      if (isChampionAvailable(state, cp.championId)) {
+        return cp.championId;
+      }
+    }
+  }
+
+  // 폴백: 기본 밴
+  return aiSelectBan(state, opponentInfo, allChampions);
 }
 
 /**
@@ -517,6 +583,73 @@ export function getRecommendedBans(
     .sort((a, b) => b.score - a.score)
     .slice(0, count)
     .map(c => ({ championId: c.championId, reason: c.reason }));
+}
+
+// ─────────────────────────────────────────
+// 카운터픽 & 팀 시너지 평가
+// ─────────────────────────────────────────
+
+/**
+ * 카운터픽 점수: 상대 이미 픽한 챔피언에 대한 상성
+ */
+function calculateCounterpickScore(
+  championId: string,
+  opponentPicks: string[],
+  synergyData: ChampionSynergy[],
+): number {
+  let score = 0;
+  for (const oppChamp of opponentPicks) {
+    const synergy = synergyData.find(
+      s => (s.championA === championId && s.championB === oppChamp) ||
+           (s.championB === championId && s.championA === oppChamp),
+    );
+    if (synergy) {
+      // 양수 시너지 = 우리 챔피언이 유리, 음수 = 불리
+      const val = synergy.championA === championId ? synergy.synergy : -synergy.synergy;
+      score += val * 0.1; // ±100 → ±10 점수
+    }
+  }
+  return score;
+}
+
+/**
+ * 팀 구성 점수: 부족한 역할 채우기
+ */
+function evaluateTeamCompScore(
+  candidateChamp: Champion,
+  currentPicks: { championId: string; position: Position }[],
+  allChampions: Champion[],
+): number {
+  let score = 0;
+  const currentTags = new Set<string>();
+  for (const pick of currentPicks) {
+    const champ = allChampions.find(c => c.id === pick.championId);
+    if (champ) champ.tags.forEach(t => currentTags.add(t));
+  }
+
+  // 이니시에이터/탱커 부족 시 보너스
+  if (!currentTags.has('engage') && !currentTags.has('tank')) {
+    if (candidateChamp.tags.includes('engage')) score += 8;
+    if (candidateChamp.tags.includes('tank')) score += 6;
+  }
+
+  // 딜 타입 다양성 (마법사/원거리 균형)
+  const hasMage = currentPicks.some(p => {
+    const c = allChampions.find(ch => ch.id === p.championId);
+    return c?.tags.includes('mage');
+  });
+  const hasMarksman = currentPicks.some(p => {
+    const c = allChampions.find(ch => ch.id === p.championId);
+    return c?.tags.includes('marksman');
+  });
+
+  if (!hasMage && candidateChamp.tags.includes('mage')) score += 5;
+  if (!hasMarksman && candidateChamp.tags.includes('marksman')) score += 3;
+
+  // 한타 시너지
+  if (candidateChamp.tags.includes('teamfight') && currentTags.has('engage')) score += 4;
+
+  return score;
 }
 
 /**

@@ -23,6 +23,8 @@ import { calculateTeamGrowth, type GrowthResult } from '../player/playerGrowth';
 import { generateLeagueSchedule } from './scheduleGenerator';
 import { assignMatchDates, SEASON_DATES, addDays } from './calendar';
 import { generatePlayoffSchedule } from './playoffGenerator';
+import { initializeTeamChemistry } from '../chemistry/chemistryEngine';
+import { generatePlayerGoals } from '../playerGoal/playerGoalEngine';
 import { processExpiredContracts } from '../economy/transferEngine';
 import {
   generateMSI,
@@ -31,7 +33,6 @@ import {
   generateLCKCup,
   generateFST,
   getWorldsQualifiedTeams,
-  getTournamentStandings,
 } from '../tournament/tournamentEngine';
 import { calculateSeasonAwards } from '../award/awardEngine';
 import { saveSeasonRecord, addHallOfFameEntry, checkAndInductHallOfFame } from '../records/recordsEngine';
@@ -40,6 +41,7 @@ import { startOffseason } from './offseasonEngine';
 import { checkGoalAchievement } from '../playerGoal/playerGoalEngine';
 import { checkOwnershipChange } from '../board/ownershipEngine';
 import { getBoardExpectations } from '../board/boardEngine';
+import { buildAchievementContext, checkAndUnlockAchievements } from '../achievement/achievementEngine';
 
 // ─────────────────────────────────────────
 // 타입
@@ -138,8 +140,25 @@ export async function processFullSeasonEnd(
     formAverages[player.id] = await getPlayerAverageForm(player.id);
   }
 
+  // 선수별 출전 경기 수 조회
+  const playerGamesPlayed: Record<string, number> = {};
+  try {
+    const db = await (await import('../../db/database')).getDatabase();
+    const gamesRows = await db.select<{ player_id: string; cnt: number }[]>(
+      `SELECT pgs.player_id, COUNT(*) as cnt
+       FROM player_game_stats pgs
+       JOIN matches m ON m.id = pgs.match_id
+       WHERE m.season_id = $1 AND m.is_played = 1
+       GROUP BY pgs.player_id`,
+      [season.id],
+    );
+    for (const row of gamesRows) {
+      playerGamesPlayed[row.player_id] = row.cnt;
+    }
+  } catch { /* 출전 수 조회 실패 시 기본값 사용 */ }
+
   const seasonSeed = `s${season.year}_${season.split}`;
-  const growthResults = calculateTeamGrowth(allPlayers, seasonSeed, formAverages);
+  const growthResults = calculateTeamGrowth(allPlayers, seasonSeed, formAverages, playerGamesPlayed);
 
   // spring → summer (같은 해), summer → spring (다음 해)
   const nextSplit: Split = season.split === 'spring' ? 'summer' : 'spring';
@@ -188,6 +207,20 @@ export async function processFullSeasonEnd(
           fearlessDraft: nextSplit === 'spring', // 스프링 정규시즌 피어리스 적용
         });
       }
+    }
+
+    // 다음 시즌 케미스트리/목표 초기화
+    try {
+      const allTeams2 = await getTeamsByRegion('LCK');
+      const allTeams3 = await getTeamsByRegion('LPL');
+      const allTeams4 = await getTeamsByRegion('LEC');
+      const allTeams5 = await getTeamsByRegion('LCS');
+      for (const team of [...allTeams2, ...allTeams3, ...allTeams4, ...allTeams5]) {
+        await initializeTeamChemistry(team.id);
+        await generatePlayerGoals(team.id, newSeasonId);
+      }
+    } catch (e) {
+      console.warn('[seasonEnd] 케미스트리/목표 초기화 실패:', e);
     }
 
     return { newSeasonId, freedPlayerIds };
@@ -306,6 +339,22 @@ export async function processFullSeasonEnd(
     console.error('구단주 교체 체크 실패:', err);
   }
 
+  // 업적 체크 (시즌 종료 시)
+  if (saveId != null) {
+    try {
+      // save_metadata에서 실제 유저 팀 ID 조회
+      const { getSaveById } = await import('../../db/queries');
+      const saveData = await getSaveById(saveId);
+      const userTeamId = saveData?.userTeamId ?? '';
+      const ctx = await buildAchievementContext(saveId, userTeamId, season.id);
+      ctx.isPlayoffChampion = championTeamId != null && ctx.trophyCount > 0;
+      ctx.isFirstSeason = ctx.seasonsPlayed <= 1;
+      await checkAndUnlockAchievements(saveId, ctx, season.endDate);
+    } catch (err) {
+      console.error('업적 체크 실패:', err);
+    }
+  }
+
   // 오프시즌 시작
   if (saveId != null) {
     try {
@@ -352,7 +401,7 @@ async function getRegionChampions(
 
 /** 각 리전 상위 N팀 조회 */
 async function getRegionTopTeams(
-  year: number,
+  _year: number,
   count: number,
 ): Promise<Record<Region, string[]>> {
   const regions: Region[] = ['LCK', 'LPL', 'LEC', 'LCS'];
@@ -370,7 +419,7 @@ async function getRegionTopTeams(
 
 /** FST 참가팀 결정 (각 리전 1시드 + LCK 추가 2팀) */
 async function getFSTParticipants(
-  year: number,
+  _year: number,
 ): Promise<{ teamId: string; region: Region }[]> {
   const participants: { teamId: string; region: Region }[] = [];
   const regions: Region[] = ['LCK', 'LPL', 'LEC', 'LCS'];

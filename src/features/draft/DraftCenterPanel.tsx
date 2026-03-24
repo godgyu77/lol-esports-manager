@@ -1,6 +1,7 @@
 import type { DraftState } from '../../engine/draft/draftEngine';
 import type { Position } from '../../types/game';
 import type { Champion } from '../../types/champion';
+import './draft.css';
 
 const POSITION_LABELS: Record<Position, string> = {
   top: '탑',
@@ -42,49 +43,43 @@ export function DraftCenterPanel({
   onConfirm,
 }: DraftCenterPanelProps) {
   return (
-    <div style={styles.centerPanel}>
-      <div style={styles.phaseIndicator}>
+    <div className="draft-center-panel">
+      <div className="draft-phase-indicator">
         {draft.isComplete ? (
-          <span style={{ color: '#2ecc71', fontSize: '18px', fontWeight: 700 }}>
+          <span className="draft-phase-complete">
             밴픽 완료!
           </span>
         ) : (
           <>
-            <span style={styles.phaseLabel}>
+            <span className="draft-phase-label">
               {draft.currentActionType === 'ban' ? 'BAN' : 'PICK'}
             </span>
-            <span style={{
-              ...styles.turnLabel,
-              color: draft.currentSide === 'blue' ? '#3498db' : '#e74c3c',
-            }}>
+            <span className={`draft-turn-label ${draft.currentSide === 'blue' ? 'draft-turn-label--blue' : 'draft-turn-label--red'}`}>
               {draft.currentSide === 'blue' ? '블루' : '레드'}팀
             </span>
-            {isAiTurn && <span style={styles.aiThinking}>AI 선택 중...</span>}
-            {currentIsUser && <span style={styles.yourTurn}>당신의 차례!</span>}
+            {isAiTurn && <span className="draft-ai-thinking">AI 선택 중...</span>}
+            {currentIsUser && <span className="draft-your-turn">당신의 차례!</span>}
           </>
         )}
       </div>
 
       {/* 유저 턴일 때 추천 */}
       {currentIsUser && !draft.isComplete && recommendations.length > 0 && (
-        <div style={styles.recBox}>
-          <h4 style={styles.recTitle}>추천</h4>
+        <div className="draft-rec-box">
+          <h4 className="draft-rec-title">추천</h4>
           {recommendations.slice(0, 3).map((r, i) => {
             const champ = championDb.find((c) => c.id === r.championId);
             return (
               <div
                 key={i}
-                style={{
-                  ...styles.recItem,
-                  background: selectedChampion === r.championId ? 'rgba(200,155,60,0.15)' : 'transparent',
-                }}
+                className={`draft-rec-item ${selectedChampion === r.championId ? 'draft-rec-item--selected' : ''}`}
                 onClick={() => {
                   onSelectChampion(r.championId);
                   if (r.position) onSelectPosition(r.position);
                 }}
               >
-                <span style={styles.recChamp}>{champ?.nameKo ?? r.championId}</span>
-                <span style={styles.recReason}>{r.reason}</span>
+                <span className="draft-rec-champ">{champ?.nameKo ?? r.championId}</span>
+                <span className="draft-rec-reason">{r.reason}</span>
               </div>
             );
           })}
@@ -93,16 +88,12 @@ export function DraftCenterPanel({
 
       {/* 픽 시 포지션 선택 */}
       {currentIsUser && draft.currentActionType === 'pick' && !draft.isComplete && (
-        <div style={styles.positionSelect}>
-          <span style={styles.posLabel}>포지션:</span>
+        <div className="draft-position-select">
+          <span className="draft-pos-label">포지션:</span>
           {(['top', 'jungle', 'mid', 'adc', 'support'] as Position[]).map((pos) => (
             <button
               key={pos}
-              style={{
-                ...styles.posBtn,
-                background: selectedPosition === pos ? '#c89b3c' : 'transparent',
-                color: selectedPosition === pos ? '#0d0d1a' : '#8a8a9a',
-              }}
+              className={`draft-pos-btn ${selectedPosition === pos ? 'draft-pos-btn--active' : ''}`}
               onClick={() => onSelectPosition(pos)}
             >
               {POSITION_LABELS[pos]}
@@ -113,103 +104,10 @@ export function DraftCenterPanel({
 
       {/* 확인 버튼 */}
       {currentIsUser && !draft.isComplete && selectedChampion && (
-        <button style={styles.confirmBtn} onClick={onConfirm}>
+        <button className="fm-btn fm-btn--primary fm-btn--lg" onClick={onConfirm}>
           {draft.currentActionType === 'ban' ? '밴 확정' : '픽 확정'}
         </button>
       )}
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  centerPanel: {
-    minWidth: '200px',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '12px',
-  },
-  phaseIndicator: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '4px',
-    padding: '16px',
-  },
-  phaseLabel: {
-    fontSize: '24px',
-    fontWeight: 800,
-    color: '#f0e6d2',
-  },
-  turnLabel: {
-    fontSize: '14px',
-    fontWeight: 600,
-  },
-  aiThinking: {
-    fontSize: '12px',
-    color: '#6a6a7a',
-    fontStyle: 'italic',
-  },
-  yourTurn: {
-    fontSize: '13px',
-    fontWeight: 600,
-    color: '#c89b3c',
-  },
-  recBox: {
-    width: '100%',
-    background: 'rgba(255,255,255,0.02)',
-    border: '1px solid #2a2a4a',
-    borderRadius: '8px',
-    padding: '10px',
-  },
-  recTitle: {
-    fontSize: '12px',
-    color: '#c89b3c',
-    marginBottom: '8px',
-  },
-  recItem: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '2px',
-    padding: '6px 8px',
-    borderRadius: '4px',
-    cursor: 'pointer',
-    marginBottom: '4px',
-  },
-  recChamp: {
-    fontSize: '13px',
-    fontWeight: 600,
-    color: '#e0e0e0',
-  },
-  recReason: {
-    fontSize: '10px',
-    color: '#6a6a7a',
-  },
-  positionSelect: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-  },
-  posLabel: {
-    fontSize: '12px',
-    color: '#6a6a7a',
-  },
-  posBtn: {
-    padding: '4px 8px',
-    border: '1px solid #3a3a5c',
-    borderRadius: '4px',
-    fontSize: '11px',
-    cursor: 'pointer',
-    fontWeight: 600,
-  },
-  confirmBtn: {
-    padding: '10px 32px',
-    background: '#c89b3c',
-    color: '#0d0d1a',
-    border: 'none',
-    borderRadius: '6px',
-    fontSize: '14px',
-    fontWeight: 700,
-    cursor: 'pointer',
-  },
-};

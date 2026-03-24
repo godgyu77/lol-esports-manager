@@ -18,7 +18,7 @@ export interface TournamentAbsence {
 export async function registerTournamentAbsence(
   playerId: string,
   teamId: string,
-  tournamentId: string,
+  _tournamentId: string,
   startDate: string,
   endDate: string,
 ): Promise<void> {
@@ -46,7 +46,7 @@ export async function getAbsentPlayers(teamId: string): Promise<string[]> {
 }
 
 /** 대회 종료 시 부재 기록 회복 처리 */
-export async function clearTournamentAbsence(tournamentId: string): Promise<void> {
+export async function clearTournamentAbsence(_tournamentId: string): Promise<void> {
   const db = await getDatabase();
   // occurred_date 기반으로 해당 대회 기간의 부재 기록 회복 처리
   await db.execute(

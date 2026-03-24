@@ -5,6 +5,7 @@
  */
 
 import { getDatabase } from '../../db/database';
+import { generateSocialReactions } from '../../ai/advancedAiService';
 import type {
   CommunitySource,
   CommentSentiment,
@@ -601,7 +602,7 @@ async function insertReaction(
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
     [seasonId, eventType, eventDate, title, content, relatedTeamId ?? null, relatedPlayerId ?? null, relatedStaffId ?? null, communitySource],
   );
-  return result.lastInsertId;
+  return result.lastInsertId ?? 0;
 }
 
 async function insertComments(
@@ -676,6 +677,24 @@ export async function generateTransferOfficial(
   const reactionId = await insertReaction(seasonId, 'transfer_official', date, title, content, source);
   const commentCount = randInt(5, 12);
   await insertComments(reactionId, TRANSFER_OFFICIAL_COMMENTS[source], vars, source, commentCount);
+
+  // AI 소셜 반응 추가
+  try {
+    const aiReactions = await generateSocialReactions({
+      eventType: 'transfer',
+      teamName: teamName,
+      details: `${playerName} ${isJoining ? '합류' : '방출'}`,
+      count: 3,
+    });
+    const db = await getDatabase();
+    for (const reaction of aiReactions) {
+      await db.execute(
+        `INSERT INTO social_comments (reaction_id, username, comment, likes, sentiment)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [reactionId, reaction.username, reaction.comment, reaction.likes, reaction.sentiment],
+      );
+    }
+  } catch { /* AI 실패 시 기존 템플릿 댓글만 유지 */ }
 }
 
 /** 스태프 영입/해고 반응 생성 */
@@ -725,6 +744,24 @@ export async function generateMatchReaction(
   // 패배팀 관련 댓글
   const loseCount = randInt(1, 4);
   await insertComments(reactionId, MATCH_COMMENTS[source].lose, { team: loser }, source, loseCount);
+
+  // AI 소셜 반응 추가 (기존 댓글에 추가)
+  try {
+    const aiReactions = await generateSocialReactions({
+      eventType: 'match_result',
+      teamName: winner,
+      details: `${homeTeam} ${scoreHome}:${scoreAway} ${awayTeam}`,
+      count: 3,
+    });
+    const db = await getDatabase();
+    for (const reaction of aiReactions) {
+      await db.execute(
+        `INSERT INTO social_comments (reaction_id, username, comment, likes, sentiment)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [reactionId, reaction.username, reaction.comment, reaction.likes, reaction.sentiment],
+      );
+    }
+  } catch { /* AI 실패 시 기존 템플릿 댓글만 유지 */ }
 }
 
 /** 최근 반응 조회 */

@@ -5,10 +5,13 @@
  * - 결과: 스탯 변화량 표시
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useGameStore } from '../../../stores/gameStore';
 import type { Player, PlayerStats, PlayerMental } from '../../../types/player';
 import { updatePlayerStats, updatePlayerMental, getTeamWithRoster } from '../../../db/queries';
+import { isAiAvailable } from '../../../ai/gameAiService';
+import { chatWithLlmJson } from '../../../ai/provider';
+import { buildPlayerContext } from '../../../ai/contextBuilder';
 
 interface TrainingType {
   id: string;
@@ -81,6 +84,13 @@ function getOvr(player: Player): number {
   );
 }
 
+function getOvrClass(ovr: number): string {
+  if (ovr >= 90) return 'fm-ovr--elite';
+  if (ovr >= 80) return 'fm-ovr--high';
+  if (ovr >= 70) return 'fm-ovr--mid';
+  return 'fm-ovr--low';
+}
+
 export function PlayerTraining() {
   const save = useGameStore((s) => s.save);
   const teams = useGameStore((s) => s.teams);
@@ -88,9 +98,57 @@ export function PlayerTraining() {
   const [selectedSlots, setSelectedSlots] = useState<(string | null)[]>([null, null, null]);
   const [results, setResults] = useState<TrainingResult[]>([]);
   const [executed, setExecuted] = useState(false);
+  const [aiRecommendation, setAiRecommendation] = useState<{ training: string; reason: string } | null>(null);
 
   const userTeam = teams.find((t) => t.id === save?.userTeamId);
   const myPlayer = userTeam?.roster.find((p) => p.id === save?.userPlayerId);
+
+  // AI 훈련 추천
+  useEffect(() => {
+    if (!myPlayer || !save?.userPlayerId) return;
+    let cancelled = false;
+
+    const loadRecommendation = async () => {
+      try {
+        const aiReady = await isAiAvailable();
+        if (aiReady) {
+          const ctx = await buildPlayerContext(save.userPlayerId!);
+          const result = await chatWithLlmJson<{ training: string; reason: string }>(
+            `당신은 프로 LoL 선수의 개인 코치입니다. 이 선수에게 오늘 가장 필요한 훈련을 추천하세요.
+
+[선수 상태]
+${ctx}
+
+훈련 유형: 솔로랭크, 챔피언 풀 확장, 팀 연습, 영상 분석, 체력 관리
+JSON: {"training": "훈련 유형명", "reason": "추천 이유 (30자 이내)"}`,
+          );
+          if (!cancelled) setAiRecommendation(result);
+        } else {
+          // 폴백: 가장 낮은 스탯 기반 추천
+          const stats = myPlayer.stats;
+          const entries: [string, number][] = [
+            ['mechanical', stats.mechanical], ['gameSense', stats.gameSense],
+            ['teamwork', stats.teamwork], ['consistency', stats.consistency],
+            ['laning', stats.laning], ['aggression', stats.aggression],
+          ];
+          entries.sort((a, b) => a[1] - b[1]);
+          const weakest = entries[0][0];
+          const recommendMap: Record<string, { training: string; reason: string }> = {
+            mechanical: { training: '솔로랭크', reason: '기계적 숙련도가 부족합니다' },
+            gameSense: { training: '영상 분석', reason: '게임 이해도를 높여야 합니다' },
+            teamwork: { training: '팀 연습', reason: '팀워크 향상이 필요합니다' },
+            consistency: { training: '영상 분석', reason: '일관성을 높여야 합니다' },
+            laning: { training: '솔로랭크', reason: '라인전 능력이 부족합니다' },
+            aggression: { training: '솔로랭크', reason: '공격성을 키워야 합니다' },
+          };
+          if (!cancelled) setAiRecommendation(recommendMap[weakest] ?? null);
+        }
+      } catch { /* AI 실패 무시 */ }
+    };
+
+    loadRecommendation();
+    return () => { cancelled = true; };
+  }, [myPlayer?.id, save?.userPlayerId]);
 
   const handleSelectTraining = useCallback((slotIndex: number, trainingId: string) => {
     if (executed) return;
@@ -194,7 +252,7 @@ export function PlayerTraining() {
   }, []);
 
   if (!myPlayer) {
-    return <p style={{ color: '#6a6a7a' }}>데이터를 불러오는 중...</p>;
+    return <p className="fm-text-secondary fm-text-md">데이터를 불러오는 중...</p>;
   }
 
   const ovr = getOvr(myPlayer);
@@ -202,313 +260,157 @@ export function PlayerTraining() {
 
   return (
     <div>
-      <h1 style={styles.title}>훈련</h1>
-
-      {/* 선수 요약 */}
-      <div style={styles.playerSummary}>
-        <span style={styles.playerName}>{myPlayer.name}</span>
-        <span style={styles.ovrBadge}>OVR {ovr}</span>
+      <div className="fm-page-header">
+        <div>
+          <h1 className="fm-page-title">훈련</h1>
+        </div>
+        <div className="fm-flex fm-items-center fm-gap-md">
+          <span className="fm-text-xl fm-font-semibold fm-text-primary">{myPlayer.name}</span>
+          <span className={`fm-ovr ${getOvrClass(ovr)} fm-text-lg`}>OVR {ovr}</span>
+        </div>
       </div>
 
-      {/* 훈련 슬롯 */}
-      <div style={styles.card}>
-        <h2 style={styles.cardTitle}>일일 훈련 슬롯 ({filledCount}/{MAX_SLOTS})</h2>
-        <div style={styles.slotsRow}>
-          {selectedSlots.map((slotId, index) => {
-            const training = slotId ? TRAINING_TYPES.find((t) => t.id === slotId) : null;
-            return (
-              <div key={index} style={styles.slot}>
-                <span style={styles.slotLabel}>슬롯 {index + 1}</span>
-                {training ? (
-                  <span style={styles.slotValue}>{training.name}</span>
-                ) : (
-                  <span style={styles.slotEmpty}>미선택</span>
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        <div style={styles.actionRow}>
+      {/* AI 훈련 추천 */}
+      {aiRecommendation && !executed && (
+        <div className="fm-alert fm-alert--success">
+          <span className="fm-alert__icon">AI</span>
+          <span className="fm-alert__text">
+            <strong>{aiRecommendation.training}</strong> &mdash; {aiRecommendation.reason}
+          </span>
           <button
-            style={{
-              ...styles.executeBtn,
-              opacity: filledCount === 0 || executed ? 0.4 : 1,
-              cursor: filledCount === 0 || executed ? 'default' : 'pointer',
+            className="fm-btn fm-btn--success fm-btn--sm"
+            onClick={() => {
+              const match = TRAINING_TYPES.find(t => t.name === aiRecommendation.training);
+              if (match) {
+                const nextEmpty = selectedSlots.findIndex(s => s === null);
+                if (nextEmpty !== -1) handleSelectTraining(nextEmpty, match.id);
+              }
             }}
-            onClick={handleExecute}
-            disabled={filledCount === 0 || executed}
           >
-            훈련 실행
+            적용
           </button>
-          {executed && (
-            <button style={styles.resetBtn} onClick={handleReset}>
-              초기화
+        </div>
+      )}
+
+      {/* 훈련 슬롯 */}
+      <div className="fm-panel">
+        <div className="fm-panel__header">
+          <span className="fm-panel__title">일일 훈련 슬롯 ({filledCount}/{MAX_SLOTS})</span>
+          <div className="fm-panel__actions">
+            <button
+              className="fm-btn fm-btn--primary"
+              onClick={handleExecute}
+              disabled={filledCount === 0 || executed}
+            >
+              훈련 실행
             </button>
-          )}
+            {executed && (
+              <button className="fm-btn" onClick={handleReset}>
+                초기화
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="fm-panel__body">
+          <div className="fm-grid fm-grid--3">
+            {selectedSlots.map((slotId, index) => {
+              const training = slotId ? TRAINING_TYPES.find((t) => t.id === slotId) : null;
+              return (
+                <div key={index} className="fm-card fm-text-center">
+                  <div className="fm-card__title">슬롯 {index + 1}</div>
+                  {training ? (
+                    <span className="fm-text-lg fm-font-semibold fm-text-accent">{training.name}</span>
+                  ) : (
+                    <span className="fm-text-md fm-text-muted">미선택</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
 
       {/* 훈련 결과 */}
       {results.length > 0 && (
-        <div style={styles.card}>
-          <h2 style={styles.cardTitle}>훈련 결과</h2>
-          <div style={styles.resultsList}>
-            {results.map((result) => (
-              <div key={result.slotIndex} style={styles.resultItem}>
-                <span style={styles.resultTrainingName}>{result.trainingName}</span>
-                <div style={styles.resultChanges}>
-                  {result.changes.map((change) => (
-                    <span key={change.label} style={styles.resultChange}>
-                      {change.label}{' '}
-                      <span style={styles.resultPlus}>+{change.amount}</span>
+        <div className="fm-panel">
+          <div className="fm-panel__header">
+            <span className="fm-panel__title">훈련 결과</span>
+          </div>
+          <div className="fm-panel__body">
+            <div className="fm-flex-col fm-gap-sm">
+              {results.map((result) => (
+                <div key={result.slotIndex} className="fm-card fm-card--highlight">
+                  <div className="fm-flex fm-items-center fm-gap-md">
+                    <span className="fm-text-lg fm-font-semibold fm-text-primary" style={{ minWidth: '100px' }}>
+                      {result.trainingName}
                     </span>
-                  ))}
+                    <div className="fm-flex fm-gap-md fm-flex-wrap">
+                      {result.changes.map((change) => (
+                        <span key={change.label} className="fm-text-md fm-text-secondary">
+                          {change.label}{' '}
+                          <span className="fm-text-success fm-font-semibold">+{change.amount}</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         </div>
       )}
 
       {/* 훈련 유형 선택 */}
-      <div style={styles.card}>
-        <h2 style={styles.cardTitle}>훈련 유형</h2>
-        <div style={styles.trainingGrid}>
-          {TRAINING_TYPES.map((training) => {
-            // 현재 비어있는 첫 번째 슬롯 찾기
-            const nextEmptySlot = selectedSlots.findIndex((s) => s === null);
-            // 이미 선택된 슬롯이 있는지
-            const selectedSlotIndex = selectedSlots.indexOf(training.id);
-            const isSelected = selectedSlotIndex !== -1;
+      <div className="fm-panel">
+        <div className="fm-panel__header">
+          <span className="fm-panel__title">훈련 유형</span>
+        </div>
+        <div className="fm-panel__body">
+          <div className="fm-grid fm-grid--2">
+            {TRAINING_TYPES.map((training) => {
+              // 현재 비어있는 첫 번째 슬롯 찾기
+              const nextEmptySlot = selectedSlots.findIndex((s) => s === null);
+              // 이미 선택된 슬롯이 있는지
+              const selectedSlotIndex = selectedSlots.indexOf(training.id);
+              const isSelected = selectedSlotIndex !== -1;
 
-            return (
-              <div
-                key={training.id}
-                style={{
-                  ...styles.trainingCard,
-                  ...(isSelected ? styles.trainingCardSelected : {}),
-                  cursor: executed ? 'default' : 'pointer',
-                }}
-                onClick={() => {
-                  if (executed) return;
-                  if (isSelected) {
-                    // 선택 해제
-                    handleSelectTraining(selectedSlotIndex, training.id);
-                  } else if (nextEmptySlot !== -1) {
-                    // 다음 빈 슬롯에 할당
-                    handleSelectTraining(nextEmptySlot, training.id);
-                  }
-                }}
-              >
-                <div style={styles.trainingHeader}>
-                  <span style={styles.trainingName}>{training.name}</span>
-                  {isSelected && (
-                    <span style={styles.slotBadge}>슬롯 {selectedSlotIndex + 1}</span>
-                  )}
+              return (
+                <div
+                  key={training.id}
+                  className={`fm-card fm-card--clickable ${isSelected ? 'fm-card--highlight' : ''}`}
+                  style={{ cursor: executed ? 'default' : 'pointer' }}
+                  onClick={() => {
+                    if (executed) return;
+                    if (isSelected) {
+                      // 선택 해제
+                      handleSelectTraining(selectedSlotIndex, training.id);
+                    } else if (nextEmptySlot !== -1) {
+                      // 다음 빈 슬롯에 할당
+                      handleSelectTraining(nextEmptySlot, training.id);
+                    }
+                  }}
+                >
+                  <div className="fm-flex fm-justify-between fm-items-center fm-mb-sm">
+                    <span className="fm-text-lg fm-font-semibold fm-text-primary">{training.name}</span>
+                    {isSelected && (
+                      <span className="fm-badge fm-badge--accent">슬롯 {selectedSlotIndex + 1}</span>
+                    )}
+                  </div>
+                  <p className="fm-text-sm fm-text-muted fm-mb-md">{training.description}</p>
+                  <div className="fm-flex-col fm-gap-xs">
+                    {training.effects.map((effect) => (
+                      <div key={effect.stat} className="fm-info-row">
+                        <span className="fm-info-row__label">{effect.label}</span>
+                        <span className="fm-text-success fm-font-semibold fm-text-sm">{effect.amount}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <p style={styles.trainingDesc}>{training.description}</p>
-                <div style={styles.effectList}>
-                  {training.effects.map((effect) => (
-                    <div key={effect.stat} style={styles.effectItem}>
-                      <span style={styles.effectLabel}>{effect.label}</span>
-                      <span style={styles.effectAmount}>{effect.amount}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  title: {
-    fontSize: '24px',
-    fontWeight: 700,
-    color: '#f0e6d2',
-    marginBottom: '24px',
-  },
-  playerSummary: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    marginBottom: '16px',
-  },
-  playerName: {
-    fontSize: '18px',
-    fontWeight: 600,
-    color: '#f0e6d2',
-  },
-  ovrBadge: {
-    fontSize: '14px',
-    fontWeight: 700,
-    color: '#a0d0ff',
-    background: 'rgba(160,208,255,0.1)',
-    padding: '3px 10px',
-    borderRadius: '4px',
-  },
-  card: {
-    background: 'rgba(255,255,255,0.03)',
-    border: '1px solid #2a2a4a',
-    borderRadius: '10px',
-    padding: '20px',
-    marginBottom: '16px',
-  },
-  cardTitle: {
-    fontSize: '16px',
-    fontWeight: 600,
-    color: '#c89b3c',
-    marginBottom: '16px',
-  },
-  slotsRow: {
-    display: 'flex',
-    gap: '12px',
-    marginBottom: '16px',
-  },
-  slot: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '6px',
-    padding: '14px',
-    background: 'rgba(255,255,255,0.02)',
-    border: '1px solid #2a2a4a',
-    borderRadius: '8px',
-  },
-  slotLabel: {
-    fontSize: '11px',
-    color: '#6a6a7a',
-    fontWeight: 600,
-  },
-  slotValue: {
-    fontSize: '14px',
-    fontWeight: 600,
-    color: '#c89b3c',
-  },
-  slotEmpty: {
-    fontSize: '13px',
-    color: '#3a3a5c',
-  },
-  actionRow: {
-    display: 'flex',
-    gap: '10px',
-  },
-  executeBtn: {
-    padding: '10px 24px',
-    fontSize: '14px',
-    fontWeight: 600,
-    color: '#0d0d1a',
-    background: '#c89b3c',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-  },
-  resetBtn: {
-    padding: '10px 24px',
-    fontSize: '14px',
-    fontWeight: 500,
-    color: '#8a8a9a',
-    background: 'transparent',
-    border: '1px solid #3a3a5c',
-    borderRadius: '6px',
-    cursor: 'pointer',
-  },
-  resultsList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '10px',
-  },
-  resultItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '16px',
-    padding: '12px',
-    background: 'rgba(80,200,120,0.05)',
-    border: '1px solid rgba(80,200,120,0.15)',
-    borderRadius: '8px',
-  },
-  resultTrainingName: {
-    fontSize: '14px',
-    fontWeight: 600,
-    color: '#e0e0e0',
-    minWidth: '100px',
-  },
-  resultChanges: {
-    display: 'flex',
-    gap: '16px',
-    flexWrap: 'wrap',
-  },
-  resultChange: {
-    fontSize: '13px',
-    color: '#8a8a9a',
-  },
-  resultPlus: {
-    color: '#50c878',
-    fontWeight: 600,
-  },
-  trainingGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(2, 1fr)',
-    gap: '12px',
-  },
-  trainingCard: {
-    padding: '16px',
-    background: 'rgba(255,255,255,0.02)',
-    border: '1px solid #2a2a4a',
-    borderRadius: '8px',
-    transition: 'all 0.2s',
-  },
-  trainingCardSelected: {
-    border: '1px solid #c89b3c',
-    background: 'rgba(200,155,60,0.08)',
-  },
-  trainingHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '8px',
-  },
-  trainingName: {
-    fontSize: '15px',
-    fontWeight: 600,
-    color: '#f0e6d2',
-  },
-  slotBadge: {
-    fontSize: '11px',
-    fontWeight: 600,
-    color: '#c89b3c',
-    background: 'rgba(200,155,60,0.15)',
-    padding: '2px 8px',
-    borderRadius: '4px',
-  },
-  trainingDesc: {
-    fontSize: '12px',
-    color: '#8a8a9a',
-    marginBottom: '12px',
-    lineHeight: '1.4',
-  },
-  effectList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '4px',
-  },
-  effectItem: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  effectLabel: {
-    fontSize: '12px',
-    color: '#6a6a7a',
-  },
-  effectAmount: {
-    fontSize: '12px',
-    fontWeight: 600,
-    color: '#50c878',
-  },
-};

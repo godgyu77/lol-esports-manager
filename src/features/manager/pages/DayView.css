@@ -1,0 +1,183 @@
+/* ═══════════════════════════════════════════════════
+   DayView — FM-Style Day Progression Screen
+   ═══════════════════════════════════════════════════ */
+
+/* ─── Date Hero Card ─── */
+.dv-date-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: linear-gradient(135deg, var(--bg-tertiary) 0%, var(--bg-card) 100%);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-lg);
+  padding: 20px 24px;
+  margin-bottom: 12px;
+}
+
+.dv-date-main {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.dv-date-day {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.dv-date-info {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+/* ─── Activity Selection ─── */
+.dv-activity-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 8px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.dv-activity-btn:hover {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: var(--border-hover);
+}
+
+.dv-activity-btn--active {
+  background: var(--accent-dim);
+  border-color: var(--accent-border);
+}
+
+/* ─── Match Score Display ─── */
+.dv-match-team {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  min-width: 60px;
+  text-align: center;
+}
+
+.dv-match-score {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  min-width: 50px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── Player Event Card ─── */
+.dv-player-event {
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  margin-bottom: 6px;
+  border: 1px solid;
+  border-left-width: 3px;
+}
+
+.dv-player-event__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.dv-player-event__category {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 3px;
+}
+
+.dv-player-event__desc {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* ─── Event Choice Buttons ─── */
+.dv-choice-btn {
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.dv-choice-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--border-hover);
+  color: var(--text-primary);
+}
+
+/* ─── Skip Summary Row ─── */
+.dv-skip-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.dv-skip-row:last-child {
+  border-bottom: none;
+}
+
+/* ─── Offseason Event Row ─── */
+.dv-offseason-event {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.dv-offseason-event:last-child {
+  border-bottom: none;
+}
+
+.dv-offseason-event__content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.dv-offseason-event__effects {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* ─── Training Detail Link ─── */
+.dv-training-link {
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--info);
+  background: transparent;
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.dv-training-link:hover {
+  background: var(--info-dim);
+  border-color: rgba(59, 130, 246, 0.4);
+}

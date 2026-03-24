@@ -12,6 +12,7 @@ import { useGameStore } from '../../../stores/gameStore';
 import { useMatchStore } from '../../../stores/matchStore';
 import { useKeyboardShortcuts } from '../../../hooks/useKeyboardShortcuts';
 import { advanceDay, skipToNextMatchDay } from '../../../engine/season/dayAdvancer';
+import { processPlayerEvent } from '../../../engine/event/playerEventEngine';
 import { getTrainingSchedule } from '../../../engine/training/trainingEngine';
 import { TRAINING_TYPE_LABELS } from '../../../types/training';
 import type { TrainingScheduleEntry } from '../../../types/training';
@@ -19,6 +20,10 @@ import type { DayResult } from '../../../engine/season/dayAdvancer';
 import type { DayType } from '../../../engine/season/calendar';
 import { OFFSEASON_PHASE_LABELS } from '../../../engine/season/offseasonEngine';
 import { generateOffseasonEvents, OFFSEASON_EVENT_LABELS, type OffseasonEvent } from '../../../engine/season/offseasonEvents';
+import { usePlayerStore } from '../../../stores/playerStore';
+import { useTeamStore } from '../../../stores/teamStore';
+import { useSettingsStore } from '../../../stores/settingsStore';
+import './DayView.css';
 
 type ActivityChoice = 'training' | 'scrim' | 'rest';
 
@@ -37,7 +42,6 @@ export function DayView() {
   const save = useGameStore((s) => s.save);
   const season = useGameStore((s) => s.season);
   const teams = useGameStore((s) => s.teams);
-  const dayPhase = useGameStore((s) => s.dayPhase);
   const setDayPhase = useGameStore((s) => s.setDayPhase);
   const setSeason = useGameStore((s) => s.setSeason);
   const setPendingUserMatch = useGameStore((s) => s.setPendingUserMatch);
@@ -69,7 +73,10 @@ export function DayView() {
         const entry = schedule.find((s) => s.dayOfWeek === dayOfWeek) ?? null;
         setTodayTraining(entry);
       })
-      .catch(() => setTodayTraining(null));
+      .catch((err) => {
+        console.warn('[DayView] 훈련 스케줄 로드 실패:', err);
+        setTodayTraining(null);
+      });
   }, [userTeamId, dayOfWeek]);
 
   // 오프시즌 이벤트 생성
@@ -96,11 +103,16 @@ export function DayView() {
         save.mode,
         selectedActivity,
         save.id,
+        useSettingsStore.getState().difficulty,
       );
 
       setDayResult(result);
       setCurrentDate(result.nextDate);
       setDayType(result.dayType);
+
+      // 캐시 무효화 (일간 진행 후 데이터 갱신)
+      usePlayerStore.getState().invalidateTeam(userTeamId);
+      useTeamStore.getState().invalidateTeam(userTeamId);
 
       if (result.isSeasonEnd) {
         // 시즌 종료 → 시즌 종료 화면으로
@@ -113,7 +125,7 @@ export function DayView() {
         setFearlessPool({ blue: [], red: [] });
         setPendingUserMatch(result.userMatch);
         setDayPhase('banpick');
-        navigate('/manager/draft');
+        navigate('/manager/pre-match');
       } else {
         setDayPhase('idle');
         // season 날짜 동기화
@@ -122,6 +134,7 @@ export function DayView() {
     } catch (err) {
       console.error('일간 진행 오류:', err);
       setDayPhase('idle');
+      setDayResult(prev => prev ? { ...prev, events: [...prev.events, `⚠ 일부 처리 중 오류가 발생했습니다: ${err instanceof Error ? err.message : '알 수 없는 오류'}`] } : prev);
     } finally {
       setIsProcessing(false);
     }
@@ -141,6 +154,7 @@ export function DayView() {
         save.mode,
         season.endDate,
         selectedActivity,
+        useSettingsStore.getState().difficulty,
       );
 
       setSkipResults(results);
@@ -162,7 +176,7 @@ export function DayView() {
           setFearlessPool({ blue: [], red: [] });
           setPendingUserMatch(lastResult.userMatch);
           setDayPhase('banpick');
-          navigate('/manager/draft');
+          navigate('/manager/pre-match');
           return;
         }
       }
@@ -191,38 +205,41 @@ export function DayView() {
   });
 
   if (!season || !save || !userTeam) {
-    return <p style={{ color: 'var(--text-muted)' }}>데이터를 불러오는 중...</p>;
+    return <p className="fm-text-muted fm-text-md">데이터를 불러오는 중...</p>;
   }
 
   return (
     <div>
-      <h1 style={styles.title}>시즌 진행</h1>
+      {/* 페이지 헤더 */}
+      <div className="fm-page-header">
+        <h1 className="fm-page-title">시즌 진행</h1>
+      </div>
 
       {/* 날짜 카드 */}
-      <div style={styles.dateCard}>
-        <div style={styles.dateMain}>
-          <span style={styles.dateYear}>{currentDate.slice(0, 4)}년</span>
-          <span style={styles.dateDay}>
+      <div className="dv-date-card">
+        <div className="dv-date-main">
+          <span className="fm-text-lg fm-text-muted">{currentDate.slice(0, 4)}년</span>
+          <span className="dv-date-day">
             {currentDate.slice(5, 7)}월 {currentDate.slice(8)}일
           </span>
-          <span style={styles.dateDow}>({DAY_NAMES[dayOfWeek]}요일)</span>
+          <span className="fm-text-xl fm-text-secondary">({DAY_NAMES[dayOfWeek]}요일)</span>
         </div>
-        <div style={styles.dateInfo}>
-          <span style={styles.weekLabel}>{season.currentWeek}주차</span>
-          <span style={styles.teamLabel}>{userTeam.shortName}</span>
+        <div className="dv-date-info">
+          <span className="fm-badge fm-badge--default">{season.currentWeek}주차</span>
+          <span className="fm-text-lg fm-font-semibold fm-text-accent">{userTeam.shortName}</span>
         </div>
       </div>
 
       {/* 오프시즌 배너 */}
       {dayResult?.isOffseason && dayResult.offseasonPhase && (
-        <div style={styles.offseasonBanner}>
-          <span style={styles.offseasonTitle}>
+        <div className="fm-alert fm-alert--warning fm-mb-md">
+          <span className="fm-font-bold fm-text-lg">
             {dayResult.offseasonPhase === 'preseason' ? '부트캠프' : '오프시즌'}
           </span>
-          <span style={styles.offseasonPhase}>
+          <span className="fm-badge fm-badge--default fm-font-semibold">
             {OFFSEASON_PHASE_LABELS[dayResult.offseasonPhase]}
           </span>
-          <span style={styles.offseasonDays}>
+          <span className="fm-text-secondary fm-text-md" style={{ marginLeft: 'auto' }}>
             잔여 {dayResult.offseasonDaysRemaining ?? 0}일
           </span>
         </div>
@@ -230,70 +247,75 @@ export function DayView() {
 
       {/* 오프시즌 이벤트 */}
       {offseasonEvents.length > 0 && (
-        <div style={styles.card}>
-          <h3 style={styles.subTitle}>오프시즌 이벤트</h3>
-          {offseasonEvents.map((evt, i) => (
-            <div key={i} style={dayViewStyles.offseasonEventRow}>
-              <span style={dayViewStyles.offseasonEventBadge}>
-                {OFFSEASON_EVENT_LABELS[evt.type]}
-              </span>
-              <div style={dayViewStyles.offseasonEventContent}>
-                <span style={dayViewStyles.offseasonEventTitle}>{evt.title}</span>
-                <span style={dayViewStyles.offseasonEventDesc}>{evt.description}</span>
-              </div>
-              {(evt.effects.morale || evt.effects.reputation || evt.effects.fanHappiness) && (
-                <div style={dayViewStyles.offseasonEventEffects}>
-                  {evt.effects.morale && <span style={{ color: '#2ecc71', fontSize: '11px' }}>사기 +{evt.effects.morale}</span>}
-                  {evt.effects.reputation && <span style={{ color: '#3498db', fontSize: '11px' }}>명성 +{evt.effects.reputation}</span>}
-                  {evt.effects.fanHappiness && <span style={{ color: '#f39c12', fontSize: '11px' }}>팬 +{evt.effects.fanHappiness}</span>}
+        <div className="fm-panel fm-mb-md">
+          <div className="fm-panel__header">
+            <span className="fm-panel__title">오프시즌 이벤트</span>
+          </div>
+          <div className="fm-panel__body">
+            {offseasonEvents.map((evt, i) => (
+              <div key={i} className="dv-offseason-event">
+                <span className="fm-badge fm-badge--warning">
+                  {OFFSEASON_EVENT_LABELS[evt.type]}
+                </span>
+                <div className="dv-offseason-event__content">
+                  <span className="fm-text-md fm-font-semibold fm-text-primary">{evt.title}</span>
+                  <span className="fm-text-base fm-text-secondary">{evt.description}</span>
                 </div>
-              )}
-            </div>
-          ))}
+                {(evt.effects.morale || evt.effects.reputation || evt.effects.fanHappiness) && (
+                  <div className="dv-offseason-event__effects">
+                    {evt.effects.morale && <span className="fm-text-sm fm-text-success">사기 +{evt.effects.morale}</span>}
+                    {evt.effects.reputation && <span className="fm-text-sm fm-text-info">명성 +{evt.effects.reputation}</span>}
+                    {evt.effects.fanHappiness && <span className="fm-text-sm fm-text-warning">팬 +{evt.effects.fanHappiness}</span>}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
       {/* 활동 선택 (비경기일) */}
-      <div style={styles.activityPanel}>
-        <span style={styles.activityLabel}>오늘의 활동:</span>
-        <div style={styles.activityBtnGroup}>
-          {([
-            { key: 'training', label: '훈련', desc: '폼↑ 체력↓' },
-            { key: 'scrim', label: '스크림', desc: '폼↑↑ 체력↓↓ 사기↑' },
-            { key: 'rest', label: '휴식', desc: '체력↑↑ 사기↑ 폼↓' },
-          ] as const).map(({ key, label, desc }) => (
-            <button
-              key={key}
-              style={{
-                ...styles.activityBtn,
-                ...(selectedActivity === key ? styles.activityBtnActive : {}),
-                borderColor: DAY_TYPE_LABELS[key].color,
-              }}
-              onClick={() => setSelectedActivity(key)}
-            >
-              <span style={styles.activityBtnLabel}>{label}</span>
-              <span style={styles.activityBtnDesc}>{desc}</span>
-            </button>
-          ))}
+      <div className="fm-panel fm-mb-md">
+        <div className="fm-panel__header">
+          <span className="fm-panel__title">오늘의 활동</span>
+        </div>
+        <div className="fm-panel__body">
+          <div className="fm-grid fm-grid--3">
+            {([
+              { key: 'training', label: '훈련', desc: '폼↑ 체력↓' },
+              { key: 'scrim', label: '스크림', desc: '폼↑↑ 체력↓↓ 사기↑' },
+              { key: 'rest', label: '휴식', desc: '체력↑↑ 사기↑ 폼↓' },
+            ] as const).map(({ key, label, desc }) => (
+              <button
+                key={key}
+                className={`dv-activity-btn${selectedActivity === key ? ' dv-activity-btn--active' : ''}`}
+                style={{ borderColor: selectedActivity === key ? DAY_TYPE_LABELS[key].color : undefined }}
+                onClick={() => setSelectedActivity(key)}
+              >
+                <span className="fm-text-lg fm-font-semibold fm-text-primary">{label}</span>
+                <span className="fm-text-sm fm-text-muted">{desc}</span>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
       {/* 훈련 미니 패널 */}
       {selectedActivity === 'training' && todayTraining && (
-        <div style={styles.trainingMiniPanel}>
-          <div style={styles.trainingMiniHeader}>
-            <span style={styles.trainingMiniTitle}>오늘의 훈련 스케줄</span>
+        <div className="fm-card fm-card--highlight fm-mb-md">
+          <div className="fm-mb-sm">
+            <span className="fm-text-md fm-font-semibold fm-text-info">오늘의 훈련 스케줄</span>
           </div>
-          <div style={styles.trainingMiniContent}>
-            <span style={styles.trainingMiniType}>
+          <div className="fm-flex fm-items-center fm-gap-lg fm-mb-md">
+            <span className="fm-text-lg fm-font-semibold fm-text-primary">
               {TRAINING_TYPE_LABELS[todayTraining.trainingType]}
             </span>
-            <span style={styles.trainingMiniIntensity}>
+            <span className="fm-badge fm-badge--default fm-text-md">
               강도: {todayTraining.intensity === 'light' ? '가벼운' : todayTraining.intensity === 'normal' ? '보통' : '강도 높은'}
             </span>
           </div>
           <button
-            style={styles.trainingDetailBtn}
+            className="dv-training-link"
             onClick={() => navigate('/manager/training')}
           >
             훈련 상세 설정 →
@@ -302,24 +324,16 @@ export function DayView() {
       )}
 
       {/* 액션 버튼 */}
-      <div style={styles.actionRow}>
+      <div className="fm-flex fm-gap-md fm-mb-lg">
         <button
-          style={{
-            ...styles.btn,
-            ...styles.btnPrimary,
-            opacity: isProcessing ? 0.5 : 1,
-          }}
+          className="fm-btn fm-btn--primary fm-btn--lg"
           onClick={handleNextDay}
           disabled={isProcessing}
         >
           {isProcessing ? '진행 중...' : '다음 날 →'}
         </button>
         <button
-          style={{
-            ...styles.btn,
-            ...styles.btnSecondary,
-            opacity: isProcessing ? 0.5 : 1,
-          }}
+          className="fm-btn fm-btn--lg"
           onClick={handleSkipToMatch}
           disabled={isProcessing}
         >
@@ -329,14 +343,14 @@ export function DayView() {
 
       {/* 하루 결과 */}
       {dayResult && (
-        <div style={styles.card}>
-          <div style={styles.resultHeader}>
-            <span style={styles.resultDate}>
+        <div className="fm-panel fm-mb-md fm-animate-slide">
+          <div className="fm-panel__header">
+            <span className="fm-text-xl fm-font-semibold fm-text-primary">
               {dayResult.date} ({dayResult.dayName})
             </span>
             <span
+              className="fm-badge"
               style={{
-                ...styles.dayTypeBadge,
                 background: DAY_TYPE_LABELS[dayResult.dayType].color + '22',
                 color: DAY_TYPE_LABELS[dayResult.dayType].color,
               }}
@@ -345,371 +359,152 @@ export function DayView() {
             </span>
           </div>
 
-          {dayResult.events.map((evt, i) => (
-            <p key={i} style={styles.eventText}>• {evt}</p>
-          ))}
+          <div className="fm-panel__body">
+            {dayResult.events.map((evt, i) => (
+              <p key={i} className="fm-text-md fm-text-secondary fm-mb-sm">• {evt}</p>
+            ))}
 
-          {/* 타 팀 경기 결과 */}
-          {dayResult.matchResults.length > 0 && (
-            <div style={styles.matchResults}>
-              <h3 style={styles.subTitle}>오늘의 경기 결과</h3>
-              {dayResult.matchResults.map((mr) => {
-                const home = teams.find((t) => t.id === mr.homeTeamId);
-                const away = teams.find((t) => t.id === mr.awayTeamId);
-                return (
-                  <div key={mr.matchId} style={styles.matchRow}>
-                    <span style={styles.matchTeam}>{home?.shortName ?? mr.homeTeamId}</span>
-                    <span style={styles.matchScore}>
-                      {mr.result.scoreHome} : {mr.result.scoreAway}
-                    </span>
-                    <span style={styles.matchTeam}>{away?.shortName ?? mr.awayTeamId}</span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+            {/* 선수 개인 이벤트 */}
+            {dayResult.playerEvents && dayResult.playerEvents.length > 0 && (
+              <div className="fm-mt-md">
+                {dayResult.playerEvents.map((pe) => {
+                  const severityColor = pe.severity === 'critical' ? '#e74c3c'
+                    : pe.severity === 'major' ? '#f39c12'
+                    : pe.severity === 'moderate' ? '#3498db' : '#8a8a9a';
+                  return (
+                    <div
+                      key={pe.id}
+                      className="dv-player-event"
+                      style={{
+                        borderColor: `${severityColor}44`,
+                        borderLeftColor: severityColor,
+                        background: `${severityColor}08`,
+                      }}
+                    >
+                      <div className="dv-player-event__header">
+                        <span
+                          className="dv-player-event__category"
+                          style={{
+                            background: `${severityColor}20`,
+                            color: severityColor,
+                          }}
+                        >
+                          {pe.category === 'military' ? '군사' : pe.category === 'scandal' ? '스캔들'
+                            : pe.category === 'personal' ? '개인사' : pe.category === 'achievement' ? '업적'
+                            : pe.category === 'controversy' ? '논란' : pe.category === 'growth' ? '성장'
+                            : pe.category === 'media' ? '미디어' : pe.category === 'education' ? '교육' : pe.category}
+                        </span>
+                        <span className="fm-text-md fm-font-semibold fm-text-primary">
+                          {pe.title}
+                        </span>
+                        <span className="fm-text-sm fm-text-muted" style={{ marginLeft: 'auto' }}>
+                          {pe.playerName}
+                        </span>
+                      </div>
+                      <p className="dv-player-event__desc">{pe.description}</p>
+                      {pe.effects.moraleChange && (
+                        <span
+                          className="fm-text-sm"
+                          style={{
+                            color: pe.effects.moraleChange > 0 ? 'var(--success)' : 'var(--danger)',
+                            marginRight: '8px',
+                          }}
+                        >
+                          사기 {pe.effects.moraleChange > 0 ? '+' : ''}{pe.effects.moraleChange}
+                        </span>
+                      )}
+                      {pe.effects.daysAbsent && pe.effects.daysAbsent > 0 && (
+                        <span className="fm-text-sm fm-text-danger">결장 {pe.effects.daysAbsent}일</span>
+                      )}
+                      {pe.choices && pe.choices.length > 0 && (
+                        <div className="fm-flex fm-gap-sm fm-flex-wrap fm-mt-sm">
+                          {pe.choices.map((choice, ci) => (
+                            <button
+                              key={ci}
+                              className="dv-choice-btn"
+                              onClick={async () => {
+                                if (!season || !save) return;
+                                try {
+                                  await processPlayerEvent(pe, season.id, season.currentDate, save.userTeamId, ci);
+                                  // 선택 후 버튼 비활성화 (불변성 유지)
+                                  setDayResult(prev => {
+                                    if (!prev || !prev.playerEvents) return prev;
+                                    return {
+                                      ...prev,
+                                      playerEvents: prev.playerEvents.map(e =>
+                                        e.id === pe.id ? { ...e, choices: undefined } : e,
+                                      ),
+                                    };
+                                  });
+                                } catch (e) {
+                                  console.warn('이벤트 선택지 처리 실패:', e);
+                                }
+                              }}
+                              title={choice.effect}
+                            >
+                              {choice.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* 타 팀 경기 결과 */}
+            {dayResult.matchResults.length > 0 && (
+              <div className="fm-mt-md">
+                <div className="fm-divider" />
+                <h3 className="fm-panel__title fm-text-accent fm-mb-sm">오늘의 경기 결과</h3>
+                {dayResult.matchResults.map((mr) => {
+                  const home = teams.find((t) => t.id === mr.homeTeamId);
+                  const away = teams.find((t) => t.id === mr.awayTeamId);
+                  return (
+                    <div key={mr.matchId} className="fm-match-row fm-justify-center">
+                      <span className="dv-match-team">{home?.shortName ?? mr.homeTeamId}</span>
+                      <span className="dv-match-score">
+                        {mr.result.scoreHome} : {mr.result.scoreAway}
+                      </span>
+                      <span className="dv-match-team">{away?.shortName ?? mr.awayTeamId}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
       {/* 스킵 결과 요약 */}
       {skipResults.length > 1 && (
-        <div style={styles.card}>
-          <h3 style={styles.subTitle}>{skipResults.length}일 스킵 완료</h3>
-          {skipResults.map((dr, i) => (
-            <div key={i} style={styles.skipRow}>
-              <span style={styles.skipDate}>{dr.date} ({dr.dayName})</span>
-              <span
-                style={{
-                  ...styles.dayTypeBadgeSmall,
-                  color: DAY_TYPE_LABELS[dr.dayType].color,
-                }}
-              >
-                {DAY_TYPE_LABELS[dr.dayType].label}
-              </span>
-              {dr.matchResults.length > 0 && (
-                <span style={styles.skipExtra}>
-                  {dr.matchResults.length}경기
+        <div className="fm-panel fm-animate-slide">
+          <div className="fm-panel__header">
+            <span className="fm-panel__title">{skipResults.length}일 스킵 완료</span>
+          </div>
+          <div className="fm-panel__body fm-panel__body--compact">
+            {skipResults.map((dr, i) => (
+              <div key={i} className="dv-skip-row">
+                <span className="fm-text-md fm-text-secondary" style={{ minWidth: '120px' }}>
+                  {dr.date} ({dr.dayName})
                 </span>
-              )}
-            </div>
-          ))}
+                <span
+                  className="fm-text-sm fm-font-medium"
+                  style={{ color: DAY_TYPE_LABELS[dr.dayType].color }}
+                >
+                  {DAY_TYPE_LABELS[dr.dayType].label}
+                </span>
+                {dr.matchResults.length > 0 && (
+                  <span className="fm-text-base fm-text-muted" style={{ marginLeft: 'auto' }}>
+                    {dr.matchResults.length}경기
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  title: {
-    fontSize: '24px',
-    fontWeight: 700,
-    color: 'var(--text-primary)',
-    marginBottom: '24px',
-  },
-  dateCard: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    background: 'linear-gradient(135deg, #1a1a3a 0%, #12122a 100%)',
-    border: '1px solid #c89b3c44',
-    borderRadius: '12px',
-    padding: '24px 28px',
-    marginBottom: '20px',
-  },
-  dateMain: {
-    display: 'flex',
-    alignItems: 'baseline',
-    gap: '8px',
-  },
-  dateYear: {
-    fontSize: '14px',
-    color: 'var(--text-muted)',
-  },
-  dateDay: {
-    fontSize: '28px',
-    fontWeight: 700,
-    color: 'var(--text-primary)',
-  },
-  dateDow: {
-    fontSize: '16px',
-    color: 'var(--text-secondary)',
-  },
-  dateInfo: {
-    display: 'flex',
-    gap: '16px',
-    alignItems: 'center',
-  },
-  weekLabel: {
-    fontSize: '14px',
-    color: 'var(--text-secondary)',
-    background: 'rgba(255,255,255,0.05)',
-    padding: '4px 10px',
-    borderRadius: '4px',
-  },
-  teamLabel: {
-    fontSize: '14px',
-    fontWeight: 600,
-    color: 'var(--accent)',
-  },
-  actionRow: {
-    display: 'flex',
-    gap: '12px',
-    marginBottom: '24px',
-  },
-  btn: {
-    padding: '12px 24px',
-    borderRadius: '8px',
-    border: 'none',
-    fontSize: '14px',
-    fontWeight: 600,
-    cursor: 'pointer',
-    transition: 'all 0.2s',
-  },
-  btnPrimary: {
-    background: 'var(--accent)',
-    color: 'var(--bg-primary)',
-  },
-  btnSecondary: {
-    background: 'transparent',
-    border: '1px solid #3a3a5c',
-    color: 'var(--text-secondary)',
-  },
-  card: {
-    background: 'rgba(255,255,255,0.03)',
-    border: '1px solid var(--border)',
-    borderRadius: '10px',
-    padding: '20px',
-    marginBottom: '16px',
-  },
-  resultHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    marginBottom: '12px',
-  },
-  resultDate: {
-    fontSize: '16px',
-    fontWeight: 600,
-    color: 'var(--text-primary)',
-  },
-  dayTypeBadge: {
-    fontSize: '12px',
-    fontWeight: 600,
-    padding: '3px 10px',
-    borderRadius: '12px',
-  },
-  dayTypeBadgeSmall: {
-    fontSize: '11px',
-    fontWeight: 500,
-  },
-  eventText: {
-    fontSize: '13px',
-    color: 'var(--text-secondary)',
-    marginBottom: '4px',
-  },
-  matchResults: {
-    marginTop: '16px',
-    borderTop: '1px solid var(--border)',
-    paddingTop: '12px',
-  },
-  subTitle: {
-    fontSize: '14px',
-    fontWeight: 600,
-    color: 'var(--accent)',
-    marginBottom: '10px',
-  },
-  matchRow: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '16px',
-    padding: '8px 0',
-    borderBottom: '1px solid rgba(255,255,255,0.03)',
-  },
-  matchTeam: {
-    fontSize: '14px',
-    fontWeight: 500,
-    color: 'var(--text-primary)',
-    minWidth: '60px',
-    textAlign: 'center',
-  },
-  matchScore: {
-    fontSize: '18px',
-    fontWeight: 700,
-    color: 'var(--text-primary)',
-    minWidth: '60px',
-    textAlign: 'center',
-  },
-  skipRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    padding: '6px 0',
-    borderBottom: '1px solid rgba(255,255,255,0.02)',
-  },
-  skipDate: {
-    fontSize: '13px',
-    color: 'var(--text-secondary)',
-    minWidth: '120px',
-  },
-  skipExtra: {
-    fontSize: '12px',
-    color: 'var(--text-muted)',
-    marginLeft: 'auto',
-  },
-  activityPanel: {
-    background: 'rgba(255,255,255,0.03)',
-    border: '1px solid var(--border)',
-    borderRadius: '10px',
-    padding: '16px 20px',
-    marginBottom: '16px',
-  },
-  activityLabel: {
-    fontSize: '13px',
-    fontWeight: 600,
-    color: 'var(--text-secondary)',
-    marginBottom: '10px',
-    display: 'block',
-  },
-  activityBtnGroup: {
-    display: 'flex',
-    gap: '10px',
-  },
-  activityBtn: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column' as const,
-    alignItems: 'center',
-    gap: '4px',
-    padding: '12px 8px',
-    borderRadius: '8px',
-    border: '1px solid #3a3a5c',
-    background: 'transparent',
-    cursor: 'pointer',
-    transition: 'all 0.2s',
-  },
-  activityBtnActive: {
-    background: 'rgba(200,155,60,0.12)',
-    borderColor: 'var(--accent)',
-  },
-  activityBtnLabel: {
-    fontSize: '14px',
-    fontWeight: 600,
-    color: 'var(--text-primary)',
-  },
-  activityBtnDesc: {
-    fontSize: '11px',
-    color: 'var(--text-muted)',
-  },
-  trainingMiniPanel: {
-    background: 'rgba(52,152,219,0.06)',
-    border: '1px solid rgba(52,152,219,0.3)',
-    borderRadius: '10px',
-    padding: '16px 20px',
-    marginBottom: '16px',
-  },
-  trainingMiniHeader: {
-    marginBottom: '10px',
-  },
-  trainingMiniTitle: {
-    fontSize: '13px',
-    fontWeight: 600,
-    color: '#3498db',
-  },
-  trainingMiniContent: {
-    display: 'flex',
-    gap: '16px',
-    alignItems: 'center',
-    marginBottom: '12px',
-  },
-  trainingMiniType: {
-    fontSize: '15px',
-    fontWeight: 600,
-    color: 'var(--text-primary)',
-  },
-  trainingMiniIntensity: {
-    fontSize: '13px',
-    color: 'var(--text-secondary)',
-    background: 'rgba(255,255,255,0.05)',
-    padding: '3px 10px',
-    borderRadius: '4px',
-  },
-  trainingDetailBtn: {
-    padding: '8px 16px',
-    fontSize: '13px',
-    fontWeight: 500,
-    color: '#3498db',
-    background: 'transparent',
-    border: '1px solid rgba(52,152,219,0.3)',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    transition: 'all 0.2s',
-  },
-  offseasonBanner: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '16px',
-    background: 'linear-gradient(135deg, rgba(243,156,18,0.12) 0%, rgba(231,76,60,0.08) 100%)',
-    border: '1px solid rgba(243,156,18,0.3)',
-    borderRadius: '10px',
-    padding: '16px 20px',
-    marginBottom: '16px',
-  },
-  offseasonTitle: {
-    fontSize: '16px',
-    fontWeight: 700,
-    color: 'var(--warning)',
-  },
-  offseasonPhase: {
-    fontSize: '14px',
-    fontWeight: 600,
-    color: 'var(--text-primary)',
-    background: 'rgba(255,255,255,0.08)',
-    padding: '4px 12px',
-    borderRadius: '6px',
-  },
-  offseasonDays: {
-    fontSize: '13px',
-    color: 'var(--text-secondary)',
-    marginLeft: 'auto',
-  },
-};
-
-const dayViewStyles: Record<string, React.CSSProperties> = {
-  offseasonEventRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    padding: '10px 0',
-    borderBottom: '1px solid rgba(255,255,255,0.04)',
-  },
-  offseasonEventBadge: {
-    fontSize: '11px',
-    fontWeight: 600,
-    color: 'var(--warning)',
-    background: 'rgba(243,156,18,0.1)',
-    padding: '3px 8px',
-    borderRadius: '4px',
-    whiteSpace: 'nowrap',
-  },
-  offseasonEventContent: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '2px',
-    flex: 1,
-  },
-  offseasonEventTitle: {
-    fontSize: '13px',
-    fontWeight: 600,
-    color: 'var(--text-primary)',
-  },
-  offseasonEventDesc: {
-    fontSize: '12px',
-    color: 'var(--text-secondary)',
-  },
-  offseasonEventEffects: {
-    display: 'flex',
-    gap: '8px',
-    flexShrink: 0,
-  },
-};

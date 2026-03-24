@@ -41,6 +41,8 @@ export interface Match {
   matchType: MatchType;
   boFormat: 'Bo1' | 'Bo3' | 'Bo5';
   fearlessDraft?: boolean;
+  /** 사이드 선택권 팀 (시드 높은 팀) */
+  sidePickTeamId?: string;
 }
 
 export interface Game {
@@ -54,6 +56,21 @@ export interface Game {
   totalKillsAway: number;
 }
 
+/** 드래곤 타입 (4종류) */
+export type DragonType = 'infernal' | 'ocean' | 'mountain' | 'cloud';
+
+/** 드래곤 소울 상태 */
+export interface DragonSoulState {
+  /** 각 팀의 드래곤 스택 */
+  homeStacks: number;
+  awayStacks: number;
+  /** 드래곤 타입 히스토리 */
+  dragonTypes: { type: DragonType; side: 'home' | 'away' }[];
+  /** 소울 획득 팀 (4스택 달성) */
+  soulTeam?: 'home' | 'away';
+  soulType?: DragonType;
+}
+
 // 매치 엔진 Tick 이벤트
 export type MatchEventType =
   | 'kill'
@@ -62,7 +79,18 @@ export type MatchEventType =
   | 'baron'
   | 'teamfight'
   | 'gank'
-  | 'lane_swap';
+  | 'lane_swap'
+  | 'solo_kill'
+  | 'dive'
+  | 'invade'
+  | 'elder_dragon'
+  | 'rift_herald'
+  | 'void_grub'
+  | 'ace'
+  | 'base_race'
+  | 'backdoor'
+  | 'steal'
+  | 'pentakill';
 
 export interface MatchEvent {
   tick: number;           // 게임 내 시간 (초)
@@ -105,6 +133,11 @@ export interface MatchTickState {
   dragonsAway: number;
   baronHome: boolean;
   baronAway: boolean;
+  /** 보이드 그럽 (각 팀 처치 수, 최대 6) */
+  grubsHome: number;
+  grubsAway: number;
+  /** 드래곤 소울 상태 */
+  dragonSoul: DragonSoulState;
   events: MatchEvent[];
   playerPositions: Record<string, { x: number; y: number }>;
 }

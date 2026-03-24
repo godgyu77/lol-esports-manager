@@ -74,127 +74,137 @@ export function BoardView() {
   }, [loadData]);
 
   if (isLoading) {
-    return <div style={styles.loading}>로딩 중...</div>;
+    return <div className="fm-text-muted fm-text-center fm-p-lg">로딩 중...</div>;
   }
 
   if (error) {
-    return <div style={styles.error}>{error}</div>;
+    return <div className="fm-text-danger fm-text-center fm-p-lg">{error}</div>;
   }
 
   if (!expectations) {
-    return <div style={styles.loading}>구단 정보가 없습니다.</div>;
+    return <div className="fm-text-muted fm-text-center fm-p-lg">구단 정보가 없습니다.</div>;
   }
 
   return (
-    <div style={styles.container}>
-      <h1 style={styles.title}>구단 관리</h1>
+    <div>
+      <div className="fm-page-header">
+        <h1 className="fm-page-title">구단 관리</h1>
+      </div>
 
       {/* 구단주 목표 */}
-      <section style={styles.section}>
-        <h2 style={styles.sectionTitle}>구단주 목표</h2>
-        <div style={styles.goalsGrid}>
-          <div style={styles.goalCard}>
-            <span style={styles.goalLabel}>목표 순위</span>
-            <span style={styles.goalValue}>{expectations.targetStanding}위 이내</span>
-          </div>
-          <div style={styles.goalCard}>
-            <span style={styles.goalLabel}>플레이오프 진출</span>
-            <span style={{
-              ...styles.goalValue,
-              color: expectations.targetPlayoff ? '#c89b3c' : '#6a6a7a',
-            }}>
-              {expectations.targetPlayoff ? '필수' : '선택'}
-            </span>
-          </div>
-          <div style={styles.goalCard}>
-            <span style={styles.goalLabel}>국제대회 진출</span>
-            <span style={{
-              ...styles.goalValue,
-              color: expectations.targetInternational ? '#c89b3c' : '#6a6a7a',
-            }}>
-              {expectations.targetInternational ? '필수' : '선택'}
-            </span>
+      <div className="fm-panel fm-mb-md">
+        <div className="fm-panel__header">
+          <span className="fm-panel__title">구단주 목표</span>
+        </div>
+        <div className="fm-panel__body">
+          <div className="fm-grid fm-grid--3">
+            <div className="fm-card fm-flex-col fm-items-center fm-gap-sm">
+              <span className="fm-text-md fm-text-secondary">목표 순위</span>
+              <span className="fm-text-xl fm-font-bold fm-text-primary">{expectations.targetStanding}위 이내</span>
+            </div>
+            <div className="fm-card fm-flex-col fm-items-center fm-gap-sm">
+              <span className="fm-text-md fm-text-secondary">플레이오프 진출</span>
+              <span className={`fm-text-xl fm-font-bold ${expectations.targetPlayoff ? 'fm-text-accent' : 'fm-text-muted'}`}>
+                {expectations.targetPlayoff ? '필수' : '선택'}
+              </span>
+            </div>
+            <div className="fm-card fm-flex-col fm-items-center fm-gap-sm">
+              <span className="fm-text-md fm-text-secondary">국제대회 진출</span>
+              <span className={`fm-text-xl fm-font-bold ${expectations.targetInternational ? 'fm-text-accent' : 'fm-text-muted'}`}>
+                {expectations.targetInternational ? '필수' : '선택'}
+              </span>
+            </div>
           </div>
         </div>
-      </section>
+      </div>
 
       {/* 만족도 & 팬 행복도 */}
-      <section style={styles.section}>
-        <h2 style={styles.sectionTitle}>현황</h2>
-        <div style={styles.gaugeContainer}>
-          <GaugeBar
-            label="구단주 만족도"
-            value={expectations.satisfaction}
-            color={getGaugeColor(expectations.satisfaction)}
-          />
-          <GaugeBar
-            label="팬 행복도"
-            value={expectations.fanHappiness}
-            color={getGaugeColor(expectations.fanHappiness)}
-          />
+      <div className="fm-panel fm-mb-md">
+        <div className="fm-panel__header">
+          <span className="fm-panel__title">현황</span>
         </div>
-
-        {/* 경고 */}
-        <div style={styles.warningSection}>
-          <span style={styles.warningLabel}>경고 횟수</span>
-          <div style={styles.warningDots}>
-            {[0, 1, 2].map((i) => (
-              <span
-                key={i}
-                style={{
-                  ...styles.warningDot,
-                  background: i < expectations.warningCount ? '#e74c3c' : '#2a2a4a',
-                }}
-              />
-            ))}
+        <div className="fm-panel__body">
+          <div className="fm-flex-col fm-gap-md fm-mb-lg">
+            <GaugeBar
+              label="구단주 만족도"
+              value={expectations.satisfaction}
+              color={getGaugeColor(expectations.satisfaction)}
+            />
+            <GaugeBar
+              label="팬 행복도"
+              value={expectations.fanHappiness}
+              color={getGaugeColor(expectations.fanHappiness)}
+            />
           </div>
-          {expectations.warningCount > 0 && (
-            <span style={styles.warningText}>
-              {expectations.warningCount >= 3
-                ? '해고 위기!'
-                : `${expectations.warningCount}회 경고`}
-            </span>
+
+          {/* 경고 */}
+          <div className="fm-flex fm-items-center fm-gap-md">
+            <span className="fm-text-lg fm-text-secondary fm-flex-shrink-0" style={{ width: 120 }}>경고 횟수</span>
+            <div className="fm-flex fm-gap-sm">
+              {[0, 1, 2].map((i) => (
+                <span
+                  key={i}
+                  style={{
+                    width: 16,
+                    height: 16,
+                    borderRadius: '50%',
+                    border: '1px solid var(--border)',
+                    background: i < expectations.warningCount ? 'var(--danger)' : 'var(--border)',
+                  }}
+                />
+              ))}
+            </div>
+            {expectations.warningCount > 0 && (
+              <span className="fm-text-md fm-font-semibold fm-text-danger">
+                {expectations.warningCount >= 3
+                  ? '해고 위기!'
+                  : `${expectations.warningCount}회 경고`}
+              </span>
+            )}
+          </div>
+
+          {expectations.isFired && (
+            <div className="fm-alert fm-alert--danger fm-mt-md">
+              <span className="fm-alert__text fm-font-bold fm-text-center" style={{ width: '100%' }}>
+                구단주에 의해 해고되었습니다.
+              </span>
+            </div>
           )}
         </div>
-
-        {expectations.isFired && (
-          <div style={styles.firedBanner}>
-            구단주에 의해 해고되었습니다.
-          </div>
-        )}
-      </section>
+      </div>
 
       {/* 최근 팬 반응 */}
-      <section style={styles.section}>
-        <h2 style={styles.sectionTitle}>최근 팬 반응</h2>
-        {reactions.length === 0 ? (
-          <p style={styles.emptyText}>아직 기록된 팬 반응이 없습니다.</p>
-        ) : (
-          <ul style={styles.reactionList}>
-            {reactions.map((reaction) => (
-              <li key={reaction.id} style={styles.reactionItem}>
-                <div style={styles.reactionHeader}>
-                  <span style={styles.reactionType}>
-                    {getEventLabel(reaction.eventType)}
-                  </span>
-                  <span style={styles.reactionDate}>{reaction.reactionDate}</span>
-                </div>
-                <div style={styles.reactionBody}>
-                  {reaction.message && (
-                    <span style={styles.reactionMessage}>{reaction.message}</span>
-                  )}
-                  <span style={{
-                    ...styles.reactionDelta,
-                    color: reaction.happinessChange >= 0 ? '#2ecc71' : '#e74c3c',
-                  }}>
-                    {reaction.happinessChange >= 0 ? '+' : ''}{reaction.happinessChange}
-                  </span>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <div className="fm-panel">
+        <div className="fm-panel__header">
+          <span className="fm-panel__title">최근 팬 반응</span>
+        </div>
+        <div className="fm-panel__body--flush">
+          {reactions.length === 0 ? (
+            <p className="fm-text-lg fm-text-muted fm-p-md">아직 기록된 팬 반응이 없습니다.</p>
+          ) : (
+            <ul className="fm-list-none" style={{ maxHeight: 360, overflowY: 'auto' }}>
+              {reactions.map((reaction) => (
+                <li key={reaction.id} style={{ padding: '10px 12px', borderBottom: '1px solid var(--border-subtle)' }}>
+                  <div className="fm-flex fm-justify-between fm-mb-sm">
+                    <span className="fm-text-md fm-font-semibold fm-text-accent">
+                      {getEventLabel(reaction.eventType)}
+                    </span>
+                    <span className="fm-text-base fm-text-muted">{reaction.reactionDate}</span>
+                  </div>
+                  <div className="fm-flex fm-justify-between fm-items-center">
+                    {reaction.message && (
+                      <span className="fm-text-md fm-text-secondary">{reaction.message}</span>
+                    )}
+                    <span className={`fm-text-lg fm-font-bold fm-flex-shrink-0 ${reaction.happinessChange >= 0 ? 'fm-text-success' : 'fm-text-danger'}`}>
+                      {reaction.happinessChange >= 0 ? '+' : ''}{reaction.happinessChange}
+                    </span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -205,211 +215,21 @@ export function BoardView() {
 
 function GaugeBar({ label, value, color }: { label: string; value: number; color: string }) {
   return (
-    <div style={styles.gaugeRow}>
-      <span style={styles.gaugeLabel}>{label}</span>
-      <div style={styles.gaugeTrack}>
+    <div className="fm-flex fm-items-center fm-gap-md">
+      <span className="fm-text-lg fm-text-secondary fm-flex-shrink-0" style={{ width: 120 }}>{label}</span>
+      <div className="fm-bar__track fm-flex-1" style={{ height: 12, border: '1px solid var(--border)' }}>
         <div
-          style={{
-            ...styles.gaugeFill,
-            width: `${value}%`,
-            background: color,
-          }}
+          className="fm-bar__fill"
+          style={{ width: `${value}%`, background: color }}
         />
       </div>
-      <span style={{ ...styles.gaugeValue, color }}>{value}</span>
+      <span className="fm-text-xl fm-font-bold fm-text-right" style={{ color, width: 36 }}>{value}</span>
     </div>
   );
 }
 
 function getGaugeColor(value: number): string {
-  if (value >= 70) return '#2ecc71';
-  if (value >= 40) return '#c89b3c';
-  return '#e74c3c';
+  if (value >= 70) return 'var(--success)';
+  if (value >= 40) return 'var(--accent)';
+  return 'var(--danger)';
 }
-
-// ─────────────────────────────────────────
-// 스타일
-// ─────────────────────────────────────────
-
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    maxWidth: '900px',
-  },
-  loading: {
-    color: '#8a8a9a',
-    padding: '40px',
-    textAlign: 'center',
-  },
-  error: {
-    color: '#e74c3c',
-    padding: '40px',
-    textAlign: 'center',
-  },
-  title: {
-    fontSize: '22px',
-    fontWeight: 700,
-    color: '#c89b3c',
-    marginBottom: '28px',
-  },
-  section: {
-    background: '#12122a',
-    border: '1px solid #2a2a4a',
-    borderRadius: '8px',
-    padding: '20px',
-    marginBottom: '20px',
-  },
-  sectionTitle: {
-    fontSize: '16px',
-    fontWeight: 600,
-    color: '#e0e0e0',
-    marginBottom: '16px',
-  },
-
-  // 목표
-  goalsGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(3, 1fr)',
-    gap: '12px',
-  },
-  goalCard: {
-    background: '#0d0d1a',
-    border: '1px solid #2a2a4a',
-    borderRadius: '6px',
-    padding: '16px',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '8px',
-  },
-  goalLabel: {
-    fontSize: '13px',
-    color: '#8a8a9a',
-  },
-  goalValue: {
-    fontSize: '18px',
-    fontWeight: 700,
-    color: '#e0e0e0',
-  },
-
-  // 게이지
-  gaugeContainer: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px',
-    marginBottom: '20px',
-  },
-  gaugeRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-  },
-  gaugeLabel: {
-    fontSize: '14px',
-    color: '#8a8a9a',
-    width: '120px',
-    flexShrink: 0,
-  },
-  gaugeTrack: {
-    flex: 1,
-    height: '12px',
-    background: '#0d0d1a',
-    borderRadius: '6px',
-    overflow: 'hidden',
-    border: '1px solid #2a2a4a',
-  },
-  gaugeFill: {
-    height: '100%',
-    borderRadius: '6px',
-    transition: 'width 0.3s ease',
-  },
-  gaugeValue: {
-    fontSize: '16px',
-    fontWeight: 700,
-    width: '36px',
-    textAlign: 'right',
-  },
-
-  // 경고
-  warningSection: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-  },
-  warningLabel: {
-    fontSize: '14px',
-    color: '#8a8a9a',
-    width: '120px',
-    flexShrink: 0,
-  },
-  warningDots: {
-    display: 'flex',
-    gap: '8px',
-  },
-  warningDot: {
-    width: '16px',
-    height: '16px',
-    borderRadius: '50%',
-    border: '1px solid #3a3a5a',
-  },
-  warningText: {
-    fontSize: '13px',
-    color: '#e74c3c',
-    fontWeight: 600,
-  },
-  firedBanner: {
-    marginTop: '16px',
-    padding: '12px',
-    background: 'rgba(231, 76, 60, 0.15)',
-    border: '1px solid #e74c3c',
-    borderRadius: '6px',
-    color: '#e74c3c',
-    fontWeight: 700,
-    textAlign: 'center',
-    fontSize: '15px',
-  },
-
-  // 팬 반응
-  emptyText: {
-    color: '#6a6a7a',
-    fontSize: '14px',
-  },
-  reactionList: {
-    listStyle: 'none',
-    padding: 0,
-    margin: 0,
-    maxHeight: '360px',
-    overflowY: 'auto',
-  },
-  reactionItem: {
-    padding: '10px 12px',
-    borderBottom: '1px solid #1a1a3a',
-  },
-  reactionHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    marginBottom: '4px',
-  },
-  reactionType: {
-    fontSize: '13px',
-    fontWeight: 600,
-    color: '#c89b3c',
-  },
-  reactionDate: {
-    fontSize: '12px',
-    color: '#6a6a7a',
-  },
-  reactionBody: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  reactionMessage: {
-    fontSize: '13px',
-    color: '#8a8a9a',
-  },
-  reactionDelta: {
-    fontSize: '14px',
-    fontWeight: 700,
-    flexShrink: 0,
-  },
-};

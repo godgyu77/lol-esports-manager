@@ -99,21 +99,18 @@ export function TeamSelect() {
   };
 
   return (
-    <div style={styles.container}>
-      <h1 style={styles.title}>팀 선택</h1>
-      <p style={styles.subtitle}>
+    <div className="fm-content fm-flex-col fm-items-center" style={{ minHeight: '100vh' }}>
+      <h1 className="fm-text-2xl fm-font-bold fm-text-primary fm-mb-sm">팀 선택</h1>
+      <p className="fm-text-md fm-text-muted fm-mb-lg">
         {mode === 'manager' ? '감독으로 이끌 팀을 선택하세요' : '소속될 팀을 선택하세요'}
       </p>
 
       {/* 리전 탭 */}
-      <div style={styles.tabs}>
+      <div className="fm-tabs fm-mb-lg">
         {REGIONS.map((r) => (
           <button
             key={r.value}
-            style={{
-              ...styles.tab,
-              ...(selectedRegion === r.value ? styles.tabActive : {}),
-            }}
+            className={`fm-tab ${selectedRegion === r.value ? 'fm-tab--active' : ''}`}
             onClick={() => setSelectedRegion(r.value)}
           >
             {r.label}
@@ -121,304 +118,94 @@ export function TeamSelect() {
         ))}
       </div>
 
-      <div style={styles.layout}>
+      <div className="fm-flex fm-gap-lg" style={{ maxWidth: 1000, width: '100%' }}>
         {/* 좌측: 팀 그리드 */}
-        <div style={styles.gridContainer}>
-          <div style={styles.grid}>
+        <div className="fm-flex-1" style={{ minWidth: 0 }}>
+          <div className="fm-grid fm-grid--2" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
             {filteredTeams.map((team) => (
               <button
                 key={team.id}
-                style={{
-                  ...styles.teamCard,
-                  ...(selectedTeam?.id === team.id ? styles.teamCardSelected : {}),
-                }}
+                className={`fm-card fm-card--clickable fm-flex fm-items-center fm-gap-md ${
+                  selectedTeam?.id === team.id ? 'fm-card--highlight' : ''
+                }`}
                 onClick={() => setSelectedTeam(team)}
               >
-                <span style={styles.shortName}>{team.shortName}</span>
-                <span style={styles.teamName}>{team.name}</span>
-                <span style={styles.region}>{team.region}</span>
+                <span className="fm-text-xl fm-font-bold fm-text-accent" style={{ minWidth: 40 }}>
+                  {team.shortName}
+                </span>
+                <span className="fm-text-lg fm-text-primary fm-flex-1">{team.name}</span>
+                <span className="fm-text-sm fm-text-muted">{team.region}</span>
               </button>
             ))}
           </div>
         </div>
 
         {/* 우측: 미리보기 패널 */}
-        <div style={styles.previewPanel}>
+        <div className="fm-panel fm-flex-shrink-0" style={{ width: 340, maxHeight: '60vh', overflowY: 'auto' }}>
           {selectedTeam && teamData ? (
-            <>
-              <h2 style={styles.previewTitle}>{teamData.teamName}</h2>
-              <div style={styles.previewMeta}>
-                <span style={styles.metaTag}>{selectedTeam.region}</span>
-                <span style={styles.metaTag}>재정 {teamData.financialTier}티어</span>
+            <div>
+              <div className="fm-panel__header">
+                <span className="fm-panel__title">{teamData.teamName}</span>
               </div>
 
-              <div style={styles.previewSection}>
-                <h3 style={styles.sectionLabel}>재정</h3>
-                <div style={styles.financeRow}>
-                  <span style={styles.financeLabel}>예산</span>
-                  <span style={styles.financeValue}>{teamData.money}억</span>
+              <div className="fm-panel__body fm-flex-col fm-gap-md">
+                <div className="fm-flex fm-gap-sm">
+                  <span className="fm-badge fm-badge--accent">{selectedTeam.region}</span>
+                  <span className="fm-badge fm-badge--default">재정 {teamData.financialTier}티어</span>
                 </div>
-                <div style={styles.financeRow}>
-                  <span style={styles.financeLabel}>연간 지원금</span>
-                  <span style={styles.financeValue}>{teamData.annualSupport}억</span>
-                </div>
-              </div>
 
-              <div style={styles.previewSection}>
-                <h3 style={styles.sectionLabel}>1군 로스터</h3>
-                <div style={styles.rosterList}>
-                  {starters.map((p) => (
-                    <div key={p.name} style={styles.rosterRow}>
-                      <span style={styles.rosterPos}>{p.role}</span>
-                      <span style={styles.rosterName}>{p.name}</span>
-                      <span style={styles.rosterOvr}>{p.stats.ovr}</span>
-                    </div>
-                  ))}
+                {/* 재정 */}
+                <div>
+                  <h3 className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">재정</h3>
+                  <div className="fm-info-row">
+                    <span className="fm-info-row__label">예산</span>
+                    <span className="fm-info-row__value">{teamData.money}억</span>
+                  </div>
+                  <div className="fm-info-row">
+                    <span className="fm-info-row__label">연간 지원금</span>
+                    <span className="fm-info-row__value">{teamData.annualSupport}억</span>
+                  </div>
                 </div>
-                <div style={styles.avgOvr}>
-                  평균 OVR: <strong>{avgOvr}</strong>
+
+                {/* 1군 로스터 */}
+                <div>
+                  <h3 className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">1군 로스터</h3>
+                  <div className="fm-flex-col fm-gap-xs">
+                    {starters.map((p) => (
+                      <div key={p.name} className="fm-flex fm-items-center fm-gap-sm fm-p-sm" style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-sm)' }}>
+                        <span className="fm-text-xs fm-font-bold fm-text-accent" style={{ minWidth: 32 }}>{p.role}</span>
+                        <span className="fm-text-md fm-text-primary fm-flex-1">{p.name}</span>
+                        <span className="fm-text-md fm-font-bold fm-text-primary">{p.stats.ovr}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="fm-text-right fm-text-md fm-text-muted fm-mt-sm">
+                    평균 OVR: <strong className="fm-text-primary">{avgOvr}</strong>
+                  </div>
                 </div>
-              </div>
 
-              <div style={styles.previewSection}>
-                <h3 style={styles.sectionLabel}>구단 기대치</h3>
-                <span style={styles.expectation}>{getExpectation(teamData.financialTier)}</span>
-              </div>
+                {/* 구단 기대치 */}
+                <div>
+                  <h3 className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">구단 기대치</h3>
+                  <span className="fm-text-xl fm-font-bold fm-text-accent">{getExpectation(teamData.financialTier)}</span>
+                </div>
 
-              <button style={styles.startBtn} onClick={handleStart}>
-                이 팀으로 시작 →
-              </button>
-            </>
+                <button className="fm-btn fm-btn--primary fm-btn--lg" style={{ width: '100%' }} onClick={handleStart}>
+                  이 팀으로 시작 →
+                </button>
+              </div>
+            </div>
           ) : (
-            <div style={styles.previewEmpty}>
+            <div className="fm-panel__body fm-flex fm-items-center fm-justify-center fm-text-muted fm-text-lg fm-text-center" style={{ minHeight: 300 }}>
               <p>팀을 선택하면 상세 정보가 표시됩니다</p>
             </div>
           )}
         </div>
       </div>
 
-      <button style={styles.back} onClick={() => navigate('/mode-select')}>
+      <button className="fm-btn fm-btn--ghost fm-mt-lg" onClick={() => navigate('/mode-select')}>
         ← 돌아가기
       </button>
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    minHeight: '100vh',
-    background: 'linear-gradient(135deg, #0a0a1a 0%, #1a1a3e 50%, #0a0a1a 100%)',
-    color: '#e0e0e0',
-    padding: '40px',
-  },
-  title: {
-    fontSize: '32px',
-    fontWeight: 700,
-    color: '#f0e6d2',
-    marginBottom: '8px',
-  },
-  subtitle: {
-    fontSize: '14px',
-    color: '#8a8a9a',
-    marginBottom: '16px',
-  },
-  tabs: {
-    display: 'flex',
-    gap: '8px',
-    marginBottom: '24px',
-  },
-  tab: {
-    padding: '8px 16px',
-    border: '1px solid #3a3a5c',
-    borderRadius: '6px',
-    background: 'transparent',
-    color: '#8a8a9a',
-    cursor: 'pointer',
-    fontSize: '13px',
-    transition: 'all 0.2s',
-  },
-  tabActive: {
-    borderColor: '#c89b3c',
-    color: '#c89b3c',
-    background: 'rgba(200, 155, 60, 0.1)',
-  },
-  layout: {
-    display: 'flex',
-    gap: '24px',
-    maxWidth: '1000px',
-    width: '100%',
-  },
-  gridContainer: {
-    flex: 1,
-    minWidth: 0,
-  },
-  grid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(2, 1fr)',
-    gap: '12px',
-    maxHeight: '60vh',
-    overflowY: 'auto',
-  },
-  teamCard: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    padding: '16px 20px',
-    border: '1px solid #3a3a5c',
-    borderRadius: '8px',
-    background: 'rgba(255,255,255,0.03)',
-    color: '#e0e0e0',
-    cursor: 'pointer',
-    transition: 'all 0.2s',
-    textAlign: 'left',
-  },
-  teamCardSelected: {
-    borderColor: '#c89b3c',
-    background: 'rgba(200, 155, 60, 0.1)',
-  },
-  shortName: {
-    fontSize: '18px',
-    fontWeight: 800,
-    color: '#c89b3c',
-    minWidth: '40px',
-  },
-  teamName: {
-    flex: 1,
-    fontSize: '14px',
-  },
-  region: {
-    fontSize: '12px',
-    color: '#6a6a7a',
-  },
-  previewPanel: {
-    width: '340px',
-    flexShrink: 0,
-    background: 'rgba(255,255,255,0.03)',
-    border: '1px solid #3a3a5c',
-    borderRadius: '12px',
-    padding: '24px',
-    maxHeight: '60vh',
-    overflowY: 'auto',
-  },
-  previewEmpty: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: '300px',
-    color: '#6a6a7a',
-    fontSize: '14px',
-    textAlign: 'center',
-  },
-  previewTitle: {
-    fontSize: '22px',
-    fontWeight: 700,
-    color: '#f0e6d2',
-    marginBottom: '8px',
-    marginTop: 0,
-  },
-  previewMeta: {
-    display: 'flex',
-    gap: '8px',
-    marginBottom: '20px',
-  },
-  metaTag: {
-    padding: '4px 10px',
-    borderRadius: '4px',
-    background: 'rgba(200, 155, 60, 0.15)',
-    color: '#c89b3c',
-    fontSize: '12px',
-    fontWeight: 600,
-  },
-  previewSection: {
-    marginBottom: '16px',
-  },
-  sectionLabel: {
-    fontSize: '13px',
-    fontWeight: 600,
-    color: '#8a8a9a',
-    marginBottom: '8px',
-    marginTop: 0,
-    textTransform: 'uppercase' as const,
-    letterSpacing: '0.5px',
-  },
-  financeRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    padding: '4px 0',
-  },
-  financeLabel: {
-    color: '#8a8a9a',
-    fontSize: '13px',
-  },
-  financeValue: {
-    color: '#e0e0e0',
-    fontSize: '13px',
-    fontWeight: 600,
-  },
-  rosterList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '4px',
-  },
-  rosterRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    padding: '6px 8px',
-    borderRadius: '4px',
-    background: 'rgba(255,255,255,0.02)',
-  },
-  rosterPos: {
-    fontSize: '11px',
-    fontWeight: 700,
-    color: '#c89b3c',
-    minWidth: '32px',
-  },
-  rosterName: {
-    flex: 1,
-    fontSize: '13px',
-    color: '#e0e0e0',
-  },
-  rosterOvr: {
-    fontSize: '13px',
-    fontWeight: 700,
-    color: '#f0e6d2',
-  },
-  avgOvr: {
-    marginTop: '8px',
-    fontSize: '13px',
-    color: '#8a8a9a',
-    textAlign: 'right',
-  },
-  expectation: {
-    fontSize: '16px',
-    fontWeight: 700,
-    color: '#c89b3c',
-  },
-  startBtn: {
-    width: '100%',
-    padding: '14px',
-    border: 'none',
-    borderRadius: '8px',
-    background: 'linear-gradient(135deg, #c89b3c, #a67c2e)',
-    color: '#0a0a1a',
-    fontSize: '15px',
-    fontWeight: 700,
-    cursor: 'pointer',
-    marginTop: '12px',
-    transition: 'all 0.2s',
-  },
-  back: {
-    marginTop: '32px',
-    padding: '10px 20px',
-    border: 'none',
-    borderRadius: '6px',
-    background: 'transparent',
-    color: '#6a6a7a',
-    fontSize: '14px',
-    cursor: 'pointer',
-  },
-};

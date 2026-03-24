@@ -8,16 +8,63 @@
 
 import { MATCH_CONSTANTS } from '../../data/systemPrompt';
 import type { Position } from '../../types/game';
-import type { Game, MatchEvent, MatchEventType } from '../../types/match';
+import type { MatchEvent, DragonType, DragonSoulState } from '../../types/match';
 import type { Player } from '../../types/player';
 import type { PlayStyle } from '../../types/team';
+import type { ChampionSynergy } from '../../types/champion';
 import type { TacticsBonus } from '../tactics/tacticsEngine';
+import { checkTacticalAdjustment, calculateRoleBonuses } from '../tactics/tacticsEngine';
+import type { TeamTactics } from '../../types/tactics';
 import {
   type Lineup,
   type MatchupResult,
   evaluateMatchup,
+  calculateChampionSynergyBonus,
+  evaluateTeamComposition,
 } from './teamRating';
 import { createRng } from '../../utils/rng';
+
+// ─────────────────────────────────────────
+// 드래곤 / 그럽 상수
+// ─────────────────────────────────────────
+
+/** 배열에서 최빈값 반환 */
+function getMostFrequent<T>(arr: T[]): T | undefined {
+  if (arr.length === 0) return undefined;
+  const freq = new Map<T, number>();
+  for (const item of arr) freq.set(item, (freq.get(item) ?? 0) + 1);
+  let maxItem = arr[0];
+  let maxCount = 0;
+  for (const [item, count] of freq) {
+    if (count > maxCount) { maxCount = count; maxItem = item; }
+  }
+  return maxItem;
+}
+
+const DRAGON_TYPES: DragonType[] = ['infernal', 'ocean', 'mountain', 'cloud'];
+const DRAGON_SOUL_WIN_RATE_BONUS: Record<DragonType, number> = {
+  infernal: 0.10, ocean: 0.07, mountain: 0.08, cloud: 0.06,
+};
+const DRAGON_STACK_BONUS: Record<DragonType, number> = {
+  infernal: 0.020, ocean: 0.012, mountain: 0.015, cloud: 0.010,
+};
+
+// ─────────────────────────────────────────
+// 챔피언 픽 정보
+// ─────────────────────────────────────────
+
+/** 경기에서 사용되는 챔피언 픽 정보 */
+export interface MatchChampionPicks {
+  picks: { championId: string; position: Position }[];
+  /** 챔피언별 스탯 (earlyGame, lateGame, teamfight, splitPush, difficulty) */
+  champStats: Record<string, { earlyGame: number; lateGame: number; teamfight: number; splitPush: number; difficulty: number }>;
+  /** 챔피언별 태그 */
+  champTags: Record<string, string[]>;
+  /** 챔피언별 데미지 프로필 */
+  champDamageProfiles: Record<string, string>;
+  /** 포지션별 선수의 해당 챔피언 숙련도 (0-100) */
+  champProficiency: Record<Position, number>;
+}
 
 // ─────────────────────────────────────────
 // 타입
@@ -47,6 +94,20 @@ export interface GameResult {
   events: MatchEvent[];
   playerStatsHome: PlayerGameStatLine[];
   playerStatsAway: PlayerGameStatLine[];
+  /** 드래곤 소울 상태 */
+  dragonSoul: DragonSoulState;
+  /** 보이드 그럽 (각 팀) */
+  grubsHome: number;
+  grubsAway: number;
+}
+
+/** 세트간 선수 교체 기록 */
+export interface BetweenGameSubstitution {
+  gameNumber: number;
+  side: 'home' | 'away';
+  outPlayerId: string;
+  inPlayerId: string;
+  position: Position;
 }
 
 /** 매치(시리즈) 전체 결과 */
@@ -55,6 +116,10 @@ export interface MatchResult {
   scoreAway: number;
   winner: 'home' | 'away';
   games: GameResult[];
+  /** 세트간 선수 교체 기록 */
+  substitutions: BetweenGameSubstitution[];
+  /** 사이드 선택 기록 (세트별) */
+  sideSelections: { gameNumber: number; blueSide: 'home' | 'away' }[];
 }
 
 // ─────────────────────────────────────────
@@ -201,7 +266,7 @@ function generatePlayerStats(
  */
 function simulateGame(
   matchup: MatchupResult,
-  gameNumber: number,
+  _gameNumber: number,
   fatigueHome: number,
   fatigueAway: number,
   seed: string,
@@ -211,13 +276,52 @@ function simulateGame(
   awayPlayStyle: PlayStyle = 'controlled',
   homeTacticsBonus?: TacticsBonus,
   awayTacticsBonus?: TacticsBonus,
+  homeChampions?: MatchChampionPicks,
+  awayChampions?: MatchChampionPicks,
+  synergyData: ChampionSynergy[] = [],
+  homeTactics?: TeamTactics,
+  awayTactics?: TeamTactics,
 ): GameResult {
   const rand = createRng(seed);
   const { homeWinRate, homeRating, awayRating, laneMatchups } = matchup;
 
   // 피로 보정: 후반 세트일수록 체력이 낮은 팀 불리 (3배 강화)
   const fatigueDiff = (fatigueAway - fatigueHome) * 0.04;
-  let currentWinRate = Math.max(0.15, Math.min(0.85, homeWinRate + fatigueDiff));
+
+  // ── 챔피언 보정 ──
+  let championBonus = 0;
+  if (homeChampions && awayChampions) {
+    // 팀 시너지 보너스
+    const homeSynergy = calculateChampionSynergyBonus(
+      homeChampions.picks, awayChampions.picks, synergyData,
+    );
+    const awaySynergy = calculateChampionSynergyBonus(
+      awayChampions.picks, homeChampions.picks, synergyData,
+    );
+
+    // 팀 구성 보너스 (AP/AD 밸런스, 이니시에이터, 한타 잠재력)
+    const homeComp = evaluateTeamComposition(
+      homeChampions.picks.map(p => ({
+        championId: p.championId,
+        tags: (homeChampions.champTags[p.championId] ?? []) as import('../../types/champion').ChampionTag[],
+        teamfight: homeChampions.champStats[p.championId]?.teamfight ?? 50,
+        damageType: inferDamageType(homeChampions.champTags[p.championId] ?? [], homeChampions.champDamageProfiles?.[p.championId]),
+      })),
+    );
+    const awayComp = evaluateTeamComposition(
+      awayChampions.picks.map(p => ({
+        championId: p.championId,
+        tags: (awayChampions.champTags[p.championId] ?? []) as import('../../types/champion').ChampionTag[],
+        teamfight: awayChampions.champStats[p.championId]?.teamfight ?? 50,
+        damageType: inferDamageType(awayChampions.champTags[p.championId] ?? [], awayChampions.champDamageProfiles?.[p.championId]),
+      })),
+    );
+
+    // 챔피언 보정: 시너지 + 구성 차이 → 승률 보정 (최대 ±8%)
+    championBonus = ((homeSynergy - awaySynergy) + (homeComp - awayComp)) * 0.004;
+  }
+
+  let currentWinRate = Math.max(0.15, Math.min(0.85, homeWinRate + fatigueDiff + championBonus));
 
   /** 승률 보정 (클램프 적용) */
   const adjustWinRate = (delta: number) => {
@@ -252,6 +356,24 @@ function simulateGame(
   const homeObj = homeTacticsBonus?.objectiveBonus ?? 0;
   const awayObj = awayTacticsBonus?.objectiveBonus ?? 0;
 
+  // 역할별 지시 보너스 계산
+  const homeRoleBonuses = homeTactics?.roleInstructions ? calculateRoleBonuses(
+    homeTactics.roleInstructions,
+    Object.fromEntries(positions.map(pos => [pos, homeLineup[pos].stats])) as unknown as Record<Position, { aggression: number; laning: number; gameSense: number }>,
+  ) : [];
+  const awayRoleBonuses = awayTactics?.roleInstructions ? calculateRoleBonuses(
+    awayTactics.roleInstructions,
+    Object.fromEntries(positions.map(pos => [pos, awayLineup[pos].stats])) as unknown as Record<Position, { aggression: number; laning: number; gameSense: number }>,
+  ) : [];
+
+  // 역할별 보너스를 라인전 승률에 반영
+  for (const rb of homeRoleBonuses) {
+    adjustWinRate(rb.laningBonus + rb.gankSuccessBonus * 0.5);
+  }
+  for (const rb of awayRoleBonuses) {
+    adjustWinRate(-(rb.laningBonus + rb.gankSuccessBonus * 0.5));
+  }
+
   // 각 라인별 라인전 결과
   for (const pos of positions) {
     if (pos === 'jungle') continue;
@@ -284,7 +406,9 @@ function simulateGame(
     const gangkTacticsMod = (homeEarly - awayEarly) * 0.5;
     const gangkSuccess = rand() < 0.5 + jglDiff * 0.01 + gangkTacticsMod;
     const tick = Math.round(180 + rand() * 600);
-    const targetLane = positions[Math.floor(rand() * 3) * 2];
+    // 갱킹 대상 라인: top(0), mid(2), adc(3) — jungle(1)은 갱킹 주체, support(4)는 제외
+    const gangkTargets = [0, 2, 3];
+    const targetLane = positions[gangkTargets[Math.floor(rand() * gangkTargets.length)]];
 
     if (gangkSuccess && jglDiff > 0) {
       killsHome++; goldHome += 450; adjustWinRate(0.025);
@@ -295,9 +419,78 @@ function simulateGame(
     }
   }
 
+  // ── 보이드 그럽 (5~8분, 첫 웨이브) ──
+  let grubsHome = 0;
+  let grubsAway = 0;
+  const grubTick1 = Math.round(300 + rand() * 180);
+  const grubWin1 = rand() < currentWinRate;
+  const grubSide1: 'home' | 'away' = grubWin1 ? 'home' : 'away';
+  if (grubSide1 === 'home') { grubsHome += 3; goldHome += 150; adjustWinRate(0.01); }
+  else { grubsAway += 3; goldAway += 150; adjustWinRate(-0.01); }
+  events.push({ tick: grubTick1, type: 'void_grub' as MatchEvent['type'], side: grubSide1, description: '보이드 그럽 3마리 처치', goldChange: 150 });
+
+  // 두번째 그럽 웨이브 (11~14분)
+  const grubTick2 = Math.round(660 + rand() * 180);
+  const grubWin2 = rand() < currentWinRate;
+  const grubSide2: 'home' | 'away' = grubWin2 ? 'home' : 'away';
+  if (grubSide2 === 'home') { grubsHome += 3; goldHome += 150; adjustWinRate(0.01); }
+  else { grubsAway += 3; goldAway += 150; adjustWinRate(-0.01); }
+  events.push({ tick: grubTick2, type: 'void_grub' as MatchEvent['type'], side: grubSide2, description: '보이드 그럽 3마리 처치', goldChange: 150 });
+
+  // 6마리 달성 시 추가 타워 공격 보정
+  if (grubsHome >= 6) adjustWinRate(0.02);
+  if (grubsAway >= 6) adjustWinRate(-0.02);
+
+  // ── 리프트 헤럴드 (14분) ──
+  const heraldTick = Math.round(840 + rand() * 60);
+  const heraldWin = rand() < currentWinRate;
+  const heraldSide: 'home' | 'away' = heraldWin ? 'home' : 'away';
+  if (heraldSide === 'home') { goldHome += 400; adjustWinRate(0.02); }
+  else { goldAway += 400; adjustWinRate(-0.02); }
+  events.push({ tick: heraldTick, type: 'rift_herald', side: heraldSide, description: '리프트 헤럴드 처치', goldChange: 400 });
+
+  // 헤럴드 → 타워 파괴
+  if (rand() < 0.7) {
+    if (heraldSide === 'home') goldHome += 550;
+    else goldAway += 550;
+    events.push({ tick: heraldTick + 30, type: 'tower_destroy', side: heraldSide, description: '헤럴드로 1티어 타워 파괴', goldChange: 550 });
+  }
+
+  // 다이브 이벤트 (라인전 후반)
+  for (const pos of positions) {
+    if (pos === 'jungle' || pos === 'support') continue;
+    const laneDiff = laneMatchups[pos];
+    if (Math.abs(laneDiff) > 8 && rand() < 0.25) {
+      const diveSide: 'home' | 'away' = laneDiff > 0 ? 'home' : 'away';
+      const diveTick = Math.round(600 + rand() * 300);
+      if (diveSide === 'home') { killsHome++; goldHome += 450; adjustWinRate(0.025); }
+      else { killsAway++; goldAway += 450; adjustWinRate(-0.025); }
+      events.push({ tick: diveTick, type: 'dive', side: diveSide, description: `${pos} 타워 다이브 성공`, goldChange: 450 });
+    }
+  }
+
+  // 인베이드 이벤트 (초반 전술에 따라)
+  if ((homeEarly > 0.03 || awayEarly > 0.03) && rand() < 0.3) {
+    const invadeSide: 'home' | 'away' = homeEarly > awayEarly ? 'home' : 'away';
+    if (invadeSide === 'home') { killsHome++; goldHome += 400; adjustWinRate(0.02); }
+    else { killsAway++; goldAway += 400; adjustWinRate(-0.02); }
+    events.push({ tick: Math.round(60 + rand() * 120), type: 'invade', side: invadeSide, description: '정글 인베이드 성공', goldChange: 400 });
+  }
+
   const goldDiffAt15 = goldHome - goldAway;
 
-  // ── 중반 시뮬레이션 (15~25분) ──
+  // 골드 차이 → 승률 동적 반영 (3000골드당 +3%)
+  adjustWinRate(goldDiffAt15 / 3000 * 0.03);
+
+  // 챔피언 초반력 보정 (earlyGame 스탯 평균 비교)
+  if (homeChampions && awayChampions) {
+    const homeEarlyAvg = homeChampions.picks.reduce((s, p) => s + (homeChampions.champStats[p.championId]?.earlyGame ?? 50), 0) / 5;
+    const awayEarlyAvg = awayChampions.picks.reduce((s, p) => s + (awayChampions.champStats[p.championId]?.earlyGame ?? 50), 0) / 5;
+    adjustWinRate((homeEarlyAvg - awayEarlyAvg) * 0.001); // 초반 챔피언 차이 반영
+  }
+
+  // ── 중반 시뮬레이션 (15~25분) — 드래곤 타입/소울 시스템 ──
+  const dragonSoul: DragonSoulState = { homeStacks: 0, awayStacks: 0, dragonTypes: [] };
   const dragonCount = 2 + Math.floor(rand() * 2);
   for (let d = 0; d < dragonCount; d++) {
     const tick = Math.round(900 + d * 300 + rand() * 180);
@@ -305,16 +498,41 @@ function simulateGame(
     const dragonModHome = PLAY_STYLE_EVENT_MODIFIERS[homePlayStyle].dragon;
     const dragonModAway = PLAY_STYLE_EVENT_MODIFIERS[awayPlayStyle].dragon;
     const dragonBias = (dragonModHome - dragonModAway) * 0.05;
-    // 전술 중반 보정 + 오브젝트 우선도 보정
     const midTacticsDiff = (homeMid - awayMid) + (homeObj - awayObj);
     const dragonWin = rand() < 0.5 + tfPower * 0.008 + (currentWinRate - 0.5) * 0.15 + dragonBias + midTacticsDiff;
 
+    // 드래곤 타입 결정
+    const dragonType = DRAGON_TYPES[Math.floor(rand() * DRAGON_TYPES.length)];
+
     if (dragonWin) {
-      goldHome += 200; adjustWinRate(0.03);
-      events.push({ tick, type: 'dragon', side: 'home', description: '드래곤 확보', goldChange: 200 });
+      goldHome += 200;
+      dragonSoul.homeStacks++;
+      dragonSoul.dragonTypes.push({ type: dragonType, side: 'home' });
+      adjustWinRate(DRAGON_STACK_BONUS[dragonType]);
+      events.push({ tick, type: 'dragon', side: 'home', description: `${dragonType} 드래곤 확보`, goldChange: 200 });
+
+      // 소울 달성 체크 (4스택) — 소울 타입은 해당 팀이 잡은 드래곤 중 최빈 타입
+      if (dragonSoul.homeStacks >= 4 && !dragonSoul.soulTeam) {
+        dragonSoul.soulTeam = 'home';
+        const homeDragons = dragonSoul.dragonTypes.filter(d => d.side === 'home').map(d => d.type);
+        const soulType = getMostFrequent(homeDragons) ?? dragonType;
+        dragonSoul.soulType = soulType;
+        adjustWinRate(DRAGON_SOUL_WIN_RATE_BONUS[soulType]);
+      }
     } else {
-      goldAway += 200; adjustWinRate(-0.03);
-      events.push({ tick, type: 'dragon', side: 'away', description: '드래곤 확보', goldChange: 200 });
+      goldAway += 200;
+      dragonSoul.awayStacks++;
+      dragonSoul.dragonTypes.push({ type: dragonType, side: 'away' });
+      adjustWinRate(-DRAGON_STACK_BONUS[dragonType]);
+      events.push({ tick, type: 'dragon', side: 'away', description: `${dragonType} 드래곤 확보`, goldChange: 200 });
+
+      if (dragonSoul.awayStacks >= 4 && !dragonSoul.soulTeam) {
+        dragonSoul.soulTeam = 'away';
+        const awayDragons = dragonSoul.dragonTypes.filter(d => d.side === 'away').map(d => d.type);
+        const soulType = getMostFrequent(awayDragons) ?? dragonType;
+        dragonSoul.soulType = soulType;
+        adjustWinRate(-DRAGON_SOUL_WIN_RATE_BONUS[soulType]);
+      }
     }
 
     const tfMod = dragonWin
@@ -338,6 +556,29 @@ function simulateGame(
     if (leadingSide === 'home') { goldHome += 550; adjustWinRate(0.015); }
     else { goldAway += 550; adjustWinRate(-0.015); }
     events.push({ tick, type: 'tower_destroy', side: leadingSide, description: '외곽 타워 파괴', goldChange: 550 });
+  }
+
+  // 인게임 전술 전환 (중반 골드 차이/초반 상황 기반)
+  const currentGoldDiff = goldHome - goldAway;
+  const isWinningEarly = currentWinRate > 0.5;
+  if (homeTactics) {
+    const adjusted = checkTacticalAdjustment(homeTactics, currentGoldDiff, isWinningEarly);
+    if (adjusted) {
+      adjustWinRate((adjusted.lateBonus - (homeTacticsBonus?.lateBonus ?? 0)) * 0.5);
+    }
+  }
+  if (awayTactics) {
+    const adjusted = checkTacticalAdjustment(awayTactics, -currentGoldDiff, !isWinningEarly);
+    if (adjusted) {
+      adjustWinRate(-(adjusted.lateBonus - (awayTacticsBonus?.lateBonus ?? 0)) * 0.5);
+    }
+  }
+
+  // 챔피언 후반력 보정 (lateGame 스탯 평균 비교)
+  if (homeChampions && awayChampions) {
+    const homeLateAvg = homeChampions.picks.reduce((s, p) => s + (homeChampions.champStats[p.championId]?.lateGame ?? 50), 0) / 5;
+    const awayLateAvg = awayChampions.picks.reduce((s, p) => s + (awayChampions.champStats[p.championId]?.lateGame ?? 50), 0) / 5;
+    adjustWinRate((homeLateAvg - awayLateAvg) * 0.0015); // 후반 스케일링 챔피언 반영
   }
 
   // ── 후반 시뮬레이션 (25분+) ──
@@ -368,6 +609,32 @@ function simulateGame(
       else goldAway += 550;
       events.push({ tick, type: 'tower_destroy', side: lateLead, description: '내부 타워 파괴', goldChange: 550 });
     }
+
+    // 바론 스틸 이벤트 (5% 확률, 지고 있는 팀이 시도)
+    const losingSide: 'home' | 'away' = baronSide === 'home' ? 'away' : 'home';
+    if (rand() < 0.05) {
+      if (losingSide === 'home') { goldHome += 1500; adjustWinRate(0.08); }
+      else { goldAway += 1500; adjustWinRate(-0.08); }
+      events.push({ tick: baronTick + 5, type: 'steal', side: losingSide, description: '바론 스틸! 역전의 기회', goldChange: 1500 });
+    }
+  }
+
+  // 엘더 드래곤 (35분 이상 장기전)
+  if (durationMinutes > 35) {
+    const elderTick = Math.round(2100 + rand() * 300);
+    const elderWin = rand() < currentWinRate;
+    const elderSide: 'home' | 'away' = elderWin ? 'home' : 'away';
+    if (elderSide === 'home') { adjustWinRate(0.10); }
+    else { adjustWinRate(-0.10); }
+    events.push({ tick: elderTick, type: 'elder_dragon', side: elderSide, description: '장로 드래곤 처치! 강력한 버프 획득', goldChange: 0 });
+
+    // 엘더 후 교전 → 에이스 가능
+    if (rand() < 0.4) {
+      const aceKills = 4 + Math.floor(rand() * 2);
+      if (elderSide === 'home') { killsHome += aceKills; goldHome += aceKills * 300; adjustWinRate(0.05); }
+      else { killsAway += aceKills; goldAway += aceKills * 300; adjustWinRate(-0.05); }
+      events.push({ tick: elderTick + 20, type: 'ace', side: elderSide, description: `에이스! ${aceKills}킬로 상대 전멸`, goldChange: aceKills * 300 });
+    }
   }
 
   // 최종 승패: 누적된 승률을 기반으로 결정
@@ -390,7 +657,152 @@ function simulateGame(
   const playerStatsHome = generatePlayerStats(homeLineup, killsHome, killsAway, durationMinutes, rand);
   const playerStatsAway = generatePlayerStats(awayLineup, killsAway, killsHome, durationMinutes, rand);
 
-  return { winnerSide, durationMinutes, goldDiffAt15, killsHome, killsAway, events, playerStatsHome, playerStatsAway };
+  return { winnerSide, durationMinutes, goldDiffAt15, killsHome, killsAway, events, playerStatsHome, playerStatsAway, dragonSoul, grubsHome, grubsAway };
+}
+
+// ─────────────────────────────────────────
+// 세트간 교체 로직 (AI 자동)
+// ─────────────────────────────────────────
+
+/**
+ * 게임 결과에서 가장 성적이 나쁜 선수의 포지션을 찾는다.
+ * 기준: deaths 최대 & KDA 최저
+ */
+function findWorstPerformer(stats: PlayerGameStatLine[]): Position | null {
+  if (stats.length === 0) return null;
+  let worst = stats[0];
+  let worstKda = (worst.kills + worst.assists) / Math.max(1, worst.deaths);
+  for (const s of stats) {
+    const kda = (s.kills + s.assists) / Math.max(1, s.deaths);
+    // 더 많이 죽고 KDA도 낮으면 교체 후보
+    if (s.deaths > worst.deaths || (s.deaths === worst.deaths && kda < worstKda)) {
+      worst = s;
+      worstKda = kda;
+    }
+  }
+  return worst.position;
+}
+
+/**
+ * 벤치에서 해당 포지션에 투입 가능한 선수를 찾는다.
+ * 주포지션 또는 부포지션이 일치하는 선수 중 가장 높은 전투력을 가진 선수 반환.
+ */
+function findBenchReplacement(bench: Player[], position: Position, currentPlayerId: string): Player | null {
+  const candidates = bench.filter(p =>
+    p.id !== currentPlayerId && (p.position === position || p.secondaryPosition === position),
+  );
+  if (candidates.length === 0) return null;
+  // 종합 스탯 기준 정렬
+  candidates.sort((a, b) => {
+    const ratingA = a.stats.mechanical * 0.2 + a.stats.gameSense * 0.2 + a.stats.teamwork * 0.15 + a.stats.consistency * 0.15 + a.stats.laning * 0.15 + a.stats.aggression * 0.15;
+    const ratingB = b.stats.mechanical * 0.2 + b.stats.gameSense * 0.2 + b.stats.teamwork * 0.15 + b.stats.consistency * 0.15 + b.stats.laning * 0.15 + b.stats.aggression * 0.15;
+    return ratingB - ratingA;
+  });
+  return candidates[0];
+}
+
+/**
+ * AI 팀의 세트간 교체 시도
+ * @returns 교체 정보 또는 null
+ */
+function attemptSubstitution(
+  lineup: Lineup,
+  bench: Player[],
+  lastGameStats: PlayerGameStatLine[],
+  scoreDiff: number,
+  rand: () => number,
+): { position: Position; outPlayer: Player; inPlayer: Player } | null {
+  if (bench.length === 0) return null;
+
+  // 교체 확률: 1점차 뒤지면 25%, 2점차 이상 뒤지면 40%
+  const subProbability = Math.abs(scoreDiff) >= 2 ? 0.40 : 0.25;
+  if (rand() >= subProbability) return null;
+
+  const worstPos = findWorstPerformer(lastGameStats);
+  if (!worstPos) return null;
+
+  const currentPlayer = lineup[worstPos];
+  const replacement = findBenchReplacement(bench, worstPos, currentPlayer.id);
+  if (!replacement) return null;
+
+  return { position: worstPos, outPlayer: currentPlayer, inPlayer: replacement };
+}
+
+// ─────────────────────────────────────────
+// 시리즈 모멘텀/틸트 시스템
+// ─────────────────────────────────────────
+
+interface MomentumState {
+  homeConsecutiveWins: number;
+  awayConsecutiveWins: number;
+  /** 홈 팀이 뒤쳐진 적이 있었는지 */
+  homeWasBehind: boolean;
+  awayWasBehind: boolean;
+}
+
+/**
+ * 시리즈 모멘텀 보정값 계산 (홈 기준, 양수면 홈 유리)
+ */
+function calculateMomentumModifier(
+  state: MomentumState,
+  lastGameWinner: 'home' | 'away',
+  _scoreHome: number,
+  _scoreAway: number,
+  homeLineup: Lineup,
+  awayLineup: Lineup,
+  gameNum: number,
+  maxGames: number,
+  rand: () => number,
+): number {
+  let modifier = 0;
+  const positions: Position[] = ['top', 'jungle', 'mid', 'adc', 'support'];
+
+  // 1. 연승 보너스: 시리즈 내 연속 승리 → +2% per streak
+  if (state.homeConsecutiveWins > 1) {
+    modifier += (state.homeConsecutiveWins - 1) * 0.02;
+  }
+  if (state.awayConsecutiveWins > 1) {
+    modifier -= (state.awayConsecutiveWins - 1) * 0.02;
+  }
+
+  // 2. 컴백 모멘텀: 뒤지고 있다가 이기면 +3% 사기 부스트
+  if (lastGameWinner === 'home' && state.homeWasBehind) {
+    modifier += 0.03;
+  }
+  if (lastGameWinner === 'away' && state.awayWasBehind) {
+    modifier -= 0.03;
+  }
+
+  // 3. 틸트: 패배 팀에서 멘탈이 낮은 선수 → -1~3% 페널티
+  const losingLineup = lastGameWinner === 'home' ? awayLineup : homeLineup;
+  const losingSide = lastGameWinner === 'home' ? 'away' : 'home';
+  for (const pos of positions) {
+    const player = losingLineup[pos];
+    if (player.mental.mental < 50) {
+      // 멘탈이 낮을수록 큰 페널티 (30 → -3%, 40 → -2%, 50 → 0%)
+      const tiltPenalty = (50 - player.mental.mental) / 50 * 0.03 * (0.5 + rand() * 0.5);
+      if (losingSide === 'home') modifier -= tiltPenalty;
+      else modifier += tiltPenalty;
+    }
+  }
+
+  // 4. 베테랑 클러치: 24세+ & 높은 consistency → 결정 세트(Bo3 game3, Bo5 game5)에서 +1%
+  const isDecidingGame = (maxGames === 3 && gameNum === 3) || (maxGames === 5 && gameNum === 5);
+  if (isDecidingGame) {
+    for (const pos of positions) {
+      const homePlayer = homeLineup[pos];
+      if (homePlayer.age >= 24 && homePlayer.stats.consistency >= 70) {
+        modifier += 0.01;
+      }
+      const awayPlayer = awayLineup[pos];
+      if (awayPlayer.age >= 24 && awayPlayer.stats.consistency >= 70) {
+        modifier -= 0.01;
+      }
+    }
+  }
+
+  // 클램프: 모멘텀 합산 최대 ±4%
+  return Math.max(-0.04, Math.min(0.04, modifier));
 }
 
 // ─────────────────────────────────────────
@@ -421,38 +833,183 @@ export function simulateMatch(
   awayPlayStyle: PlayStyle = 'controlled',
   homeTacticsBonus?: TacticsBonus,
   awayTacticsBonus?: TacticsBonus,
+  homeChampions?: MatchChampionPicks,
+  awayChampions?: MatchChampionPicks,
+  synergyData?: ChampionSynergy[],
+  homeTactics?: TeamTactics,
+  awayTactics?: TeamTactics,
+  /** 홈 팀 벤치 선수 목록 (세트간 교체용) */
+  homeBench: Player[] = [],
+  /** 어웨이 팀 벤치 선수 목록 (세트간 교체용) */
+  awayBench: Player[] = [],
+  /** 홈 팀 추가 보너스 (케미스트리+솔로랭크) */
+  homeExtraBonus?: number,
+  /** 어웨이 팀 추가 보너스 (케미스트리+솔로랭크) */
+  awayExtraBonus?: number,
 ): MatchResult {
-  const matchup = evaluateMatchup(homeLineup, awayLineup, homeTraits, awayTraits, homeForm, awayForm, homePlayStyle, awayPlayStyle);
+  // 챔피언 숙련도/난이도 추출
+  const homeChampProf = homeChampions?.champProficiency;
+  const awayChampProf = awayChampions?.champProficiency;
+  const extractDifficulty = (picks: MatchChampionPicks | undefined): Record<Position, number> | undefined => {
+    if (!picks) return undefined;
+    const result = {} as Record<Position, number>;
+    for (const p of picks.picks) {
+      if (p.position) result[p.position] = picks.champStats[p.championId]?.difficulty ?? 50;
+    }
+    return Object.keys(result).length > 0 ? result : undefined;
+  };
+  const homeChampDiff = extractDifficulty(homeChampions);
+  const awayChampDiff = extractDifficulty(awayChampions);
+
+  let currentHomeLineup = homeLineup;
+  let currentAwayLineup = awayLineup;
+
+  const matchup = evaluateMatchup(currentHomeLineup, currentAwayLineup, homeTraits, awayTraits, homeForm, awayForm, homePlayStyle, awayPlayStyle, homeChampProf, awayChampProf, homeChampDiff, awayChampDiff, homeExtraBonus, awayExtraBonus);
   const maxGames = format === 'Bo5' ? 5 : format === 'Bo3' ? 3 : 1;
   const winsNeeded = format === 'Bo1' ? 1 : format === 'Bo3' ? 2 : 3;
 
   let scoreHome = 0;
   let scoreAway = 0;
   const games: GameResult[] = [];
+  const substitutions: BetweenGameSubstitution[] = [];
+  const sideSelections: { gameNumber: number; blueSide: 'home' | 'away' }[] = [];
+
+  // 모멘텀 상태 추적
+  const momentum: MomentumState = {
+    homeConsecutiveWins: 0,
+    awayConsecutiveWins: 0,
+    homeWasBehind: false,
+    awayWasBehind: false,
+  };
+  let momentumModifier = 0;
+
+  // 벤치 선수 풀 (교체 시 소진되지 않도록 복사)
+  const homeBenchPool = [...homeBench];
+  const awayBenchPool = [...awayBench];
 
   for (let gameNum = 1; gameNum <= maxGames; gameNum++) {
     if (scoreHome >= winsNeeded || scoreAway >= winsNeeded) break;
 
+    // ── 사이드 선택: 홀수 세트는 홈팀 블루, 짝수 세트는 어웨이 블루 ──
+    const blueSide: 'home' | 'away' = gameNum % 2 === 1 ? 'home' : 'away';
+    sideSelections.push({ gameNumber: gameNum, blueSide });
+
+    // 블루 사이드 미세 보정 (선픽 이점 +1%)
+    const sideBonus = blueSide === 'home' ? 0.01 : -0.01;
+
     // 후반 세트 피로도: 각 선수의 stamina 평균으로 계산
-    const avgStaminaHome = averageStamina(homeLineup);
-    const avgStaminaAway = averageStamina(awayLineup);
+    const avgStaminaHome = averageStamina(currentHomeLineup);
+    const avgStaminaAway = averageStamina(currentAwayLineup);
     const fatigueHome = (gameNum - 1) * (1 - avgStaminaHome / 100) * 2;
     const fatigueAway = (gameNum - 1) * (1 - avgStaminaAway / 100) * 2;
 
+    // 매치업 재평가 (세트간 교체 반영)
+    const gameMatchup = gameNum === 1
+      ? matchup
+      : evaluateMatchup(currentHomeLineup, currentAwayLineup, homeTraits, awayTraits, homeForm, awayForm, homePlayStyle, awayPlayStyle, homeChampProf, awayChampProf, homeChampDiff, awayChampDiff, homeExtraBonus, awayExtraBonus);
+
+    // 사이드 보정 + 모멘텀 보정 적용
+    gameMatchup.homeWinRate = Math.max(0.15, Math.min(0.85, gameMatchup.homeWinRate + sideBonus + momentumModifier));
+
     const seed = `${matchId}_game${gameNum}`;
-    const result = simulateGame(matchup, gameNum, fatigueHome, fatigueAway, seed, homeLineup, awayLineup, homePlayStyle, awayPlayStyle, homeTacticsBonus, awayTacticsBonus);
+    const result = simulateGame(gameMatchup, gameNum, fatigueHome, fatigueAway, seed, currentHomeLineup, currentAwayLineup, homePlayStyle, awayPlayStyle, homeTacticsBonus, awayTacticsBonus, homeChampions, awayChampions, synergyData ?? [], homeTactics, awayTactics);
 
     games.push(result);
 
     if (result.winnerSide === 'home') scoreHome++;
     else scoreAway++;
+
+    // 시리즈가 끝나지 않았으면 세트간 로직 적용
+    if (scoreHome < winsNeeded && scoreAway < winsNeeded) {
+      const subRand = createRng(`${matchId}_sub_${gameNum}`);
+
+      // ── 모멘텀 상태 업데이트 ──
+      if (result.winnerSide === 'home') {
+        momentum.homeConsecutiveWins++;
+        momentum.awayConsecutiveWins = 0;
+      } else {
+        momentum.awayConsecutiveWins++;
+        momentum.homeConsecutiveWins = 0;
+      }
+      // 뒤처진 경험 추적
+      if (scoreHome < scoreAway) momentum.homeWasBehind = true;
+      if (scoreAway < scoreHome) momentum.awayWasBehind = true;
+
+      // 모멘텀 보정값 계산 (다음 세트에 적용)
+      momentumModifier = calculateMomentumModifier(
+        momentum,
+        result.winnerSide,
+        scoreHome,
+        scoreAway,
+        currentHomeLineup,
+        currentAwayLineup,
+        gameNum + 1,
+        maxGames,
+        subRand,
+      );
+
+      // ── 세트간 선수 교체 (AI 자동, Bo3/Bo5만) ──
+      if (format !== 'Bo1') {
+        // 패배 팀이 교체를 시도
+        if (result.winnerSide === 'away') {
+          // 홈 팀 패배 → 홈 팀 교체 시도
+          const sub = attemptSubstitution(
+            currentHomeLineup,
+            homeBenchPool,
+            result.playerStatsHome,
+            scoreHome - scoreAway,
+            subRand,
+          );
+          if (sub) {
+            // 라인업 업데이트 (새 객체 생성)
+            currentHomeLineup = { ...currentHomeLineup, [sub.position]: sub.inPlayer };
+            // 벤치에서 투입된 선수 제거, 교체된 선수를 벤치에 추가
+            const idx = homeBenchPool.findIndex(p => p.id === sub.inPlayer.id);
+            if (idx >= 0) homeBenchPool.splice(idx, 1);
+            homeBenchPool.push(sub.outPlayer);
+            substitutions.push({
+              gameNumber: gameNum,
+              side: 'home',
+              outPlayerId: sub.outPlayer.id,
+              inPlayerId: sub.inPlayer.id,
+              position: sub.position,
+            });
+          }
+        } else {
+          // 어웨이 팀 패배 → 어웨이 팀 교체 시도
+          const sub = attemptSubstitution(
+            currentAwayLineup,
+            awayBenchPool,
+            result.playerStatsAway,
+            scoreAway - scoreHome,
+            subRand,
+          );
+          if (sub) {
+            currentAwayLineup = { ...currentAwayLineup, [sub.position]: sub.inPlayer };
+            const idx = awayBenchPool.findIndex(p => p.id === sub.inPlayer.id);
+            if (idx >= 0) awayBenchPool.splice(idx, 1);
+            awayBenchPool.push(sub.outPlayer);
+            substitutions.push({
+              gameNumber: gameNum,
+              side: 'away',
+              outPlayerId: sub.outPlayer.id,
+              inPlayerId: sub.inPlayer.id,
+              position: sub.position,
+            });
+          }
+        }
+      }
+    }
   }
 
   return {
     scoreHome,
     scoreAway,
-    winner: scoreHome > scoreAway ? 'home' : 'away',
+    // 동점 방어: 골드 합산이 높은 쪽 승리, 그래도 동점이면 홈 어드밴티지
+    winner: scoreHome > scoreAway ? 'home' : scoreAway > scoreHome ? 'away' : 'home',
     games,
+    substitutions,
+    sideSelections,
   };
 }
 
@@ -465,4 +1022,18 @@ function averageStamina(lineup: Lineup): number {
   const positions: Position[] = ['top', 'jungle', 'mid', 'adc', 'support'];
   const total = positions.reduce((sum, pos) => sum + lineup[pos].mental.stamina, 0);
   return total / 5;
+}
+
+/** 챔피언 데미지 프로필 → 팀 구성 평가용 변환 */
+function inferDamageType(tags: string[], damageProfile?: string): 'ap' | 'ad' | 'mixed' {
+  // damageProfile이 있으면 우선 사용
+  if (damageProfile === 'magic') return 'ap';
+  if (damageProfile === 'physical') return 'ad';
+  if (damageProfile === 'hybrid' || damageProfile === 'true') return 'mixed';
+  // fallback: 태그 기반 추론
+  const isMage = tags.includes('mage');
+  const isAD = tags.includes('marksman') || tags.includes('fighter') || tags.includes('assassin');
+  if (isMage && !isAD) return 'ap';
+  if (isAD && !isMage) return 'ad';
+  return 'mixed';
 }

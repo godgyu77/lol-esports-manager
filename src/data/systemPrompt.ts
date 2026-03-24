@@ -73,13 +73,13 @@ export const MATCH_CONSTANTS = {
 // 선수 성장/퇴화 시스템
 // ───────────────────────────────────────────────────
 export const GROWTH_CONSTANTS = {
-  /** 포지션별 최적 나이 범위 */
+  /** 포지션별 최적 나이 범위 (포지션 특화) */
   peakAge: {
-    top: { start: 21, end: 26 },
-    jungle: { start: 21, end: 25 },
-    mid: { start: 20, end: 25 },
-    adc: { start: 20, end: 25 },
-    support: { start: 22, end: 28 },
+    top: { start: 23, end: 27 },
+    jungle: { start: 22, end: 26 },
+    mid: { start: 21, end: 25 },
+    adc: { start: 21, end: 25 },
+    support: { start: 23, end: 28 },
   },
   /** 성장률 (시즌당) */
   growthRate: {

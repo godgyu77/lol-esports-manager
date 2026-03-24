@@ -5,7 +5,6 @@
  * - 주당 경기 수를 균등 배분
  */
 
-import { LEAGUE_CONSTANTS } from '../../data/systemPrompt';
 import type { Region } from '../../types';
 
 export interface ScheduleMatch {
@@ -119,10 +118,9 @@ function assignWeeks(
  * @returns 주차별 경기 목록
  */
 export function generateLeagueSchedule(
-  region: Region,
+  _region: Region,
   teamIds: string[],
 ): ScheduleMatch[] {
-  const league = LEAGUE_CONSTANTS[region];
   const rounds = generateDoubleRoundRobin(teamIds);
 
   // 총 경기 수
@@ -135,17 +133,3 @@ export function generateLeagueSchedule(
   return assignWeeks(rounds, matchesPerWeek);
 }
 
-/**
- * 스케줄 요약 정보
- */
-function getScheduleSummary(schedule: ScheduleMatch[]) {
-  const totalMatches = schedule.length;
-  const totalWeeks = Math.max(...schedule.map(s => s.week));
-  const matchesPerWeek = new Map<number, number>();
-
-  for (const match of schedule) {
-    matchesPerWeek.set(match.week, (matchesPerWeek.get(match.week) ?? 0) + 1);
-  }
-
-  return { totalMatches, totalWeeks, matchesPerWeek };
-}

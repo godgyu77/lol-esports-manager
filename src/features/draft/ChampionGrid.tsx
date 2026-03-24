@@ -1,5 +1,6 @@
 import type { Position } from '../../types/game';
 import type { Champion } from '../../types/champion';
+import './draft.css';
 
 const POSITION_LABELS: Record<Position, string> = {
   top: '탑',
@@ -18,6 +19,12 @@ interface ChampionGridProps {
   onFilterChange: (pos: Position | 'all') => void;
 }
 
+function getTierClass(tier: string): string {
+  if (tier === 'S') return 'draft-champ-tier--s';
+  if (tier === 'A') return 'draft-champ-tier--a';
+  return 'draft-champ-tier--default';
+}
+
 export function ChampionGrid({
   filteredChampions,
   selectedChampion,
@@ -27,15 +34,11 @@ export function ChampionGrid({
   onFilterChange,
 }: ChampionGridProps) {
   return (
-    <div style={styles.champGrid}>
+    <div className="draft-champ-grid">
       {/* 포지션 필터 */}
-      <div style={styles.filterRow}>
+      <div className="draft-filter-row">
         <button
-          style={{
-            ...styles.filterBtn,
-            background: filterPosition === 'all' ? '#c89b3c33' : 'transparent',
-            color: filterPosition === 'all' ? '#c89b3c' : '#6a6a7a',
-          }}
+          className={`draft-filter-btn ${filterPosition === 'all' ? 'draft-filter-btn--active' : ''}`}
           onClick={() => onFilterChange('all')}
         >
           전체
@@ -43,11 +46,7 @@ export function ChampionGrid({
         {(['top', 'jungle', 'mid', 'adc', 'support'] as Position[]).map((pos) => (
           <button
             key={pos}
-            style={{
-              ...styles.filterBtn,
-              background: filterPosition === pos ? '#c89b3c33' : 'transparent',
-              color: filterPosition === pos ? '#c89b3c' : '#6a6a7a',
-            }}
+            className={`draft-filter-btn ${filterPosition === pos ? 'draft-filter-btn--active' : ''}`}
             onClick={() => onFilterChange(pos)}
           >
             {POSITION_LABELS[pos]}
@@ -55,30 +54,29 @@ export function ChampionGrid({
         ))}
       </div>
 
-      <div style={styles.champList}>
+      <div className="draft-champ-list">
         {filteredChampions.map((champ) => {
           const isFearlessBlocked = fearlessDisabledIds?.has(champ.id) ?? false;
+          const isSelected = selectedChampion === champ.id;
+
+          const itemClass = [
+            'draft-champ-item',
+            isFearlessBlocked ? 'draft-champ-item--fearless' : '',
+            !isFearlessBlocked && isSelected ? 'draft-champ-item--selected' : '',
+          ].filter(Boolean).join(' ');
+
           return (
             <div
               key={champ.id}
-              style={{
-                ...styles.champItem,
-                borderColor: isFearlessBlocked ? '#1a1a2e' : selectedChampion === champ.id ? '#c89b3c' : '#2a2a4a',
-                background: isFearlessBlocked ? 'rgba(255,255,255,0.01)' : selectedChampion === champ.id ? 'rgba(200,155,60,0.08)' : 'transparent',
-                opacity: isFearlessBlocked ? 0.35 : 1,
-                cursor: isFearlessBlocked ? 'not-allowed' : 'pointer',
-              }}
+              className={itemClass}
               onClick={() => !isFearlessBlocked && onSelectChampion(champ.id)}
               title={isFearlessBlocked ? '피어리스: 이전 세트에서 사용됨' : undefined}
             >
-              <span style={styles.champName}>{champ.nameKo}</span>
+              <span className="draft-champ-name">{champ.nameKo}</span>
               {isFearlessBlocked ? (
-                <span style={styles.fearlessTag}>사용됨</span>
+                <span className="draft-fearless-tag">사용됨</span>
               ) : (
-                <span style={{
-                  ...styles.champTier,
-                  color: champ.tier === 'S' ? '#e74c3c' : champ.tier === 'A' ? '#f39c12' : '#6a6a7a',
-                }}>
+                <span className={`draft-champ-tier ${getTierClass(champ.tier)}`}>
                   {champ.tier}
                 </span>
               )}
@@ -89,55 +87,3 @@ export function ChampionGrid({
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  champGrid: {
-    background: 'rgba(255,255,255,0.02)',
-    border: '1px solid #2a2a4a',
-    borderRadius: '10px',
-    padding: '16px',
-  },
-  filterRow: {
-    display: 'flex',
-    gap: '6px',
-    marginBottom: '12px',
-  },
-  filterBtn: {
-    padding: '4px 10px',
-    border: '1px solid #2a2a4a',
-    borderRadius: '4px',
-    fontSize: '12px',
-    cursor: 'pointer',
-  },
-  champList: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))',
-    gap: '6px',
-    maxHeight: '200px',
-    overflowY: 'auto',
-  },
-  champItem: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '6px 10px',
-    border: '1px solid',
-    borderRadius: '4px',
-    cursor: 'pointer',
-    transition: 'all 0.15s',
-  },
-  champName: {
-    fontSize: '11px',
-    color: '#e0e0e0',
-  },
-  champTier: {
-    fontSize: '10px',
-    fontWeight: 700,
-  },
-  fearlessTag: {
-    fontSize: '9px',
-    fontWeight: 600,
-    color: '#e74c3c',
-    opacity: 0.8,
-  },
-};

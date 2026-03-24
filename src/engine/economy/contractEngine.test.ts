@@ -5,8 +5,15 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { calculateRenewalOffer, evaluatePlayerDemand } from './contractEngine';
+import {
+  calculateRenewalOffer,
+  evaluatePlayerDemand,
+  generateDecisionFactors,
+  evaluateTeam,
+  generatePlayerCounterOffer,
+} from './contractEngine';
 import type { Player } from '../../types/player';
+import type { ContractDecisionFactors } from '../../types/contract';
 
 // ─────────────────────────────────────────
 // 헬퍼: mock 선수 생성
@@ -43,6 +50,11 @@ function createMockPlayer(overrides: Partial<Player> = {}): Player {
     potential: 70,
     peakAge: 23,
     popularity: 50,
+    secondaryPosition: null,
+    playstyle: 'versatile',
+    careerGames: 0,
+    chemistry: {},
+    formHistory: [],
   };
 
   return {
@@ -59,11 +71,11 @@ function createMockPlayer(overrides: Partial<Player> = {}): Player {
 // ─────────────────────────────────────────
 
 describe('calculateRenewalOffer', () => {
-  it('젊고 잠재력 높은 선수에게 3년 계약 제안', () => {
+  it('젊고 잠재력 높은 선수에게 2년 계약 제안 (장기 락인 방지)', () => {
     const youngTalent = createMockPlayer({ age: 20, potential: 85 });
     const offer = calculateRenewalOffer(youngTalent);
 
-    expect(offer.suggestedYears).toBe(3);
+    expect(offer.suggestedYears).toBe(2);
   });
 
   it('나이 많은 선수(28+)에게 1년 계약 제안', () => {
@@ -176,5 +188,178 @@ describe('evaluatePlayerDemand', () => {
     expect(demand.minSalary).toBeGreaterThan(0);
     expect(demand.idealSalary).toBeGreaterThan(0);
     expect(demand.maxSalary).toBeGreaterThan(0);
+  });
+});
+
+// ─────────────────────────────────────────
+// generateDecisionFactors 테스트
+// ─────────────────────────────────────────
+
+describe('generateDecisionFactors', () => {
+  it('신인 선수(20세 이하)는 출전 기회를 가장 중시', () => {
+    const rookie = createMockPlayer({ age: 18 });
+    const factors = generateDecisionFactors(rookie);
+
+    expect(factors.playtime).toBeGreaterThan(factors.money);
+    expect(factors.playtime).toBeGreaterThan(factors.loyalty);
+  });
+
+  it('베테랑(27세 이상)은 우승을 가장 중시', () => {
+    const veteran = createMockPlayer({ age: 28 });
+    const factors = generateDecisionFactors(veteran);
+
+    expect(factors.winning).toBeGreaterThanOrEqual(factors.money);
+    expect(factors.winning).toBeGreaterThan(factors.playtime);
+  });
+
+  it('스타급(OVR 80+)은 돈과 명성을 중시', () => {
+    const star = createMockPlayer({
+      age: 24,
+      stats: {
+        mechanical: 85, gameSense: 85, teamwork: 85,
+        consistency: 85, laning: 85, aggression: 85,
+      },
+    });
+    const factors = generateDecisionFactors(star);
+
+    expect(factors.money).toBeGreaterThan(50);
+    expect(factors.reputation).toBeGreaterThan(50);
+  });
+
+  it('하위 선수(OVR 60 미만)는 출전 기회 절실', () => {
+    const low = createMockPlayer({
+      stats: {
+        mechanical: 50, gameSense: 50, teamwork: 50,
+        consistency: 50, laning: 50, aggression: 50,
+      },
+    });
+    const factors = generateDecisionFactors(low);
+
+    expect(factors.playtime).toBeGreaterThan(factors.reputation);
+  });
+
+  it('모든 팩터는 0~100 범위', () => {
+    const player = createMockPlayer();
+    const factors = generateDecisionFactors(player);
+
+    for (const key of ['money', 'winning', 'playtime', 'loyalty', 'reputation'] as const) {
+      expect(factors[key]).toBeGreaterThanOrEqual(0);
+      expect(factors[key]).toBeLessThanOrEqual(100);
+    }
+  });
+});
+
+// ─────────────────────────────────────────
+// evaluateTeam 테스트
+// ─────────────────────────────────────────
+
+describe('evaluateTeam', () => {
+  const defaultFactors: ContractDecisionFactors = {
+    money: 50, winning: 50, playtime: 50, loyalty: 50, reputation: 50,
+  };
+
+  const strongTeam = {
+    reputation: 85,
+    recentWinRate: 0.75,
+    rosterStrength: 78,
+    isCurrentTeam: true,
+    positionCompetitorOvr: 60,
+  };
+
+  const weakTeam = {
+    reputation: 30,
+    recentWinRate: 0.3,
+    rosterStrength: 55,
+    isCurrentTeam: false,
+    positionCompetitorOvr: 72,
+  };
+
+  it('명문팀 + 높은 연봉 → 높은 평가', () => {
+    const player = createMockPlayer();
+    const eval1 = evaluateTeam(player, defaultFactors, strongTeam, 5000);
+
+    expect(eval1.overall).toBeGreaterThan(60);
+  });
+
+  it('약한 팀 + 낮은 연봉 → 낮은 평가', () => {
+    const player = createMockPlayer();
+    const eval2 = evaluateTeam(player, defaultFactors, weakTeam, 1000);
+
+    expect(eval2.overall).toBeLessThan(50);
+  });
+
+  it('같은 팀에서 충성도 보너스 적용', () => {
+    const player = createMockPlayer();
+    const currentTeamEval = evaluateTeam(player, defaultFactors, { ...weakTeam, isCurrentTeam: true }, 3000);
+    const newTeamEval = evaluateTeam(player, defaultFactors, { ...weakTeam, isCurrentTeam: false }, 3000);
+
+    expect(currentTeamEval.loyaltyScore).toBeGreaterThan(newTeamEval.loyaltyScore);
+  });
+
+  it('돈 중시 선수는 연봉에 민감', () => {
+    const moneyFactors: ContractDecisionFactors = { money: 90, winning: 20, playtime: 20, loyalty: 20, reputation: 20 };
+    const player = createMockPlayer();
+
+    const highSalary = evaluateTeam(player, moneyFactors, strongTeam, 8000);
+    const lowSalary = evaluateTeam(player, moneyFactors, strongTeam, 1000);
+
+    expect(highSalary.overall).toBeGreaterThan(lowSalary.overall);
+  });
+
+  it('reasons 배열이 비어있지 않음', () => {
+    const player = createMockPlayer();
+    const evaluation = evaluateTeam(player, defaultFactors, strongTeam, 3000);
+
+    expect(evaluation.reasons.length).toBeGreaterThan(0);
+  });
+});
+
+// ─────────────────────────────────────────
+// generatePlayerCounterOffer 테스트
+// ─────────────────────────────────────────
+
+describe('generatePlayerCounterOffer', () => {
+  it('팀 평가 낮으면 더 높은 연봉 요구', () => {
+    const player = createMockPlayer();
+    const factors = generateDecisionFactors(player);
+
+    const goodEval = { overall: 85, salaryScore: 80, winningScore: 80, playtimeScore: 80, loyaltyScore: 80, reputationScore: 80, reasons: [] };
+    const badEval = { overall: 25, salaryScore: 20, winningScore: 20, playtimeScore: 20, loyaltyScore: 20, reputationScore: 20, reasons: [] };
+
+    const goodCounter = generatePlayerCounterOffer(player, factors, { salary: 3000, years: 2, signingBonus: 0 }, goodEval);
+    const badCounter = generatePlayerCounterOffer(player, factors, { salary: 3000, years: 2, signingBonus: 0 }, badEval);
+
+    expect(badCounter.salary).toBeGreaterThanOrEqual(goodCounter.salary);
+  });
+
+  it('베테랑은 1년 계약 선호', () => {
+    const veteran = createMockPlayer({ age: 28 });
+    const factors = generateDecisionFactors(veteran);
+    const eval1 = { overall: 60, salaryScore: 60, winningScore: 60, playtimeScore: 60, loyaltyScore: 60, reputationScore: 60, reasons: [] };
+
+    const counter = generatePlayerCounterOffer(veteran, factors, { salary: 3000, years: 3, signingBonus: 0 }, eval1);
+
+    expect(counter.years).toBe(1);
+  });
+
+  it('역제안 연봉은 팀 제안 이상', () => {
+    const player = createMockPlayer();
+    const factors = generateDecisionFactors(player);
+    const eval1 = { overall: 50, salaryScore: 50, winningScore: 50, playtimeScore: 50, loyaltyScore: 50, reputationScore: 50, reasons: [] };
+
+    const counter = generatePlayerCounterOffer(player, factors, { salary: 5000, years: 2, signingBonus: 0 }, eval1);
+
+    expect(counter.salary).toBeGreaterThanOrEqual(5000);
+  });
+
+  it('메시지가 항상 존재', () => {
+    const player = createMockPlayer();
+    const factors = generateDecisionFactors(player);
+    const eval1 = { overall: 50, salaryScore: 50, winningScore: 50, playtimeScore: 50, loyaltyScore: 50, reputationScore: 50, reasons: [] };
+
+    const counter = generatePlayerCounterOffer(player, factors, { salary: 3000, years: 2, signingBonus: 0 }, eval1);
+
+    expect(counter.message).toBeTruthy();
+    expect(counter.message.length).toBeGreaterThan(0);
   });
 });

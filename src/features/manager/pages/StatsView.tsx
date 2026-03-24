@@ -6,6 +6,14 @@ import type { Match } from '../../../types/match';
 import type { Position } from '../../../types/game';
 import type { Player } from '../../../types/player';
 import { Skeleton, SkeletonTable, SkeletonCards } from '../../../components/Skeleton';
+import {
+  getDetailedPlayerStats,
+  getTeamDetailedStats,
+  getPlayerRanking,
+  type DetailedPlayerStats,
+  type TeamDetailedStats,
+  type PlayerRankingEntry,
+} from '../../../engine/stats/detailedStatsEngine';
 
 interface Standing {
   teamId: string;
@@ -40,6 +48,7 @@ interface PlayerRanking {
 }
 
 type RankingCategory = 'kills' | 'kda' | 'cs' | 'damage';
+type StatsTab = 'overview' | 'detailed';
 
 const POSITION_ORDER: Position[] = ['top', 'jungle', 'mid', 'adc', 'support'];
 const POSITION_LABELS: Record<Position, string> = {
@@ -55,11 +64,11 @@ function getOverall(player: Player): number {
   return Math.round((s.mechanical + s.gameSense + s.teamwork + s.consistency + s.laning + s.aggression) / 6);
 }
 
-function getBarColor(value: number): string {
-  if (value >= 80) return 'linear-gradient(90deg, #c89b3c, #e0c068)';
-  if (value >= 60) return 'linear-gradient(90deg, #3498db, #5dade2)';
-  if (value >= 40) return 'linear-gradient(90deg, #2ecc71, #58d68d)';
-  return 'linear-gradient(90deg, #e74c3c, #ec7063)';
+function getBarFillClass(value: number): string {
+  if (value >= 80) return 'fm-bar__fill--accent';
+  if (value >= 60) return 'fm-bar__fill--blue';
+  if (value >= 40) return 'fm-bar__fill--green';
+  return 'fm-bar__fill--red';
 }
 
 export function StatsView() {
@@ -73,6 +82,12 @@ export function StatsView() {
   const [playerRankings, setPlayerRankings] = useState<PlayerRanking[]>([]);
   const [rankingCategory, setRankingCategory] = useState<RankingCategory>('kills');
   const [isLoading, setIsLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<StatsTab>('overview');
+  const [detailedPlayerStats, setDetailedPlayerStats] = useState<Map<string, DetailedPlayerStats>>(new Map());
+  const [teamDetailedStats, setTeamDetailedStats] = useState<TeamDetailedStats | null>(null);
+  const [detailedRankings, setDetailedRankings] = useState<PlayerRankingEntry[]>([]);
+  const [detailedRankingStat, setDetailedRankingStat] = useState<string>('kda');
+  const [isDetailedLoading, setIsDetailedLoading] = useState(false);
 
   const userTeamId = save?.userTeamId;
 
@@ -105,18 +120,58 @@ export function StatsView() {
     };
   }, [season, userTeamId]);
 
+  // 심화 통계 로드
+  useEffect(() => {
+    if (!season || !userTeamId || activeTab !== 'detailed') return;
+    let cancelled = false;
+
+    const loadDetailed = async () => {
+      setIsDetailedLoading(true);
+      try {
+        const userTeam2 = teams.find((t) => t.id === userTeamId);
+        const roster = userTeam2?.roster ?? [];
+
+        // 선수별 심화 통계
+        const statsMap = new Map<string, DetailedPlayerStats>();
+        for (const player of roster) {
+          const stats = await getDetailedPlayerStats(player.id, season.id);
+          if (!cancelled) statsMap.set(player.id, stats);
+        }
+
+        // 팀 상세 통계
+        const teamStats = await getTeamDetailedStats(userTeamId, season.id);
+
+        // 리그 순위
+        const rankings = await getPlayerRanking(season.id, detailedRankingStat as 'kda', 10);
+
+        if (!cancelled) {
+          setDetailedPlayerStats(statsMap);
+          setTeamDetailedStats(teamStats);
+          setDetailedRankings(rankings);
+        }
+      } catch (e) {
+        console.warn('심화 통계 로딩 실패:', e);
+      } finally {
+        if (!cancelled) setIsDetailedLoading(false);
+      }
+    };
+
+    loadDetailed();
+    return () => { cancelled = true; };
+  }, [season, userTeamId, activeTab, teams, detailedRankingStat]);
+
   if (!season || !userTeamId) {
-    return <p style={{ color: 'var(--text-muted)' }}>시즌 데이터를 불러오는 중...</p>;
+    return <p className="fm-text-muted">시즌 데이터를 불러오는 중...</p>;
   }
 
   if (isLoading) {
     return (
       <div>
         <Skeleton width="180px" height="28px" variant="text" />
-        <div style={{ marginTop: '24px' }}>
+        <div className="fm-mt-lg">
           <SkeletonCards count={4} />
         </div>
-        <div style={{ marginTop: '24px' }}>
+        <div className="fm-mt-lg">
           <SkeletonTable rows={6} cols={5} />
         </div>
       </div>
@@ -207,10 +262,6 @@ export function StatsView() {
   const avgKillsPerGame = totalGames > 0 ? (totalKills / totalGames).toFixed(1) : '0.0';
   const avgGoldDiffAt15 = totalGames > 0 ? Math.round(totalGoldDiffAt15 / totalGames) : 0;
 
-  // 평균 KDA 계산
-  const avgKda = totalDeaths > 0
-    ? ((totalKills + totalDeaths * 0) / totalDeaths).toFixed(2) // kills/deaths만
-    : totalKills > 0 ? 'Perfect' : '0.00';
   // 팀 KDA = (kills) / deaths (어시스트 정보가 게임 레벨에서 없으므로 K/D)
   const teamKdRatio = totalDeaths > 0
     ? (totalKills / totalDeaths).toFixed(2)
@@ -304,133 +355,349 @@ export function StatsView() {
 
   return (
     <div>
-      <h1 style={styles.title}>경기 통계</h1>
+      <h1 className="fm-page-title fm-mb-lg">경기 통계</h1>
+
+      {/* ─── 탭 ─── */}
+      <div className="fm-tabs">
+        <button
+          className={`fm-tab ${activeTab === 'overview' ? 'fm-tab--active' : ''}`}
+          onClick={() => setActiveTab('overview')}
+        >
+          기본 통계
+        </button>
+        <button
+          className={`fm-tab ${activeTab === 'detailed' ? 'fm-tab--active' : ''}`}
+          onClick={() => setActiveTab('detailed')}
+        >
+          심화 통계
+        </button>
+      </div>
+
+      {/* ─── 심화 통계 탭 ─── */}
+      {activeTab === 'detailed' && (
+        <div>
+          {isDetailedLoading ? (
+            <div>
+              <SkeletonCards count={3} />
+              <div className="fm-mt-md"><SkeletonTable rows={5} cols={4} /></div>
+            </div>
+          ) : (
+            <>
+              {/* 팀 상세 통계 */}
+              {teamDetailedStats && teamDetailedStats.totalGames > 0 && (
+                <div className="fm-panel fm-mb-lg">
+                  <div className="fm-panel__header">
+                    <span className="fm-panel__title">{userTeamName} 팀 심화 지표</span>
+                  </div>
+                  <div className="fm-panel__body">
+                    <div className="fm-grid fm-grid--4">
+                      <div className="fm-card fm-flex-col fm-items-center fm-gap-sm">
+                        <span className="fm-stat__label">퍼스트 블러드율</span>
+                        <span className="fm-stat__value">{teamDetailedStats.firstBloodRate}%</span>
+                      </div>
+                      <div className="fm-card fm-flex-col fm-items-center fm-gap-sm">
+                        <span className="fm-stat__label">드래곤 컨트롤율</span>
+                        <span className="fm-stat__value">{teamDetailedStats.dragonControlRate}%</span>
+                      </div>
+                      <div className="fm-card fm-flex-col fm-items-center fm-gap-sm">
+                        <span className="fm-stat__label">바론 컨트롤율</span>
+                        <span className="fm-stat__value">{teamDetailedStats.baronControlRate}%</span>
+                      </div>
+                      <div className="fm-card fm-flex-col fm-items-center fm-gap-sm">
+                        <span className="fm-stat__label">역전률</span>
+                        <span className="fm-stat__value">{teamDetailedStats.comebackRate}%</span>
+                      </div>
+                    </div>
+                    <div className="fm-grid fm-grid--4 fm-mt-md">
+                      <div className="fm-card fm-flex-col fm-items-center fm-gap-sm">
+                        <span className="fm-stat__label">초반 레이팅</span>
+                        <DetailedStatBar value={teamDetailedStats.earlyGameRating} />
+                      </div>
+                      <div className="fm-card fm-flex-col fm-items-center fm-gap-sm">
+                        <span className="fm-stat__label">중반 레이팅</span>
+                        <DetailedStatBar value={teamDetailedStats.midGameRating} />
+                      </div>
+                      <div className="fm-card fm-flex-col fm-items-center fm-gap-sm">
+                        <span className="fm-stat__label">후반 레이팅</span>
+                        <DetailedStatBar value={teamDetailedStats.lateGameRating} />
+                      </div>
+                      <div className="fm-card fm-flex-col fm-items-center fm-gap-sm">
+                        <span className="fm-stat__label">사이드 승률</span>
+                        <span className="fm-text-sm fm-text-secondary">
+                          블루 {teamDetailedStats.blueWinRate}% / 레드 {teamDetailedStats.redWinRate}%
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 선수별 심화 통계 */}
+              {detailedPlayerStats.size > 0 && (
+                <div className="fm-panel fm-mb-lg">
+                  <div className="fm-panel__header">
+                    <span className="fm-panel__title">선수별 심화 통계</span>
+                  </div>
+                  <div className="fm-panel__body--flush fm-table-wrap">
+                    <table className="fm-table fm-table--striped">
+                      <thead>
+                        <tr>
+                          <th>선수</th>
+                          <th>KDA</th>
+                          <th>CS/분</th>
+                          <th>15분 골드차</th>
+                          <th>퍼블율</th>
+                          <th>라인전 승률</th>
+                          <th>킬 관여</th>
+                          <th>일관성</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {userRoster.map((player) => {
+                          const ps = detailedPlayerStats.get(player.id);
+                          if (!ps || ps.totalGames === 0) return null;
+                          return (
+                            <tr key={player.id}>
+                              <td className="fm-cell--name">
+                                <span className="fm-text-accent fm-text-xs" style={{ marginRight: '4px' }}>
+                                  {POSITION_LABELS[player.position]}
+                                </span>
+                                {player.name}
+                              </td>
+                              <td className={ps.kda >= 4 ? 'fm-cell--green' : ps.kda >= 2.5 ? '' : 'fm-cell--red'} style={{ fontWeight: 600 }}>
+                                {ps.kda.toFixed(2)}
+                              </td>
+                              <td>{ps.csPerMin.toFixed(1)}</td>
+                              <td className={ps.goldDiffAt15 > 0 ? 'fm-cell--green' : ps.goldDiffAt15 < 0 ? 'fm-cell--red' : ''}>
+                                {ps.goldDiffAt15 > 0 ? '+' : ''}{ps.goldDiffAt15}
+                              </td>
+                              <td>{ps.firstBloodRate.toFixed(0)}%</td>
+                              <td className={ps.laneWinRate >= 55 ? 'fm-cell--green' : ps.laneWinRate <= 45 ? 'fm-cell--red' : ''}>
+                                {ps.laneWinRate.toFixed(0)}%
+                              </td>
+                              <td>{ps.killParticipation.toFixed(0)}%</td>
+                              <td>
+                                <DetailedStatBar value={ps.consistencyScore} maxWidth="60px" />
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* 리그 심화 순위 */}
+              <div className="fm-panel fm-mb-lg">
+                <div className="fm-panel__header">
+                  <span className="fm-panel__title">리그 심화 순위</span>
+                </div>
+                <div className="fm-panel__body">
+                  <div className="fm-tabs">
+                    {([
+                      ['kda', 'KDA'],
+                      ['csPerMin', 'CS/분'],
+                      ['goldPerMin', '골드/분'],
+                      ['damagePerMin', '데미지/분'],
+                      ['killParticipation', '킬 관여율'],
+                      ['goldDiffAt15', '15분 골드차'],
+                      ['laneWinRate', '라인전 승률'],
+                      ['consistencyScore', '일관성'],
+                    ] as [string, string][]).map(([stat, label]) => (
+                      <button
+                        key={stat}
+                        className={`fm-tab ${detailedRankingStat === stat ? 'fm-tab--active' : ''}`}
+                        onClick={() => setDetailedRankingStat(stat)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  {detailedRankings.length === 0 ? (
+                    <p className="fm-text-muted fm-text-md">데이터가 부족합니다 (최소 3경기 필요)</p>
+                  ) : (
+                    <div className="fm-table-wrap">
+                      <table className="fm-table fm-table--striped">
+                        <thead>
+                          <tr>
+                            <th>#</th>
+                            <th>선수</th>
+                            <th>수치</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {detailedRankings.map((entry, idx) => (
+                            <tr key={entry.playerId}>
+                              <td className={idx < 3 ? 'fm-cell--accent' : ''} style={{ fontWeight: idx < 3 ? 700 : 400 }}>
+                                {idx + 1}
+                              </td>
+                              <td className="fm-cell--name">{entry.name}</td>
+                              <td className="fm-font-semibold fm-text-primary">
+                                {typeof entry.value === 'number' ? entry.value.toFixed(2) : entry.value}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ─── 기본 통계 탭 ─── */}
+      {activeTab === 'overview' && <>
 
       {/* ─── 팀 통계 요약 카드 ─── */}
-      <section style={styles.section}>
-        <h2 style={styles.sectionTitle}>{userTeamName} 핵심 지표</h2>
-        <div style={vizStyles.summaryCardsRow}>
-          {/* 승률 원형 */}
-          <div style={vizStyles.summaryStatCard}>
-            <span style={vizStyles.summaryStatLabel}>승률</span>
-            <div style={{
-              ...vizStyles.circleOuter,
-              background: `conic-gradient(#c89b3c ${winRateNum * 3.6}deg, #2a2a4a ${winRateNum * 3.6}deg)`,
-            }}>
-              <div style={vizStyles.circleInner}>
-                <span style={vizStyles.circleValue}>{winRate}%</span>
+      <div className="fm-panel fm-mb-lg">
+        <div className="fm-panel__header">
+          <span className="fm-panel__title">{userTeamName} 핵심 지표</span>
+        </div>
+        <div className="fm-panel__body">
+          <div className="fm-grid fm-grid--4">
+            {/* 승률 원형 */}
+            <div className="fm-card fm-flex-col fm-items-center fm-gap-sm">
+              <span className="fm-stat__label">승률</span>
+              <div
+                className="fm-flex fm-items-center fm-justify-center"
+                style={{
+                  width: '80px',
+                  height: '80px',
+                  borderRadius: '50%',
+                  background: `conic-gradient(var(--accent) ${winRateNum * 3.6}deg, var(--bg-tertiary) ${winRateNum * 3.6}deg)`,
+                }}
+              >
+                <div
+                  className="fm-flex fm-items-center fm-justify-center"
+                  style={{
+                    width: '60px',
+                    height: '60px',
+                    borderRadius: '50%',
+                    background: 'var(--bg-card)',
+                  }}
+                >
+                  <span className="fm-text-lg fm-font-bold fm-text-accent">{winRate}%</span>
+                </div>
               </div>
+              <span className="fm-text-sm fm-text-muted">{userStanding?.wins ?? 0}승 {userStanding?.losses ?? 0}패</span>
             </div>
-            <span style={vizStyles.summaryStatSub}>{userStanding?.wins ?? 0}승 {userStanding?.losses ?? 0}패</span>
-          </div>
 
-          {/* 평균 게임 시간 */}
-          <div style={vizStyles.summaryStatCard}>
-            <span style={vizStyles.summaryStatLabel}>평균 게임 시간</span>
-            <span style={vizStyles.summaryStatBig}>
-              {avgGameMinutes}:{String(avgGameSeconds).padStart(2, '0')}
-            </span>
-            <span style={vizStyles.summaryStatSub}>{totalGames}경기 기준</span>
-          </div>
+            {/* 평균 게임 시간 */}
+            <div className="fm-card fm-flex-col fm-items-center fm-gap-sm">
+              <span className="fm-stat__label">평균 게임 시간</span>
+              <span className="fm-stat__value">
+                {avgGameMinutes}:{String(avgGameSeconds).padStart(2, '0')}
+              </span>
+              <span className="fm-text-sm fm-text-muted">{totalGames}경기 기준</span>
+            </div>
 
-          {/* 평균 K/D */}
-          <div style={vizStyles.summaryStatCard}>
-            <span style={vizStyles.summaryStatLabel}>팀 K/D</span>
-            <span style={vizStyles.summaryStatBig}>{teamKdRatio}</span>
-            <span style={vizStyles.summaryStatSub}>{totalKills}킬 / {totalDeaths}데스</span>
-          </div>
+            {/* 평균 K/D */}
+            <div className="fm-card fm-flex-col fm-items-center fm-gap-sm">
+              <span className="fm-stat__label">팀 K/D</span>
+              <span className="fm-stat__value">{teamKdRatio}</span>
+              <span className="fm-text-sm fm-text-muted">{totalKills}킬 / {totalDeaths}데스</span>
+            </div>
 
-          {/* 연승/연패 */}
-          <div style={vizStyles.summaryStatCard}>
-            <span style={vizStyles.summaryStatLabel}>
-              {streakType === 'win' ? '연승' : streakType === 'loss' ? '연패' : '기록 없음'}
-            </span>
-            <span style={{
-              ...vizStyles.summaryStatBig,
-              color: streakType === 'win' ? 'var(--success)' : streakType === 'loss' ? 'var(--danger)' : 'var(--text-secondary)',
-            }}>
-              {currentStreak > 0 ? `${currentStreak}${streakType === 'win' ? '연승' : '연패'}` : '-'}
-            </span>
-            <span style={vizStyles.summaryStatSub}>현재 스트릭</span>
+            {/* 연승/연패 */}
+            <div className="fm-card fm-flex-col fm-items-center fm-gap-sm">
+              <span className="fm-stat__label">
+                {streakType === 'win' ? '연승' : streakType === 'loss' ? '연패' : '기록 없음'}
+              </span>
+              <span className={`fm-stat__value ${streakType === 'win' ? 'fm-text-success' : streakType === 'loss' ? 'fm-text-danger' : 'fm-text-secondary'}`}>
+                {currentStreak > 0 ? `${currentStreak}${streakType === 'win' ? '연승' : '연패'}` : '-'}
+              </span>
+              <span className="fm-text-sm fm-text-muted">현재 스트릭</span>
+            </div>
           </div>
         </div>
-      </section>
+      </div>
 
       {/* ─── 최근 10경기 승/패 바 차트 ─── */}
       {recentGamesForChart.length > 0 && (
-        <section style={styles.section}>
-          <h2 style={styles.sectionTitle}>최근 경기 승패 (킬 수 기준)</h2>
-          <div style={vizStyles.recentBarContainer}>
-            {recentGamesForChart.map((game, i) => (
-              <div key={i} style={vizStyles.recentBarCol}>
-                <span style={vizStyles.recentBarWL}>
-                  {game.isWin ? 'W' : 'L'}
-                </span>
-                <div style={{
-                  width: '28px',
-                  height: `${Math.max(Math.min(game.kills * 4, 80), 6)}px`,
-                  background: game.isWin ? '#2ecc71' : '#e74c3c',
-                  borderRadius: '3px 3px 0 0',
-                  transition: 'height 0.3s ease',
-                }} />
-                <span style={vizStyles.recentBarKills}>{game.kills}</span>
-              </div>
-            ))}
+        <div className="fm-panel fm-mb-lg">
+          <div className="fm-panel__header">
+            <span className="fm-panel__title">최근 경기 승패 (킬 수 기준)</span>
           </div>
-          <div style={vizStyles.recentBarLegend}>
-            <span style={{ color: 'var(--success)', fontSize: '11px' }}>■ 승리</span>
-            <span style={{ color: 'var(--danger)', fontSize: '11px' }}>■ 패배</span>
-            <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>숫자 = 총 킬</span>
+          <div className="fm-panel__body">
+            <div className="fm-flex fm-gap-sm fm-items-center" style={{ alignItems: 'flex-end', height: '110px', paddingTop: '20px' }}>
+              {recentGamesForChart.map((game, i) => (
+                <div key={i} className="fm-flex-col fm-items-center fm-gap-xs" style={{ justifyContent: 'flex-end', height: '100%' }}>
+                  <span className="fm-text-sm fm-font-bold fm-text-secondary">
+                    {game.isWin ? 'W' : 'L'}
+                  </span>
+                  <div style={{
+                    width: '28px',
+                    height: `${Math.max(Math.min(game.kills * 4, 80), 6)}px`,
+                    background: game.isWin ? 'var(--success)' : 'var(--danger)',
+                    borderRadius: '3px 3px 0 0',
+                    transition: 'height 0.3s ease',
+                  }} />
+                  <span className="fm-text-xs fm-text-muted">{game.kills}</span>
+                </div>
+              ))}
+            </div>
+            <div className="fm-flex fm-gap-md fm-mt-sm">
+              <span className="fm-text-sm fm-text-success">■ 승리</span>
+              <span className="fm-text-sm fm-text-danger">■ 패배</span>
+              <span className="fm-text-sm fm-text-muted">숫자 = 총 킬</span>
+            </div>
           </div>
-        </section>
+        </div>
       )}
 
       {/* ─── 포지션별 평균 OVR ─── */}
       {userRoster.length > 0 && (
-        <section style={styles.section}>
-          <h2 style={styles.sectionTitle}>포지션별 평균 OVR</h2>
-          <div style={{ maxWidth: '500px' }}>
+        <div className="fm-panel fm-mb-lg">
+          <div className="fm-panel__header">
+            <span className="fm-panel__title">포지션별 평균 OVR</span>
+          </div>
+          <div className="fm-panel__body" style={{ maxWidth: '500px' }}>
             {positionAvgOvr.map(({ position, avgOvr }) => (
-              <div key={position} style={vizStyles.posBarRow}>
-                <span style={vizStyles.posBarLabel}>{POSITION_LABELS[position]}</span>
-                <div style={vizStyles.posBarBg}>
-                  <div style={{
-                    width: `${avgOvr}%`,
-                    height: '100%',
-                    background: getBarColor(avgOvr),
-                    borderRadius: '8px',
-                    transition: 'width 0.3s ease',
-                  }} />
+              <div key={position} className="fm-bar fm-mb-sm">
+                <span className="fm-text-accent fm-font-semibold fm-text-base" style={{ width: '40px' }}>
+                  {POSITION_LABELS[position]}
+                </span>
+                <div className="fm-bar__track" style={{ height: '16px', borderRadius: '8px' }}>
+                  <div
+                    className={`fm-bar__fill ${getBarFillClass(avgOvr)}`}
+                    style={{ width: `${avgOvr}%`, borderRadius: '8px' }}
+                  />
                 </div>
-                <span style={vizStyles.posBarValue}>{avgOvr}</span>
+                <span className="fm-bar__value fm-text-primary fm-font-semibold">{avgOvr}</span>
               </div>
             ))}
           </div>
-        </section>
+        </div>
       )}
 
       {/* ─── 선수 성장 추적 ─── */}
       {userRoster.length > 0 && (
-        <section style={styles.section}>
-          <h2 style={styles.sectionTitle}>선수 OVR 현황</h2>
-          <div style={{ maxWidth: '600px' }}>
+        <div className="fm-panel fm-mb-lg">
+          <div className="fm-panel__header">
+            <span className="fm-panel__title">선수 OVR 현황</span>
+          </div>
+          <div className="fm-panel__body" style={{ maxWidth: '600px' }}>
             {POSITION_ORDER.map((pos) => {
               const posPlayers = userRoster.filter((p) => p.position === pos);
               return posPlayers.map((player) => {
                 const currentOvr = getOverall(player);
-                // potential을 시즌 초 기준 참고치로 표시 (잠재력 대비 현재)
                 const potentialOvr = player.potential;
                 const diff = currentOvr - potentialOvr;
 
                 return (
-                  <div key={player.id} style={vizStyles.growthRow}>
-                    <div style={vizStyles.growthNameCol}>
-                      <span style={vizStyles.growthPos}>{POSITION_LABELS[player.position]}</span>
-                      <span style={vizStyles.growthName}>{player.name}</span>
+                  <div key={player.id} className="fm-flex fm-items-center fm-gap-sm fm-mb-sm">
+                    <div className="fm-flex fm-items-center fm-gap-sm fm-flex-shrink-0" style={{ width: '120px' }}>
+                      <span className="fm-text-sm fm-text-accent fm-font-semibold" style={{ width: '30px' }}>
+                        {POSITION_LABELS[player.position]}
+                      </span>
+                      <span className="fm-text-md fm-text-primary fm-font-medium">{player.name}</span>
                     </div>
-                    <div style={vizStyles.growthBarCol}>
-                      {/* 잠재력 바 (회색 배경) */}
-                      <div style={vizStyles.growthBarBg}>
+                    <div className="fm-flex-1">
+                      <div style={{ position: 'relative', height: '14px', background: 'var(--bg-card)', borderRadius: '6px', overflow: 'hidden' }}>
                         <div style={{
                           position: 'absolute',
                           left: 0,
@@ -447,201 +714,227 @@ export function StatsView() {
                           width: `${currentOvr}%`,
                           height: '100%',
                           background: diff >= 0
-                            ? 'linear-gradient(90deg, #c89b3c, #e0c068)'
-                            : 'linear-gradient(90deg, #e74c3c, #ec7063)',
+                            ? 'linear-gradient(90deg, var(--accent), #e0c068)'
+                            : 'linear-gradient(90deg, var(--danger), #ec7063)',
                           borderRadius: '6px',
                           transition: 'width 0.3s ease',
                         }} />
                       </div>
                     </div>
-                    <span style={vizStyles.growthOvr}>{currentOvr}</span>
-                    <span style={{
-                      ...vizStyles.growthArrow,
-                      color: diff > 0 ? '#2ecc71' : diff < 0 ? '#e74c3c' : '#8a8a9a',
-                    }}>
+                    <span className="fm-text-md fm-font-bold fm-text-primary fm-flex-shrink-0" style={{ width: '30px', textAlign: 'right' }}>
+                      {currentOvr}
+                    </span>
+                    <span
+                      className={`fm-text-base fm-font-semibold fm-flex-shrink-0 ${diff > 0 ? 'fm-text-success' : diff < 0 ? 'fm-text-danger' : 'fm-text-muted'}`}
+                      style={{ width: '40px', textAlign: 'right' }}
+                    >
                       {diff > 0 ? `+${diff}` : diff < 0 ? `${diff}` : '='}
-                      {diff > 0 ? ' ↑' : diff < 0 ? ' ↓' : ''}
+                      {diff > 0 ? ' \u2191' : diff < 0 ? ' \u2193' : ''}
                     </span>
                   </div>
                 );
               });
             })}
+            <p className="fm-text-sm fm-text-muted fm-mt-sm">
+              회색 바 = 잠재력, 컬러 바 = 현재 OVR, 화살표 = 잠재력 대비 차이
+            </p>
           </div>
-          <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '8px' }}>
-            회색 바 = 잠재력, 컬러 바 = 현재 OVR, 화살표 = 잠재력 대비 차이
-          </p>
-        </section>
+        </div>
       )}
 
       {/* ─── 기존: 팀 전적 요약 ─── */}
-      <section style={styles.section}>
-        <h2 style={styles.sectionTitle}>{userTeamName} 시즌 전적</h2>
-        <div style={styles.summaryGrid}>
-          <div style={styles.summaryCard}>
-            <span style={styles.summaryLabel}>매치 승</span>
-            <span style={styles.summaryValue}>{userStanding?.wins ?? 0}</span>
-          </div>
-          <div style={styles.summaryCard}>
-            <span style={styles.summaryLabel}>매치 패</span>
-            <span style={styles.summaryValue}>{userStanding?.losses ?? 0}</span>
-          </div>
-          <div style={styles.summaryCard}>
-            <span style={styles.summaryLabel}>세트 승</span>
-            <span style={styles.summaryValue}>{userStanding?.setWins ?? 0}</span>
-          </div>
-          <div style={styles.summaryCard}>
-            <span style={styles.summaryLabel}>세트 패</span>
-            <span style={styles.summaryValue}>{userStanding?.setLosses ?? 0}</span>
-          </div>
-          <div style={styles.summaryCard}>
-            <span style={styles.summaryLabel}>승률</span>
-            <span style={{ ...styles.summaryValue, color: 'var(--accent)' }}>{winRate}%</span>
-          </div>
-          <div style={styles.summaryCard}>
-            <span style={styles.summaryLabel}>평균 킬/게임</span>
-            <span style={styles.summaryValue}>{avgKillsPerGame}</span>
-          </div>
-          <div style={styles.summaryCard}>
-            <span style={styles.summaryLabel}>평균 15분 골드차</span>
-            <span style={{
-              ...styles.summaryValue,
-              color: avgGoldDiffAt15 > 0 ? '#90ee90' : avgGoldDiffAt15 < 0 ? '#ff6b6b' : '#c0c0d0',
-            }}>
-              {avgGoldDiffAt15 > 0 ? `+${avgGoldDiffAt15}` : avgGoldDiffAt15}
-            </span>
+      <div className="fm-panel fm-mb-lg">
+        <div className="fm-panel__header">
+          <span className="fm-panel__title">{userTeamName} 시즌 전적</span>
+        </div>
+        <div className="fm-panel__body">
+          <div className="fm-grid fm-grid--4">
+            <div className="fm-card fm-flex-col fm-items-center fm-gap-sm">
+              <span className="fm-stat__label">매치 승</span>
+              <span className="fm-stat__value">{userStanding?.wins ?? 0}</span>
+            </div>
+            <div className="fm-card fm-flex-col fm-items-center fm-gap-sm">
+              <span className="fm-stat__label">매치 패</span>
+              <span className="fm-stat__value">{userStanding?.losses ?? 0}</span>
+            </div>
+            <div className="fm-card fm-flex-col fm-items-center fm-gap-sm">
+              <span className="fm-stat__label">세트 승</span>
+              <span className="fm-stat__value">{userStanding?.setWins ?? 0}</span>
+            </div>
+            <div className="fm-card fm-flex-col fm-items-center fm-gap-sm">
+              <span className="fm-stat__label">세트 패</span>
+              <span className="fm-stat__value">{userStanding?.setLosses ?? 0}</span>
+            </div>
+            <div className="fm-card fm-flex-col fm-items-center fm-gap-sm">
+              <span className="fm-stat__label">승률</span>
+              <span className="fm-stat__value fm-stat__value--accent">{winRate}%</span>
+            </div>
+            <div className="fm-card fm-flex-col fm-items-center fm-gap-sm">
+              <span className="fm-stat__label">평균 킬/게임</span>
+              <span className="fm-stat__value">{avgKillsPerGame}</span>
+            </div>
+            <div className="fm-card fm-flex-col fm-items-center fm-gap-sm">
+              <span className="fm-stat__label">평균 15분 골드차</span>
+              <span className={`fm-stat__value ${avgGoldDiffAt15 > 0 ? 'fm-text-success' : avgGoldDiffAt15 < 0 ? 'fm-text-danger' : ''}`}>
+                {avgGoldDiffAt15 > 0 ? `+${avgGoldDiffAt15}` : avgGoldDiffAt15}
+              </span>
+            </div>
           </div>
         </div>
-      </section>
+      </div>
 
       {/* 주차별 승률 변화 차트 */}
       {cumulativeWinRates.length > 0 && (
-        <section style={styles.section}>
-          <h2 style={styles.sectionTitle}>주차별 누적 승률</h2>
-          <div style={styles.chartContainer}>
-            {cumulativeWinRates.map((entry) => (
-              <div key={entry.week} style={styles.chartRow}>
-                <span style={styles.chartLabel}>W{entry.week}</span>
-                <div style={styles.chartBarBg}>
-                  <div
-                    style={{
-                      ...styles.chartBar,
-                      width: `${entry.rate}%`,
-                    }}
-                  />
-                </div>
-                <span style={styles.chartValue}>{entry.rate}%</span>
-              </div>
-            ))}
+        <div className="fm-panel fm-mb-lg">
+          <div className="fm-panel__header">
+            <span className="fm-panel__title">주차별 누적 승률</span>
           </div>
-        </section>
+          <div className="fm-panel__body">
+            <div className="fm-flex-col fm-gap-sm">
+              {cumulativeWinRates.map((entry) => (
+                <div key={entry.week} className="fm-bar">
+                  <span className="fm-text-base fm-text-muted fm-text-right fm-flex-shrink-0" style={{ width: '36px' }}>
+                    W{entry.week}
+                  </span>
+                  <div className="fm-bar__track" style={{ height: '16px', borderRadius: '4px' }}>
+                    <div
+                      className="fm-bar__fill fm-bar__fill--accent"
+                      style={{ width: `${entry.rate}%`, borderRadius: '4px' }}
+                    />
+                  </div>
+                  <span className="fm-bar__value fm-flex-shrink-0" style={{ width: '40px' }}>
+                    {entry.rate}%
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* 최근 10경기 기록 */}
-      <section style={styles.section}>
-        <h2 style={styles.sectionTitle}>최근 경기 기록</h2>
+      <div className="fm-panel fm-mb-lg">
+        <div className="fm-panel__header">
+          <span className="fm-panel__title">최근 경기 기록</span>
+        </div>
         {playedMatches.length === 0 ? (
-          <p style={{ color: 'var(--text-muted)' }}>진행된 경기가 없습니다.</p>
+          <div className="fm-panel__body">
+            <p className="fm-text-muted">진행된 경기가 없습니다.</p>
+          </div>
         ) : (
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.th}>주차</th>
-                <th style={styles.th}>상대팀</th>
-                <th style={styles.th}>결과</th>
-                <th style={styles.th}>스코어</th>
-                <th style={styles.th}>유형</th>
-              </tr>
-            </thead>
-            <tbody>
-              {playedMatches.map((match) => {
-                const result = getMatchResult(match);
-                const opponentName = getTeamName(getOpponentId(match));
-                const isHome = match.teamHomeId === userTeamId;
-                const score = isHome
-                  ? `${match.scoreHome} - ${match.scoreAway}`
-                  : `${match.scoreAway} - ${match.scoreHome}`;
+          <div className="fm-panel__body--flush fm-table-wrap">
+            <table className="fm-table fm-table--striped">
+              <thead>
+                <tr>
+                  <th>주차</th>
+                  <th>상대팀</th>
+                  <th>결과</th>
+                  <th>스코어</th>
+                  <th>유형</th>
+                </tr>
+              </thead>
+              <tbody>
+                {playedMatches.map((match) => {
+                  const result = getMatchResult(match);
+                  const opponentName = getTeamName(getOpponentId(match));
+                  const isHome = match.teamHomeId === userTeamId;
+                  const score = isHome
+                    ? `${match.scoreHome} - ${match.scoreAway}`
+                    : `${match.scoreAway} - ${match.scoreHome}`;
 
-                return (
-                  <tr key={match.id} style={styles.tr}>
-                    <td style={styles.td}>W{match.week}</td>
-                    <td style={{ ...styles.td, ...styles.nameCell }}>{opponentName}</td>
-                    <td style={{
-                      ...styles.td,
-                      color: result === 'win' ? '#90ee90' : '#ff6b6b',
-                      fontWeight: 600,
-                    }}>
-                      {result === 'win' ? '승' : '패'}
-                    </td>
-                    <td style={styles.td}>{score}</td>
-                    <td style={styles.td}>{getMatchTypeLabel(match.matchType)}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                  return (
+                    <tr key={match.id}>
+                      <td>W{match.week}</td>
+                      <td className="fm-cell--name">{opponentName}</td>
+                      <td className={result === 'win' ? 'fm-cell--green' : 'fm-cell--red'} style={{ fontWeight: 600 }}>
+                        {result === 'win' ? '승' : '패'}
+                      </td>
+                      <td>{score}</td>
+                      <td>{getMatchTypeLabel(match.matchType)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
-      </section>
+      </div>
 
       {/* 개인 순위 */}
       {playerRankings.length > 0 && (
-        <section style={styles.section}>
-          <h2 style={styles.sectionTitle}>개인 순위</h2>
-          <div style={statsViewStyles.categoryRow}>
-            {([
-              ['kills', '킬왕'],
-              ['kda', 'KDA왕'],
-              ['cs', 'CS왕'],
-              ['damage', '데미지왕'],
-            ] as [RankingCategory, string][]).map(([cat, label]) => (
-              <button
-                key={cat}
-                style={{
-                  ...statsViewStyles.categoryBtn,
-                  ...(rankingCategory === cat ? statsViewStyles.categoryBtnActive : {}),
-                }}
-                onClick={() => setRankingCategory(cat)}
-              >
-                {label}
-              </button>
-            ))}
+        <div className="fm-panel fm-mb-lg">
+          <div className="fm-panel__header">
+            <span className="fm-panel__title">개인 순위</span>
           </div>
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.th}>#</th>
-                <th style={styles.th}>선수</th>
-                <th style={styles.th}>팀</th>
-                <th style={styles.th}>경기</th>
-                <th style={styles.th}>
-                  {rankingCategory === 'kills' ? '총 킬'
-                    : rankingCategory === 'kda' ? 'KDA'
-                    : rankingCategory === 'cs' ? '평균 CS'
-                    : '평균 데미지'}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {getSortedRankings(playerRankings, rankingCategory).slice(0, 10).map((pr, idx) => (
-                <tr key={pr.playerId} style={styles.tr}>
-                  <td style={{
-                    ...styles.td,
-                    color: idx < 3 ? 'var(--accent)' : '#c0c0d0',
-                    fontWeight: idx < 3 ? 700 : 400,
-                  }}>
-                    {idx + 1}
-                  </td>
-                  <td style={{ ...styles.td, ...styles.nameCell }}>{pr.playerName}</td>
-                  <td style={styles.td}>{getTeamName(pr.teamId)}</td>
-                  <td style={styles.td}>{pr.games}</td>
-                  <td style={{ ...styles.td, fontWeight: 600, color: 'var(--text-primary)' }}>
-                    {getRankingValue(pr, rankingCategory)}
-                  </td>
-                </tr>
+          <div className="fm-panel__body">
+            <div className="fm-tabs">
+              {([
+                ['kills', '킬왕'],
+                ['kda', 'KDA왕'],
+                ['cs', 'CS왕'],
+                ['damage', '데미지왕'],
+              ] as [RankingCategory, string][]).map(([cat, label]) => (
+                <button
+                  key={cat}
+                  className={`fm-tab ${rankingCategory === cat ? 'fm-tab--active' : ''}`}
+                  onClick={() => setRankingCategory(cat)}
+                >
+                  {label}
+                </button>
               ))}
-            </tbody>
-          </table>
-        </section>
+            </div>
+            <div className="fm-table-wrap">
+              <table className="fm-table fm-table--striped">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>선수</th>
+                    <th>팀</th>
+                    <th>경기</th>
+                    <th>
+                      {rankingCategory === 'kills' ? '총 킬'
+                        : rankingCategory === 'kda' ? 'KDA'
+                        : rankingCategory === 'cs' ? '평균 CS'
+                        : '평균 데미지'}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {getSortedRankings(playerRankings, rankingCategory).slice(0, 10).map((pr, idx) => (
+                    <tr key={pr.playerId}>
+                      <td className={idx < 3 ? 'fm-cell--accent' : ''} style={{ fontWeight: idx < 3 ? 700 : 400 }}>
+                        {idx + 1}
+                      </td>
+                      <td className="fm-cell--name">{pr.playerName}</td>
+                      <td>{getTeamName(pr.teamId)}</td>
+                      <td>{pr.games}</td>
+                      <td className="fm-font-semibold fm-text-primary">
+                        {getRankingValue(pr, rankingCategory)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       )}
+
+      </>}
+    </div>
+  );
+}
+
+/** 수평 바 컴포넌트 (심화 통계용) */
+function DetailedStatBar({ value, maxWidth }: { value: number; maxWidth?: string }) {
+  const colorClass = value >= 70 ? 'fm-bar__fill--green' : value >= 50 ? 'fm-bar__fill--accent' : value >= 30 ? 'fm-bar__fill--yellow' : 'fm-bar__fill--red';
+  const textClass = value >= 70 ? 'fm-text-success' : value >= 50 ? 'fm-text-accent' : value >= 30 ? 'fm-text-warning' : 'fm-text-danger';
+  return (
+    <div className="fm-bar" style={{ maxWidth: maxWidth ?? '100%' }}>
+      <div className="fm-bar__track" style={{ height: '8px' }}>
+        <div className={`fm-bar__fill ${colorClass}`} style={{ width: `${Math.min(100, value)}%` }} />
+      </div>
+      <span className={`fm-bar__value fm-font-semibold ${textClass}`}>{value}</span>
     </div>
   );
 }
@@ -674,304 +967,3 @@ function getRankingValue(pr: PlayerRanking, category: RankingCategory): string {
     case 'damage': return pr.avgDamage.toLocaleString();
   }
 }
-
-// ─── 기존 스타일 ───
-
-const styles: Record<string, React.CSSProperties> = {
-  title: {
-    fontSize: '24px',
-    fontWeight: 700,
-    color: 'var(--text-primary)',
-    marginBottom: '24px',
-  },
-  section: {
-    marginBottom: '32px',
-  },
-  sectionTitle: {
-    fontSize: '16px',
-    fontWeight: 600,
-    color: 'var(--accent)',
-    marginBottom: '16px',
-    borderBottom: '1px solid #3a3a5c',
-    paddingBottom: '8px',
-  },
-  summaryGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
-    gap: '12px',
-  },
-  summaryCard: {
-    background: 'rgba(255,255,255,0.03)',
-    border: '1px solid var(--border)',
-    borderRadius: '8px',
-    padding: '16px',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '8px',
-  },
-  summaryLabel: {
-    fontSize: '12px',
-    color: 'var(--text-muted)',
-  },
-  summaryValue: {
-    fontSize: '20px',
-    fontWeight: 700,
-    color: 'var(--text-primary)',
-  },
-  table: {
-    width: '100%',
-    borderCollapse: 'collapse',
-    fontSize: '13px',
-  },
-  th: {
-    padding: '8px 10px',
-    textAlign: 'left',
-    borderBottom: '1px solid #3a3a5c',
-    color: 'var(--text-muted)',
-    fontSize: '12px',
-    fontWeight: 500,
-  },
-  tr: {
-    borderBottom: '1px solid rgba(255,255,255,0.04)',
-  },
-  td: {
-    padding: '8px 10px',
-    color: '#c0c0d0',
-  },
-  nameCell: {
-    fontWeight: 500,
-    color: 'var(--text-primary)',
-  },
-  chartContainer: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '6px',
-  },
-  chartRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-  },
-  chartLabel: {
-    width: '36px',
-    fontSize: '12px',
-    color: 'var(--text-muted)',
-    textAlign: 'right',
-    flexShrink: 0,
-  },
-  chartBarBg: {
-    flex: 1,
-    height: '16px',
-    background: 'rgba(255,255,255,0.05)',
-    borderRadius: '4px',
-    overflow: 'hidden',
-  },
-  chartBar: {
-    height: '100%',
-    background: 'linear-gradient(90deg, #c89b3c, #e0c068)',
-    borderRadius: '4px',
-    transition: 'width 0.3s ease',
-  },
-  chartValue: {
-    width: '40px',
-    fontSize: '12px',
-    color: '#c0c0d0',
-    textAlign: 'right',
-    flexShrink: 0,
-  },
-};
-
-const statsViewStyles: Record<string, React.CSSProperties> = {
-  categoryRow: {
-    display: 'flex',
-    gap: '8px',
-    marginBottom: '16px',
-  },
-  categoryBtn: {
-    padding: '6px 16px',
-    fontSize: '13px',
-    fontWeight: 500,
-    background: 'rgba(255,255,255,0.05)',
-    border: '1px solid #3a3a5c',
-    borderRadius: '6px',
-    color: 'var(--text-secondary)',
-    cursor: 'pointer',
-  },
-  categoryBtnActive: {
-    background: 'rgba(200,155,60,0.15)',
-    borderColor: 'var(--accent)',
-    color: 'var(--accent)',
-    fontWeight: 700,
-  },
-};
-
-// ─── 시각화 추가 스타일 ───
-
-const vizStyles: Record<string, React.CSSProperties> = {
-  // 팀 통계 요약 카드
-  summaryCardsRow: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
-    gap: '16px',
-  },
-  summaryStatCard: {
-    background: 'rgba(255,255,255,0.03)',
-    border: '1px solid var(--border)',
-    borderRadius: '12px',
-    padding: '20px 16px',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '12px',
-  },
-  summaryStatLabel: {
-    fontSize: '12px',
-    color: 'var(--text-secondary)',
-    fontWeight: 500,
-  },
-  summaryStatBig: {
-    fontSize: '28px',
-    fontWeight: 700,
-    color: 'var(--text-primary)',
-  },
-  summaryStatSub: {
-    fontSize: '11px',
-    color: 'var(--text-muted)',
-  },
-
-  // 원형 퍼센트 바
-  circleOuter: {
-    width: '80px',
-    height: '80px',
-    borderRadius: '50%',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  circleInner: {
-    width: '60px',
-    height: '60px',
-    borderRadius: '50%',
-    background: 'var(--bg-card)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  circleValue: {
-    fontSize: '14px',
-    fontWeight: 700,
-    color: 'var(--accent)',
-  },
-
-  // 최근 경기 바 차트
-  recentBarContainer: {
-    display: 'flex',
-    gap: '6px',
-    alignItems: 'flex-end',
-    height: '110px',
-    padding: '20px 0 0 0',
-  },
-  recentBarCol: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '4px',
-    justifyContent: 'flex-end',
-    height: '100%',
-  },
-  recentBarWL: {
-    fontSize: '11px',
-    fontWeight: 700,
-    color: 'var(--text-secondary)',
-  },
-  recentBarKills: {
-    fontSize: '10px',
-    color: 'var(--text-muted)',
-    marginTop: '2px',
-  },
-  recentBarLegend: {
-    display: 'flex',
-    gap: '16px',
-    marginTop: '8px',
-  },
-
-  // 포지션별 바 차트
-  posBarRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    marginBottom: '6px',
-  },
-  posBarLabel: {
-    width: '40px',
-    fontSize: '12px',
-    color: 'var(--accent)',
-    fontWeight: 600,
-  },
-  posBarBg: {
-    flex: 1,
-    height: '16px',
-    background: 'var(--bg-card)',
-    borderRadius: '8px',
-    overflow: 'hidden',
-  },
-  posBarValue: {
-    width: '30px',
-    fontSize: '12px',
-    color: 'var(--text-primary)',
-    textAlign: 'right',
-    fontWeight: 600,
-  },
-
-  // 선수 성장 추적
-  growthRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    marginBottom: '8px',
-  },
-  growthNameCol: {
-    width: '120px',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    flexShrink: 0,
-  },
-  growthPos: {
-    fontSize: '11px',
-    color: 'var(--accent)',
-    fontWeight: 600,
-    width: '30px',
-  },
-  growthName: {
-    fontSize: '13px',
-    color: 'var(--text-primary)',
-    fontWeight: 500,
-  },
-  growthBarCol: {
-    flex: 1,
-  },
-  growthBarBg: {
-    position: 'relative',
-    height: '14px',
-    background: 'var(--bg-card)',
-    borderRadius: '6px',
-    overflow: 'hidden',
-  },
-  growthOvr: {
-    width: '30px',
-    fontSize: '13px',
-    fontWeight: 700,
-    color: 'var(--text-primary)',
-    textAlign: 'right',
-    flexShrink: 0,
-  },
-  growthArrow: {
-    width: '40px',
-    fontSize: '12px',
-    fontWeight: 600,
-    textAlign: 'right',
-    flexShrink: 0,
-  },
-};

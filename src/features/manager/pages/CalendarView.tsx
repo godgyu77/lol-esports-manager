@@ -217,15 +217,17 @@ export function CalendarView() {
   }
 
   if (!season) {
-    return <p style={{ color: '#6a6a7a' }}>데이터를 불러오는 중...</p>;
+    return <p className="fm-text-muted">데이터를 불러오는 중...</p>;
   }
 
   return (
     <div>
-      <h1 style={styles.title}>캘린더</h1>
+      <div className="fm-page-header">
+        <h1 className="fm-page-title">캘린더</h1>
+      </div>
 
       {/* 범례 */}
-      <div style={styles.legend}>
+      <div className="fm-flex fm-flex-wrap fm-gap-md fm-mb-md">
         {([
           ['match_day', '경기일'],
           ['training', '훈련'],
@@ -233,32 +235,35 @@ export function CalendarView() {
           ['rest', '휴식'],
           ['offseason', '오프시즌'],
         ] as const).map(([type, label]) => (
-          <span key={type} style={styles.legendItem}>
-            <span style={{ ...styles.legendDot, background: DAY_TYPE_COLORS[type] }} />
+          <span key={type} className="fm-flex fm-items-center fm-gap-xs fm-text-base fm-text-secondary">
+            <span style={{ width: 10, height: 10, borderRadius: '50%', display: 'inline-block', background: DAY_TYPE_COLORS[type] }} />
             {label}
           </span>
         ))}
       </div>
 
       {/* 월 네비게이션 */}
-      <div style={styles.monthNav}>
-        <button style={styles.navBtn} onClick={handlePrevMonth}>&lt;</button>
-        <span style={styles.monthLabel}>
+      <div className="fm-flex fm-items-center fm-gap-sm fm-mb-md">
+        <button className="fm-btn" onClick={handlePrevMonth}>&lt;</button>
+        <span className="fm-text-xl fm-font-bold fm-text-primary fm-text-center" style={{ minWidth: 140 }}>
           {viewYear}년 {MONTH_LABELS[viewMonth]}
         </span>
-        <button style={styles.navBtn} onClick={handleNextMonth}>&gt;</button>
-        <button style={styles.todayBtn} onClick={handleToday}>오늘</button>
+        <button className="fm-btn" onClick={handleNextMonth}>&gt;</button>
+        <button className="fm-btn fm-btn--primary fm-btn--sm" onClick={handleToday} style={{ marginLeft: 8 }}>오늘</button>
       </div>
 
-      {isLoading && <p style={{ color: '#6a6a7a', fontSize: '13px' }}>경기 일정을 불러오는 중...</p>}
+      {isLoading && <p className="fm-text-muted fm-text-md fm-mb-sm">경기 일정을 불러오는 중...</p>}
 
-      {/* 요일 헤더 */}
-      <div style={styles.grid}>
+      {/* 요일 헤더 + 날짜 셀 */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2 }}>
         {WEEKDAY_LABELS.map((label, i) => (
-          <div key={i} style={{
-            ...styles.weekdayHeader,
-            color: i === 0 ? '#e74c3c' : i === 6 ? '#3498db' : '#6a6a7a',
-          }}>
+          <div
+            key={i}
+            className={`fm-text-base fm-font-semibold fm-text-center ${
+              i === 0 ? 'fm-text-danger' : i === 6 ? 'fm-text-info' : 'fm-text-muted'
+            }`}
+            style={{ padding: '8px 0', borderBottom: '1px solid var(--border)' }}
+          >
             {label}
           </div>
         ))}
@@ -271,34 +276,54 @@ export function CalendarView() {
           return (
             <div
               key={i}
+              className="fm-flex-col"
               style={{
-                ...styles.cell,
+                minHeight: 72,
+                padding: 6,
+                borderRadius: 6,
+                gap: 2,
+                position: 'relative',
                 background: cell.isCurrentMonth ? DAY_TYPE_BG[cell.dayType] : 'transparent',
                 opacity: cell.isCurrentMonth ? 1 : 0.3,
-                border: isToday ? '2px solid #c89b3c' : '1px solid rgba(255,255,255,0.04)',
+                border: isToday ? '2px solid var(--accent)' : '1px solid var(--border-subtle)',
                 boxShadow: isToday ? '0 0 8px rgba(200,155,60,0.3)' : 'none',
               }}
             >
-              <span style={{
-                ...styles.cellDay,
-                color: isToday ? '#c89b3c' : cell.isCurrentMonth ? '#e0e0e0' : '#4a4a5a',
-                fontWeight: isToday ? 700 : 400,
-              }}>
+              <span
+                className={`fm-text-md ${isToday ? 'fm-text-accent fm-font-bold' : cell.isCurrentMonth ? 'fm-text-primary' : 'fm-text-muted'}`}
+              >
                 {cell.day}
               </span>
 
               {/* 일정 유형 도트 */}
               {cell.isCurrentMonth && (
-                <span style={{
-                  ...styles.typeDot,
-                  background: DAY_TYPE_COLORS[cell.dayType],
-                }} />
+                <span
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: '50%',
+                    position: 'absolute',
+                    top: 8,
+                    right: 8,
+                    background: DAY_TYPE_COLORS[cell.dayType],
+                  }}
+                />
               )}
 
               {/* 유저 팀 경기: 상대팀 약자 */}
               {hasUserMatch && cell.isCurrentMonth && cell.matches.map((m, j) => (
-                <span key={j} style={styles.matchLabel}>
-                  <span style={{ fontSize: '8px', color: '#8a8a9a' }}>
+                <span
+                  key={j}
+                  className="fm-text-xs fm-font-semibold fm-truncate"
+                  style={{
+                    color: '#e74c3c',
+                    background: 'rgba(231,76,60,0.15)',
+                    padding: '1px 4px',
+                    borderRadius: 3,
+                    marginTop: 2,
+                  }}
+                >
+                  <span className="fm-text-xs fm-text-secondary">
                     {m.isHome ? 'vs' : '@'}
                   </span>
                   {' '}{m.opponentShortName}
@@ -311,113 +336,3 @@ export function CalendarView() {
     </div>
   );
 }
-
-// ─────────────────────────────────────────
-// 스타일
-// ─────────────────────────────────────────
-
-const styles: Record<string, React.CSSProperties> = {
-  title: {
-    fontSize: '24px',
-    fontWeight: 700,
-    color: '#f0e6d2',
-    marginBottom: '16px',
-  },
-  legend: {
-    display: 'flex',
-    gap: '16px',
-    marginBottom: '16px',
-    flexWrap: 'wrap',
-  },
-  legendItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    fontSize: '12px',
-    color: '#8a8a9a',
-  },
-  legendDot: {
-    width: '10px',
-    height: '10px',
-    borderRadius: '50%',
-    display: 'inline-block',
-  },
-  monthNav: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    marginBottom: '16px',
-  },
-  navBtn: {
-    padding: '8px 14px',
-    fontSize: '16px',
-    fontWeight: 700,
-    background: 'rgba(255,255,255,0.05)',
-    border: '1px solid #3a3a5c',
-    borderRadius: '6px',
-    color: '#e0e0e0',
-    cursor: 'pointer',
-  },
-  monthLabel: {
-    fontSize: '18px',
-    fontWeight: 700,
-    color: '#f0e6d2',
-    minWidth: '140px',
-    textAlign: 'center',
-  },
-  todayBtn: {
-    padding: '6px 14px',
-    fontSize: '12px',
-    fontWeight: 600,
-    background: 'rgba(200,155,60,0.1)',
-    border: '1px solid #c89b3c44',
-    borderRadius: '6px',
-    color: '#c89b3c',
-    cursor: 'pointer',
-    marginLeft: '8px',
-  },
-  grid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(7, 1fr)',
-    gap: '2px',
-  },
-  weekdayHeader: {
-    textAlign: 'center',
-    fontSize: '12px',
-    fontWeight: 600,
-    padding: '8px 0',
-    borderBottom: '1px solid #2a2a4a',
-  },
-  cell: {
-    minHeight: '72px',
-    padding: '6px',
-    borderRadius: '6px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '2px',
-    position: 'relative',
-  },
-  cellDay: {
-    fontSize: '13px',
-  },
-  typeDot: {
-    width: '6px',
-    height: '6px',
-    borderRadius: '50%',
-    position: 'absolute',
-    top: '8px',
-    right: '8px',
-  },
-  matchLabel: {
-    fontSize: '10px',
-    fontWeight: 600,
-    color: '#e74c3c',
-    background: 'rgba(231,76,60,0.15)',
-    padding: '1px 4px',
-    borderRadius: '3px',
-    marginTop: '2px',
-    whiteSpace: 'nowrap',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-  },
-};

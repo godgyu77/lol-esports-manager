@@ -53,12 +53,12 @@ export function MeetingModal({
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
   const [selectedTopic, setSelectedTopic] = useState(MEETING_TOPICS[0]);
   const [loading, setLoading] = useState(false);
+  const [applied, setApplied] = useState(false);
   const [result, setResult] = useState<{
     dialogue: string;
     moraleChange: number;
     extra?: string;
   } | null>(null);
-  const [applied, setApplied] = useState(false);
 
   const isCooldown = cooldownDays > 0;
   const title = mode === 'meeting' ? '선수 면담' : '기자회견';
@@ -66,9 +66,11 @@ export function MeetingModal({
   // ── 선수 면담 실행 ──
   const handleMeeting = async () => {
     if (!selectedPlayer) return;
+    console.log('[MeetingModal] 면담 시작:', selectedPlayer.name, selectedTopic);
     setLoading(true);
     try {
       const condition = await getPlayerCondition(selectedPlayer.id, currentDate);
+      console.log('[MeetingModal] 컨디션:', condition);
       const morale = condition?.morale ?? 50;
 
       const res = await generateMeetingResponse({
@@ -94,7 +96,8 @@ export function MeetingModal({
         moraleChange: res.moraleChange,
         extra: res.reason,
       });
-    } catch {
+    } catch (err) {
+      console.error('[MeetingModal] 면담 오류:', err);
       setResult({
         dialogue: '면담이 원활하게 진행되지 않았습니다.',
         moraleChange: 0,
@@ -149,338 +152,165 @@ export function MeetingModal({
   };
 
   return (
-    <div style={styles.overlay} role="dialog" aria-modal="true" aria-label={title} onKeyDown={handleKeyDown}>
-      <div className="animate-scaleIn" style={styles.modal}>
-        <h3 style={styles.title}>{title}</h3>
+    <div className="fm-overlay" role="dialog" aria-modal="true" aria-label={title} onKeyDown={handleKeyDown}>
+      <div className="fm-modal">
+        {/* Header */}
+        <div className="fm-modal__header">
+          <span className="fm-modal__title">{title}</span>
+          <button className="fm-modal__close" onClick={onClose} aria-label="닫기">
+            ×
+          </button>
+        </div>
 
         {/* 쿨다운 상태 */}
         {isCooldown && !result ? (
-          <div style={styles.cooldownWrap}>
-            <p style={styles.cooldownText}>
-              다음 {title}까지 <span style={styles.cooldownDays}>{cooldownDays}일</span> 남았습니다.
+          <div className="fm-modal__body fm-text-center">
+            <p className="fm-text-lg fm-text-secondary fm-mb-lg" style={{ lineHeight: 1.6 }}>
+              다음 {title}까지 <span className="fm-font-bold fm-text-accent">{cooldownDays}일</span> 남았습니다.
             </p>
-            <button style={styles.closeBtn} onClick={onClose} autoFocus>
-              닫기
-            </button>
+            <div className="fm-modal__footer" style={{ borderTop: 'none', justifyContent: 'center' }}>
+              <button className="fm-btn fm-btn--primary" onClick={onClose} autoFocus>
+                닫기
+              </button>
+            </div>
           </div>
         ) : result ? (
           /* 결과 표시 */
-          <div style={styles.resultWrap}>
-            <div style={styles.dialogueBox}>
-              <p style={styles.dialogueText}>"{result.dialogue}"</p>
+          <div className="fm-modal__body fm-flex-col fm-gap-md fm-items-center">
+            {/* 대사 박스 */}
+            <div
+              className="fm-card"
+              style={{
+                width: '100%',
+                borderLeft: '3px solid var(--accent)',
+                borderRadius: 'var(--radius-lg)',
+              }}
+            >
+              <p className="fm-text-lg fm-text-primary" style={{ fontStyle: 'italic', lineHeight: 1.6 }}>
+                "{result.dialogue}"
+              </p>
             </div>
-            <div style={styles.effectRow}>
-              <span style={styles.effectLabel}>사기 변화</span>
+
+            {/* 사기 변화 */}
+            <div className="fm-flex fm-items-center fm-gap-md">
+              <span className="fm-text-sm fm-text-secondary">사기 변화</span>
               <span
-                style={{
-                  ...styles.effectValue,
-                  color: result.moraleChange > 0 ? '#50c878' : result.moraleChange < 0 ? '#dc3c3c' : '#8a8a9a',
-                }}
+                className={`fm-text-xl fm-font-bold ${
+                  result.moraleChange > 0
+                    ? 'fm-text-success'
+                    : result.moraleChange < 0
+                      ? 'fm-text-danger'
+                      : 'fm-text-muted'
+                }`}
               >
                 {result.moraleChange > 0 ? '+' : ''}{result.moraleChange}
               </span>
             </div>
+
             {result.extra && (
-              <p style={styles.extraText}>{result.extra}</p>
+              <p className="fm-text-xs fm-text-muted">{result.extra}</p>
             )}
-            <button style={styles.confirmBtn} onClick={onClose}>
-              확인
-            </button>
+
+            <div className="fm-modal__footer" style={{ width: '100%', borderTop: 'none', justifyContent: 'center', padding: '8px 0 0' }}>
+              <button className="fm-btn fm-btn--primary" onClick={onClose}>
+                확인
+              </button>
+            </div>
           </div>
         ) : mode === 'meeting' ? (
           /* 면담: 선수 선택 + 주제 선택 */
-          <div style={styles.formWrap}>
-            <div style={styles.fieldGroup}>
-              <label style={styles.fieldLabel}>면담 대상</label>
-              <div style={styles.playerList}>
-                {players.map((p) => (
-                  <button
-                    key={p.id}
-                    style={{
-                      ...styles.playerBtn,
-                      borderColor: selectedPlayer?.id === p.id ? '#c89b3c' : '#3a3a5c',
-                      background: selectedPlayer?.id === p.id ? 'rgba(200,155,60,0.1)' : 'rgba(255,255,255,0.03)',
-                    }}
-                    onClick={() => setSelectedPlayer(p)}
-                  >
-                    <span style={styles.playerPos}>{positionLabel[p.position] ?? p.position}</span>
-                    <span style={styles.playerName}>{p.name}</span>
-                  </button>
-                ))}
+          <>
+            <div className="fm-modal__body fm-flex-col fm-gap-lg">
+              {/* 면담 대상 */}
+              <div className="fm-flex-col fm-gap-sm">
+                <label className="fm-text-sm fm-font-semibold fm-text-primary">면담 대상</label>
+                <div className="fm-flex-col fm-gap-xs">
+                  {players.map((p) => (
+                    <button
+                      key={p.id}
+                      className={`fm-card fm-card--clickable fm-flex fm-items-center fm-gap-md ${
+                        selectedPlayer?.id === p.id ? 'fm-card--highlight' : ''
+                      }`}
+                      style={{ padding: '10px 14px' }}
+                      onClick={() => setSelectedPlayer(p)}
+                    >
+                      <span className="fm-text-sm fm-font-semibold fm-text-accent" style={{ minWidth: 40 }}>
+                        {positionLabel[p.position] ?? p.position}
+                      </span>
+                      <span className="fm-text-lg fm-font-medium fm-text-primary">{p.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 면담 주제 */}
+              <div className="fm-flex-col fm-gap-sm">
+                <label className="fm-text-sm fm-font-semibold fm-text-primary">면담 주제</label>
+                <div className="fm-flex fm-flex-wrap fm-gap-xs">
+                  {MEETING_TOPICS.map((topic) => (
+                    <button
+                      key={topic}
+                      className={`fm-btn ${selectedTopic === topic ? 'fm-btn--primary' : ''}`}
+                      onClick={() => setSelectedTopic(topic)}
+                    >
+                      {topic}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
-            <div style={styles.fieldGroup}>
-              <label style={styles.fieldLabel}>면담 주제</label>
-              <div style={styles.topicList}>
-                {MEETING_TOPICS.map((topic) => (
-                  <button
-                    key={topic}
-                    style={{
-                      ...styles.topicBtn,
-                      borderColor: selectedTopic === topic ? '#c89b3c' : '#3a3a5c',
-                      background: selectedTopic === topic ? 'rgba(200,155,60,0.1)' : 'rgba(255,255,255,0.03)',
-                    }}
-                    onClick={() => setSelectedTopic(topic)}
-                  >
-                    {topic}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div style={styles.btnRow}>
-              <button style={styles.cancelBtn} onClick={onClose}>
+
+            <div className="fm-modal__footer">
+              <button className="fm-btn" onClick={onClose}>
                 취소
               </button>
               <button
-                style={{
-                  ...styles.confirmBtn,
-                  opacity: !selectedPlayer || loading ? 0.5 : 1,
-                  cursor: !selectedPlayer || loading ? 'not-allowed' : 'pointer',
-                }}
-                disabled={!selectedPlayer || loading}
+                className="fm-btn fm-btn--primary"
+                disabled={!selectedPlayer || loading || applied}
                 onClick={handleMeeting}
               >
                 {loading ? '진행 중...' : '면담 시작'}
               </button>
             </div>
-          </div>
+          </>
         ) : (
           /* 기자회견 */
-          <div style={styles.formWrap}>
-            <div style={styles.pressInfo}>
-              <p style={styles.pressLabel}>최근 경기 결과</p>
-              <p style={styles.pressValue}>{recentResults || '기록 없음'}</p>
+          <>
+            <div className="fm-modal__body fm-flex-col fm-gap-md">
+              {/* 최근 경기 결과 */}
+              <div
+                className="fm-card"
+                style={{
+                  borderLeft: '3px solid var(--accent)',
+                  borderRadius: 'var(--radius-lg)',
+                }}
+              >
+                <p className="fm-text-xs fm-text-muted fm-mb-sm">최근 경기 결과</p>
+                <p className="fm-text-lg fm-font-semibold fm-text-primary">
+                  {recentResults || '기록 없음'}
+                </p>
+              </div>
+
+              <p className="fm-text-sm fm-text-secondary" style={{ lineHeight: 1.5 }}>
+                기자회견을 진행하면 팀 전체의 사기에 영향을 줍니다.
+              </p>
             </div>
-            <p style={styles.pressDesc}>
-              기자회견을 진행하면 팀 전체의 사기에 영향을 줍니다.
-            </p>
-            <div style={styles.btnRow}>
-              <button style={styles.cancelBtn} onClick={onClose}>
+
+            <div className="fm-modal__footer">
+              <button className="fm-btn" onClick={onClose}>
                 취소
               </button>
               <button
-                style={{
-                  ...styles.confirmBtn,
-                  opacity: loading ? 0.5 : 1,
-                  cursor: loading ? 'not-allowed' : 'pointer',
-                }}
-                disabled={loading}
+                className="fm-btn fm-btn--primary"
+                disabled={loading || applied}
                 onClick={handlePressConference}
               >
                 {loading ? '진행 중...' : '기자회견 시작'}
               </button>
             </div>
-          </div>
+          </>
         )}
       </div>
     </div>
   );
 }
-
-// ─────────────────────────────────────────
-// 스타일
-// ─────────────────────────────────────────
-
-const styles: Record<string, React.CSSProperties> = {
-  overlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    background: 'rgba(0,0,0,0.7)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 100,
-  },
-  modal: {
-    background: '#1a1a3a',
-    border: '1px solid #c89b3c',
-    borderRadius: '12px',
-    padding: '28px',
-    maxWidth: '520px',
-    width: '90%',
-    maxHeight: '80vh',
-    overflowY: 'auto',
-  },
-  title: {
-    fontSize: '18px',
-    fontWeight: 700,
-    color: '#c89b3c',
-    marginBottom: '20px',
-  },
-
-  // 쿨다운
-  cooldownWrap: {
-    textAlign: 'center',
-  },
-  cooldownText: {
-    fontSize: '14px',
-    color: '#8a8a9a',
-    marginBottom: '20px',
-    lineHeight: 1.6,
-  },
-  cooldownDays: {
-    fontWeight: 700,
-    color: '#c89b3c',
-  },
-
-  // 폼
-  formWrap: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px',
-  },
-  fieldGroup: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px',
-  },
-  fieldLabel: {
-    fontSize: '13px',
-    fontWeight: 600,
-    color: '#e0e0e0',
-  },
-  playerList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '6px',
-  },
-  playerBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    padding: '10px 14px',
-    border: '1px solid #3a3a5c',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    color: '#e0e0e0',
-    textAlign: 'left',
-    transition: 'all 0.15s',
-  },
-  playerPos: {
-    fontSize: '12px',
-    fontWeight: 600,
-    color: '#c89b3c',
-    minWidth: '40px',
-  },
-  playerName: {
-    fontSize: '14px',
-    fontWeight: 500,
-    color: '#e0e0e0',
-  },
-  topicList: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    gap: '6px',
-  },
-  topicBtn: {
-    padding: '8px 14px',
-    border: '1px solid #3a3a5c',
-    borderRadius: '6px',
-    fontSize: '13px',
-    cursor: 'pointer',
-    color: '#e0e0e0',
-    transition: 'all 0.15s',
-  },
-
-  // 기자회견
-  pressInfo: {
-    padding: '12px 16px',
-    background: 'rgba(255,255,255,0.03)',
-    borderRadius: '8px',
-    borderLeft: '3px solid #c89b3c',
-  },
-  pressLabel: {
-    fontSize: '12px',
-    color: '#6a6a7a',
-    marginBottom: '4px',
-  },
-  pressValue: {
-    fontSize: '15px',
-    fontWeight: 600,
-    color: '#e0e0e0',
-  },
-  pressDesc: {
-    fontSize: '13px',
-    color: '#8a8a9a',
-    lineHeight: 1.5,
-  },
-
-  // 버튼
-  btnRow: {
-    display: 'flex',
-    justifyContent: 'flex-end',
-    gap: '10px',
-    marginTop: '8px',
-  },
-  cancelBtn: {
-    padding: '10px 20px',
-    background: 'rgba(255,255,255,0.05)',
-    border: '1px solid #3a3a5c',
-    borderRadius: '8px',
-    fontSize: '14px',
-    fontWeight: 600,
-    color: '#8a8a9a',
-    cursor: 'pointer',
-  },
-  confirmBtn: {
-    padding: '10px 24px',
-    background: '#c89b3c',
-    border: 'none',
-    borderRadius: '8px',
-    fontSize: '14px',
-    fontWeight: 700,
-    color: '#0d0d1a',
-    cursor: 'pointer',
-  },
-  closeBtn: {
-    padding: '10px 24px',
-    background: '#c89b3c',
-    border: 'none',
-    borderRadius: '8px',
-    fontSize: '14px',
-    fontWeight: 700,
-    color: '#0d0d1a',
-    cursor: 'pointer',
-  },
-
-  // 결과
-  resultWrap: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px',
-    alignItems: 'center',
-  },
-  dialogueBox: {
-    width: '100%',
-    padding: '16px 20px',
-    background: 'rgba(255,255,255,0.03)',
-    borderRadius: '8px',
-    borderLeft: '3px solid #c89b3c',
-  },
-  dialogueText: {
-    fontSize: '14px',
-    color: '#e0e0e0',
-    fontStyle: 'italic',
-    lineHeight: 1.6,
-  },
-  effectRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-  },
-  effectLabel: {
-    fontSize: '13px',
-    color: '#8a8a9a',
-  },
-  effectValue: {
-    fontSize: '16px',
-    fontWeight: 700,
-  },
-  extraText: {
-    fontSize: '12px',
-    color: '#6a6a7a',
-  },
-};

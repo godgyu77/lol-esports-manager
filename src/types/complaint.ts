@@ -1,4 +1,4 @@
-export type ComplaintType = 'playtime' | 'salary' | 'transfer' | 'role' | 'morale';
+export type ComplaintType = 'playtime' | 'salary' | 'transfer' | 'role' | 'morale' | 'conflict';
 export type ComplaintStatus = 'active' | 'resolved' | 'ignored' | 'escalated';
 
 export interface PlayerComplaint {
@@ -22,6 +22,7 @@ export const COMPLAINT_TYPE_LABELS: Record<ComplaintType, string> = {
   transfer: '이적 요청',
   role: '역할 불만',
   morale: '사기 저하',
+  conflict: '선수 갈등',
 };
 
 export const COMPLAINT_SEVERITY_LABELS: Record<number, string> = {

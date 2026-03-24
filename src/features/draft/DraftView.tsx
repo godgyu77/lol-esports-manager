@@ -9,10 +9,10 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGameStore } from '../../stores/gameStore';
+import { useBgm } from '../../hooks/useBgm';
 import {
   createDraftState,
   executeDraftAction,
-  isChampionAvailable,
   aiSelectBan,
   aiSelectPick,
   buildDraftTeamInfo,
@@ -29,8 +29,11 @@ import { PickSection } from './PickSection';
 import { ChampionGrid } from './ChampionGrid';
 import { DraftCenterPanel } from './DraftCenterPanel';
 import { soundManager } from '../../audio/soundManager';
+import { generateDraftAdvice, type DraftAdvice } from '../../ai/advancedAiService';
+import './draft.css';
 
 export function DraftView() {
+  useBgm('draft');
   const navigate = useNavigate();
   const save = useGameStore((s) => s.save);
   const pendingMatch = useGameStore((s) => s.pendingUserMatch);
@@ -48,6 +51,8 @@ export function DraftView() {
   const [selectedPosition, setSelectedPosition] = useState<Position>('mid');
   const [isAiTurn, setIsAiTurn] = useState(false);
   const [filterPosition, setFilterPosition] = useState<Position | 'all'>('all');
+  const [aiAdvice, setAiAdvice] = useState<DraftAdvice | null>(null);
+  const [aiAdviceLoading, setAiAdviceLoading] = useState(false);
 
   const userTeamId = save?.userTeamId ?? '';
   const isUserBlue = pendingMatch?.teamHomeId === userTeamId;
@@ -111,19 +116,7 @@ export function DraftView() {
     }, 800); // AI 딜레이
 
     return () => clearTimeout(timer);
-  }, [draft?.currentStep, draft?.currentSide, userSide, blueInfo, redInfo]);
-
-  // 밴픽 완료 시
-  useEffect(() => {
-    if (draft?.isComplete) {
-      setDraftResult(draft);
-      const timer = setTimeout(() => {
-        setDayPhase('live_match');
-        navigate(`${basePath}/match`);
-      }, 1500);
-      return () => clearTimeout(timer);
-    }
-  }, [draft?.isComplete, navigate, setDayPhase, setDraftResult]);
+  }, [draft?.currentStep, draft?.currentSide, userSide, blueInfo, redInfo, mode]);
 
   // 추천 목록
   const recommendations = useMemo(() => {
@@ -146,6 +139,53 @@ export function DraftView() {
     }
   }, [draft?.currentStep, draft?.currentSide, userSide, blueInfo, redInfo, isUserBlue]);
 
+  // 유저 턴 시 AI 조언 생성
+  useEffect(() => {
+    if (!draft || draft.isComplete) return;
+    const currentIsUserTurn = mode === 'manager' && draft.currentSide === userSide;
+    if (!currentIsUserTurn) {
+      setAiAdvice(null);
+      return;
+    }
+
+    setAiAdviceLoading(true);
+    setAiAdvice(null);
+
+    const recommendedBans = draft.currentActionType === 'ban' && recommendations.length > 0
+      ? recommendations.map(r => r.championId ?? '').filter(Boolean)
+      : undefined;
+
+    generateDraftAdvice({
+      phase: draft.currentActionType,
+      turn: draft.currentStep,
+      myTeam: isUserBlue ? (homeTeam?.shortName ?? '블루') : (awayTeam?.shortName ?? '레드'),
+      opponentTeam: isUserBlue ? (awayTeam?.shortName ?? '레드') : (homeTeam?.shortName ?? '블루'),
+      myBans: isUserBlue ? draft.blue.bans : draft.red.bans,
+      opponentBans: isUserBlue ? draft.red.bans : draft.blue.bans,
+      myPicks: (isUserBlue ? draft.blue.picks : draft.red.picks).map(p => p.championId),
+      opponentPicks: (isUserBlue ? draft.red.picks : draft.blue.picks).map(p => p.championId),
+      recommendedBans,
+    }).then(advice => {
+      setAiAdvice(advice);
+    }).catch(() => {
+      // AI 실패 시 조언 표시하지 않음
+    }).finally(() => {
+      setAiAdviceLoading(false);
+    });
+  }, [draft?.currentStep, draft?.currentSide, mode, userSide]);
+
+  // 밴픽 완료 시
+  useEffect(() => {
+    if (draft?.isComplete) {
+      setDraftResult(draft);
+      const timer = setTimeout(() => {
+        setDayPhase('live_match');
+        navigate(`${basePath}/match`);
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [draft?.isComplete, navigate, setDayPhase, setDraftResult]);
+
   const handleConfirm = useCallback(() => {
     if (!draft || !selectedChampion) return;
 
@@ -164,11 +204,11 @@ export function DraftView() {
   const { filteredChampions, fearlessDisabledIds } = useMemo(() => {
     if (!draft) return { filteredChampions: [], fearlessDisabledIds: new Set<string>() };
 
-    // 피어리스로 인해 사용 불가한 챔피언 ID 수집
+    // 피어리스로 인해 사용 불가한 챔피언 ID 수집 (현재 턴 side만 제한)
     const disabled = new Set<string>();
-    if (draft.fearlessMode) {
-      for (const id of draft.fearlessPool.blue) disabled.add(id);
-      for (const id of draft.fearlessPool.red) disabled.add(id);
+    if (draft.fearlessMode && draft.currentSide) {
+      const pool = draft.currentSide === 'blue' ? draft.fearlessPool.blue : draft.fearlessPool.red;
+      for (const id of pool) disabled.add(id);
     }
 
     const filtered = CHAMPION_DB.filter((c) => {
@@ -183,19 +223,19 @@ export function DraftView() {
   }, [draft, filterPosition]);
 
   if (!pendingMatch || !draft) {
-    return <p style={{ color: '#6a6a7a' }}>밴픽 데이터 로딩 중...</p>;
+    return <p className="fm-text-muted fm-text-md">밴픽 데이터 로딩 중...</p>;
   }
 
   const currentIsUser = mode === 'manager' && draft.currentSide === userSide;
 
   return (
-    <div style={styles.container}>
+    <div className="draft-container">
       {/* 피어리스 드래프트 표시 */}
       {draft.fearlessMode && (
-        <div style={styles.fearlessBanner}>
+        <div className="draft-fearless-banner">
           FEARLESS DRAFT — 이전 세트에서 사용한 챔피언 재사용 불가
           {(fearlessPool.blue.length > 0 || fearlessPool.red.length > 0) && (
-            <span style={styles.fearlessCount}>
+            <span className="draft-fearless-count">
               (블루 {fearlessPool.blue.length}챔 / 레드 {fearlessPool.red.length}챔 제한)
             </span>
           )}
@@ -203,17 +243,17 @@ export function DraftView() {
       )}
 
       {/* 상단: 팀 표시 */}
-      <div style={styles.header}>
-        <div style={{ ...styles.teamHeader, borderColor: '#3498db' }}>
-          <span style={styles.teamSide}>블루</span>
-          <span style={styles.teamName}>{homeTeam?.shortName ?? '블루팀'}</span>
-          {isUserBlue && <span style={styles.userBadge}>YOU</span>}
+      <div className="draft-header">
+        <div className="draft-team-header draft-team-header--blue">
+          <span className="draft-team-side">블루</span>
+          <span className="draft-team-name">{homeTeam?.shortName ?? '블루팀'}</span>
+          {isUserBlue && <span className="draft-user-badge">YOU</span>}
         </div>
-        <div style={styles.vsText}>VS</div>
-        <div style={{ ...styles.teamHeader, borderColor: '#e74c3c' }}>
-          <span style={styles.teamSide}>레드</span>
-          <span style={styles.teamName}>{awayTeam?.shortName ?? '레드팀'}</span>
-          {!isUserBlue && <span style={styles.userBadge}>YOU</span>}
+        <div className="draft-vs-text">VS</div>
+        <div className="draft-team-header draft-team-header--red">
+          <span className="draft-team-side">레드</span>
+          <span className="draft-team-name">{awayTeam?.shortName ?? '레드팀'}</span>
+          {!isUserBlue && <span className="draft-user-badge">YOU</span>}
         </div>
       </div>
 
@@ -225,7 +265,7 @@ export function DraftView() {
       />
 
       {/* 픽 목록 */}
-      <div style={styles.pickSection}>
+      <div className="draft-pick-section">
         <PickSection
           picks={draft.blue.picks}
           color="#3498db"
@@ -264,75 +304,24 @@ export function DraftView() {
           onFilterChange={setFilterPosition}
         />
       )}
+
+      {/* AI 코치 조언 (유저 턴에만 표시) */}
+      {currentIsUser && !draft.isComplete && (
+        <div className="draft-ai-advice">
+          <span className="draft-ai-advice-label">AI 코치 조언</span>
+          {aiAdviceLoading ? (
+            <span className="draft-ai-advice-loading">분석 중...</span>
+          ) : aiAdvice ? (
+            <div className="draft-ai-advice-content">
+              <span className="draft-ai-advice-suggestion">{aiAdvice.suggestion}</span>
+              <span className="draft-ai-advice-reason">{aiAdvice.reason}</span>
+              <span className="draft-ai-advice-confidence">신뢰도: {aiAdvice.confidence}%</span>
+            </div>
+          ) : (
+            <span className="draft-ai-advice-loading">조언을 불러올 수 없습니다.</span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    maxWidth: '1000px',
-    margin: '0 auto',
-  },
-  fearlessBanner: {
-    textAlign: 'center' as const,
-    padding: '8px 16px',
-    marginBottom: '16px',
-    background: 'linear-gradient(90deg, rgba(200,155,60,0.15), rgba(200,155,60,0.05))',
-    border: '1px solid rgba(200,155,60,0.4)',
-    borderRadius: '6px',
-    color: '#c89b3c',
-    fontSize: '13px',
-    fontWeight: 700,
-    letterSpacing: '1px',
-  },
-  fearlessCount: {
-    display: 'block',
-    fontSize: '11px',
-    fontWeight: 400,
-    color: '#8a8a9a',
-    marginTop: '2px',
-  },
-  header: {
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: '32px',
-    marginBottom: '24px',
-  },
-  teamHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    padding: '12px 20px',
-    borderBottom: '3px solid',
-    borderRadius: '8px 8px 0 0',
-    background: 'rgba(255,255,255,0.03)',
-  },
-  teamSide: {
-    fontSize: '12px',
-    color: '#6a6a7a',
-  },
-  teamName: {
-    fontSize: '18px',
-    fontWeight: 700,
-    color: '#f0e6d2',
-  },
-  userBadge: {
-    fontSize: '10px',
-    fontWeight: 700,
-    color: '#c89b3c',
-    background: 'rgba(200,155,60,0.15)',
-    padding: '2px 6px',
-    borderRadius: '4px',
-  },
-  vsText: {
-    fontSize: '20px',
-    fontWeight: 700,
-    color: '#3a3a5c',
-  },
-  pickSection: {
-    display: 'flex',
-    gap: '16px',
-    marginBottom: '24px',
-  },
-};

@@ -7,7 +7,7 @@
  */
 
 import { getDatabase } from '../../db/database';
-import type { Player, PlayerStats } from '../../types/player';
+import type { Player } from '../../types/player';
 import type { Region } from '../../types/game';
 import type { Scout, ScoutingReport } from '../../types/scout';
 import { calculateStaffBonuses } from '../staff/staffEngine';
@@ -123,7 +123,7 @@ export async function hireScout(teamId: string, hiredDate: string): Promise<Scou
   );
 
   return {
-    id: result.lastInsertId,
+    id: result.lastInsertId ?? 0,
     teamId,
     name,
     ability,
@@ -185,7 +185,7 @@ export async function assignScouting(
   );
 
   return {
-    id: result.lastInsertId,
+    id: result.lastInsertId ?? 0,
     scoutId,
     playerId,
     teamId,
@@ -279,7 +279,8 @@ export async function advanceScoutingDay(teamId: string, currentDate: string): P
   const db = await getDatabase();
 
   // 진행 중인 리포트 가져오기
-  const pendingRows = await db.select<ReportRow[]>(
+  type ReportRowWithScout = ReportRow & { ability: number; experience: number; region_specialty: string | null };
+  const pendingRows = await db.select<ReportRowWithScout[]>(
     `SELECT sr.*, s.ability, s.experience, s.region_specialty
      FROM scouting_reports sr
      JOIN scouts s ON s.id = sr.scout_id

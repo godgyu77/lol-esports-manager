@@ -53,8 +53,6 @@ export async function generatePlayoffSchedule(
   const top6 = standings.slice(0, 6);
   if (top6.length < 6) return [];
 
-  const seed1 = top6[0].teamId;
-  const seed2 = top6[1].teamId;
   const seed3 = top6[2].teamId;
   const seed4 = top6[3].teamId;
   const seed5 = top6[4].teamId;
@@ -116,6 +114,9 @@ export async function advancePlayoff(
   standings: { teamId: string }[],
   playoffStartDate: string,
 ): Promise<{ nextMatchId?: string; isPlayoffComplete: boolean }> {
+  if (standings.length < 2) {
+    return { isPlayoffComplete: false };
+  }
   const seed1 = standings[0].teamId;
   const seed2 = standings[1].teamId;
 
@@ -236,8 +237,11 @@ export async function processPlayoffMatchResult(
     const sf1 = await getMatchById(sf1Id);
     const sf2 = await getMatchById(sf2Id);
 
-    // 양쪽 준결승 모두 완료 확인
-    if (sf1?.isPlayed && sf2?.isPlayed) {
+    // 양쪽 준결승 모두 완료 확인 (null 방어 포함)
+    if (!sf1 || !sf2) {
+      return { isPlayoffComplete: false };
+    }
+    if (sf1.isPlayed && sf2.isPlayed) {
       const sf1Winner = sf1.scoreHome > sf1.scoreAway ? sf1.teamHomeId : sf1.teamAwayId;
       const sf2Winner = sf2.scoreHome > sf2.scoreAway ? sf2.teamHomeId : sf2.teamAwayId;
       await generateFinals(seasonId, sf1Winner, sf2Winner, playoffStartDate);

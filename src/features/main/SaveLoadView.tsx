@@ -3,8 +3,7 @@
  * - 자동 저장 슬롯 + 수동 저장 슬롯 10개
  * - 저장/불러오기/삭제 기능
  */
-import type React from 'react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { SaveSlot } from '../../types/game';
 import { useGameStore } from '../../stores/gameStore';
@@ -14,19 +13,24 @@ import {
   loadSave,
   deleteSave,
 } from '../../engine/save/saveEngine';
+import { loadGameIntoStore } from '../../db/initGame';
 
 type ViewMode = 'save' | 'load';
 
 export function SaveLoadView() {
   const navigate = useNavigate();
   const save = useGameStore((s) => s.save);
-  const setSave = useGameStore((s) => s.setSave);
 
   const [slots, setSlots] = useState<SaveSlot[]>([]);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>(save ? 'save' : 'load');
   const [message, setMessage] = useState<string | null>(null);
+  const messageTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  useEffect(() => {
+    return () => { clearTimeout(messageTimerRef.current); };
+  }, []);
 
   const isInGame = save !== null;
 
@@ -47,8 +51,9 @@ export function SaveLoadView() {
   }, []);
 
   const showMessage = (msg: string) => {
+    clearTimeout(messageTimerRef.current);
     setMessage(msg);
-    setTimeout(() => setMessage(null), 3000);
+    messageTimerRef.current = setTimeout(() => setMessage(null), 3000);
   };
 
   const handleSave = async (slotNumber: number) => {
@@ -87,7 +92,7 @@ export function SaveLoadView() {
     try {
       setProcessing(true);
       const loadedSave = await loadSave(saveId);
-      setSave(loadedSave);
+      await loadGameIntoStore(loadedSave.id);
 
       const basePath = loadedSave.mode === 'manager' ? '/manager' : '/player';
       navigate(basePath);
@@ -148,48 +153,48 @@ export function SaveLoadView() {
     return (
       <div
         key={slot.slotNumber}
-        style={{
-          ...styles.slot,
-          ...(isAutoSlot ? styles.autoSlot : {}),
-        }}
+        className={`fm-card fm-flex fm-items-center fm-gap-lg ${isAutoSlot ? 'fm-card--highlight fm-mb-sm' : ''}`}
       >
-        <div style={styles.slotHeader}>
-          <span style={styles.slotLabel}>
+        <div className="fm-flex-col fm-gap-xs" style={{ minWidth: 120 }}>
+          <span className="fm-text-md fm-font-semibold fm-text-accent">
             {isAutoSlot ? '자동 저장' : `슬롯 ${slot.slotNumber}`}
           </span>
           {hasSave && (
-            <span style={styles.slotDate}>
+            <span className="fm-text-xs fm-text-muted">
               {formatDate(slot.save!.updatedAt)}
             </span>
           )}
         </div>
 
         {hasSave ? (
-          <div style={styles.slotInfo}>
-            <div style={styles.slotName}>{slot.save!.saveName}</div>
-            <div style={styles.slotDetails}>
+          <div className="fm-flex-col fm-gap-xs fm-flex-1">
+            <span className="fm-text-lg fm-font-medium fm-text-primary">{slot.save!.saveName}</span>
+            <div className="fm-flex fm-gap-sm fm-flex-wrap">
               {slot.save!.teamName && (
-                <span style={styles.detailTag}>{slot.save!.teamName}</span>
+                <span className="fm-badge fm-badge--default">{slot.save!.teamName}</span>
               )}
               {slot.save!.seasonInfo && (
-                <span style={styles.detailTag}>{slot.save!.seasonInfo}</span>
+                <span className="fm-badge fm-badge--default">{slot.save!.seasonInfo}</span>
               )}
-              <span style={styles.detailTag}>
+              <span className="fm-badge fm-badge--default">
                 {slot.save!.mode === 'manager' ? '감독 모드' : '선수 모드'}
               </span>
-              <span style={styles.detailTag}>
+              <span className="fm-badge fm-badge--default">
                 {formatPlayTime(slot.save!.playTimeMinutes)}
               </span>
             </div>
           </div>
         ) : (
-          <div style={styles.emptySlot}>빈 슬롯</div>
+          <div className="fm-flex-1 fm-text-lg fm-text-muted" style={{ fontStyle: 'italic' }}>
+            빈 슬롯
+          </div>
         )}
 
-        <div style={styles.slotActions}>
+        <div className="fm-flex fm-gap-sm fm-flex-shrink-0">
           {viewMode === 'save' && isInGame && (
             <button
-              style={styles.saveBtn}
+              className="fm-btn fm-btn--sm"
+              style={{ borderColor: 'var(--accent-border)', color: 'var(--accent)' }}
               onClick={() => handleSave(slot.slotNumber)}
               disabled={processing}
             >
@@ -199,14 +204,14 @@ export function SaveLoadView() {
           {hasSave && (
             <>
               <button
-                style={styles.loadBtn}
+                className="fm-btn fm-btn--sm fm-btn--success"
                 onClick={() => handleLoad(slot.save!.id)}
                 disabled={processing}
               >
                 불러오기
               </button>
               <button
-                style={styles.deleteBtn}
+                className="fm-btn fm-btn--sm fm-btn--danger"
                 onClick={() => handleDelete(slot.save!.id, slot.slotNumber)}
                 disabled={processing}
               >
@@ -220,25 +225,19 @@ export function SaveLoadView() {
   };
 
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <h1 style={styles.title}>저장 / 불러오기</h1>
+    <div className="fm-content fm-flex-col fm-items-center" style={{ minHeight: '100vh' }}>
+      <div className="fm-flex fm-justify-between fm-items-center fm-mb-lg" style={{ width: '100%', maxWidth: 700 }}>
+        <h1 className="fm-text-2xl fm-font-bold fm-text-accent">저장 / 불러오기</h1>
         {isInGame && (
-          <div style={styles.tabs}>
+          <div className="fm-flex fm-gap-sm">
             <button
-              style={{
-                ...styles.tab,
-                ...(viewMode === 'save' ? styles.tabActive : {}),
-              }}
+              className={`fm-tab ${viewMode === 'save' ? 'fm-tab--active' : ''}`}
               onClick={() => setViewMode('save')}
             >
               저장
             </button>
             <button
-              style={{
-                ...styles.tab,
-                ...(viewMode === 'load' ? styles.tabActive : {}),
-              }}
+              className={`fm-tab ${viewMode === 'load' ? 'fm-tab--active' : ''}`}
               onClick={() => setViewMode('load')}
             >
               불러오기
@@ -247,190 +246,23 @@ export function SaveLoadView() {
         )}
       </div>
 
-      {message && <div style={styles.message}>{message}</div>}
+      {message && (
+        <div className="fm-alert fm-alert--warning fm-mb-md" style={{ maxWidth: 700, width: '100%' }}>
+          <span className="fm-alert__text fm-text-center">{message}</span>
+        </div>
+      )}
 
       {loading ? (
-        <div style={styles.loading}>슬롯 정보를 불러오는 중...</div>
+        <div className="fm-p-lg fm-text-muted fm-text-lg">슬롯 정보를 불러오는 중...</div>
       ) : (
-        <div style={styles.slotList}>
+        <div className="fm-flex-col fm-gap-sm" style={{ width: '100%', maxWidth: 700 }}>
           {slots.map(renderSlot)}
         </div>
       )}
 
-      <button style={styles.backBtn} onClick={() => navigate(-1)}>
+      <button className="fm-btn fm-btn--ghost fm-mt-lg" onClick={() => navigate(-1)}>
         돌아가기
       </button>
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    minHeight: '100vh',
-    background: '#0d0d1a',
-    color: '#e0e0e0',
-    padding: '40px',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-  },
-  header: {
-    width: '100%',
-    maxWidth: '700px',
-    marginBottom: '24px',
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  title: {
-    fontSize: '24px',
-    fontWeight: 700,
-    color: '#c89b3c',
-  },
-  tabs: {
-    display: 'flex',
-    gap: '8px',
-  },
-  tab: {
-    padding: '8px 20px',
-    border: '1px solid #3a3a5c',
-    borderRadius: '6px',
-    background: 'transparent',
-    color: '#8a8a9a',
-    cursor: 'pointer',
-    fontSize: '14px',
-    transition: 'all 0.2s',
-  },
-  tabActive: {
-    background: 'rgba(200,155,60,0.15)',
-    color: '#c89b3c',
-    borderColor: '#c89b3c',
-  },
-  message: {
-    width: '100%',
-    maxWidth: '700px',
-    padding: '12px 16px',
-    marginBottom: '16px',
-    borderRadius: '6px',
-    background: 'rgba(200,155,60,0.1)',
-    border: '1px solid rgba(200,155,60,0.3)',
-    color: '#c89b3c',
-    fontSize: '14px',
-    textAlign: 'center' as const,
-  },
-  loading: {
-    padding: '40px',
-    color: '#6a6a7a',
-    fontSize: '14px',
-  },
-  slotList: {
-    width: '100%',
-    maxWidth: '700px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px',
-  },
-  slot: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '16px',
-    padding: '16px 20px',
-    borderRadius: '8px',
-    background: '#12122a',
-    border: '1px solid #2a2a4a',
-    transition: 'border-color 0.2s',
-  },
-  autoSlot: {
-    borderColor: 'rgba(200,155,60,0.3)',
-    marginBottom: '8px',
-  },
-  slotHeader: {
-    minWidth: '120px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '4px',
-  },
-  slotLabel: {
-    fontSize: '13px',
-    fontWeight: 600,
-    color: '#c89b3c',
-  },
-  slotDate: {
-    fontSize: '11px',
-    color: '#6a6a7a',
-  },
-  slotInfo: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '6px',
-  },
-  slotName: {
-    fontSize: '14px',
-    fontWeight: 500,
-    color: '#e0e0e0',
-  },
-  slotDetails: {
-    display: 'flex',
-    gap: '8px',
-    flexWrap: 'wrap',
-  },
-  detailTag: {
-    fontSize: '11px',
-    padding: '2px 8px',
-    borderRadius: '4px',
-    background: 'rgba(255,255,255,0.05)',
-    color: '#8a8a9a',
-  },
-  emptySlot: {
-    flex: 1,
-    fontSize: '14px',
-    color: '#4a4a5a',
-    fontStyle: 'italic',
-  },
-  slotActions: {
-    display: 'flex',
-    gap: '8px',
-    flexShrink: 0,
-  },
-  saveBtn: {
-    padding: '6px 16px',
-    borderRadius: '4px',
-    border: '1px solid #c89b3c',
-    background: 'rgba(200,155,60,0.15)',
-    color: '#c89b3c',
-    fontSize: '12px',
-    cursor: 'pointer',
-    transition: 'all 0.2s',
-  },
-  loadBtn: {
-    padding: '6px 16px',
-    borderRadius: '4px',
-    border: '1px solid #3a8a5c',
-    background: 'rgba(58,138,92,0.15)',
-    color: '#3a8a5c',
-    fontSize: '12px',
-    cursor: 'pointer',
-    transition: 'all 0.2s',
-  },
-  deleteBtn: {
-    padding: '6px 16px',
-    borderRadius: '4px',
-    border: '1px solid #8a3a3a',
-    background: 'rgba(138,58,58,0.15)',
-    color: '#8a3a3a',
-    fontSize: '12px',
-    cursor: 'pointer',
-    transition: 'all 0.2s',
-  },
-  backBtn: {
-    marginTop: '24px',
-    padding: '10px 24px',
-    border: '1px solid #3a3a5c',
-    borderRadius: '6px',
-    background: 'transparent',
-    color: '#6a6a7a',
-    cursor: 'pointer',
-    fontSize: '13px',
-  },
-};

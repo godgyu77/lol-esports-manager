@@ -59,11 +59,6 @@ interface AllTimeRecordRow {
   value: number;
 }
 
-interface TeamWinStreakRow {
-  team_id: string;
-  streak: number;
-}
-
 // ─────────────────────────────────────────
 // Row → TypeScript 매핑
 // ─────────────────────────────────────────

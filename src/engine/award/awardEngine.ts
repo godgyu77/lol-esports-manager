@@ -163,6 +163,14 @@ export async function calculateSeasonAwards(
       awardedDate,
     });
     awards.push(mvpAward);
+
+    // 수상 뉴스 생성
+    try {
+      const { generateAwardNews } = await import('../news/newsEngine');
+      const playerRows = await db.select<{ name: string }[]>('SELECT name FROM players WHERE id = $1', [mvp.player_id]);
+      const teamRows = await db.select<{ name: string }[]>('SELECT name FROM teams WHERE id = $1', [mvp.team_id]);
+      await generateAwardNews(seasonId, awardedDate, playerRows[0]?.name ?? '', 'mvp', teamRows[0]?.name ?? '', mvp.team_id, mvp.player_id);
+    } catch { /* 뉴스 생성 실패 무시 */ }
   }
 
   // ─── All-Pro 1st/2nd Team (포지션별) ───
@@ -279,8 +287,8 @@ export async function calculateSeasonAwards(
  * 경기 MVP(POG) 기록
  */
 export async function awardPOG(
-  gameId: string,
-  matchId: string,
+  _gameId: string,
+  _matchId: string,
   playerId: string,
   teamId: string,
   date: string,

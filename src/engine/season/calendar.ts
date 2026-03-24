@@ -5,7 +5,6 @@
  * - 시즌 스케줄과 날짜 매핑
  */
 
-import type { Region } from '../../types/game';
 
 // ─────────────────────────────────────────
 // 타입
@@ -20,13 +19,6 @@ export interface CalendarDay {
   matchIds: string[];     // 해당 날 경기 ID (경기일이면)
   isUserMatch: boolean;   // 유저 팀 경기가 있는 날
   weekNumber: number;     // 시즌 주차
-}
-
-interface SeasonCalendar {
-  startDate: string;
-  endDate: string;
-  days: CalendarDay[];
-  matchDates: string[];   // 경기가 있는 날짜 목록
 }
 
 // ─────────────────────────────────────────
@@ -134,7 +126,7 @@ export function assignMatchDates(
     let dayIndex = 0;
     for (const match of matches) {
       const matchDayOfWeek = matchDaysOfWeek[dayIndex % matchDaysOfWeek.length];
-      const daysFromMonday = matchDayOfWeek - 1; // 월=0, 화=1, ...
+      const daysFromMonday = matchDayOfWeek - 1; // getDay() 기준: 수(3-1=2), 목(4-1=3), 금(5-1=4), 토(6-1=5)
       const matchDate = addDays(monday, daysFromMonday);
 
       result.push({
@@ -149,69 +141,3 @@ export function assignMatchDates(
   return result;
 }
 
-/**
- * 전체 시즌 캘린더 생성
- */
-function generateSeasonCalendar(
-  startDate: string,
-  endDate: string,
-  matchSchedule: { date: string; matchId: string; homeTeamId: string; awayTeamId: string }[],
-  userTeamId?: string,
-): SeasonCalendar {
-  const totalDays = daysBetween(startDate, endDate);
-  const days: CalendarDay[] = [];
-  const matchDates = new Set<string>();
-
-  // 경기 날짜별 매핑
-  const matchesByDate = new Map<string, { matchId: string; homeTeamId: string; awayTeamId: string }[]>();
-  for (const m of matchSchedule) {
-    matchDates.add(m.date);
-    const arr = matchesByDate.get(m.date) ?? [];
-    arr.push(m);
-    matchesByDate.set(m.date, arr);
-  }
-
-  let weekNumber = 1;
-
-  for (let i = 0; i <= totalDays; i++) {
-    const date = addDays(startDate, i);
-    const dayOfWeek = parseDate(date).getDay();
-    const dayMatches = matchesByDate.get(date) ?? [];
-    const isMatchDay = dayMatches.length > 0;
-
-    // 주차 계산 (월요일 기준)
-    if (dayOfWeek === 1 && i > 0) weekNumber++;
-
-    const isUserMatch = userTeamId
-      ? dayMatches.some(m => m.homeTeamId === userTeamId || m.awayTeamId === userTeamId)
-      : false;
-
-    // 일 유형 결정
-    let dayType: DayType;
-    if (isMatchDay) {
-      dayType = 'match_day';
-    } else if (dayOfWeek === 0) {
-      dayType = 'rest'; // 일요일 = 휴식
-    } else if (dayOfWeek === 1 || dayOfWeek === 2) {
-      dayType = 'scrim'; // 월/화 = 스크림
-    } else {
-      dayType = 'training'; // 나머지 = 훈련
-    }
-
-    days.push({
-      date,
-      dayOfWeek,
-      dayType,
-      matchIds: dayMatches.map(m => m.matchId),
-      isUserMatch,
-      weekNumber,
-    });
-  }
-
-  return {
-    startDate,
-    endDate,
-    days,
-    matchDates: [...matchDates].sort(),
-  };
-}

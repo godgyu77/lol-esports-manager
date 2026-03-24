@@ -13,6 +13,7 @@ import {
   type Sponsor,
 } from '../../db/queries';
 import { getDatabase } from '../../db/database';
+import { addDays } from '../season/calendar';
 
 // ─────────────────────────────────────────
 // 타입
@@ -117,11 +118,9 @@ export async function acceptSponsor(
   offer: SponsorOffer,
   currentDate: string,
 ): Promise<Sponsor> {
-  // 종료일 계산 (현재 날짜 + durationWeeks 주)
-  const start = new Date(currentDate);
-  const end = new Date(start);
-  end.setDate(end.getDate() + offer.durationWeeks * 7);
-  const endDate = end.toISOString().split('T')[0];
+  // [W16] 종료일 계산 — calendar.ts의 addDays를 사용하여 타임존 혼용 방지
+  // new Date() + toISOString()는 UTC 기준이라 로컬 날짜와 불일치 발생
+  const endDate = addDays(currentDate, offer.durationWeeks * 7);
 
   const id = await insertSponsor({
     seasonId,
@@ -225,7 +224,7 @@ export interface SponsorChangeResult {
 export async function checkSponsorChanges(
   teamId: string,
   seasonId: number,
-  currentDate: string,
+  _currentDate: string,
 ): Promise<SponsorChangeResult> {
   const db = await getDatabase();
   const result: SponsorChangeResult = { newOffers: [], lostSponsors: [], majorOffer: null };
@@ -301,3 +300,194 @@ export const SPONSOR_TIER_COLORS: Record<SponsorTier, string> = {
   silver: '#a0a0b0',
   bronze: '#cd7f32',
 };
+
+// ─────────────────────────────────────────
+// 조건부 스폰서 계약 시스템
+// ─────────────────────────────────────────
+
+/** 스폰서 계약 조건 유형 */
+export type SponsorConditionType =
+  | 'playoff_qualify'      // 플레이오프 진출
+  | 'top_4_finish'         // 상위 4위 마감
+  | 'championship_win'     // 우승
+  | 'international_qualify' // 국제대회 진출
+  | 'player_appearance'    // 특정 선수 출연 의무
+  | 'social_media_post'    // 소셜 미디어 홍보
+  | 'win_streak_3'         // 3연승 달성
+  | 'viewership_target';   // 시청률 목표 달성
+
+/** 스폰서 계약 조건 */
+export interface SponsorCondition {
+  type: SponsorConditionType;
+  /** 조건 설명 */
+  description: string;
+  /** 조건 달성 시 보너스 (만 원) */
+  bonusAmount: number;
+  /** 미달성 시 페널티 (만 원, 양수) */
+  penaltyAmount: number;
+  /** 달성 여부 (null이면 미확인) */
+  fulfilled: boolean | null;
+}
+
+/** 조건부 스폰서 제안 (확장) */
+export interface ConditionalSponsorOffer extends SponsorOffer {
+  /** 추가 조건 목록 */
+  conditions: SponsorCondition[];
+  /** 기본 주간 수입 (조건 미달성 시) */
+  baseWeeklyPayout: number;
+  /** 조건 달성 시 최대 주간 수입 */
+  maxWeeklyPayout: number;
+  /** 선수 출연 의무 (해당 시) */
+  requiredPlayerAppearances?: number;
+}
+
+/** 조건 유형별 라벨 */
+export const SPONSOR_CONDITION_LABELS: Record<SponsorConditionType, string> = {
+  playoff_qualify: '플레이오프 진출',
+  top_4_finish: '상위 4위 마감',
+  championship_win: '우승',
+  international_qualify: '국제대회 진출',
+  player_appearance: '선수 홍보 출연',
+  social_media_post: '소셜 미디어 홍보',
+  win_streak_3: '3연승 달성',
+  viewership_target: '시청률 목표',
+};
+
+/**
+ * 조건부 스폰서 제안 생성
+ * 기존 스폰서 제안에 성적 연동 보너스/페널티 추가
+ */
+export function generateConditionalSponsorOffer(
+  baseOffer: SponsorOffer,
+  teamReputation: number,
+): ConditionalSponsorOffer {
+  const conditions: SponsorCondition[] = [];
+  const tierConditionCount: Record<SponsorTier, number> = {
+    platinum: 3,
+    gold: 2,
+    silver: 1,
+    bronze: 0,
+  };
+
+  const count = tierConditionCount[baseOffer.tier];
+
+  // 티어에 따른 조건 풀
+  const availableConditions: SponsorCondition[] = [];
+
+  if (teamReputation >= 70) {
+    availableConditions.push({
+      type: 'championship_win',
+      description: '시즌 우승 시 보너스',
+      bonusAmount: Math.round(baseOffer.weeklyPayout * baseOffer.durationWeeks * 0.5),
+      penaltyAmount: 0,
+      fulfilled: null,
+    });
+  }
+
+  if (teamReputation >= 55) {
+    availableConditions.push({
+      type: 'playoff_qualify',
+      description: '플레이오프 진출 시 보너스',
+      bonusAmount: Math.round(baseOffer.weeklyPayout * baseOffer.durationWeeks * 0.2),
+      penaltyAmount: Math.round(baseOffer.weeklyPayout * baseOffer.durationWeeks * 0.1),
+      fulfilled: null,
+    });
+  }
+
+  availableConditions.push({
+    type: 'top_4_finish',
+    description: '상위 4위 마감 시 보너스',
+    bonusAmount: Math.round(baseOffer.weeklyPayout * baseOffer.durationWeeks * 0.15),
+    penaltyAmount: 0,
+    fulfilled: null,
+  });
+
+  if (baseOffer.tier === 'platinum' || baseOffer.tier === 'gold') {
+    availableConditions.push({
+      type: 'player_appearance',
+      description: '시즌 중 선수 홍보 출연 3회',
+      bonusAmount: Math.round(baseOffer.weeklyPayout * 4),
+      penaltyAmount: Math.round(baseOffer.weeklyPayout * 2),
+      fulfilled: null,
+    });
+  }
+
+  availableConditions.push({
+    type: 'win_streak_3',
+    description: '시즌 중 3연승 달성 시 보너스',
+    bonusAmount: Math.round(baseOffer.weeklyPayout * 2),
+    penaltyAmount: 0,
+    fulfilled: null,
+  });
+
+  // 랜덤으로 조건 선택
+  const shuffled = availableConditions.sort(() => Math.random() - 0.5);
+  conditions.push(...shuffled.slice(0, count));
+
+  // 최대 주간 수입 계산 (모든 조건 달성 시)
+  const totalBonus = conditions.reduce((s, c) => s + c.bonusAmount, 0);
+  const bonusPerWeek = baseOffer.durationWeeks > 0 ? totalBonus / baseOffer.durationWeeks : 0;
+  const maxWeeklyPayout = baseOffer.weeklyPayout + Math.round(bonusPerWeek);
+
+  return {
+    ...baseOffer,
+    conditions,
+    baseWeeklyPayout: baseOffer.weeklyPayout,
+    maxWeeklyPayout,
+  };
+}
+
+/**
+ * 시즌 종료 시 스폰서 조건 달성 여부 확인
+ */
+export function evaluateSponsorConditions(
+  conditions: SponsorCondition[],
+  seasonResult: {
+    finalStanding: number;
+    madePlayoff: boolean;
+    wonChampionship: boolean;
+    madeInternational: boolean;
+    longestWinStreak: number;
+    playerAppearancesDone: number;
+  },
+): { conditions: SponsorCondition[]; totalBonus: number; totalPenalty: number } {
+  let totalBonus = 0;
+  let totalPenalty = 0;
+
+  const evaluated = conditions.map((condition) => {
+    let fulfilled = false;
+
+    switch (condition.type) {
+      case 'playoff_qualify':
+        fulfilled = seasonResult.madePlayoff;
+        break;
+      case 'top_4_finish':
+        fulfilled = seasonResult.finalStanding <= 4;
+        break;
+      case 'championship_win':
+        fulfilled = seasonResult.wonChampionship;
+        break;
+      case 'international_qualify':
+        fulfilled = seasonResult.madeInternational;
+        break;
+      case 'player_appearance':
+        fulfilled = seasonResult.playerAppearancesDone >= 3;
+        break;
+      case 'win_streak_3':
+        fulfilled = seasonResult.longestWinStreak >= 3;
+        break;
+      default:
+        fulfilled = false;
+    }
+
+    if (fulfilled) {
+      totalBonus += condition.bonusAmount;
+    } else if (condition.penaltyAmount > 0) {
+      totalPenalty += condition.penaltyAmount;
+    }
+
+    return { ...condition, fulfilled };
+  });
+
+  return { conditions: evaluated, totalBonus, totalPenalty };
+}
