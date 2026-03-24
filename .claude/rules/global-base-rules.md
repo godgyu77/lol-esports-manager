@@ -8,16 +8,16 @@
 ## 문서 적용 계층
 
 
-| 계층               | 문서                                     | 적용 시점            |
-| ---------------- | -------------------------------------- | ---------------- |
-| 전역               | 이 문서 (`global-base-rules.md`)          | 항상               |
-| 작업 절차            | `pipeline.md`                          | 항상               |
-| 코드 품질            | `code-quality-principles.md`           | 항상               |
-| 언어 (React/TS)    | `language-react-typescript-rules.md`   | React/TS 프로젝트    |
-| 언어 (Java/Spring) | `language-java-springboot-rules.md`    | Java/Spring 프로젝트 |
-| 프로젝트 (프론트)       | `projects/weai/front-overlay.md`       | weai 프론트엔드       |
-| 프로젝트 (백엔드)       | `projects/weai/backend-jex-overlay.md` | weai Jex 백엔드     |
-| AI 보완            | `ai-supplementary-rules.md`            | 항상               |
+| 계층               | 문서                                           | 적용 시점            |
+| ---------------- | -------------------------------------------- | ---------------- |
+| 전역               | 이 문서 (`global-base-rules.md`)                 | 항상               |
+| 작업 절차            | `pipeline.md`                                 | 항상               |
+| 코드 품질            | `code-quality-principles.md`                  | 항상               |
+| AI 보완            | `ai-supplementary-rules.md`                   | 항상               |
+| 보안               | `security-guidelines.md`                      | 항상               |
+| Git 워크플로우        | `git-workflow.md`                              | 항상               |
+| 언어 (React/TS)    | `language-react-typescript-rules.md`          | React/TS 프로젝트    |
+| 언어 (Java/Spring) | `language-java-springboot-rules.md`           | Java/Spring 프로젝트 |
 
 
 ---
@@ -64,18 +64,17 @@
 
 > 구체적 절차는 `pipeline.md`의 7단계 파이프라인을 따른다.
 
-- **분석 우선**: 오류/요구사항을 받으면 먼저 원인을 분석하여 방안을 제시한다.
-- **코드 수정은 허락 후**: 사용자가 "수정해", "고쳐", "적용해" 등 명시적으로 지시할 때까지 코드를 직접 수정하지 않는다.
-- **코드 우선, 설명은 간결하게**: 수정 지시를 받으면 코드를 먼저 작성하고 부가 설명은 최소화한다.
+- **분석 후 바로 구현**: 오류/요구사항을 받으면 원인 분석 후 별도 승인 없이 바로 코드를 수정한다.
+- **코드 우선, 설명은 간결하게**: 코드를 먼저 작성하고 부가 설명은 최소화한다.
 - **최소 수정 원칙** 유지
-- **고위험 변경**(공통 컴포넌트, 타입, API 인터페이스)은 영향 범위와 롤백 포인트를 사전 보고
+- **고위험 변경**(공통 컴포넌트, 타입, API 인터페이스)은 영향 범위를 간략히 언급 후 진행한다.
 
 ---
 
 ## 기존 패턴 유지
 
 - 프로젝트에 이미 존재하는 코드 스타일, 디렉토리 구조, 네이밍 규칙을 따른다.
-- 새로운 패턴이나 라이브러리를 임의로 도입하지 않는다.
+- 새로운 패턴이나 라이브러리는 기능 구현에 필요한 경우 자유롭게 도입할 수 있다. (npm 패키지 설치 허용)
 
 ---
 
@@ -103,5 +102,5 @@
 ## 품질 기준
 
 - 코드 품질 4원칙 적용 (→ `code-quality-principles.md`)
+- 보안 규칙 준수 (→ `security-guidelines.md`)
 - 성능 최적화는 **측정 근거 기반**으로 수행
-
