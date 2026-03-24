@@ -1,6 +1,7 @@
 # Language Rules: React + TypeScript
 
 > React와 TypeScript를 사용하는 프로젝트에 공통 적용한다.
+> 보안 규칙은 `security-guidelines.md`, 커밋 규칙은 `git-workflow.md` 참조.
 > 출처: lhg language-react-typescript-rules + kcy react_rules 통합
 
 ---
@@ -60,15 +61,6 @@
 - **Early return** 패턴으로 가독성 확보
 - 이벤트 핸들러는 `handle` 접두사: `handleClick`, `handleKeyDown`
 - 서술적인 변수/함수명 사용
-
----
-
-## 커밋 메시지 규칙 (Conventional Commits)
-
-- 형식: `<type>[optional scope]: <description>`
-- 타입: `fix:` (버그), `feat:` (기능), `chore:`, `docs:`, `style:`, `refactor:`, `perf:`, `test:`
-- 제목에 마침표 금지, 명령형 어조 사용
-- 본문에는 **what/why** 설명 (how는 생략 가능)
 
 ---
 
