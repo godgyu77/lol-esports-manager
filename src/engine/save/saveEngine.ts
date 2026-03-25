@@ -13,6 +13,7 @@ import {
   updateSaveMeta,
 } from '../../db/queries';
 import { useGameStore } from '../../stores/gameStore';
+import { getBaseSeed } from '../../utils/random';
 
 const MAX_SLOTS = 10;
 
@@ -42,6 +43,7 @@ export async function createManualSaveFromCurrent(
     saveName,
     teamName,
     seasonInfo,
+    getBaseSeed() || null,
   );
 
   return newSaveId;
@@ -84,17 +86,17 @@ export async function validateSaveIntegrity(save: GameSave): Promise<{ valid: bo
 
     // 신규 시스템 테이블 존재 확인 (데이터 유효성)
     try {
-      await db.select<any[]>('SELECT 1 FROM player_chemistry LIMIT 1');
+      await db.select<Record<string, unknown>[]>('SELECT 1 FROM player_chemistry LIMIT 1');
     } catch {
       errors.push('player_chemistry 테이블 없음 (마이그레이션 필요)');
     }
     try {
-      await db.select<any[]>('SELECT 1 FROM player_satisfaction LIMIT 1');
+      await db.select<Record<string, unknown>[]>('SELECT 1 FROM player_satisfaction LIMIT 1');
     } catch {
       errors.push('player_satisfaction 테이블 없음 (마이그레이션 필요)');
     }
     try {
-      await db.select<any[]>('SELECT 1 FROM player_solo_rank LIMIT 1');
+      await db.select<Record<string, unknown>[]>('SELECT 1 FROM player_solo_rank LIMIT 1');
     } catch {
       errors.push('player_solo_rank 테이블 없음 (마이그레이션 필요)');
     }

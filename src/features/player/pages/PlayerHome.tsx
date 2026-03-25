@@ -13,14 +13,7 @@ import { isAiAvailable } from '../../../ai/gameAiService';
 import { chatWithLlmJson } from '../../../ai/provider';
 import { buildPlayerContext } from '../../../ai/contextBuilder';
 import type { Player } from '../../../types/player';
-
-const POSITION_LABELS: Record<string, string> = {
-  top: '탑',
-  jungle: '정글',
-  mid: '미드',
-  adc: '원딜',
-  support: '서포터',
-};
+import { POSITION_LABELS_KR as POSITION_LABELS } from '../../../utils/constants';
 
 const DAY_TYPE_LABELS: Record<string, string> = {
   training: '훈련일',
@@ -136,7 +129,7 @@ export function PlayerHome() {
     return () => {
       cancelled = true;
     };
-  }, [userTeam?.id, season?.id, season?.currentDate, save?.userPlayerId]);
+  }, [userTeam, season, save?.userPlayerId]);
 
   if (!userTeam || !season || !myPlayer) {
     return <p className="fm-text-secondary fm-text-md">데이터를 불러오는 중...</p>;

@@ -3,11 +3,13 @@
  * OVR 등급 → 6개 스탯 변환 포함
  */
 import { CHAMPION_DB, getChampionsByPrimaryRole } from '../data/championDb';
+import { FREE_AGENT_PLAYERS, FREE_AGENT_STAFF } from '../data/freeAgentDb';
 import { SIGNATURE_CHAMPIONS } from '../data/signatureChampions';
 import { FINANCIAL_CONSTANTS, MATCH_CONSTANTS } from '../data/systemPrompt';
 import { LCK_TEAMS, LCS_TEAMS, LEC_TEAMS, LPL_TEAMS } from '../data/rosterDb';
 import type { Role, RosterPlayer, TeamData } from '../data/rosterDb';
 import type { Position, Region } from '../types';
+import { clamp } from '../utils/mathUtils';
 import { getDatabase, withTransaction } from './database';
 import { insertChampion, insertPlayer, insertPlayerTrait, insertTeam } from './queries';
 
@@ -30,10 +32,6 @@ const REGION_NATIONALITY: Record<Region, string> = {
   LCS: 'NA',
   LEC: 'EU',
 };
-
-function clamp(value: number, min = 0, max = 100): number {
-  return Math.max(min, Math.min(max, Math.round(value)));
-}
 
 /**
  * 지표를 -10 ~ +10 범위의 보정값으로 정규화
@@ -87,12 +85,12 @@ export function convertToPlayerStats(
   const nVariance = Math.sqrt(variance) * 1.5; // 분산이 높을수록 일관성 감소
 
   return {
-    mechanical: clamp(baseOvr + nDpm * 0.5 + nSoloKill * 0.5),
-    gameSense: clamp(baseOvr + nKda * 0.8),
-    teamwork: clamp(baseOvr + nFbPart * 0.5 - nSoloKill * 0.3),
-    consistency: clamp(baseOvr - nVariance),
-    laning: clamp(baseOvr + nCsd15 * 0.4 + nGd15 * 0.3 + nXpd15 * 0.3),
-    aggression: clamp(baseOvr + nSoloKill * 0.5 + nFbPart * 0.3 - nFbVictim * 0.2),
+    mechanical: Math.round(clamp(baseOvr + nDpm * 0.5 + nSoloKill * 0.5, 0, 100)),
+    gameSense: Math.round(clamp(baseOvr + nKda * 0.8, 0, 100)),
+    teamwork: Math.round(clamp(baseOvr + nFbPart * 0.5 - nSoloKill * 0.3, 0, 100)),
+    consistency: Math.round(clamp(baseOvr - nVariance, 0, 100)),
+    laning: Math.round(clamp(baseOvr + nCsd15 * 0.4 + nGd15 * 0.3 + nXpd15 * 0.3, 0, 100)),
+    aggression: Math.round(clamp(baseOvr + nSoloKill * 0.5 + nFbPart * 0.3 - nFbVictim * 0.2, 0, 100)),
   };
 }
 
@@ -148,7 +146,7 @@ async function seedTeams(
 
       // 잠재력: 나이가 어릴수록 높음 (하한 30 보장)
       const MIN_POTENTIAL = 30;
-      const potential = clamp(80 - (rosterPlayer.age - 18) * 3, MIN_POTENTIAL, 100);
+      const potential = Math.round(clamp(80 - (rosterPlayer.age - 18) * 3, MIN_POTENTIAL, 100));
 
       // 최적 나이: 포지션 기반 기본값
       const peakAgeMap: Record<Position, number> = {
@@ -161,7 +159,7 @@ async function seedTeams(
 
       // 인기도: OVR 등급 기반
       const ovrNum = MATCH_CONSTANTS.ovrToNumber[rosterPlayer.stats.ovr] ?? 50;
-      const popularity = clamp(ovrNum - 30);
+      const popularity = Math.round(clamp(ovrNum - 30, 0, 100));
 
       // 연봉: OVR 등급별 차등 (만 원 단위)
       // S+(97)→8억, A(86)→5.2억, B(75)→3.1억, C(63)→1.5억, D(50)→0.7억
@@ -261,7 +259,7 @@ function generateChampionPool(
   if (signature) {
     return signature.map((champId, i) => ({
       championId: champId,
-      proficiency: clamp(95 - i * 5 + Math.round((rand() - 0.5) * 6)),
+      proficiency: Math.round(clamp(95 - i * 5 + Math.round((rand() - 0.5) * 6), 0, 100)),
       gamesPlayed: Math.round(200 - i * 25 + rand() * 50),
     }));
   }
@@ -319,7 +317,7 @@ function generateChampionPool(
 
     return {
       championId: s.champ.id,
-      proficiency: clamp(Math.round(baseProficiency + ovrBonus + (rand() - 0.5) * 8)),
+      proficiency: Math.round(clamp(Math.round(baseProficiency + ovrBonus + (rand() - 0.5) * 8), 0, 100)),
       gamesPlayed: Math.round(150 - i * 20 + rand() * 80),
     };
   });
@@ -362,6 +360,50 @@ async function seedChampionProficiency(
 }
 
 /**
+ * 자유계약 선수 + 스태프 시딩
+ */
+async function seedFreeAgents(): Promise<void> {
+  const db = await getDatabase();
+
+  // 자유계약 선수 시딩
+  for (const fa of FREE_AGENT_PLAYERS) {
+    await insertPlayer({
+      id: fa.id,
+      name: fa.name,
+      teamId: null,
+      position: fa.position,
+      age: fa.age,
+      nationality: fa.nationality,
+      mechanical: fa.mechanical,
+      gameSense: fa.gameSense,
+      teamwork: fa.teamwork,
+      consistency: fa.consistency,
+      laning: fa.laning,
+      aggression: fa.aggression,
+      mental: fa.mental,
+      stamina: fa.stamina,
+      morale: fa.morale,
+      salary: fa.salary,
+      contractEndSeason: 0,
+      potential: fa.potential,
+      peakAge: fa.peakAge,
+      popularity: fa.popularity,
+      division: 'main',
+      isUserPlayer: false,
+    });
+  }
+
+  // 자유계약 스태프 시딩
+  for (const staff of FREE_AGENT_STAFF) {
+    await db.execute(
+      `INSERT INTO staff (team_id, name, role, ability, specialty, salary, morale, contract_end_season, hired_date, is_free_agent)
+       VALUES (NULL, $1, $2, $3, $4, $5, 70, 0, '2026-01-01', 1)`,
+      [staff.name, staff.role, staff.ability, staff.specialty, staff.salary],
+    );
+  }
+}
+
+/**
  * 전체 데이터 시딩 (트랜잭션)
  */
 export async function seedAllData(): Promise<void> {
@@ -376,5 +418,7 @@ export async function seedAllData(): Promise<void> {
     await seedChampionProficiency(LPL_TEAMS, 'LPL');
     await seedChampionProficiency(LCS_TEAMS, 'LCS');
     await seedChampionProficiency(LEC_TEAMS, 'LEC');
+    // 자유계약 선수 + 스태프 시딩
+    await seedFreeAgents();
   });
 }

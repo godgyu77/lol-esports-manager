@@ -3,15 +3,8 @@
  * - 면담, 기자회견 폴백
  * - 주제/상황별 풍부한 템플릿
  */
-
-function pickRandom<T>(arr: readonly T[]): T {
-  if (arr.length === 0) throw new Error('pickRandom: empty array');
-  return arr[Math.floor(Math.random() * arr.length)]!;
-}
-
-function fillTemplate(text: string, vars: Record<string, string>): string {
-  return Object.entries(vars).reduce((t, [k, v]) => t.replaceAll(`{${k}}`, v), text);
-}
+import { pickRandom } from '../utils/random';
+import { fillTemplate } from '../utils/stringUtils';
 
 // ─────────────────────────────────────────
 // 면담 응답 (MEETING_RESPONSES)

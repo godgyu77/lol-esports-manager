@@ -7,6 +7,7 @@
 
 import { getDatabase } from '../../db/database';
 import type { PlayerSoloRank, SoloRankTier, SoloRankDayResult } from '../../types/soloRank';
+import { nextRandom, randomInt } from '../../utils/random';
 
 // ─────────────────────────────────────────
 // 상수
@@ -50,7 +51,7 @@ function tierIndex(tier: SoloRankTier): number {
 export function initializeSoloRank(playerId: string, ovr: number): PlayerSoloRank {
   const tier = expectedTierByOvr(ovr);
   const range = TIER_LP_THRESHOLDS[tier];
-  const lp = Math.round(range.min + Math.random() * (range.max - range.min));
+  const lp = Math.round(range.min + nextRandom() * (range.max - range.min));
 
   return {
     playerId,
@@ -58,7 +59,7 @@ export function initializeSoloRank(playerId: string, ovr: number): PlayerSoloRan
     lp,
     recentWinRate: 0.50 + (ovr - 70) * 0.01, // OVR 80 → 60%, OVR 85 → 65%
     gamesPlayedToday: 0,
-    rank: Math.max(1, Math.round(500 - ovr * 5 + Math.random() * 50)),
+    rank: Math.max(1, Math.round(500 - ovr * 5 + nextRandom() * 50)),
   };
 }
 
@@ -86,7 +87,7 @@ export async function simulateSoloRankDay(
   // 현재 솔로랭크 상태 조회
   let current: PlayerSoloRank;
   try {
-    const rows = await db.select<any[]>(
+    const rows = await db.select<Record<string, unknown>[]>(
       'SELECT * FROM player_solo_rank WHERE player_id = $1',
       [playerId],
     );
@@ -112,11 +113,11 @@ export async function simulateSoloRankDay(
   // 경기일: 1-2게임, 훈련일: 2-4게임, 스크림일: 1-2게임, 휴식일: 3-6게임
   let baseGames: number;
   switch (dayType) {
-    case 'match_day': baseGames = 1 + Math.floor(Math.random() * 2); break;
-    case 'training': baseGames = 2 + Math.floor(Math.random() * 3); break;
-    case 'scrim': baseGames = 1 + Math.floor(Math.random() * 2); break;
-    case 'rest': baseGames = 3 + Math.floor(Math.random() * 4); break;
-    default: baseGames = 2 + Math.floor(Math.random() * 3); break;
+    case 'match_day': baseGames = randomInt(1, 2); break;
+    case 'training': baseGames = randomInt(2, 4); break;
+    case 'scrim': baseGames = randomInt(1, 2); break;
+    case 'rest': baseGames = randomInt(3, 6); break;
+    default: baseGames = randomInt(2, 4); break;
   }
 
   // 스태미나가 낮으면 게임 수 감소
@@ -133,13 +134,13 @@ export async function simulateSoloRankDay(
   let wins = 0;
   let losses = 0;
   for (let i = 0; i < gamesPlayed; i++) {
-    if (Math.random() < effectiveWinRate) wins++;
+    if (nextRandom() < effectiveWinRate) wins++;
     else losses++;
   }
 
   // LP 변동
-  const lpPerWin = 18 + Math.floor(Math.random() * 6);  // 18-23
-  const lpPerLoss = -(15 + Math.floor(Math.random() * 6)); // -15 ~ -20
+  const lpPerWin = randomInt(18, 23);
+  const lpPerLoss = -randomInt(15, 20);
   const lpChange = wins * lpPerWin + losses * lpPerLoss;
 
   // 새 LP 계산
@@ -163,7 +164,7 @@ export async function simulateSoloRankDay(
   }
 
   // 순위 재계산
-  const newRank = Math.max(1, Math.round(current.rank - lpChange * 0.1 + (Math.random() - 0.5) * 10));
+  const newRank = Math.max(1, Math.round(current.rank - lpChange * 0.1 + (nextRandom() - 0.5) * 10));
 
   // 승률 업데이트 (최근 20게임 이동 평균)
   const newWinRate = current.recentWinRate * 0.8 + (gamesPlayed > 0 ? wins / gamesPlayed : 0.5) * 0.2;
@@ -171,7 +172,7 @@ export async function simulateSoloRankDay(
   // 챔피언풀 확장 (연습 챔피언)
   let championPoolExpansion: SoloRankDayResult['championPoolExpansion'];
   if (practiceChampionId && gamesPlayed >= 2) {
-    const profGain = Math.round(gamesPlayed * (1.5 + Math.random()));
+    const profGain = Math.round(gamesPlayed * (1.5 + nextRandom()));
     championPoolExpansion = {
       championId: practiceChampionId,
       proficiencyGain: profGain,
@@ -227,7 +228,7 @@ export async function processTeamSoloRank(
   const results: SoloRankDayResult[] = [];
 
   try {
-    const players = await db.select<any[]>(
+    const players = await db.select<Record<string, unknown>[]>(
       `SELECT id, mechanical, game_sense, teamwork, consistency, laning, aggression, stamina
        FROM players WHERE team_id = $1 AND division = 'main'`,
       [teamId],
@@ -239,7 +240,7 @@ export async function processTeamSoloRank(
       // 연습 챔피언 조회
       let practiceChampId: string | null = null;
       try {
-        const rankRow = await db.select<any[]>(
+        const rankRow = await db.select<Record<string, unknown>[]>(
           'SELECT practice_champion_id FROM player_solo_rank WHERE player_id = $1',
           [p.id],
         );
@@ -291,7 +292,7 @@ export async function calculateSoloRankBonus(playerId: string): Promise<SoloRank
   const db = await getDatabase();
 
   try {
-    const rows = await db.select<any[]>(
+    const rows = await db.select<Record<string, unknown>[]>(
       'SELECT * FROM player_solo_rank WHERE player_id = $1',
       [playerId],
     );
@@ -370,7 +371,7 @@ export async function getSoloRankLeaderboard(
 ): Promise<PlayerSoloRank[]> {
   const db = await getDatabase();
   try {
-    const rows = await db.select<any[]>(
+    const rows = await db.select<Record<string, unknown>[]>(
       `SELECT sr.*, p.name as player_name, p.team_id
        FROM player_solo_rank sr
        JOIN players p ON p.id = sr.player_id

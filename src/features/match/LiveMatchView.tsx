@@ -37,9 +37,12 @@ import { CommentaryPanel } from './CommentaryPanel';
 import { SeriesResult } from './SeriesResult';
 import { TacticsPanel } from './TacticsPanel';
 import { PlayerInstructions } from './PlayerInstructions';
+import { PlayerStatsTable } from './PlayerStatsTable';
+import { PostGameStats } from './PostGameStats';
 import { soundManager } from '../../audio/soundManager';
 import './match.css';
 const MatchMinimap = lazy(() => import('./MatchMinimap').then((m) => ({ default: m.MatchMinimap })));
+const MatchMinimap3D = lazy(() => import('./MatchMinimap3D').then((m) => ({ default: m.MatchMinimap3D })));
 
 const AI_COMMENTARY_EVENT_TYPES = new Set(['kill', 'dragon', 'baron', 'tower_destroy', 'teamfight']);
 const AI_COMMENTARY_COOLDOWN_MS = 30_000;
@@ -105,6 +108,7 @@ export function LiveMatchView() {
   const [isRunning, setIsRunning] = useState(false);
   const [currentDecision, setCurrentDecision] = useState<Decision | null>(null);
   const [seriesComplete, setSeriesComplete] = useState(false);
+  const [is3D, setIs3D] = useState(false);
   const [postMatchComment, setPostMatchComment] = useState<PostMatchComment | null>(null);
   const [homePlayerIds, setHomePlayerIds] = useState<string[]>([]);
   const [awayPlayerIds, setAwayPlayerIds] = useState<string[]>([]);
@@ -115,7 +119,7 @@ export function LiveMatchView() {
 
   const commentaryRef = useRef<HTMLDivElement>(null);
   const chatRef = useRef<HTMLDivElement>(null);
-  const tickTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const _tickTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastAiCommentaryTime = useRef<number>(0);
   const lastProcessedEventCount = useRef<number>(0);
   const lastChatEventCount = useRef<number>(0);
@@ -199,30 +203,38 @@ export function LiveMatchView() {
     initGame(currentGameNum);
   }, [initGame, currentGameNum]);
 
-  // 틱 루프
+  // 틱 루프 — requestAnimationFrame 기반 (부드러운 렌더링)
   useEffect(() => {
     if (!engine || !isRunning || currentDecision) return;
 
-    const interval = Math.max(50, 500 / matchSpeed);
-    tickTimer.current = setInterval(() => {
-      const paused = engine.advance();
-      const state = engine.getState();
-      setGameState({ ...state });
+    const tickInterval = Math.max(50, 500 / matchSpeed);
+    let lastTickTime = performance.now();
+    let animId = 0;
 
-      if (paused && state.pendingDecision) {
-        setCurrentDecision(state.pendingDecision);
-        setIsRunning(false);
+    const loop = (now: number) => {
+      const elapsed = now - lastTickTime;
+      if (elapsed >= tickInterval) {
+        lastTickTime = now - (elapsed % tickInterval);
+        const paused = engine.advance();
+        const state = engine.getState();
+        setGameState({ ...state });
+
+        if (paused && state.pendingDecision) {
+          setCurrentDecision(state.pendingDecision);
+          setIsRunning(false);
+          return;
+        }
+
+        if (state.isFinished) {
+          setIsRunning(false);
+          return;
+        }
       }
-
-      if (state.isFinished) {
-        if (tickTimer.current) clearInterval(tickTimer.current);
-        setIsRunning(false);
-      }
-    }, interval);
-
-    return () => {
-      if (tickTimer.current) clearInterval(tickTimer.current);
+      animId = requestAnimationFrame(loop);
     };
+
+    animId = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(animId);
   }, [engine, isRunning, matchSpeed, currentDecision]);
 
   // AI 경기 중계: 주요 이벤트(kill, dragon, baron, tower_destroy, teamfight) 발생 시 호출
@@ -258,6 +270,7 @@ export function LiveMatchView() {
       goldDiff: gameState.goldHome - gameState.goldAway,
       gameTime: gameState.currentTick,
       kills: { home: gameState.killsHome, away: gameState.killsAway },
+      teamName: homeTeam?.shortName,
     }).then(result => {
       if (cancelled || !engine) return;
       const state = engine.getState();
@@ -271,6 +284,7 @@ export function LiveMatchView() {
     }).catch(() => { /* AI 실패 시 기존 중계 유지 */ });
 
     return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- engine/gameState를 deps에 추가하면 매 틱마다 실행되어 AI 호출 폭주. 이벤트 수 변경 시에만 실행
   }, [gameState?.events.length]);
 
   // 라이브 채팅: 주요 이벤트 시 커뮤니티 채팅 생성
@@ -309,6 +323,7 @@ export function LiveMatchView() {
     }).catch(() => { /* 채팅 생성 실패 무시 */ });
 
     return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- engine/gameState/teamNames를 deps에 추가하면 매 틱마다 실행되어 채팅 생성 폭주. 이벤트 수 변경 시에만 실행
   }, [gameState?.events.length]);
 
   // 채팅 패널 자동 스크롤
@@ -341,7 +356,7 @@ export function LiveMatchView() {
   }, [engine]);
 
   // 게임 종료 → 다음 세트 or 시리즈 종료
-  const handleGameEnd = useCallback(async () => {
+  const handleGameEnd = async () => {
     if (!gameState || !pendingMatch || !engine || !gameState.winner) return;
 
     const playerStatLines = engine.getPlayerStatLines();
@@ -351,12 +366,17 @@ export function LiveMatchView() {
       goldDiffAt15: gameState.goldHome - gameState.goldAway,
       killsHome: gameState.killsHome,
       killsAway: gameState.killsAway,
+      goldHome: gameState.goldHome,
+      goldAway: gameState.goldAway,
+      towersHome: gameState.towersHome,
+      towersAway: gameState.towersAway,
       events: gameState.events,
       playerStatsHome: playerStatLines.home,
       playerStatsAway: playerStatLines.away,
       dragonSoul: gameState.dragonSoul,
       grubsHome: gameState.grubsHome,
       grubsAway: gameState.grubsAway,
+      goldHistory: gameState.goldHistory ?? [],
     };
 
     const newResults = [...gameResults, result];
@@ -425,7 +445,7 @@ export function LiveMatchView() {
       setTeamTalkResult(null);
       setTeamTalkDone(false);
     }
-  }, [engine, gameState, pendingMatch, gameResults, seriesScore, currentGameNum, setBetweenGames]);
+  };
 
   // 세트 간 팀 토크 실행
   const handleBetweenGamesTalk = useCallback(async (tone: 'motivate' | 'calm' | 'warn') => {
@@ -563,64 +583,90 @@ export function LiveMatchView() {
         </div>
       )}
 
-      <div className="match-content">
-        <CommentaryPanel
-          commentary={gameState.commentary}
-          panelRef={commentaryRef}
-        />
-        <Suspense fallback={<div className="match-minimap-placeholder" />}>
-          <MatchMinimap
-            gameState={gameState}
-            homePlayerIds={homePlayerIds}
-            awayPlayerIds={awayPlayerIds}
+      {/* 메인 영역: 미니맵(좌) + 중계/채팅(우) */}
+      <div className="match-main-area">
+        <div className="match-main-left">
+          <div className="minimap-toggle-bar">
+            <button
+              className={`minimap-toggle-btn ${!is3D ? 'minimap-toggle-btn--active' : ''}`}
+              onClick={() => setIs3D(false)}
+            >2D</button>
+            <button
+              className={`minimap-toggle-btn ${is3D ? 'minimap-toggle-btn--active' : ''}`}
+              onClick={() => setIs3D(true)}
+            >3D</button>
+          </div>
+          <Suspense fallback={<div className="match-minimap-placeholder" />}>
+            {is3D ? (
+              <MatchMinimap3D
+                gameState={gameState}
+                homePlayerIds={homePlayerIds}
+                awayPlayerIds={awayPlayerIds}
+                width={450}
+                height={450}
+              />
+            ) : (
+              <MatchMinimap
+                gameState={gameState}
+                homePlayerIds={homePlayerIds}
+                awayPlayerIds={awayPlayerIds}
+                width={450}
+                height={450}
+              />
+            )}
+          </Suspense>
+        </div>
+        <div className="match-main-right">
+          <CommentaryPanel
+            commentary={gameState.commentary}
+            panelRef={commentaryRef}
           />
-        </Suspense>
-
-        {/* 라이브 채팅 패널 */}
-        <div className="match-chat-panel" ref={chatRef}>
-          <h3 className="match-chat-title">라이브 채팅</h3>
-          {liveChatMessages.length === 0 ? (
-            <p className="match-chat-empty">이벤트 발생 시 채팅이 표시됩니다</p>
-          ) : (
-            liveChatMessages.map((msg, i) => (
-              <div key={i} className="match-chat-item">
-                <span
-                  className="match-chat-username"
-                  style={{ color: CHAT_TYPE_COLORS[msg.type] ?? '#8a8a9a' }}
-                >
-                  {msg.username}
-                </span>
-                <span className="match-chat-message">{msg.message}</span>
-              </div>
-            ))
-          )}
+          <div className="match-chat-panel" ref={chatRef}>
+            <h3 className="match-chat-title">라이브 채팅</h3>
+            {liveChatMessages.length === 0 ? (
+              <p className="match-chat-empty">이벤트 발생 시 채팅이 표시됩니다</p>
+            ) : (
+              liveChatMessages.map((msg, i) => (
+                <div key={i} className="match-chat-item">
+                  <span
+                    className="match-chat-username"
+                    style={{ color: CHAT_TYPE_COLORS[msg.type] ?? '#8a8a9a' }}
+                  >
+                    {msg.username}
+                  </span>
+                  <span className="match-chat-message">{msg.message}</span>
+                </div>
+              ))
+            )}
+          </div>
         </div>
       </div>
+
+      {/* 하단: 실시간 선수 스탯 테이블 */}
+      <PlayerStatsTable
+        playerStatsHome={gameState.playerStatsHome}
+        playerStatsAway={gameState.playerStatsAway}
+        currentTick={gameState.currentTick}
+        killsHome={gameState.killsHome}
+        killsAway={gameState.killsAway}
+        homeTeamName={homeTeam?.shortName ?? '블루'}
+        awayTeamName={awayTeam?.shortName ?? '레드'}
+      />
 
       {betweenGames && gameState && (
         <div className="fm-overlay">
           <div className="match-between-modal">
             <h2 className="match-between-title">세트 간 휴식</h2>
 
-            {/* 이전 세트 결과 */}
-            <div className="match-between-result">
-              <span className="match-between-result-label">SET {currentGameNum} 결과</span>
-              <div className="match-between-score-line">
-                <span className="fm-font-bold fm-text-info">{homeTeam?.shortName ?? '블루'}</span>
-                <span className="match-between-score-value">
-                  {gameState.killsHome} - {gameState.killsAway}
-                </span>
-                <span className="fm-font-bold fm-text-danger">{awayTeam?.shortName ?? '레드'}</span>
-              </div>
-              <span className="match-between-winner">
-                {gameState.winner === 'home' ? homeTeam?.shortName : awayTeam?.shortName} 승리
-              </span>
-              <div className="match-between-stats">
-                <span>골드: {Math.round(gameState.goldHome / 100) / 10}k vs {Math.round(gameState.goldAway / 100) / 10}k</span>
-                <span>타워: {gameState.towersHome} vs {gameState.towersAway}</span>
-                <span>경기 시간: {gameState.maxTick}분</span>
-              </div>
-            </div>
+            {/* LCK 스타일 경기 후 통계 */}
+            {gameResults.length > 0 && (
+              <PostGameStats
+                gameResult={gameResults[gameResults.length - 1]}
+                homeTeamName={homeTeam?.shortName ?? '블루'}
+                awayTeamName={awayTeam?.shortName ?? '레드'}
+                gameNumber={currentGameNum}
+              />
+            )}
 
             {/* 시리즈 스코어 */}
             <div className="match-between-series-score">

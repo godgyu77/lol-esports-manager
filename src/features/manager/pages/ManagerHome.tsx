@@ -13,6 +13,7 @@ import { getUnreadCount } from '../../../engine/news/newsEngine';
 import { getInjuredPlayerIds } from '../../../engine/injury/injuryEngine';
 import { getSatisfactionReport } from '../../../engine/satisfaction/playerSatisfactionEngine';
 import { generateDailyBriefing, generateCoachMeeting, type DailyBriefing, type CoachMeetingResult } from '../../../ai/advancedAiService';
+import { formatAmount } from '../../../utils/formatUtils';
 import type { Match } from '../../../types/match';
 import './ManagerHome.css';
 
@@ -63,13 +64,6 @@ const positionBadgeClass: Record<string, string> = {
   adc: 'adc',
   support: 'sup',
 };
-
-function formatAmount(value: number): string {
-  if (value >= 10000) {
-    return `${(value / 10000).toFixed(1)}억`;
-  }
-  return `${value.toLocaleString()}만`;
-}
 
 /** OVR 값에 따른 fm-ovr class suffix */
 function getOvrClass(ovr: number): string {
@@ -221,7 +215,7 @@ export function ManagerHome() {
     return () => {
       cancelled = true;
     };
-  }, [userTeam?.id, season?.id, season?.currentDate]);
+  }, [userTeam, season]);
 
   // 일간 브리핑 로딩
   useEffect(() => {
@@ -316,7 +310,14 @@ export function ManagerHome() {
 
     loadBriefing();
     return () => { cancelled = true; };
-  }, [userTeam?.id, season?.id, season?.currentDate]);
+  }, [userTeam, season, teams]);
+
+  /** 날짜 간 일수 차이 계산 (YYYY-MM-DD 형식) */
+  const getDaysDiff = useCallback((from: string, to: string): number => {
+    const d1 = new Date(from);
+    const d2 = new Date(to);
+    return Math.floor((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24));
+  }, []);
 
   if (!userTeam || !season) {
     return <p className="fm-text-md fm-text-muted">데이터를 불러오는 중...</p>;
@@ -342,13 +343,6 @@ export function ManagerHome() {
   const getOpponentId = (match: Match): string => {
     return match.teamHomeId === userTeam.id ? match.teamAwayId : match.teamHomeId;
   };
-
-  /** 날짜 간 일수 차이 계산 (YYYY-MM-DD 형식) */
-  const getDaysDiff = useCallback((from: string, to: string): number => {
-    const d1 = new Date(from);
-    const d2 = new Date(to);
-    return Math.floor((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24));
-  }, []);
 
   const COOLDOWN_DAYS = 7;
 

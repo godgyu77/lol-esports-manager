@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { getMatchesByTeam, getStandings, getGamesByTeamSeason, getSeasonPlayerRankings } from '../../../db/queries';
 import type { GameRow } from '../../../db/queries';
 import { useGameStore } from '../../../stores/gameStore';
@@ -48,7 +48,9 @@ interface PlayerRanking {
 }
 
 type RankingCategory = 'kills' | 'kda' | 'cs' | 'damage';
-type StatsTab = 'overview' | 'detailed';
+type StatsTab = 'overview' | 'detailed' | 'playerRanking' | 'teamStats' | 'mvpBoard';
+type PositionFilter = 'ALL' | 'top' | 'jungle' | 'mid' | 'adc' | 'support';
+type RankingSortKey = 'kda' | 'kills' | 'deaths' | 'assists' | 'cs' | 'damage' | 'gold';
 
 const POSITION_ORDER: Position[] = ['top', 'jungle', 'mid', 'adc', 'support'];
 const POSITION_LABELS: Record<Position, string> = {
@@ -88,6 +90,8 @@ export function StatsView() {
   const [detailedRankings, setDetailedRankings] = useState<PlayerRankingEntry[]>([]);
   const [detailedRankingStat, setDetailedRankingStat] = useState<string>('kda');
   const [isDetailedLoading, setIsDetailedLoading] = useState(false);
+  const [positionFilter, setPositionFilter] = useState<PositionFilter>('ALL');
+  const [rankingSortKey, setRankingSortKey] = useState<RankingSortKey>('kda');
 
   const userTeamId = save?.userTeamId;
 
@@ -159,6 +163,73 @@ export function StatsView() {
     loadDetailed();
     return () => { cancelled = true; };
   }, [season, userTeamId, activeTab, teams, detailedRankingStat]);
+
+  // ─── 선수 랭킹 탭: 필터링 + 정렬 ───
+  const filteredRankings = useMemo(() => {
+    if (!playerRankings.length) return [];
+    let list = [...playerRankings];
+    if (positionFilter !== 'ALL') {
+      list = list.filter((pr) => pr.position === positionFilter);
+    }
+    list.sort((a, b) => {
+      switch (rankingSortKey) {
+        case 'kda': {
+          const kdaA = a.totalDeaths === 0 ? a.totalKills + a.totalAssists : (a.totalKills + a.totalAssists) / a.totalDeaths;
+          const kdaB = b.totalDeaths === 0 ? b.totalKills + b.totalAssists : (b.totalKills + b.totalAssists) / b.totalDeaths;
+          return kdaB - kdaA;
+        }
+        case 'kills': return b.avgKills - a.avgKills;
+        case 'deaths': return a.avgDeaths - b.avgDeaths;
+        case 'assists': return b.avgAssists - a.avgAssists;
+        case 'cs': return b.avgCs - a.avgCs;
+        case 'damage': return b.avgDamage - a.avgDamage;
+        case 'gold': return b.avgDamage - a.avgDamage; // gold 데이터가 없으므로 damage 대용
+      }
+    });
+    return list;
+  }, [playerRankings, positionFilter, rankingSortKey]);
+
+  // ─── MVP 보드: 최근 경기 KDA TOP 10 ───
+  const mvpBoard = useMemo(() => {
+    if (!playerRankings.length) return [];
+    const ranked = [...playerRankings]
+      .filter((pr) => pr.games >= 1)
+      .map((pr) => {
+        const kda = pr.totalDeaths === 0
+          ? pr.totalKills + pr.totalAssists
+          : (pr.totalKills + pr.totalAssists) / pr.totalDeaths;
+        return { ...pr, kda };
+      })
+      .sort((a, b) => b.kda - a.kda)
+      .slice(0, 10);
+    return ranked;
+  }, [playerRankings]);
+
+  // ─── 팀 통계 탭: 전체 팀 순위 데이터 ───
+  const teamStatsData = useMemo(() => {
+    if (!standings.length) return [];
+    return [...standings]
+      .sort((a, b) => {
+        const winRateA = (a.wins + a.losses) > 0 ? a.wins / (a.wins + a.losses) : 0;
+        const winRateB = (b.wins + b.losses) > 0 ? b.wins / (b.wins + b.losses) : 0;
+        return winRateB - winRateA;
+      })
+      .map((s, idx) => {
+        const team = teams.find((t) => t.id === s.teamId);
+        const total = s.wins + s.losses;
+        const wr = total > 0 ? ((s.wins / total) * 100).toFixed(1) : '0.0';
+        return {
+          rank: idx + 1,
+          teamId: s.teamId,
+          teamName: team?.name ?? s.teamId,
+          wins: s.wins,
+          losses: s.losses,
+          setWins: s.setWins,
+          setLosses: s.setLosses,
+          winRate: wr,
+        };
+      });
+  }, [standings, teams]);
 
   if (!season || !userTeamId) {
     return <p className="fm-text-muted">시즌 데이터를 불러오는 중...</p>;
@@ -353,12 +424,14 @@ export function StatsView() {
     });
   }
 
+  // filteredRankings, mvpBoard, teamStatsData는 early return 위에서 선언됨
+
   return (
     <div>
       <h1 className="fm-page-title fm-mb-lg">경기 통계</h1>
 
       {/* ─── 탭 ─── */}
-      <div className="fm-tabs">
+      <div className="fm-tabs" style={{ flexWrap: 'wrap' }}>
         <button
           className={`fm-tab ${activeTab === 'overview' ? 'fm-tab--active' : ''}`}
           onClick={() => setActiveTab('overview')}
@@ -370,6 +443,24 @@ export function StatsView() {
           onClick={() => setActiveTab('detailed')}
         >
           심화 통계
+        </button>
+        <button
+          className={`fm-tab ${activeTab === 'playerRanking' ? 'fm-tab--active' : ''}`}
+          onClick={() => setActiveTab('playerRanking')}
+        >
+          선수 랭킹
+        </button>
+        <button
+          className={`fm-tab ${activeTab === 'teamStats' ? 'fm-tab--active' : ''}`}
+          onClick={() => setActiveTab('teamStats')}
+        >
+          팀 통계
+        </button>
+        <button
+          className={`fm-tab ${activeTab === 'mvpBoard' ? 'fm-tab--active' : ''}`}
+          onClick={() => setActiveTab('mvpBoard')}
+        >
+          MVP 보드
         </button>
       </div>
 
@@ -545,6 +636,295 @@ export function StatsView() {
                 </div>
               </div>
             </>
+          )}
+        </div>
+      )}
+
+      {/* ─── 선수 랭킹 탭 ─── */}
+      {activeTab === 'playerRanking' && (
+        <div>
+          {/* 포지션 필터 */}
+          <div className="fm-flex fm-gap-sm fm-mb-md fm-items-center" style={{ flexWrap: 'wrap' }}>
+            <span className="fm-text-sm fm-text-muted fm-font-semibold">포지션:</span>
+            {(['ALL', 'top', 'jungle', 'mid', 'adc', 'support'] as PositionFilter[]).map((pos) => (
+              <button
+                key={pos}
+                className={`fm-btn fm-btn--sm ${positionFilter === pos ? 'fm-btn--primary' : 'fm-btn--ghost'}`}
+                onClick={() => setPositionFilter(pos)}
+              >
+                {pos === 'ALL' ? 'ALL' : POSITION_LABELS[pos as Position]}
+              </button>
+            ))}
+          </div>
+
+          {/* 정렬 기준 */}
+          <div className="fm-flex fm-gap-sm fm-mb-md fm-items-center" style={{ flexWrap: 'wrap' }}>
+            <span className="fm-text-sm fm-text-muted fm-font-semibold">정렬:</span>
+            {([
+              ['kda', 'KDA'],
+              ['kills', '킬'],
+              ['deaths', '데스'],
+              ['assists', '어시'],
+              ['cs', 'CS'],
+              ['damage', '데미지'],
+            ] as [RankingSortKey, string][]).map(([key, label]) => (
+              <button
+                key={key}
+                className={`fm-btn fm-btn--sm ${rankingSortKey === key ? 'fm-btn--primary' : 'fm-btn--ghost'}`}
+                onClick={() => setRankingSortKey(key)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {/* 선수 랭킹 테이블 */}
+          <div className="fm-panel">
+            <div className="fm-panel__header">
+              <span className="fm-panel__title">
+                선수 랭킹 — {positionFilter === 'ALL' ? '전체' : POSITION_LABELS[positionFilter as Position]}
+              </span>
+              <span className="fm-text-sm fm-text-muted">{filteredRankings.length}명</span>
+            </div>
+            <div className="fm-panel__body--flush fm-table-wrap">
+              <table className="fm-table fm-table--striped">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>선수명</th>
+                    <th>포지션</th>
+                    <th>경기수</th>
+                    <th>K/D/A</th>
+                    <th>KDA</th>
+                    <th>CS/분</th>
+                    <th>데미지/분</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredRankings.map((pr, idx) => {
+                    const kda = pr.totalDeaths === 0
+                      ? (pr.totalKills + pr.totalAssists).toFixed(1)
+                      : ((pr.totalKills + pr.totalAssists) / pr.totalDeaths).toFixed(2);
+                    const csPerMin = pr.avgCs;
+                    const dmgPerMin = pr.avgDamage;
+                    return (
+                      <tr key={pr.playerId} className={pr.teamId === userTeamId ? 'fm-table__row--selected' : ''}>
+                        <td className={idx < 3 ? 'fm-cell--accent' : ''} style={{ fontWeight: idx < 3 ? 700 : 400 }}>
+                          {idx + 1}
+                        </td>
+                        <td className="fm-cell--name">{pr.playerName}</td>
+                        <td>
+                          <span className="fm-text-accent fm-text-xs">{POSITION_LABELS[pr.position as Position] ?? pr.position}</span>
+                        </td>
+                        <td>{pr.games}</td>
+                        <td>
+                          <span className="fm-text-success">{pr.avgKills.toFixed(1)}</span>
+                          {' / '}
+                          <span className="fm-text-danger">{pr.avgDeaths.toFixed(1)}</span>
+                          {' / '}
+                          <span className="fm-text-secondary">{pr.avgAssists.toFixed(1)}</span>
+                        </td>
+                        <td className={Number(kda) >= 4 ? 'fm-cell--green' : Number(kda) >= 2.5 ? '' : 'fm-cell--red'} style={{ fontWeight: 600 }}>
+                          {kda}
+                        </td>
+                        <td>{csPerMin.toFixed(1)}</td>
+                        <td>{dmgPerMin.toLocaleString()}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── 팀 통계 탭 ─── */}
+      {activeTab === 'teamStats' && (
+        <div>
+          <div className="fm-panel">
+            <div className="fm-panel__header">
+              <span className="fm-panel__title">리그 팀 순위</span>
+            </div>
+            <div className="fm-panel__body--flush fm-table-wrap">
+              <table className="fm-table fm-table--striped">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>팀</th>
+                    <th>승</th>
+                    <th>패</th>
+                    <th>승률</th>
+                    <th>세트 승</th>
+                    <th>세트 패</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {teamStatsData.map((ts) => (
+                    <tr key={ts.teamId} className={ts.teamId === userTeamId ? 'fm-table__row--selected' : ''}>
+                      <td className={ts.rank <= 3 ? 'fm-cell--accent' : ''} style={{ fontWeight: ts.rank <= 3 ? 700 : 400 }}>
+                        {ts.rank}
+                      </td>
+                      <td className="fm-cell--name">{ts.teamName}</td>
+                      <td className="fm-cell--green">{ts.wins}</td>
+                      <td className="fm-cell--red">{ts.losses}</td>
+                      <td style={{ fontWeight: 600 }}>{ts.winRate}%</td>
+                      <td>{ts.setWins}</td>
+                      <td>{ts.setLosses}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* 팀 킬/데스 비교 바 */}
+          <div className="fm-panel fm-mt-lg">
+            <div className="fm-panel__header">
+              <span className="fm-panel__title">{getTeamName(userTeamId)} 시즌 통계 요약</span>
+            </div>
+            <div className="fm-panel__body">
+              <div className="fm-grid fm-grid--3">
+                <div className="fm-card fm-flex-col fm-items-center fm-gap-sm">
+                  <span className="fm-stat__label">총 킬</span>
+                  <span className="fm-stat__value fm-text-success">{totalKills}</span>
+                </div>
+                <div className="fm-card fm-flex-col fm-items-center fm-gap-sm">
+                  <span className="fm-stat__label">총 데스</span>
+                  <span className="fm-stat__value fm-text-danger">{totalDeaths}</span>
+                </div>
+                <div className="fm-card fm-flex-col fm-items-center fm-gap-sm">
+                  <span className="fm-stat__label">팀 K/D</span>
+                  <span className="fm-stat__value">{teamKdRatio}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── MVP 보드 탭 ─── */}
+      {activeTab === 'mvpBoard' && (
+        <div>
+          <div className="fm-panel">
+            <div className="fm-panel__header">
+              <span className="fm-panel__title">MVP 보드 — KDA TOP 10</span>
+            </div>
+            <div className="fm-panel__body">
+              {mvpBoard.length === 0 ? (
+                <p className="fm-text-muted">경기 데이터가 부족합니다.</p>
+              ) : (
+                <div className="fm-flex-col fm-gap-md">
+                  {mvpBoard.map((entry, idx) => {
+                    const maxKda = mvpBoard[0]?.kda ?? 1;
+                    const barWidth = maxKda > 0 ? (entry.kda / maxKda) * 100 : 0;
+                    return (
+                      <div key={entry.playerId} className="fm-flex fm-items-center fm-gap-sm">
+                        {/* 순위 */}
+                        <span
+                          className={`fm-font-bold fm-flex-shrink-0 ${idx < 3 ? 'fm-text-accent' : 'fm-text-muted'}`}
+                          style={{ width: '28px', textAlign: 'right', fontSize: idx < 3 ? '16px' : '13px' }}
+                        >
+                          {idx + 1}
+                        </span>
+
+                        {/* 선수 정보 */}
+                        <div className="fm-flex-col fm-flex-shrink-0" style={{ width: '120px' }}>
+                          <span className="fm-text-primary fm-font-semibold fm-text-md">{entry.playerName}</span>
+                          <span className="fm-text-xs fm-text-accent">{POSITION_LABELS[entry.position as Position] ?? entry.position}</span>
+                        </div>
+
+                        {/* KDA 바 차트 */}
+                        <div className="fm-flex-1">
+                          <div style={{ position: 'relative', height: '20px', background: 'var(--bg-tertiary)', borderRadius: '4px', overflow: 'hidden' }}>
+                            <div style={{
+                              width: `${barWidth}%`,
+                              height: '100%',
+                              background: idx === 0
+                                ? 'linear-gradient(90deg, var(--accent), #e0c068)'
+                                : idx < 3
+                                  ? 'linear-gradient(90deg, rgba(200,170,110,0.6), rgba(200,170,110,0.3))'
+                                  : 'rgba(100,181,246,0.4)',
+                              borderRadius: '4px',
+                              transition: 'width 0.3s ease',
+                            }} />
+                            <span style={{
+                              position: 'absolute',
+                              right: '8px',
+                              top: '50%',
+                              transform: 'translateY(-50%)',
+                              fontSize: '11px',
+                              fontWeight: 600,
+                              color: 'var(--text-primary)',
+                            }}>
+                              {entry.kda.toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* 세부 스탯 */}
+                        <div className="fm-flex fm-gap-md fm-flex-shrink-0 fm-text-sm" style={{ width: '180px' }}>
+                          <span>
+                            <span className="fm-text-muted">CS </span>
+                            <span className="fm-text-primary fm-font-semibold">{entry.avgCs.toFixed(0)}</span>
+                          </span>
+                          <span>
+                            <span className="fm-text-muted">DMG </span>
+                            <span className="fm-text-primary fm-font-semibold">{entry.avgDamage.toLocaleString()}</span>
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* 최근 5경기 KDA 바 차트 (사용자 팀 로스터 기준) */}
+          {userRoster.length > 0 && (
+            <div className="fm-panel fm-mt-lg">
+              <div className="fm-panel__header">
+                <span className="fm-panel__title">{getTeamName(userTeamId)} 로스터 시즌 KDA</span>
+              </div>
+              <div className="fm-panel__body">
+                <div className="fm-flex-col fm-gap-sm">
+                  {userRoster
+                    .filter((p) => {
+                      const pr = playerRankings.find((r) => r.playerId === p.id);
+                      return pr && pr.games > 0;
+                    })
+                    .map((player) => {
+                      const pr = playerRankings.find((r) => r.playerId === player.id);
+                      if (!pr) return null;
+                      const kda = pr.totalDeaths === 0
+                        ? pr.totalKills + pr.totalAssists
+                        : (pr.totalKills + pr.totalAssists) / pr.totalDeaths;
+                      const maxKda = 8;
+                      const barPct = Math.min((kda / maxKda) * 100, 100);
+                      return (
+                        <div key={player.id} className="fm-bar">
+                          <span className="fm-text-accent fm-font-semibold fm-text-sm fm-flex-shrink-0" style={{ width: '32px' }}>
+                            {POSITION_LABELS[player.position]}
+                          </span>
+                          <span className="fm-text-primary fm-text-sm fm-flex-shrink-0" style={{ width: '80px' }}>
+                            {player.name}
+                          </span>
+                          <div className="fm-bar__track" style={{ height: '16px', borderRadius: '4px' }}>
+                            <div
+                              className={`fm-bar__fill ${kda >= 4 ? 'fm-bar__fill--green' : kda >= 2.5 ? 'fm-bar__fill--accent' : 'fm-bar__fill--red'}`}
+                              style={{ width: `${barPct}%`, borderRadius: '4px' }}
+                            />
+                          </div>
+                          <span className="fm-bar__value fm-font-semibold fm-flex-shrink-0" style={{ width: '50px' }}>
+                            {kda.toFixed(2)}
+                          </span>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            </div>
           )}
         </div>
       )}

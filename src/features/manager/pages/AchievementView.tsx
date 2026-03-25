@@ -72,7 +72,7 @@ export function AchievementView() {
 
     load();
     return () => { cancelled = true; };
-  }, [save?.id, season?.id]);
+  }, [save, season]);
 
   if (!save || !season) {
     return <p className="fm-text-muted fm-p-md">데이터를 불러오는 중...</p>;

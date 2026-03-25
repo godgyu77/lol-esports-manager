@@ -71,7 +71,7 @@ function getLoyaltyLabel(loyalty: number): string {
 }
 
 export function PlayerContractView() {
-  const save = useGameStore((s) => s.save);
+  const _save = useGameStore((s) => s.save);
   const season = useGameStore((s) => s.season);
 
   const [contract, setContract] = useState<ContractInfo | null>(null);
@@ -210,7 +210,7 @@ export function PlayerContractView() {
     } finally {
       setLoading(false);
     }
-  }, [save, season]);
+  }, [season]);
 
   useEffect(() => {
     loadContractData();
@@ -256,7 +256,7 @@ export function PlayerContractView() {
       await acceptFreeAgentOffer(transferOffer, season.id, season.currentDate);
       setMessage({ text: `${offer.teamName}과 계약 완료!`, type: 'success' });
       await loadContractData();
-    } catch (err) {
+    } catch {
       setMessage({ text: '계약 수락 중 오류가 발생했습니다.', type: 'error' });
     }
   }, [season, contract, loadContractData]);
@@ -273,7 +273,7 @@ export function PlayerContractView() {
       await finalizeNegotiation(result, season.id);
       setMessage({ text: '재계약 수락 완료!', type: 'success' });
       await loadContractData();
-    } catch (err) {
+    } catch {
       setMessage({ text: '수락 처리 중 오류가 발생했습니다.', type: 'error' });
     }
   }, [season, loadContractData]);
@@ -284,7 +284,7 @@ export function PlayerContractView() {
       await respondToNegotiation(neg.id, 'reject', undefined, '이 조건으로는 계약할 수 없습니다.');
       setMessage({ text: '재계약을 거절했습니다.', type: 'success' });
       await loadContractData();
-    } catch (err) {
+    } catch {
       setMessage({ text: '거절 처리 중 오류가 발생했습니다.', type: 'error' });
     }
   }, [loadContractData]);
@@ -322,7 +322,7 @@ export function PlayerContractView() {
 
       setCounterNeg(null);
       await loadContractData();
-    } catch (err) {
+    } catch {
       setMessage({ text: '역제안 중 오류가 발생했습니다.', type: 'error' });
     }
   };
@@ -356,7 +356,7 @@ export function PlayerContractView() {
 
         await loadContractData();
       }
-    } catch (err) {
+    } catch {
       setMessage({ text: '계약 요청 중 오류가 발생했습니다.', type: 'error' });
     }
   };

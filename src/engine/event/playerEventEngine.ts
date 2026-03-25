@@ -7,6 +7,7 @@
 
 import { getDatabase } from '../../db/database';
 import { generateNewsArticle } from '../../ai/advancedAiService';
+import { nextRandom } from '../../utils/random';
 
 // ─────────────────────────────────────────
 // 타입
@@ -39,9 +40,20 @@ export interface PlayerEvent {
   };
   choices?: {
     label: string;
-    effect: string;
+    effect: ChoiceEffect;
   }[];
   severity: 'minor' | 'moderate' | 'major' | 'critical';
+}
+
+export interface ChoiceEffect {
+  displayText: string;
+  moraleChange?: number;
+  popularityChange?: number;
+  staminaChange?: number;
+  daysAbsent?: number;
+  teamMoraleChange?: number;
+  teamPopularityChange?: number;
+  teamStatChanges?: Record<string, number>;
 }
 
 // ─────────────────────────────────────────
@@ -121,9 +133,9 @@ const EVENT_TEMPLATES: EventTemplate[] = [
     description: (name) => `${name} 선수의 도박 관련 논란이 터졌습니다. 심각한 이미지 타격이 예상됩니다.`,
     effects: { moraleChange: -15, popularityChange: -30, daysAbsent: 30, teamMoraleChange: -5 },
     choices: [
-      { label: '엄중 경고 + 벌금', effect: '선수 사기 -5, 인기 추가 하락 방지' },
-      { label: '출전 정지 연장 (60일)', effect: '팬 반응 호전, 팀 이미지 보호' },
-      { label: '묵인', effect: '팀 사기 추가 하락' },
+      { label: '엄중 경고 + 벌금', effect: { displayText: '선수 사기 -5, 인기 추가 하락 방지', moraleChange: -5 } },
+      { label: '출전 정지 연장 (60일)', effect: { displayText: '팬 반응 호전, 팀 이미지 보호', teamPopularityChange: 2 } },
+      { label: '묵인', effect: { displayText: '팀 사기 추가 하락', teamMoraleChange: -3 } },
     ],
     severity: 'critical',
     baseProbability: 0.0005,
@@ -136,8 +148,8 @@ const EVENT_TEMPLATES: EventTemplate[] = [
     description: (name) => `${name} 선수가 음주 관련 사건에 연루되었습니다.`,
     effects: { moraleChange: -15, popularityChange: -20, teamMoraleChange: -5 },
     choices: [
-      { label: '공개 사과 요구', effect: '인기도 일부 회복' },
-      { label: '내부 처리', effect: '팀 내부 갈등 가능성' },
+      { label: '공개 사과 요구', effect: { displayText: '인기도 일부 회복' } },
+      { label: '내부 처리', effect: { displayText: '팀 내부 갈등 가능성', teamMoraleChange: -3 } },
     ],
     severity: 'major',
     baseProbability: 0.001,
@@ -150,8 +162,8 @@ const EVENT_TEMPLATES: EventTemplate[] = [
     description: (name) => `${name} 선수의 SNS 게시글이 논란이 되고 있습니다.`,
     effects: { moraleChange: -5, popularityChange: -15 },
     choices: [
-      { label: '게시글 삭제 + 사과문 게재', effect: '논란 빠르게 진화' },
-      { label: '무대응', effect: '논란 장기화 가능성' },
+      { label: '게시글 삭제 + 사과문 게재', effect: { displayText: '논란 빠르게 진화' } },
+      { label: '무대응', effect: { displayText: '논란 장기화 가능성' } },
     ],
     severity: 'moderate',
     baseProbability: 0.002,
@@ -173,8 +185,8 @@ const EVENT_TEMPLATES: EventTemplate[] = [
     description: (name) => `${name} 선수가 팀 내에서 폭언을 한 것으로 알려졌습니다.`,
     effects: { teamMoraleChange: -10, moraleChange: -5 },
     choices: [
-      { label: '개별 면담 진행', effect: '갈등 해소 가능' },
-      { label: '벌금 부과', effect: '규율 확립, 선수 불만 가능' },
+      { label: '개별 면담 진행', effect: { displayText: '갈등 해소 가능', teamMoraleChange: 5 } },
+      { label: '벌금 부과', effect: { displayText: '규율 확립, 선수 불만 가능', teamStatChanges: { consistency: 1 } } },
     ],
     severity: 'moderate',
     baseProbability: 0.002,
@@ -298,8 +310,8 @@ const EVENT_TEMPLATES: EventTemplate[] = [
     description: (name) => `${name} 선수에게 예능 프로그램 출연 제의가 들어왔습니다.`,
     effects: { popularityChange: 10, moraleChange: 3 },
     choices: [
-      { label: '출연 수락', effect: '인기도 +10, 체력 -5' },
-      { label: '출연 거절', effect: '훈련 집중' },
+      { label: '출연 수락', effect: { displayText: '인기도 +10, 체력 -5', popularityChange: 10, staminaChange: -5 } },
+      { label: '출연 거절', effect: { displayText: '훈련 집중' } },
     ],
     severity: 'minor',
     baseProbability: 0.001,
@@ -374,8 +386,8 @@ const EVENT_TEMPLATES: EventTemplate[] = [
     description: (name) => `${name} 선수가 번아웃 증상을 보이고 있습니다. 충분한 휴식이 필요합니다.`,
     effects: { moraleChange: -15, statChanges: { consistency: -2 } },
     choices: [
-      { label: '1주일 휴식 부여', effect: '컨디션 회복, 출전 불가 7일' },
-      { label: '계속 경기 출전', effect: '폼 추가 하락 위험' },
+      { label: '1주일 휴식 부여', effect: { displayText: '컨디션 회복, 출전 불가 7일', moraleChange: 10, daysAbsent: 7 } },
+      { label: '계속 경기 출전', effect: { displayText: '폼 추가 하락 위험' } },
     ],
     severity: 'moderate',
     condition: (p) => p.morale < 30,
@@ -464,7 +476,7 @@ export async function generateDailyPlayerEvents(
           prob *= template.probabilityModifier(player);
         }
 
-        if (Math.random() < prob) {
+        if (nextRandom() < prob) {
           const event: PlayerEvent = {
             id: `${template.id}_${player.id}_${currentDate}`,
             playerId: player.id,
@@ -656,102 +668,81 @@ export async function getPlayerEventHistory(
 
 /**
  * 이벤트 선택지의 효과를 실제로 적용한다.
- * effect 텍스트를 파싱하여 스탯/사기/출전정지 등을 처리.
+ * 구조화된 ChoiceEffect 객체를 기반으로 스탯/사기/출전정지 등을 처리.
  */
 async function applyChoiceEffect(
   db: Awaited<ReturnType<typeof getDatabase>>,
   event: PlayerEvent,
-  choice: { label: string; effect: string },
+  choice: { label: string; effect: ChoiceEffect },
   teamId: string,
   currentDate: string,
 ): Promise<void> {
-  const effect = choice.effect;
-  const label = choice.label;
+  const fx = choice.effect;
 
-  // 사기 변동 파싱: "선수 사기 -5", "사기 +10"
-  const moraleMatch = effect.match(/사기\s*([+-]?\d+)/);
-  if (moraleMatch) {
-    const delta = parseInt(moraleMatch[1]);
+  // 1. 선수 사기 변동
+  if (fx.moraleChange) {
     await db.execute(
       'UPDATE players SET morale = MAX(0, MIN(100, morale + $1)) WHERE id = $2',
-      [delta, event.playerId],
+      [fx.moraleChange, event.playerId],
     );
   }
 
-  // 인기도 변동: "인기도 +10", "인기 추가 하락 방지"
-  const popMatch = effect.match(/인기도?\s*([+-]\d+)/);
-  if (popMatch) {
-    const delta = parseInt(popMatch[1]);
+  // 2. 선수 인기도 변동
+  if (fx.popularityChange) {
     await db.execute(
       'UPDATE players SET popularity = MAX(0, MIN(100, popularity + $1)) WHERE id = $2',
-      [delta, event.playerId],
+      [fx.popularityChange, event.playerId],
     );
   }
 
-  // 출전 정지/결장 연장: "출전 정지 연장 (60일)", "출전 불가 7일"
-  const absenceMatch = effect.match(/출전\s*(?:정지|불가)\s*(?:연장\s*)?\(?(\d+)일?\)?/);
-  if (absenceMatch) {
-    const days = parseInt(absenceMatch[1]);
-    try {
-      const returnDate = new Date(currentDate);
-      returnDate.setDate(returnDate.getDate() + days);
-      const expectedReturn = returnDate.toISOString().slice(0, 10);
-      await db.execute(
-        `INSERT INTO player_injuries (player_id, team_id, injury_type, severity, days_remaining, is_recovered, occurred_date, expected_return)
-         VALUES ($1, $2, $3, $4, $5, 0, $6, $7)`,
-        [event.playerId, teamId, `${event.title} — ${label}`, event.severity, days, currentDate, expectedReturn],
-      );
-    } catch (e) { console.warn('[playerEventEngine] 출전 정지 처리 실패:', e); }
-  }
-
-  // 체력 변동: "체력 -5"
-  const staminaMatch = effect.match(/체력\s*([+-]\d+)/);
-  if (staminaMatch) {
-    const delta = parseInt(staminaMatch[1]);
+  // 3. 선수 체력 변동
+  if (fx.staminaChange) {
     try {
       await db.execute(
         'UPDATE player_daily_condition SET stamina = MAX(0, MIN(100, stamina + $1)) WHERE player_id = $2',
-        [delta, event.playerId],
+        [fx.staminaChange, event.playerId],
       );
     } catch { /* player_daily_condition 미존재 시 무시 */ }
   }
 
-  // 팀 사기 변동: "팀 사기 추가 하락", "팀 이미지 보호"
-  if (effect.includes('팀 사기 추가 하락') || effect.includes('팀 내부 갈등')) {
-    await db.execute(
-      'UPDATE players SET morale = MAX(0, morale - 3) WHERE team_id = $1 AND id != $2',
-      [teamId, event.playerId],
-    );
+  // 4. 출전 불가
+  if (fx.daysAbsent && fx.daysAbsent > 0) {
+    try {
+      const returnDate = new Date(currentDate);
+      returnDate.setDate(returnDate.getDate() + fx.daysAbsent);
+      const expectedReturn = returnDate.toISOString().slice(0, 10);
+      await db.execute(
+        `INSERT INTO player_injuries (player_id, team_id, injury_type, severity, days_remaining, is_recovered, occurred_date, expected_return)
+         VALUES ($1, $2, $3, $4, $5, 0, $6, $7)`,
+        [event.playerId, teamId, `${event.title} — ${choice.label}`, event.severity, fx.daysAbsent, currentDate, expectedReturn],
+      );
+    } catch (e) { console.warn('[playerEventEngine] 출전 정지 처리 실패:', e); }
   }
-  if (effect.includes('팀 이미지 보호') || effect.includes('팬 반응 호전')) {
+
+  // 5. 팀 사기 변동
+  if (fx.teamMoraleChange) {
     await db.execute(
-      'UPDATE players SET popularity = MIN(100, popularity + 2) WHERE team_id = $1',
-      [teamId],
+      'UPDATE players SET morale = MAX(0, MIN(100, morale + $1)) WHERE team_id = $2 AND id != $3',
+      [fx.teamMoraleChange, teamId, event.playerId],
     );
   }
 
-  // 갈등 해소: "갈등 해소 가능"
-  if (effect.includes('갈등 해소')) {
+  // 6. 팀 인기도 변동
+  if (fx.teamPopularityChange) {
     await db.execute(
-      'UPDATE players SET morale = MIN(100, morale + 5) WHERE team_id = $1',
-      [teamId],
+      'UPDATE players SET popularity = MIN(100, popularity + $1) WHERE team_id = $2',
+      [fx.teamPopularityChange, teamId],
     );
   }
 
-  // 규율 확립: "규율 확립"
-  if (effect.includes('규율 확립')) {
-    // 팀 전체 consistency 약간 상승
-    await db.execute(
-      'UPDATE players SET consistency = MIN(99, consistency + 1) WHERE team_id = $1',
-      [teamId],
-    ).catch(() => {});
-  }
-
-  // 컨디션 회복: "컨디션 회복"
-  if (effect.includes('컨디션 회복')) {
-    await db.execute(
-      'UPDATE players SET morale = MIN(100, morale + 10) WHERE id = $1',
-      [event.playerId],
-    );
+  // 7. 팀 스탯 변동
+  if (fx.teamStatChanges) {
+    for (const [stat, change] of Object.entries(fx.teamStatChanges)) {
+      const column = stat === 'gameSense' ? 'game_sense' : stat;
+      await db.execute(
+        `UPDATE players SET ${column} = MIN(99, ${column} + $1) WHERE team_id = $2`,
+        [change, teamId],
+      ).catch(() => {});
+    }
   }
 }

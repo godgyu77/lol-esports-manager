@@ -40,14 +40,17 @@ interface MatchMinimapProps {
 // 상수
 // ─────────────────────────────────────────
 
-const DEFAULT_SIZE = 280;
+const DEFAULT_SIZE = 450;
 const BG_COLOR = '#0a1a0a';
 const GRID_COLOR = 0x1a2a1a;
 const LANE_COLOR = 0x2a3a2a;
 const HOME_COLOR = 0x4488ff;
 const AWAY_COLOR = 0xff4444;
-const PLAYER_RADIUS = 5;
-const GRID_SPACING = 40;
+const PLAYER_RADIUS = 7;
+const GRID_SPACING = 50;
+
+/** 포지션 라벨 (미니맵 플레이어 표시) */
+const _POS_LABEL = ['T', 'J', 'M', 'A', 'S'];
 
 /** 이벤트 타입별 플래시 색상 */
 const EVENT_FLASH_COLORS: Partial<Record<MatchEventType, number>> = {
@@ -208,14 +211,71 @@ export function MatchMinimap({
     };
   }, [width, height]);
 
-  // ─── 매 틱마다 플레이어 + 이벤트 렌더 ───
+  // ─── 플레이어 위치 보간 (lerp) ───
+  const _prevPositions = useRef<Map<string, { x: number; y: number }>>(new Map());
+  const displayPositions = useRef<Map<string, { x: number; y: number }>>(new Map());
+
   useEffect(() => {
     const g = graphicsRef.current;
     if (!g) return;
 
-    drawPlayers(g.players, gameState.currentTick, homePlayerIds, awayPlayerIds, width, height);
+    // 목표 위치 계산
+    const targets = new Map<string, { x: number; y: number }>();
+    for (let i = 0; i < Math.min(homePlayerIds.length, 5); i++) {
+      targets.set(`h${i}`, getPlayerPosition(gameState.currentTick, i, 'home', width));
+    }
+    for (let i = 0; i < Math.min(awayPlayerIds.length, 5); i++) {
+      targets.set(`a${i}`, getPlayerPosition(gameState.currentTick, i, 'away', width));
+    }
+
+    // lerp 보간 애니메이션
+    let animId = 0;
+    const LERP_SPEED = 0.15;
+
+    const animate = () => {
+      let needsUpdate = false;
+      for (const [key, target] of targets) {
+        const current = displayPositions.current.get(key) ?? { ...target };
+        const dx = target.x - current.x;
+        const dy = target.y - current.y;
+        if (Math.abs(dx) > 0.1 || Math.abs(dy) > 0.1) {
+          current.x += dx * LERP_SPEED;
+          current.y += dy * LERP_SPEED;
+          needsUpdate = true;
+        } else {
+          current.x = target.x;
+          current.y = target.y;
+        }
+        displayPositions.current.set(key, current);
+      }
+
+      // 보간된 위치로 그리기
+      g.players.clear();
+      for (let i = 0; i < Math.min(homePlayerIds.length, 5); i++) {
+        const pos = displayPositions.current.get(`h${i}`);
+        if (pos) {
+          g.players.circle(pos.x, pos.y, PLAYER_RADIUS);
+          g.players.fill(HOME_COLOR);
+        }
+      }
+      for (let i = 0; i < Math.min(awayPlayerIds.length, 5); i++) {
+        const pos = displayPositions.current.get(`a${i}`);
+        if (pos) {
+          g.players.circle(pos.x, pos.y, PLAYER_RADIUS);
+          g.players.fill(AWAY_COLOR);
+        }
+      }
+
+      if (needsUpdate) {
+        animId = requestAnimationFrame(animate);
+      }
+    };
+
+    animate();
     drawEvents(g.events, gameState.currentTick, gameState.events, width, height);
     drawOverlay(g.overlay, gameState, width, height);
+
+    return () => cancelAnimationFrame(animId);
   }, [gameState, homePlayerIds, awayPlayerIds, width, height]);
 
   return (
@@ -267,17 +327,45 @@ const drawLanes = (g: Graphics, w: number, _h: number) => {
   }
 
   // 기지 표시 (좌하단 홈, 우상단 어웨이)
-  g.circle(margin + 0.05 * usable, margin + 0.95 * usable, 8);
+  g.circle(margin + 0.05 * usable, margin + 0.95 * usable, 10);
   g.fill({ color: HOME_COLOR, alpha: 0.3 });
-  g.stroke({ color: HOME_COLOR, width: 1, alpha: 0.6 });
+  g.stroke({ color: HOME_COLOR, width: 1.5, alpha: 0.6 });
 
-  g.circle(margin + 0.95 * usable, margin + 0.05 * usable, 8);
+  g.circle(margin + 0.95 * usable, margin + 0.05 * usable, 10);
   g.fill({ color: AWAY_COLOR, alpha: 0.3 });
-  g.stroke({ color: AWAY_COLOR, width: 1, alpha: 0.6 });
+  g.stroke({ color: AWAY_COLOR, width: 1.5, alpha: 0.6 });
+
+  // 드래곤 pit (하단 중앙)
+  g.circle(margin + 0.62 * usable, margin + 0.62 * usable, 12);
+  g.fill({ color: 0xaa44ff, alpha: 0.1 });
+  g.stroke({ color: 0xaa44ff, width: 1, alpha: 0.4 });
+
+  // 바론 pit (상단 중앙)
+  g.circle(margin + 0.38 * usable, margin + 0.38 * usable, 12);
+  g.fill({ color: 0xff44cc, alpha: 0.1 });
+  g.stroke({ color: 0xff44cc, width: 1, alpha: 0.4 });
+
+  // 타워 위치 (각 라인 3개씩, 양쪽 6개 = 12개)
+  const towerPositions = [
+    // 홈 타워 (블루)
+    { x: 0.10, y: 0.55 }, { x: 0.10, y: 0.30 }, { x: 0.15, y: 0.15 }, // 탑
+    { x: 0.30, y: 0.70 }, { x: 0.40, y: 0.60 },                       // 미드
+    { x: 0.55, y: 0.90 }, { x: 0.30, y: 0.90 }, { x: 0.15, y: 0.85 }, // 봇
+    // 어웨이 타워 (레드)
+    { x: 0.90, y: 0.45 }, { x: 0.90, y: 0.70 }, { x: 0.85, y: 0.85 }, // 탑
+    { x: 0.70, y: 0.30 }, { x: 0.60, y: 0.40 },                       // 미드
+    { x: 0.45, y: 0.10 }, { x: 0.70, y: 0.10 }, { x: 0.85, y: 0.15 }, // 봇
+  ];
+  for (let i = 0; i < towerPositions.length; i++) {
+    const tp = towerPositions[i];
+    const color = i < 8 ? HOME_COLOR : AWAY_COLOR;
+    g.rect(margin + tp.x * usable - 3, margin + tp.y * usable - 3, 6, 6);
+    g.fill({ color, alpha: 0.4 });
+  }
 };
 
 /** 플레이어 점 */
-const drawPlayers = (
+const _drawPlayers = (
   g: Graphics,
   tick: number,
   homeIds: string[],

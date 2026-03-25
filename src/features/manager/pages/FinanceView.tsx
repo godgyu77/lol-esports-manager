@@ -10,6 +10,7 @@ import {
   type SponsorOffer,
   type SponsorTier,
 } from '../../../engine/economy/sponsorEngine';
+import { formatAmount } from '../../../utils/formatUtils';
 
 /** 카테고리 한국어 라벨 */
 const CATEGORY_LABELS: Record<string, string> = {
@@ -26,13 +27,6 @@ const CATEGORY_LABELS: Record<string, string> = {
 
 function getCategoryLabel(category: string): string {
   return CATEGORY_LABELS[category] ?? category;
-}
-
-function formatAmount(amount: number): string {
-  if (amount >= 10000) {
-    return `${(amount / 10000).toFixed(1)}억`;
-  }
-  return `${amount.toLocaleString()}만`;
 }
 
 export function FinanceView() {

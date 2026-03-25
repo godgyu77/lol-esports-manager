@@ -7,6 +7,7 @@
 import type { NewsArticle, NewsCategory } from '../../types/news';
 import { getDatabase } from '../../db/database';
 import { generateNewsArticle } from '../../ai/advancedAiService';
+import { nextRandom, pickRandom, randomInt } from '../../utils/random';
 
 // ─────────────────────────────────────────
 // Row 타입
@@ -123,7 +124,7 @@ export async function generateMatchResultNews(
     `${loser}가 ${winner}에게 ${loseScore}:${winScore}로 완패했다. ${loser} 팬들 사이에서는 로스터 변경을 요구하는 목소리가 커지고 있다.`,
   ];
 
-  const idx = Math.floor(Math.random() * templates.length);
+  const idx = randomInt(0, templates.length - 1);
   await insertNews(seasonId, date, 'match_result', templates[idx], contentTemplates[idx], importance);
 }
 
@@ -162,7 +163,7 @@ export async function generateTransferRumorNews(
     `${playerName}의 ${teamName} 합류 가능성이 높아지고 있다. 전문가들은 이 영입이 성사될 경우 ${teamName}의 전력이 크게 상승할 것으로 분석했다.`,
   ];
 
-  const idx = Math.floor(Math.random() * templates.length);
+  const idx = randomInt(0, templates.length - 1);
   await insertNews(
     seasonId, date, 'transfer_rumor',
     templates[idx].title, contents[idx], templates[idx].importance,
@@ -209,7 +210,7 @@ export async function generateTeamAnalysisNews(
   ];
 
   const pool = isStrong ? strongTemplates : isWeak ? weakTemplates : midTemplates;
-  const chosen = pool[Math.floor(Math.random() * pool.length)];
+  const chosen = pickRandom(pool);
 
   await insertNews(seasonId, date, 'team_analysis', chosen.title, chosen.content, 1, teamId);
 }
@@ -253,11 +254,12 @@ export async function generateDailyNews(
   date: string,
   teams: Array<{ id: string; name: string; shortName: string }>,
 ): Promise<void> {
-  const newsCount = 1 + Math.floor(Math.random() * 3); // 1~3건
+  const db = await getDatabase();
+  const newsCount = randomInt(1, 3);
 
   for (let i = 0; i < newsCount; i++) {
-    const type = Math.random();
-    const team = teams[Math.floor(Math.random() * teams.length)];
+    const type = nextRandom();
+    const team = pickRandom(teams);
 
     if (type < 0.3) {
       // SNS 반응
@@ -269,15 +271,25 @@ export async function generateDailyNews(
         `이번 주 MVP 논란`,
         `LCK 순위 예측 토론`,
       ];
-      const topic = snsTopics[Math.floor(Math.random() * snsTopics.length)];
+      const topic = pickRandom(snsTopics);
       await generateSocialMediaReaction(seasonId, date, topic, team.id);
     } else if (type < 0.5) {
-      // 이적 루머 (20% 확률)
-      const rumorNames = ['유망주 A', '베테랑 미드', '신인 정글러', '외국인 원딜'];
-      const name = rumorNames[Math.floor(Math.random() * rumorNames.length)];
-      await generateTransferRumorNews(seasonId, date, name, team.name, team.id);
+      // 이적 루머 (20% 확률) — 다른 팀 소속 실제 선수명 사용
+      const rumorRows = await db.select<{ id: string; name: string }[]>(
+        'SELECT id, name FROM players WHERE team_id != $1 AND team_id IS NOT NULL ORDER BY RANDOM() LIMIT 1',
+        [team.id],
+      );
+      const rumorName = rumorRows.length > 0 ? rumorRows[0].name : pickRandom(['유망주 A', '베테랑 미드', '신인 정글러', '외국인 원딜']);
+      const rumorPlayerId = rumorRows.length > 0 ? rumorRows[0].id : null;
+      await generateTransferRumorNews(seasonId, date, rumorName, team.name, team.id, rumorPlayerId);
     } else if (type < 0.7) {
-      // 인터뷰
+      // 인터뷰 — 해당 팀 소속 실제 선수명 사용
+      const interviewRows = await db.select<{ id: string; name: string }[]>(
+        'SELECT id, name FROM players WHERE team_id = $1 ORDER BY RANDOM() LIMIT 1',
+        [team.id],
+      );
+      const playerName = interviewRows.length > 0 ? interviewRows[0].name : '선수';
+      const playerId = interviewRows.length > 0 ? interviewRows[0].id : null;
       const topics = [
         '이번 시즌 목표는 우승',
         '팀 분위기가 정말 좋다',
@@ -285,8 +297,8 @@ export async function generateDailyNews(
         '팬들의 응원이 큰 힘이 된다',
         '개인 기량을 더 끌어올리겠다',
       ];
-      const topic = topics[Math.floor(Math.random() * topics.length)];
-      await generateInterviewNews(seasonId, date, '선수', team.name, topic, team.id);
+      const topic = pickRandom(topics);
+      await generateInterviewNews(seasonId, date, playerName, team.name, topic, team.id, playerId);
     } else {
       // 팀 분석 기사 (간략 버전 — 실제 순위 없이)
       const title = `[분석] ${team.name}, 최근 경기력 어떨까?`;
@@ -361,8 +373,8 @@ export async function generateInjuryNews(
   };
 
   const templates = severityTemplates[severity] ?? severityTemplates[1];
-  const titleIdx = Math.floor(Math.random() * templates.title.length);
-  const contentIdx = Math.floor(Math.random() * templates.content.length);
+  const titleIdx = randomInt(0, templates.title.length - 1);
+  const contentIdx = randomInt(0, templates.content.length - 1);
 
   await insertNews(seasonId, date, 'injury_report', templates.title[titleIdx], templates.content[contentIdx], severity + 1, teamId, playerId);
 }
@@ -413,8 +425,8 @@ export async function generateTransferCompleteNews(
     `${toTeam}의 로스터 보강이 완료되었다. ${playerName}이 ${fromTeam}에서 합류하며 전력 상승이 기대된다.`,
   ];
 
-  const idx = Math.floor(Math.random() * titles.length);
-  const cIdx = Math.floor(Math.random() * contents.length);
+  const idx = randomInt(0, titles.length - 1);
+  const cIdx = randomInt(0, contents.length - 1);
   await insertNews(seasonId, date, 'transfer_complete', titles[idx], contents[cIdx], isBig ? 3 : 2, teamId, playerId);
 }
 
@@ -430,9 +442,9 @@ export async function generateScandalNews(
   teams: Array<{ id: string; name: string; shortName: string }>,
 ): Promise<{ teamId: string; moralePenalty: number } | null> {
   // 일일 10% 확률로 스캔들 발생
-  if (Math.random() >= 0.10) return null;
+  if (nextRandom() >= 0.10) return null;
 
-  const team = teams[Math.floor(Math.random() * teams.length)];
+  const team = pickRandom(teams);
   const scandalTypes: { type: ScandalType; title: string; content: string; penalty: number }[] = [
     { type: 'teammate_conflict', title: `${team.shortName} 팀 내 불화설... 선수 간 갈등 심화`, content: `${team.name} 내부에서 선수 간 갈등이 심화되고 있다는 소식이 전해졌다. 팀 관계자는 "사실무근"이라고 부인했지만 커뮤니티에서는 관련 루머가 확산 중이다.`, penalty: 10 },
     { type: 'social_media', title: `${team.shortName} 선수 SNS 논란... 커뮤니티 뜨겁게 달아올라`, content: `${team.name} 소속 선수의 SNS 게시물이 논란이 되고 있다. 해당 선수는 이후 게시물을 삭제했으나 이미 캡처본이 퍼진 상태다.`, penalty: 8 },
@@ -441,7 +453,7 @@ export async function generateScandalNews(
     { type: 'attitude', title: `${team.shortName} 선수 태도 논란... 연습 태만 의혹`, content: `${team.name} 내부에서 특정 선수의 연습 태도에 대한 불만이 제기되고 있다는 소식이다. 해당 선수는 최근 경기에서 부진한 모습을 보인 바 있다.`, penalty: 8 },
   ];
 
-  const scandal = scandalTypes[Math.floor(Math.random() * scandalTypes.length)];
+  const scandal = pickRandom(scandalTypes);
 
   // AI 뉴스 생성 시도
   try {
@@ -487,7 +499,7 @@ export async function generateFanReactionNews(
   };
 
   const pool = templates[sentiment]?.[event] ?? [`${teamName} 관련 팬 반응이 뜨겁다.`];
-  const title = pool[Math.floor(Math.random() * pool.length)];
+  const title = pickRandom(pool);
   const content = `${teamName} 관련 소식에 팬들의 반응이 SNS와 커뮤니티를 뜨겁게 달구고 있다.`;
 
   await insertNews(seasonId, date, 'fan_reaction', title, content, 1, teamId);
@@ -521,8 +533,8 @@ export async function generateAwardNews(
     `${playerName}이 ${label}을 수상하며 최고의 시즌을 보내고 있음을 증명했다. ${teamName} 관계자는 "당연한 결과"라며 축하했다.`,
   ];
 
-  const idx = Math.floor(Math.random() * titles.length);
-  const cIdx = Math.floor(Math.random() * contents.length);
+  const idx = randomInt(0, titles.length - 1);
+  const cIdx = randomInt(0, contents.length - 1);
   await insertNews(seasonId, date, 'award_news', titles[idx], contents[cIdx], 3, teamId, playerId);
 }
 

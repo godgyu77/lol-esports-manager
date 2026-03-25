@@ -11,6 +11,7 @@
 import { getDatabase } from '../../db/database';
 import type { Staff, StaffRole, StaffSpecialty, CoachingPhilosophy } from '../../types/staff';
 import type { Region } from '../../types/game';
+import { pickRandom, randomInt } from '../../utils/random';
 
 // ─────────────────────────────────────────
 // Row 매핑
@@ -239,10 +240,10 @@ export async function hireStaff(
   // 리전별 이름 풀 선택
   const regionNames = STAFF_NAMES_BY_REGION[region] ?? STAFF_NAMES_BY_REGION['LCK'];
   const names = regionNames[role] ?? SPECIALIST_NAMES[role] ?? ['전문가'];
-  const name = names[Math.floor(Math.random() * names.length)];
-  const ability = 30 + Math.floor(Math.random() * 50); // 30~79
+  const name = pickRandom(names);
+  const ability = randomInt(30, 79); // 30~79
   const specialties: (StaffSpecialty | null)[] = ['training', 'draft', 'mentoring', 'conditioning', null];
-  const specialty = role === 'head_coach' ? null : specialties[Math.floor(Math.random() * specialties.length)];
+  const specialty = role === 'head_coach' ? null : pickRandom(specialties);
   const salary = role === 'head_coach'
     ? 1500 + Math.round(ability * 15)
     : 500 + Math.round(ability * 8);
@@ -250,7 +251,7 @@ export async function hireStaff(
   // 감독만 코칭 철학 배정
   const philosophies: CoachingPhilosophy[] = ['aggressive', 'defensive', 'balanced', 'developmental'];
   const philosophy = role === 'head_coach'
-    ? philosophies[Math.floor(Math.random() * philosophies.length)]
+    ? pickRandom(philosophies)
     : null;
 
   // 리전별 국적 매핑

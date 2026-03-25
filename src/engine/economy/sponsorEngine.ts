@@ -13,6 +13,7 @@ import {
   type Sponsor,
 } from '../../db/queries';
 import { getDatabase } from '../../db/database';
+import { nextRandom, pickRandom, pickRandomN, shuffleArray } from '../../utils/random';
 import { addDays } from '../season/calendar';
 
 // ─────────────────────────────────────────
@@ -67,16 +68,6 @@ const SPONSOR_POOL: SponsorOffer[] = [
   { name: 'Secretlab', tier: 'bronze', weeklyPayout: 55, durationWeeks: 12, requiredMinReputation: 15, description: '게이밍 의자 스폰서십' },
 ];
 
-// ─────────────────────────────────────────
-// 유틸
-// ─────────────────────────────────────────
-
-/** 배열에서 랜덤 N개 선택 */
-function pickRandom<T>(arr: T[], count: number): T[] {
-  const shuffled = [...arr].sort(() => Math.random() - 0.5);
-  return shuffled.slice(0, count);
-}
-
 /** 명성에 따라 제안 수 결정 (2~4개) */
 function getOfferCount(reputation: number): number {
   if (reputation >= 70) return 4;
@@ -104,7 +95,7 @@ export function generateSponsorOffers(
   if (eligible.length === 0) return [];
 
   const count = getOfferCount(reputation);
-  return pickRandom(eligible, Math.min(count, eligible.length));
+  return pickRandomN(eligible, Math.min(count, eligible.length));
 }
 
 /**
@@ -241,7 +232,7 @@ export async function checkSponsorChanges(
   const activeNames = activeSponsors.map(s => s.name);
 
   // 1) reputation 80+ → 새 스폰서 제안 (10% 확률)
-  if (reputation >= 80 && Math.random() < 0.1) {
+  if (reputation >= 80 && nextRandom() < 0.1) {
     const offers = generateSponsorOffers(reputation, activeNames);
     if (offers.length > 0) {
       // 1개만 제안
@@ -252,7 +243,7 @@ export async function checkSponsorChanges(
   // 2) reputation 30 이하 → 기존 스폰서 이탈 (15% 확률)
   if (reputation <= 30) {
     for (const sponsor of activeSponsors) {
-      if (Math.random() < 0.15) {
+      if (nextRandom() < 0.15) {
         await updateSponsorStatus(sponsor.id, 'cancelled');
         result.lostSponsors.push(sponsor.name);
       }
@@ -273,7 +264,7 @@ export async function checkSponsorChanges(
       s => s.tier === 'platinum' && !activeNames.includes(s.name),
     );
     if (platinumOffers.length > 0) {
-      const majorOffer = platinumOffers[Math.floor(Math.random() * platinumOffers.length)];
+      const majorOffer = pickRandom(platinumOffers);
       result.majorOffer = majorOffer;
       result.newOffers.push(majorOffer);
     }
@@ -421,7 +412,7 @@ export function generateConditionalSponsorOffer(
   });
 
   // 랜덤으로 조건 선택
-  const shuffled = availableConditions.sort(() => Math.random() - 0.5);
+  const shuffled = shuffleArray(availableConditions);
   conditions.push(...shuffled.slice(0, count));
 
   // 최대 주간 수입 계산 (모든 조건 달성 시)

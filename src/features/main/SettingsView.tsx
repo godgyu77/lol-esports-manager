@@ -24,10 +24,14 @@ const AI_PROVIDER_OPTIONS: { value: AiProvider; label: string; desc: string }[] 
   { value: 'ollama', label: 'Ollama (로컬)', desc: '로컬 LLM 서버 사용' },
   { value: 'openai', label: 'OpenAI API', desc: 'GPT-4o, GPT-4.1 등 사용' },
   { value: 'claude', label: 'Claude API', desc: 'Anthropic Claude 사용' },
+  { value: 'gemini', label: 'Gemini API', desc: 'Google Gemini 사용' },
+  { value: 'grok', label: 'Grok API (xAI)', desc: 'xAI Grok 사용' },
 ];
 
 const OPENAI_MODELS = ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'gpt-4.1-nano'];
 const CLAUDE_MODELS = ['claude-haiku-4-5-20251001', 'claude-sonnet-4-5-20250514'];
+const GEMINI_MODELS = ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-2.5-flash-preview-05-20', 'gemini-2.5-pro-preview-05-06'];
+const GROK_MODELS = ['grok-3-mini', 'grok-3'];
 
 export function SettingsView() {
   const navigate = useNavigate();
@@ -52,7 +56,7 @@ export function SettingsView() {
 
   // Cloud AI provider state
   const aiProvider = useSettingsStore((s) => s.aiProvider);
-  const apiKeyEncoded = useSettingsStore((s) => s.apiKeyEncoded);
+  const hasApiKey = useSettingsStore((s) => s.hasApiKey);
   const apiEndpoint = useSettingsStore((s) => s.apiEndpoint);
   const apiModel = useSettingsStore((s) => s.apiModel);
   const setAiProvider = useSettingsStore((s) => s.setAiProvider);
@@ -76,14 +80,16 @@ export function SettingsView() {
   } | null>(null);
   const [isTesting, setIsTesting] = useState(false);
 
-  const isCloudProvider = aiProvider === 'openai' || aiProvider === 'claude';
+  const isCloudProvider = aiProvider === 'openai' || aiProvider === 'claude' || aiProvider === 'gemini' || aiProvider === 'grok';
 
-  // Initialize API key input from stored (decoded) value
+  // Initialize API key input from Stronghold
   useEffect(() => {
-    if (apiKeyEncoded) {
-      setApiKeyInput(getApiKey());
+    if (hasApiKey) {
+      getApiKey().then((key) => {
+        if (key) setApiKeyInput(key);
+      });
     }
-  }, [apiKeyEncoded, getApiKey]);
+  }, [hasApiKey, getApiKey]);
 
   useEffect(() => {
     checkOllamaStatus().then((status) => {
@@ -165,6 +171,10 @@ export function SettingsView() {
       setApiModel('gpt-4o-mini');
     } else if (provider === 'claude') {
       setApiModel('claude-haiku-4-5-20251001');
+    } else if (provider === 'gemini') {
+      setApiModel('gemini-2.0-flash');
+    } else if (provider === 'grok') {
+      setApiModel('grok-3-mini');
     }
 
     // Auto-enable/disable AI based on provider
@@ -175,8 +185,8 @@ export function SettingsView() {
     }
   };
 
-  const handleSaveApiKey = () => {
-    setApiKey(apiKeyInput);
+  const handleSaveApiKey = async () => {
+    await setApiKey(apiKeyInput);
     setConnectionTestResult(null);
   };
 
@@ -196,7 +206,12 @@ export function SettingsView() {
     }
   };
 
-  const modelOptions = aiProvider === 'openai' ? OPENAI_MODELS : CLAUDE_MODELS;
+  const modelOptions =
+    aiProvider === 'openai' ? OPENAI_MODELS :
+    aiProvider === 'claude' ? CLAUDE_MODELS :
+    aiProvider === 'gemini' ? GEMINI_MODELS :
+    aiProvider === 'grok' ? GROK_MODELS :
+    [];
 
   return (
     <div style={{ maxWidth: 640, margin: '0 auto', padding: 20, overflowY: 'auto', height: '100vh' }}>
@@ -439,7 +454,7 @@ export function SettingsView() {
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(2, 1fr)',
+              gridTemplateColumns: 'repeat(3, 1fr)',
               gap: 8,
               marginBottom: 16,
             }}
@@ -490,7 +505,10 @@ export function SettingsView() {
                     value={apiKeyInput}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setApiKeyInput(e.target.value)}
                     placeholder={
-                      aiProvider === 'openai' ? 'sk-...' : 'sk-ant-...'
+                      aiProvider === 'openai' ? 'sk-...' :
+                      aiProvider === 'claude' ? 'sk-ant-...' :
+                      aiProvider === 'gemini' ? 'AIza...' :
+                      'xai-...'
                     }
                     className="fm-input"
                     style={{
@@ -589,9 +607,10 @@ export function SettingsView() {
                   value={apiEndpoint}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setApiEndpoint(e.target.value)}
                   placeholder={
-                    aiProvider === 'openai'
-                      ? 'https://api.openai.com/v1/chat/completions'
-                      : 'https://api.anthropic.com/v1/messages'
+                    aiProvider === 'openai' ? 'https://api.openai.com/v1/chat/completions' :
+                    aiProvider === 'claude' ? 'https://api.anthropic.com/v1/messages' :
+                    aiProvider === 'gemini' ? 'https://generativelanguage.googleapis.com/v1beta' :
+                    'https://api.x.ai/v1/chat/completions'
                   }
                   className="fm-input"
                   style={{
@@ -618,7 +637,7 @@ export function SettingsView() {
                   className="fm-btn fm-btn--lg"
                   style={{ flex: 1 }}
                   onClick={handleTestConnection}
-                  disabled={isTesting || !apiKeyEncoded}
+                  disabled={isTesting || !hasApiKey}
                 >
                   {isTesting ? '테스트 중...' : '연결 테스트'}
                 </button>
@@ -824,7 +843,11 @@ export function SettingsView() {
                   ? `OpenAI (${apiModel})`
                   : aiProvider === 'claude'
                     ? `Claude (${apiModel})`
-                    : '템플릿 모드'}
+                    : aiProvider === 'gemini'
+                      ? `Gemini (${apiModel})`
+                      : aiProvider === 'grok'
+                        ? `Grok (${apiModel})`
+                        : '템플릿 모드'}
             </span>
           </div>
           <div className="fm-info-row">

@@ -24,6 +24,8 @@ import { generateLCKCup } from '../engine/tournament/tournamentEngine';
 import { initializeTeamChemistry } from '../engine/chemistry/chemistryEngine';
 import { generatePlayerGoals } from '../engine/playerGoal/playerGoalEngine';
 import { initializeKnowledgeBase } from '../ai/rag/ragEngine';
+import { initGlobalRng } from '../utils/random';
+import { updateRngSeed } from './queries';
 
 // ─────────────────────────────────────────
 // 유저 선수 생성용 배경별 스탯
@@ -229,8 +231,9 @@ export async function initializeNewGame(
       console.warn('[initGame] 케미스트리/목표 초기화 실패:', e);
     }
 
-    // 세이브 생성
-    const saveId = await createSave(mode, teamId, userPlayerId, seasonId);
+    // 시드 생성 + 세이브 생성
+    const rngSeed = crypto.randomUUID();
+    const saveId = await createSave(mode, teamId, userPlayerId, seasonId, rngSeed);
     const save = await getSaveById(saveId);
 
     if (!save) {
@@ -271,6 +274,11 @@ export async function initializeNewGame(
   await dbFinal.execute('PRAGMA foreign_keys = ON');
   console.log('[initGame] 완료: FK ON 복원');
 
+  // 전역 RNG 초기화
+  if (result.rngSeed) {
+    initGlobalRng(result.rngSeed);
+  }
+
   return result;
 }
 
@@ -280,8 +288,17 @@ export async function initializeNewGame(
 export async function loadGameIntoStore(saveId: number): Promise<void> {
   const store = useGameStore.getState();
 
-  const save = await getSaveById(saveId);
+  let save = await getSaveById(saveId);
   if (!save) throw new Error('세이브를 찾을 수 없습니다');
+
+  // RNG 시드 초기화 (기존 세이브에 시드가 없으면 새로 생성 후 DB 업데이트)
+  let rngSeed = save.rngSeed;
+  if (!rngSeed) {
+    rngSeed = crypto.randomUUID();
+    await updateRngSeed(save.id, rngSeed);
+    save = { ...save, rngSeed };
+  }
+  initGlobalRng(rngSeed);
 
   store.setSave(save);
   store.setMode(save.mode);

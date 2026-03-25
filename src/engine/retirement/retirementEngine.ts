@@ -8,6 +8,7 @@
 import { getDatabase } from '../../db/database';
 import { getAllPlayers } from '../../db/queries';
 import type { Player } from '../../types/player';
+import { nextRandom } from '../../utils/random';
 
 // ─────────────────────────────────────────
 // 타입
@@ -148,7 +149,7 @@ export async function checkRetirementCandidates(
     probability = Math.min(probability, 0.95);
 
     // 확률 판정
-    if (Math.random() < probability) {
+    if (nextRandom() < probability) {
       candidates.push({
         playerId: player.id,
         playerName: player.name,
@@ -280,7 +281,7 @@ export async function getRetirementHall(): Promise<RetirementHallEntry[]> {
 
 /** 은퇴 후 진로 랜덤 결정 (폴백) */
 function pickPostCareer(): PostCareer {
-  const roll = Math.random();
+  const roll = nextRandom();
   if (roll < 0.25) return 'coach';
   if (roll < 0.40) return 'analyst';
   if (roll < 0.60) return 'streamer';
@@ -305,7 +306,7 @@ function pickPostCareerByStats(player: Player): PostCareer {
   const maxScore = Math.max(coachScore, analystScore, streamerScore);
 
   // 최고 점수 경로 + 약간의 랜덤성 (80% 최적 진로, 20% 랜덤)
-  if (Math.random() < 0.2) return pickPostCareer();
+  if (nextRandom() < 0.2) return pickPostCareer();
 
   if (maxScore === coachScore) return 'coach';
   if (maxScore === analystScore) return 'analyst';

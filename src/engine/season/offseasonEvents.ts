@@ -4,6 +4,8 @@
  * - 올스타전, 시상식, 팬미팅, 자선 경기 등
  */
 
+import { nextRandom } from '../../utils/random';
+
 export type OffseasonEventType = 'allstar' | 'awards_ceremony' | 'fan_meeting' | 'charity_match';
 
 export interface OffseasonEvent {
@@ -27,7 +29,7 @@ export function generateOffseasonEvents(teamReputation: number): OffseasonEvent[
   const events: OffseasonEvent[] = [];
 
   // 올스타전 참가 (reputation 70+, 50% 확률)
-  if (teamReputation >= 70 && Math.random() < 0.5) {
+  if (teamReputation >= 70 && nextRandom() < 0.5) {
     events.push({
       type: 'allstar',
       title: '올스타전 참가',
@@ -55,7 +57,7 @@ export function generateOffseasonEvents(teamReputation: number): OffseasonEvent[
   }
 
   // 자선 경기 (reputation 80+, 30% 확률)
-  if (teamReputation >= 80 && Math.random() < 0.3) {
+  if (teamReputation >= 80 && nextRandom() < 0.3) {
     events.push({
       type: 'charity_match',
       title: '자선 경기 참가',

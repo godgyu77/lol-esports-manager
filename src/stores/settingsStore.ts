@@ -1,29 +1,84 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { soundManager } from '../audio/soundManager';
+import { Client, Stronghold } from '@tauri-apps/plugin-stronghold';
+import { appDataDir } from '@tauri-apps/api/path';
 
 export type Difficulty = 'easy' | 'normal' | 'hard';
 
 export type Theme = 'dark' | 'light';
 export type WindowMode = 'windowed' | 'fullscreen' | 'borderless';
-export type AiProvider = 'ollama' | 'openai' | 'claude' | 'template';
+export type AiProvider = 'ollama' | 'openai' | 'claude' | 'gemini' | 'grok' | 'template';
 
 const isMobile = (): boolean => {
   if (typeof window === 'undefined') return false;
   return /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth <= 480;
 };
 
-/** base64 인코딩으로 API 키를 난독화하여 저장 */
-const encodeKey = (key: string): string => (key ? btoa(key) : '');
-/** base64 디코딩으로 API 키 복원 */
-const decodeKey = (encoded: string): string => {
-  if (!encoded) return '';
+// ─────────────────────────────────────────
+// Stronghold API 키 관리
+// ─────────────────────────────────────────
+
+const VAULT_PASSWORD = 'lol-esports-manager';
+const CLIENT_NAME = 'api-keys';
+const API_KEY_RECORD = 'cloud-api-key';
+
+let strongholdInstance: Stronghold | null = null;
+let strongholdClient: Client | null = null;
+
+async function getStrongholdClient(): Promise<Client> {
+  if (strongholdClient) return strongholdClient;
+
+  const vaultPath = `${await appDataDir()}/vault.hold`;
+  strongholdInstance = await Stronghold.load(vaultPath, VAULT_PASSWORD);
+
   try {
-    return atob(encoded);
+    strongholdClient = await strongholdInstance.loadClient(CLIENT_NAME);
+  } catch {
+    strongholdClient = await strongholdInstance.createClient(CLIENT_NAME);
+  }
+
+  return strongholdClient;
+}
+
+async function storeApiKeyToVault(key: string): Promise<void> {
+  const client = await getStrongholdClient();
+  const store = client.getStore();
+  const data = Array.from(new TextEncoder().encode(key));
+  await store.insert(API_KEY_RECORD, data);
+  if (strongholdInstance) {
+    await strongholdInstance.save();
+  }
+}
+
+async function getApiKeyFromVault(): Promise<string> {
+  try {
+    const client = await getStrongholdClient();
+    const store = client.getStore();
+    const data = await store.get(API_KEY_RECORD);
+    if (!data || data.length === 0) return '';
+    return new TextDecoder().decode(new Uint8Array(data));
   } catch {
     return '';
   }
-};
+}
+
+async function deleteApiKeyFromVault(): Promise<void> {
+  try {
+    const client = await getStrongholdClient();
+    const store = client.getStore();
+    await store.remove(API_KEY_RECORD);
+    if (strongholdInstance) {
+      await strongholdInstance.save();
+    }
+  } catch {
+    // 삭제 실패 무시
+  }
+}
+
+// ─────────────────────────────────────────
+// Settings Store
+// ─────────────────────────────────────────
 
 interface SettingsState {
   defaultSpeed: number;
@@ -40,7 +95,7 @@ interface SettingsState {
 
   // Cloud AI provider fields
   aiProvider: AiProvider;
-  apiKeyEncoded: string; // base64-encoded API key (never stored in plain text)
+  hasApiKey: boolean; // API 키 존재 여부 (Stronghold에 저장됨)
   apiEndpoint: string;
   apiModel: string;
 
@@ -57,17 +112,20 @@ interface SettingsState {
   setWindowMode: (mode: WindowMode) => void;
 
   setAiProvider: (provider: AiProvider) => void;
-  setApiKey: (key: string) => void;
+  setApiKey: (key: string) => Promise<void>;
   setApiEndpoint: (endpoint: string) => void;
   setApiModel: (model: string) => void;
 
-  /** Decoded API key (computed from apiKeyEncoded, not persisted separately) */
-  getApiKey: () => string;
+  /** Stronghold에서 복호화된 API 키 조회 (비동기) */
+  getApiKey: () => Promise<string>;
+
+  /** 앱 시작 시 Stronghold에서 키 존재 여부 확인 */
+  initApiKeyStatus: () => Promise<void>;
 }
 
 export const useSettingsStore = create<SettingsState>()(
   persist(
-    (set, get) => ({
+    (set, _get) => ({
       defaultSpeed: 1,
       aiEnabled: true,
       aiModel: '',
@@ -82,7 +140,7 @@ export const useSettingsStore = create<SettingsState>()(
 
       // Cloud AI provider defaults
       aiProvider: isMobile() ? 'template' : 'ollama',
-      apiKeyEncoded: '',
+      hasApiKey: false,
       apiEndpoint: '',
       apiModel: 'gpt-4o-mini',
 
@@ -105,18 +163,50 @@ export const useSettingsStore = create<SettingsState>()(
       setWindowMode: (mode) => set({ windowMode: mode }),
 
       setAiProvider: (provider) => set({ aiProvider: provider }),
-      setApiKey: (key) => set({ apiKeyEncoded: encodeKey(key) }),
+      setApiKey: async (key) => {
+        if (key) {
+          await storeApiKeyToVault(key);
+          set({ hasApiKey: true });
+        } else {
+          await deleteApiKeyFromVault();
+          set({ hasApiKey: false });
+        }
+      },
       setApiEndpoint: (endpoint) => set({ apiEndpoint: endpoint }),
       setApiModel: (model) => set({ apiModel: model }),
 
-      getApiKey: () => decodeKey(get().apiKeyEncoded),
+      getApiKey: () => getApiKeyFromVault(),
+
+      initApiKeyStatus: async () => {
+        const key = await getApiKeyFromVault();
+        set({ hasApiKey: !!key });
+      },
     }),
     {
       name: 'lol-esports-settings',
+      partialize: (state) => ({
+        defaultSpeed: state.defaultSpeed,
+        aiEnabled: state.aiEnabled,
+        aiModel: state.aiModel,
+        aiSetupCompleted: state.aiSetupCompleted,
+        autoSaveInterval: state.autoSaveInterval,
+        tutorialComplete: state.tutorialComplete,
+        difficulty: state.difficulty,
+        soundEnabled: state.soundEnabled,
+        soundVolume: state.soundVolume,
+        theme: state.theme,
+        windowMode: state.windowMode,
+        aiProvider: state.aiProvider,
+        hasApiKey: state.hasApiKey,
+        apiEndpoint: state.apiEndpoint,
+        apiModel: state.apiModel,
+      }),
       onRehydrateStorage: () => (state) => {
         if (state) {
           soundManager.setEnabled(state.soundEnabled);
           soundManager.setVolume(state.soundVolume);
+          // 앱 시작 시 Stronghold에서 키 존재 여부 확인
+          state.initApiKeyStatus().catch(() => {});
         }
       },
     },

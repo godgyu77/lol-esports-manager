@@ -24,11 +24,9 @@ import { getFreeAgents } from '../../../db/queries';
 import { Skeleton, SkeletonTable } from '../../../components/Skeleton';
 import { generateScoutingReport, type ScoutingReport as AiScoutingReport } from '../../../ai/advancedAiService';
 
-type Tab = 'scouts' | 'reports' | 'watchlist';
+import { POSITION_LABELS_SHORT as POSITION_LABELS } from '../../../utils/constants';
 
-const POSITION_LABELS: Record<string, string> = {
-  top: 'TOP', jungle: 'JGL', mid: 'MID', adc: 'ADC', support: 'SUP',
-};
+type Tab = 'scouts' | 'reports' | 'watchlist';
 
 const POS_CLASS: Record<string, string> = {
   top: 'fm-pos-badge--top',
@@ -92,6 +90,7 @@ export function ScoutingView() {
     } finally {
       setIsLoading(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- otherTeamPlayers는 teams에서 매 렌더마다 새로 생성되므로 deps에 추가하면 무한 루프 발생
   }, [save, userTeamId]);
 
   useEffect(() => { loadData(); }, [loadData]);

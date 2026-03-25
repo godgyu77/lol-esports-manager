@@ -5,6 +5,7 @@ import { Skeleton } from './components/Skeleton';
 import { AiSetupWizard } from './components/AiSetupWizard';
 import { useTheme } from './hooks/useTheme';
 import { useSettingsStore } from './stores/settingsStore';
+import { ToastContainer } from './components/ToastContainer';
 
 // ─────────────────────────────────────────
 // Lazy-loaded 페이지 컴포넌트 (코드 스플리팅)
@@ -171,6 +172,7 @@ function App() {
       <ErrorBoundary>
         <AiSetupGate />
       </ErrorBoundary>
+      <ToastContainer />
     </BrowserRouter>
   );
 }

@@ -8,6 +8,7 @@
 import type { PlayerComplaint, ComplaintType, ComplaintStatus } from '../../types/complaint';
 import { getDatabase } from '../../db/database';
 import { generateTransferRumorNews, generateSocialMediaReaction } from '../news/newsEngine';
+import { nextRandom, pickRandom } from '../../utils/random';
 
 // ─────────────────────────────────────────
 // Row 타입
@@ -89,7 +90,7 @@ const COMPLAINT_MESSAGES: Record<ComplaintType, string[]> = {
 
 function getRandomMessage(type: ComplaintType): string {
   const messages = COMPLAINT_MESSAGES[type];
-  return messages[Math.floor(Math.random() * messages.length)];
+  return pickRandom(messages);
 }
 
 // ─────────────────────────────────────────
@@ -147,7 +148,7 @@ export async function checkForComplaints(
       const played = playedGames[0]?.cnt ?? 0;
       const benchCount = totalGames - played;
 
-      if (benchCount >= 3 && Math.random() < 0.3) {
+      if (benchCount >= 3 && nextRandom() < 0.3) {
         const alreadyHasPlaytime = await db.select<{ cnt: number }[]>(
           `SELECT COUNT(*) as cnt FROM player_complaints
            WHERE player_id = $1 AND team_id = $2 AND complaint_type = 'playtime' AND status = 'active'`,
@@ -268,7 +269,7 @@ export async function checkForComplaints(
 
   if (consecutiveLosses >= 5) {
     for (const player of players) {
-      if (Math.random() < 0.2) {
+      if (nextRandom() < 0.2) {
         const alreadyHasTransfer = await db.select<{ cnt: number }[]>(
           `SELECT COUNT(*) as cnt FROM player_complaints
            WHERE player_id = $1 AND team_id = $2 AND complaint_type = 'transfer' AND status = 'active'`,
@@ -608,7 +609,7 @@ export async function persuadeTransfer(
   complaintId: number,
   resolvedDate: string,
 ): Promise<boolean> {
-  const success = Math.random() < 0.5;
+  const success = nextRandom() < 0.5;
 
   if (success) {
     // 설득 성공 → 불만 해결, morale +15

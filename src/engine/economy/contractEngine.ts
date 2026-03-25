@@ -19,6 +19,7 @@ import {
 } from './transferEngine';
 import { agentNegotiate } from '../agent/agentEngine';
 import type { Player } from '../../types/player';
+import { getPlayerOverall } from '../../utils/playerUtils';
 import type {
   ContractNegotiation,
   ContractDecisionFactors,
@@ -34,12 +35,6 @@ import type {
 
 /** 연봉 상한 (억 원 → 만 원) */
 const SALARY_CAP = FINANCIAL_CONSTANTS.salaryCap * 10000;
-
-/** 선수 OVR 계산 */
-function getPlayerOverall(player: Player): number {
-  const s = player.stats;
-  return (s.mechanical + s.gameSense + s.teamwork + s.consistency + s.laning + s.aggression) / 6;
-}
 
 // ─────────────────────────────────────────
 // 갱신 제안 계산

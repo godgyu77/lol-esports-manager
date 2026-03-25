@@ -5,6 +5,7 @@
  */
 
 import { getDatabase } from '../../db/database';
+import { nextRandom } from '../../utils/random';
 
 export type BoardRequestType = 'budget_increase' | 'facility_upgrade' | 'staff_budget' | 'transfer_budget';
 
@@ -55,7 +56,7 @@ export async function submitBoardRequest(
   else if (boardSatisfaction >= 30) approvalRate = 0.25;
   else approvalRate = 0.10;
 
-  const approved = Math.random() < approvalRate;
+  const approved = nextRandom() < approvalRate;
   const status = approved ? 'approved' : 'rejected';
   const response = approved
     ? '구단에서 요청을 승인했습니다.'
@@ -84,7 +85,7 @@ export async function submitBoardRequest(
 
 export async function getBoardRequests(teamId: string, seasonId: number): Promise<BoardRequest[]> {
   const db = await getDatabase();
-  const rows = await db.select<any[]>(
+  const rows = await db.select<Record<string, unknown>[]>(
     'SELECT * FROM board_requests WHERE team_id = $1 AND season_id = $2 ORDER BY request_date DESC',
     [teamId, seasonId],
   );

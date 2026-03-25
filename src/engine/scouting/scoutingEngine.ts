@@ -11,6 +11,7 @@ import type { Player } from '../../types/player';
 import type { Region } from '../../types/game';
 import type { Scout, ScoutingReport } from '../../types/scout';
 import { calculateStaffBonuses } from '../staff/staffEngine';
+import { pickRandom, randomInt } from '../../utils/random';
 
 // ─────────────────────────────────────────
 // Row 매핑
@@ -110,10 +111,10 @@ export async function hireScout(teamId: string, hiredDate: string): Promise<Scou
   const db = await getDatabase();
 
   // 랜덤 스카우트 생성
-  const name = SCOUT_NAMES[Math.floor(Math.random() * SCOUT_NAMES.length)];
-  const ability = 30 + Math.floor(Math.random() * 50); // 30~79
+  const name = pickRandom(SCOUT_NAMES);
+  const ability = randomInt(30, 79); // 30~79
   const regions: (Region | null)[] = ['LCK', 'LPL', 'LEC', 'LCS', null];
-  const regionSpecialty = regions[Math.floor(Math.random() * regions.length)];
+  const regionSpecialty = pickRandom(regions);
   const salary = 300 + Math.round(ability * 5); // 능력에 비례한 연봉
 
   const result = await db.execute(
@@ -231,7 +232,7 @@ function calculateAccuracy(scout: Scout, playerRegion: Region | null, staffAccur
 /** 스카우팅 결과에 노이즈 추가 (정확도에 반비례) */
 function addNoise(realValue: number, accuracy: number): number {
   const maxDeviation = Math.round((100 - accuracy) * 0.3); // 정확도 100 → 편차 0, 정확도 50 → 편차 15
-  const deviation = Math.floor(Math.random() * (maxDeviation * 2 + 1)) - maxDeviation;
+  const deviation = randomInt(-maxDeviation, maxDeviation);
   return Math.max(0, Math.min(100, realValue + deviation));
 }
 

@@ -9,14 +9,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useGameStore } from '../../../stores/gameStore';
 import { getPlayerRelations, upsertPlayerRelation } from '../../../db/queries';
 import type { Player } from '../../../types/player';
-
-const POSITION_LABELS: Record<string, string> = {
-  top: '탑',
-  jungle: '정글',
-  mid: '미드',
-  adc: '원딜',
-  support: '서포터',
-};
+import { POSITION_LABELS_KR as POSITION_LABELS } from '../../../utils/constants';
 
 interface InteractionType {
   id: string;
@@ -105,7 +98,7 @@ export function PlayerRelations() {
 
     load();
     return () => { cancelled = true; };
-  }, [myPlayer?.id, userTeam]);
+  }, [myPlayer, userTeam]);
 
   // 오늘 상호작용 횟수 제한 (하루 3회)
   const [interactionsUsed, setInteractionsUsed] = useState(0);
@@ -114,6 +107,7 @@ export function PlayerRelations() {
   const prevDateRef = useRef(currentDate);
   useEffect(() => {
     if (prevDateRef.current !== currentDate) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- 날짜 변경 시 상호작용 횟수 리셋
       setInteractionsUsed(0);
       prevDateRef.current = currentDate;
     }

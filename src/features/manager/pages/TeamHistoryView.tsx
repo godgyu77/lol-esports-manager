@@ -38,6 +38,31 @@ interface LegendPlayer {
   totalKills: number;
 }
 
+// DB Row 타입
+interface SeasonRecordRow {
+  season_id: number;
+  final_standing: number | null;
+  wins: number;
+  losses: number;
+  playoff_result: string | null;
+  champion: number;
+}
+
+interface TeamAwardRow {
+  season_id: number;
+  award_type: string;
+  player_id: string | null;
+  team_id: string | null;
+  value: number | null;
+}
+
+interface LegendRow {
+  name: string;
+  position: string;
+  total_games: number;
+  total_kills: number;
+}
+
 // ─────────────────────────────────────────
 // 컴포넌트
 // ─────────────────────────────────────────
@@ -65,43 +90,25 @@ export function TeamHistoryView() {
         const db = await getDatabase();
 
         // 시즌별 기록
-        const historyRows = await db.select<{
-          season_id: number;
-          final_standing: number | null;
-          wins: number;
-          losses: number;
-          playoff_result: string | null;
-          champion: number;
-        }[]>(
+        const historyRows = await db.select<SeasonRecordRow[]>(
           `SELECT season_id, final_standing, wins, losses, playoff_result, champion
            FROM season_records
            WHERE team_id = $1
            ORDER BY season_id DESC`,
           [userTeam.id],
-        ).catch(() => [] as any[]);
+        ).catch((): SeasonRecordRow[] => []);
 
         // 수상 기록
-        const awardRows = await db.select<{
-          season_id: number;
-          award_type: string;
-          player_id: string | null;
-          team_id: string | null;
-          value: number | null;
-        }[]>(
+        const awardRows = await db.select<TeamAwardRow[]>(
           `SELECT season_id, award_type, player_id, team_id, value
            FROM awards
            WHERE team_id = $1
            ORDER BY season_id DESC`,
           [userTeam.id],
-        ).catch(() => [] as any[]);
+        ).catch((): TeamAwardRow[] => []);
 
         // 레전드 선수 (통산 경기 수 기준 상위 10인)
-        const legendRows = await db.select<{
-          name: string;
-          position: string;
-          total_games: number;
-          total_kills: number;
-        }[]>(
+        const legendRows = await db.select<LegendRow[]>(
           `SELECT p.name, p.position,
                   COALESCE(SUM(CASE WHEN gs.player_id IS NOT NULL THEN 1 ELSE 0 END), 0) as total_games,
                   COALESCE(SUM(gs.kills), 0) as total_kills
@@ -112,7 +119,7 @@ export function TeamHistoryView() {
            ORDER BY total_games DESC, total_kills DESC
            LIMIT 10`,
           [userTeam.id],
-        ).catch(() => [] as any[]);
+        ).catch((): LegendRow[] => []);
 
         if (!cancelled) {
           setHistory(historyRows.map((r) => ({
@@ -148,7 +155,7 @@ export function TeamHistoryView() {
 
     load();
     return () => { cancelled = true; };
-  }, [userTeam?.id, season?.id]);
+  }, [userTeam, season]);
 
   if (!userTeam || !season) {
     return <p className="fm-text-muted fm-p-md">데이터를 불러오는 중...</p>;

@@ -6,6 +6,7 @@
  */
 
 import { getDatabase } from '../../db/database';
+import { clamp } from '../../utils/mathUtils';
 
 // ─────────────────────────────────────────
 // 타입
@@ -117,10 +118,6 @@ const COMPLAINT_MESSAGES: Record<string, string> = {
 // ─────────────────────────────────────────
 // 유틸
 // ─────────────────────────────────────────
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
 
 function calculateOVR(player: PlayerInfoRow): number {
   return Math.round(

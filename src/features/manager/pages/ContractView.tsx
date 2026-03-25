@@ -16,23 +16,12 @@ import {
 } from '../../../engine/economy/contractEngine';
 import { calculateFairSalary } from '../../../engine/economy/transferEngine';
 import type { Player } from '../../../types/player';
-
-const POSITION_LABELS: Record<string, string> = {
-  top: 'TOP',
-  jungle: 'JGL',
-  mid: 'MID',
-  adc: 'ADC',
-  support: 'SUP',
-};
+import { POSITION_LABELS_SHORT as POSITION_LABELS } from '../../../utils/constants';
+import { formatAmount } from '../../../utils/formatUtils';
 
 function getOverall(player: Player): number {
   const s = player.stats;
   return Math.round((s.mechanical + s.gameSense + s.teamwork + s.consistency + s.laning + s.aggression) / 6);
-}
-
-function formatAmount(amount: number): string {
-  if (amount >= 10000) return `${(amount / 10000).toFixed(1)}억`;
-  return `${amount.toLocaleString()}만`;
 }
 
 export function ContractView() {

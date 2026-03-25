@@ -42,7 +42,7 @@ export function PlayerDayView() {
   const [skipResults, setSkipResults] = useState<DayResult[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  const currentDate = season?.currentDate ?? '2026-01-12';
+  const currentDate = season?.currentDate ?? '2025-12-01';
   const userTeamId = save?.userTeamId ?? '';
   const userTeam = teams.find((t) => t.id === userTeamId);
   const myPlayer = userTeam?.roster.find((p) => p.id === save?.userPlayerId);

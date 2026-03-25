@@ -7,7 +7,7 @@ export async function getDatabase(): Promise<Database> {
   if (!db) {
     db = await Database.load('sqlite:lol_esports_manager.db');
     await db.execute('PRAGMA journal_mode = WAL');
-    await db.execute('PRAGMA busy_timeout = 5000');
+    await db.execute('PRAGMA busy_timeout = 15000');
     await db.execute('PRAGMA foreign_keys = ON');
   }
   return db;

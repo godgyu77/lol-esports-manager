@@ -6,6 +6,7 @@
 
 import { getDatabase } from '../../db/database';
 import { getPlayersByTeamId } from '../../db/queries';
+import { nextRandom, pickRandom, randomInt } from '../../utils/random';
 import type { PlayerPersonality } from '../../types/personality';
 import type { TalkTone } from '../../types/teamTalk';
 
@@ -70,7 +71,7 @@ export async function generatePersonality(playerId: string): Promise<PlayerPerso
   );
   const age = playerRows[0]?.age ?? 22;
 
-  const rand = () => Math.floor(Math.random() * 7) + 2; // 2~8 기본
+  const rand = () => randomInt(2, 8); // 2~8 기본
 
   let ambition = rand();
   let loyalty = rand();
@@ -222,11 +223,6 @@ const CONFLICT_DESCRIPTIONS: Record<ConflictEvent['severity'], string[]> = {
   ],
 };
 
-function pickRandom<T>(arr: T[]): T {
-  if (arr.length === 0) throw new Error('pickRandom: empty array');
-  return arr[Math.floor(Math.random() * arr.length)]!;
-}
-
 function determineSeverity(compatibility: number): ConflictEvent['severity'] {
   if (compatibility <= -10) return 'critical';
   if (compatibility <= -7) return 'major';
@@ -275,7 +271,7 @@ export async function checkTeamConflicts(teamId: string): Promise<ConflictEvent[
       if (compatibility > -5) continue;
 
       // 30% 확률로 갈등 발생
-      if (Math.random() > 0.3) continue;
+      if (nextRandom() > 0.3) continue;
 
       const severity = determineSeverity(compatibility);
       const moraleImpact = getMoraleImpact(severity);
@@ -382,7 +378,7 @@ export async function resolveConflict(
     mediation: { successRate: 0.7, moraleBonus: 2, chemistryBonus: 3, label: '중재' },
   }[method];
 
-  const isSuccess = Math.random() < config.successRate;
+  const isSuccess = nextRandom() < config.successRate;
   const resolvedDate = new Date().toISOString().slice(0, 10);
 
   if (isSuccess) {

@@ -6,6 +6,7 @@
  */
 
 import { getDatabase } from '../../db/database';
+import { nextRandom } from '../../utils/random';
 
 // ─────────────────────────────────────────
 // 타입
@@ -218,11 +219,11 @@ export async function getDetailedPlayerStats(
     const consistencyScore = calcConsistencyScore(kdaValues);
 
     // 9. 추정치 (DB에 없는 스탯)
-    const soloKillRate = round2(Math.random() * 15 + 5); // 5-20%
-    const wardScore = round2(Math.random() * 30 + 15); // 15-45
-    const objectiveControl = round2(Math.random() * 30 + 40); // 40-70%
-    const teamfightDamageShare = round2(safeDiv(agg.total_damage, agg.total_damage * 5) * 100 + (Math.random() * 10 - 5));
-    const clutchFactor = Math.round(Math.random() * 30 + 35); // 35-65
+    const soloKillRate = round2(nextRandom() * 15 + 5); // 5-20%
+    const wardScore = round2(nextRandom() * 30 + 15); // 15-45
+    const objectiveControl = round2(nextRandom() * 30 + 40); // 40-70%
+    const teamfightDamageShare = round2(safeDiv(agg.total_damage, agg.total_damage * 5) * 100 + (nextRandom() * 10 - 5));
+    const clutchFactor = Math.round(nextRandom() * 30 + 35); // 35-65
     const csDiffAt15 = Math.round(avgGoldDiffAt15 / 50); // 골드차에서 추정
 
     return {

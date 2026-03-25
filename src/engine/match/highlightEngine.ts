@@ -6,6 +6,7 @@
  */
 
 import type { MatchEvent, MatchEventType } from '../../types/match';
+import { pickRandom } from '../../utils/random';
 
 // ─────────────────────────────────────────
 // 타입
@@ -123,7 +124,7 @@ const COMMENTARY_TEMPLATES: Record<MatchEventType, string[]> = {
 
 function generateCommentary(event: MatchEvent, playerNames: Record<string, string>): string {
   const templates = COMMENTARY_TEMPLATES[event.type] ?? ['{side}팀의 중요한 플레이!'];
-  const template = templates[Math.floor(Math.random() * templates.length)];
+  const template = pickRandom(templates);
 
   const playerName = event.playerId ? (playerNames[event.playerId] ?? event.playerId) : '선수';
   const side = event.side === 'home' ? '블루' : '레드';

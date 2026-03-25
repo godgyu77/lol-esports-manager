@@ -17,6 +17,18 @@ interface PlayerRankInfo extends PlayerSoloRank {
   teamName?: string;
 }
 
+interface SoloRankRow {
+  player_id: string;
+  tier: SoloRankTier;
+  lp: number;
+  recent_win_rate: number;
+  practice_champion_id: string | null;
+  games_played_today: number;
+  rank_position: number;
+  player_name: string;
+  team_id: string | null;
+}
+
 const TIER_LABELS: Record<SoloRankTier, string> = {
   challenger: '챌린저',
   grandmaster: '그랜드마스터',
@@ -56,7 +68,7 @@ export function SoloRankView() {
       // 팀 선수 솔로랭크
       if (userTeamId) {
         try {
-          const rows = await db.select<any[]>(
+          const rows = await db.select<SoloRankRow[]>(
             `SELECT sr.*, p.name as player_name, p.team_id
              FROM player_solo_rank sr
              JOIN players p ON p.id = sr.player_id
@@ -74,7 +86,7 @@ export function SoloRankView() {
 
       // 리더보드
       try {
-        const lbRows = await db.select<any[]>(
+        const lbRows = await db.select<SoloRankRow[]>(
           `SELECT sr.*, p.name as player_name, p.team_id
            FROM player_solo_rank sr
            JOIN players p ON p.id = sr.player_id
@@ -237,7 +249,7 @@ function LeaderboardTable({ ranks, teamMap }: { ranks: PlayerRankInfo[]; teamMap
   );
 }
 
-function mapRankRow(r: any): PlayerRankInfo {
+function mapRankRow(r: SoloRankRow): PlayerRankInfo {
   return {
     playerId: r.player_id,
     playerName: r.player_name,

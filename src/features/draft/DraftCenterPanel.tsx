@@ -1,15 +1,8 @@
 import type { DraftState } from '../../engine/draft/draftEngine';
 import type { Position } from '../../types/game';
 import type { Champion } from '../../types/champion';
+import { POSITION_LABELS_KR as POSITION_LABELS } from '../../utils/constants';
 import './draft.css';
-
-const POSITION_LABELS: Record<Position, string> = {
-  top: '탑',
-  jungle: '정글',
-  mid: '미드',
-  adc: '원딜',
-  support: '서포터',
-};
 
 interface Recommendation {
   championId: string;
@@ -87,20 +80,25 @@ export function DraftCenterPanel({
       )}
 
       {/* 픽 시 포지션 선택 */}
-      {currentIsUser && draft.currentActionType === 'pick' && !draft.isComplete && (
-        <div className="draft-position-select">
-          <span className="draft-pos-label">포지션:</span>
-          {(['top', 'jungle', 'mid', 'adc', 'support'] as Position[]).map((pos) => (
-            <button
-              key={pos}
-              className={`draft-pos-btn ${selectedPosition === pos ? 'draft-pos-btn--active' : ''}`}
-              onClick={() => onSelectPosition(pos)}
-            >
-              {POSITION_LABELS[pos]}
-            </button>
-          ))}
-        </div>
-      )}
+      {currentIsUser && draft.currentActionType === 'pick' && !draft.isComplete && (() => {
+        const userTeam = draft.currentSide === 'blue' ? draft.blue : draft.red;
+        const usedPositions = new Set(userTeam.picks.map(p => p.position));
+        return (
+          <div className="draft-position-select">
+            <span className="draft-pos-label">포지션:</span>
+            {(['top', 'jungle', 'mid', 'adc', 'support'] as Position[]).map((pos) => (
+              <button
+                key={pos}
+                className={`draft-pos-btn ${selectedPosition === pos ? 'draft-pos-btn--active' : ''} ${usedPositions.has(pos) ? 'draft-pos-btn--disabled' : ''}`}
+                onClick={() => !usedPositions.has(pos) && onSelectPosition(pos)}
+                disabled={usedPositions.has(pos)}
+              >
+                {POSITION_LABELS[pos]}
+              </button>
+            ))}
+          </div>
+        );
+      })()}
 
       {/* 확인 버튼 */}
       {currentIsUser && !draft.isComplete && selectedChampion && (

@@ -5,6 +5,7 @@
 
 import { getDatabase } from '../../db/database';
 import type { FacilityType, TeamFacility } from '../../types/facility';
+import { nextRandom, randomInt } from '../../utils/random';
 
 // ─────────────────────────────────────────
 // 상수
@@ -231,8 +232,8 @@ export const processFacilityDecay = async (teamId: string): Promise<string[]> =>
   const events: string[] = [];
 
   for (const f of facilities) {
-    if (Math.random() < 0.02) {
-      const decay = 5 + Math.floor(Math.random() * 11); // 5~15
+    if (nextRandom() < 0.02) {
+      const decay = randomInt(5, 15); // 5~15
       await db.execute(
         `UPDATE team_facilities SET condition = MAX(0, COALESCE(condition, 100) - $1) WHERE team_id = $2 AND facility_type = $3`,
         [decay, teamId, f.facilityType],

@@ -5,7 +5,9 @@
  */
 
 import { getDatabase } from '../../db/database';
+import { fillTemplate } from '../../utils/stringUtils';
 import { generateSocialReactions } from '../../ai/advancedAiService';
+import { pickRandom as seededPickRandom, randomInt as seededRandomInt } from '../../utils/random';
 import type {
   CommunitySource,
   CommentSentiment,
@@ -71,11 +73,11 @@ function mapRowToComment(row: CommentRow): SocialComment {
 // ─────────────────────────────────────────
 
 function pick<T>(arr: T[]): T {
-  return arr[Math.floor(Math.random() * arr.length)];
+  return seededPickRandom(arr);
 }
 
 function randInt(min: number, max: number): number {
-  return min + Math.floor(Math.random() * (max - min + 1));
+  return seededRandomInt(min, max);
 }
 
 const COMMUNITIES: CommunitySource[] = ['inven', 'dcinside', 'fmkorea', 'reddit', 'twitter'];
@@ -572,18 +574,6 @@ const MATCH_COMMENTS: Record<CommunitySource, { win: CommentTemplate[]; lose: Co
     ],
   },
 };
-
-// ─────────────────────────────────────────
-// 댓글 생성 헬퍼
-// ─────────────────────────────────────────
-
-function fillTemplate(template: string, vars: Record<string, string>): string {
-  let result = template;
-  for (const [key, value] of Object.entries(vars)) {
-    result = result.replaceAll(`{${key}}`, value);
-  }
-  return result;
-}
 
 async function insertReaction(
   seasonId: number,

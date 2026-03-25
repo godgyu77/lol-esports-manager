@@ -12,6 +12,7 @@ import { getDatabase } from '../../../db/database';
 import { useGameStore } from '../../../stores/gameStore';
 import { CHAMPION_DB } from '../../../data/championDb';
 import type { ChampionTag } from '../../../types/champion';
+import type { Player } from '../../../types/player';
 
 // ─────────────────────────────────────────
 // 타입
@@ -35,6 +36,26 @@ interface MetaModifier {
   splitPushEfficiency: number;
   earlyAggroEfficiency: number;
   objectiveEfficiency: number;
+}
+
+interface PatchRow {
+  season_id: number;
+  week: number;
+  champion_id: string;
+  stat_key: string;
+  old_value: string;
+  new_value: string;
+  reason: string | null;
+  created_at: string;
+}
+
+interface MetaModifierRow {
+  season_id: number;
+  patch_number: number;
+  teamfight_efficiency: number;
+  split_push_efficiency: number;
+  early_aggro_efficiency: number;
+  objective_efficiency: number;
 }
 
 interface ChampStatRow {
@@ -92,7 +113,7 @@ export function PatchMetaView() {
       const db = await getDatabase();
 
       // 최신 패치 정보
-      const patchRows = await db.select<any[]>(
+      const patchRows = await db.select<PatchRow[]>(
         `SELECT season_id, week, champion_id, stat_key, old_value, new_value, reason, created_at
          FROM champion_patches
          WHERE season_id = $1
@@ -102,7 +123,7 @@ export function PatchMetaView() {
       );
 
       // 메타 효율 보정
-      const metaRows = await db.select<any[]>(
+      const metaRows = await db.select<MetaModifierRow[]>(
         `SELECT season_id, patch_number,
                 teamfight_efficiency, split_push_efficiency,
                 early_aggro_efficiency, objective_efficiency
@@ -116,7 +137,7 @@ export function PatchMetaView() {
       // 챔피언 픽률/승률
       let champStatRows: ChampStatRow[] = [];
       try {
-        champStatRows = await db.select<any[]>(
+        champStatRows = await db.select<ChampStatRow[]>(
           `SELECT pg.champion_id, COUNT(*) as pick_count,
            SUM(CASE WHEN pg.team_id = g.winner_team_id THEN 1 ELSE 0 END) as wins
            FROM player_game_stats pg JOIN games g ON g.id = pg.game_id
@@ -130,7 +151,7 @@ export function PatchMetaView() {
 
       if (cancelled) return;
 
-      const patches: PatchInfo[] = patchRows.map((r: any) => ({
+      const patches: PatchInfo[] = patchRows.map((r) => ({
         seasonId: r.season_id,
         week: r.week,
         championId: r.champion_id,
@@ -481,7 +502,7 @@ function computeRoleStrength(champStats: ChampStatRow[]) {
 
 /** 팀 메타 적응도 계산 (간단 점수 0~100) */
 function calculateTeamMetaFit(
-  roster: any[],
+  roster: Player[],
   meta: MetaModifier | null,
   champStats: ChampStatRow[],
 ): number {
@@ -492,7 +513,7 @@ function calculateTeamMetaFit(
   const topChamps = CHAMPION_DB.filter((c) => topChampIds.has(c.id));
 
   // 주전 5인 (starter 플래그가 있으면 사용, 아니면 앞 5명)
-  const starters = roster.filter((p: any) => p.isStarter !== false).slice(0, 5);
+  const starters = roster.filter((p) => p.isStarter !== false).slice(0, 5);
 
   let matchScore = 0;
   for (const player of starters) {

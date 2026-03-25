@@ -13,6 +13,7 @@ import type { PlayerGameStats } from '../../../types/match';
 import { getPlayerGameStatsByPlayer } from '../../../db/queries';
 import { PlayerAvatar } from '../../../components/PlayerAvatar';
 import { generatePlayerConversation, type PlayerConversation } from '../../../ai/advancedAiService';
+import { POSITION_LABELS_KR as POSITION_LABELS } from '../../../utils/constants';
 
 /* ── 폼 히스토리 타입 ── */
 interface FormHistoryRow {
@@ -51,14 +52,6 @@ function getFormTrend(rows: FormHistoryRow[]): { label: string; symbol: string; 
   if (diff < -3) return { label: '하락', symbol: '\u2193', colorClass: 'fm-text-danger' };
   return { label: '안정', symbol: '\u2192', colorClass: 'fm-text-warning' };
 }
-
-const POSITION_LABELS: Record<string, string> = {
-  top: '탑',
-  jungle: '정글',
-  mid: '미드',
-  adc: '원딜',
-  support: '서포터',
-};
 
 const STAT_LABELS: Record<keyof PlayerStats, string> = {
   mechanical: '기계적 숙련도',

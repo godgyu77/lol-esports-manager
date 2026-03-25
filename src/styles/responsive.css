@@ -32,4 +32,24 @@
   .card-grid {
     grid-template-columns: 1fr;
   }
+
+  /* 매치 화면 미니맵: 모바일 최적화 */
+  .match-minimap,
+  .minimap-container {
+    width: 100%;
+    max-width: 450px;
+    margin: 0 auto;
+  }
+
+  /* 테이블 수평 스크롤 */
+  .table-responsive,
+  .fm-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* 선수 스탯 테이블 컨테이너: 세로 배치 */
+  .pst-container {
+    flex-direction: column;
+  }
 }

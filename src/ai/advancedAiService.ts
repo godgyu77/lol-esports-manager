@@ -7,24 +7,8 @@
 import { chatWithLlmJson } from './provider';
 import { isAiAvailable } from './gameAiService';
 import { augmentPromptWithKnowledge } from './rag/ragEngine';
-
-// ─────────────────────────────────────────
-// 유틸
-// ─────────────────────────────────────────
-
-function pickRandom<T>(arr: readonly T[]): T {
-  if (arr.length === 0) throw new Error('pickRandom: empty array');
-  return arr[Math.floor(Math.random() * arr.length)]!;
-}
-
-function pickRandomN<T>(arr: readonly T[], n: number): T[] {
-  const shuffled = [...arr].sort(() => Math.random() - 0.5);
-  return shuffled.slice(0, n);
-}
-
-function fillTemplate(text: string, vars: Record<string, string>): string {
-  return Object.entries(vars).reduce((t, [k, v]) => t.replaceAll(`{${k}}`, v), text);
-}
+import { pickRandom, pickRandomN, randomInt } from '../utils/random';
+import { fillTemplate } from '../utils/stringUtils';
 
 /** RAG 안전 래퍼 -- 실패 시 원본 프롬프트 반환 */
 async function safeAugment(prompt: string, query: string): Promise<string> {
@@ -208,6 +192,7 @@ export async function generateMatchCommentary(context: {
   goldDiff: number;
   gameTime: number;
   kills: { home: number; away: number };
+  teamName?: string;
 }): Promise<MatchCommentary> {
   const aiReady = await isAiAvailable();
 
@@ -236,10 +221,11 @@ JSON 형식: {"text": "중계 멘트 (80자 이내)", "excitement": 1-10, "tone"
   // 폴백: 이벤트별 템플릿
   const templates = COMMENTARY_TEMPLATES[context.event] ?? COMMENTARY_TEMPLATES.teamfight;
   const template = pickRandom(templates);
-  // 플레이스홀더가 있으면 기본값으로 치환
-  const text = template.text
-    .replace('{teamName}', '우리 팀')
-    .replace('{playerName}', '선수');
+  // 플레이스홀더가 있으면 치환 (fillTemplate은 replaceAll 사용)
+  const text = fillTemplate(template.text, {
+    teamName: context.teamName ?? '우리 팀',
+    playerName: '선수',
+  });
   return { text, excitement: template.excitement, tone: template.tone };
 }
 
@@ -714,7 +700,7 @@ JSON 형식: [{"platform": "플랫폼명", "username": "닉네임", "comment": "
     username: pickRandom(RANDOM_USERNAMES),
     comment: t.comment,
     sentiment: t.sentiment,
-    likes: Math.floor(Math.random() * 500) + 1,
+    likes: randomInt(1, 500),
   }));
 }
 
@@ -1837,9 +1823,9 @@ JSON 형식: {"from": "팬 닉네임", "subject": "제목 (15자 이내)", "cont
     typePool = ['support', 'criticism', 'advice', 'meme', 'confession'];
   }
 
-  const selectedType = typePool[Math.floor(Math.random() * typePool.length)];
+  const selectedType = pickRandom(typePool);
   const candidates = FAN_LETTER_TEMPLATES.filter(t => t.type === selectedType);
-  const template = candidates[Math.floor(Math.random() * candidates.length)] ?? FAN_LETTER_TEMPLATES[0];
+  const template = candidates.length > 0 ? pickRandom(candidates) : FAN_LETTER_TEMPLATES[0];
 
   return {
     from: pickRandom(FAN_NICKNAMES),

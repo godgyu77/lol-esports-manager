@@ -40,7 +40,7 @@ export const FINANCIAL_CONSTANTS = {
 // ───────────────────────────────────────────────────
 export const MATCH_CONSTANTS = {
   /** 경기 시간 범위 (분) */
-  gameDuration: { min: 25, max: 45 },
+  gameDuration: { min: 25, max: 40 },
   /** 라인전 종료 시점 (분) */
   laningPhaseEnd: 15,
   /** OVR 등급 → 수치 변환 */
@@ -84,7 +84,7 @@ export const GROWTH_CONSTANTS = {
   /** 성장률 (시즌당) */
   growthRate: {
     beforePeak: { min: 0.5, max: 3 },
-    atPeak: { min: -0.5, max: 1 },
+    atPeak: { min: -1.5, max: 2.0 },
     afterPeak: { min: -3, max: -0.5 },
   },
   /** 멘탈 영향 요인 */
@@ -175,24 +175,6 @@ export const TOURNAMENT_CONFIG = {
     prestige: 'SSS',
   },
 } as const;
-
-// ───────────────────────────────────────────────────
-// 난이도 보정값
-// ───────────────────────────────────────────────────
-
-import type { Difficulty } from '../stores/settingsStore';
-
-export const DIFFICULTY_MODIFIERS: Record<Difficulty, {
-  aiTransferAggression: number;    // AI 이적 공격성 (1.0=기본)
-  matchDifficulty: number;         // 경기 승률 보정 (-0.05~+0.05)
-  boardExpectationMod: number;     // 보드 기대치 보정 (-1~+1)
-  injuryRate: number;              // 부상 확률 배율
-  financialBonus: number;          // 시작 예산 배율
-}> = {
-  easy: { aiTransferAggression: 0.7, matchDifficulty: 0.08, boardExpectationMod: -1, injuryRate: 0.4, financialBonus: 1.5 },
-  normal: { aiTransferAggression: 1.0, matchDifficulty: 0, boardExpectationMod: 0, injuryRate: 1.0, financialBonus: 1.0 },
-  hard: { aiTransferAggression: 1.5, matchDifficulty: -0.08, boardExpectationMod: 1, injuryRate: 1.8, financialBonus: 0.7 },
-};
 
 // ───────────────────────────────────────────────────
 // AI 시뮬레이션 시스템 프롬프트

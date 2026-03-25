@@ -10,6 +10,7 @@ import {
   createDraftState,
   isChampionAvailable,
   executeDraftAction,
+  finalizeDraft,
   accumulateFearlessChampions,
   buildDraftTeamInfo,
   getRecommendedBans,
@@ -190,21 +191,28 @@ describe('executeDraftAction', () => {
     expect(state.blue.picks[0]).toEqual({ championId: 'aatrox', position: 'top' });
   });
 
-  it('20스텝 완료 후 isComplete = true', () => {
+  it('20스텝 완료 후 swap → finalize → complete', () => {
     const state = createDraftState();
     const positions: Position[] = ['top', 'jungle', 'mid', 'adc', 'support'];
-    let posIdx = 0;
+    // 블루/레드 각각 포지션 인덱스 추적
+    const teamPosIdx = { blue: 0, red: 0 };
 
-    for (let i = 0; i < 20; i++) {
-      const champId = `champ_${i}`;
+    let champIdx = 0;
+    while (state.currentStep < 20) {
+      const champId = `champ_${champIdx++}`;
       if (state.currentActionType === 'ban') {
         executeDraftAction(state, champId);
       } else {
-        executeDraftAction(state, champId, positions[posIdx % 5]);
-        posIdx++;
+        const side = state.currentSide;
+        const pos = positions[teamPosIdx[side] % 5];
+        teamPosIdx[side]++;
+        executeDraftAction(state, champId, pos);
       }
     }
 
+    // 20스텝 후 swap 단계 진입 → finalize로 완료
+    expect(state.phase).toBe('swap');
+    finalizeDraft(state);
     expect(state.isComplete).toBe(true);
     expect(state.phase).toBe('complete');
     expect(state.blue.bans).toHaveLength(5);

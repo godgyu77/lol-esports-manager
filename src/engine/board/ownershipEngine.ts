@@ -6,6 +6,7 @@
  */
 
 import { getDatabase } from '../../db/database';
+import { nextRandom, pickRandom, randomInt } from '../../utils/random';
 
 // ─────────────────────────────────────────
 // 타입
@@ -78,13 +79,8 @@ const OWNER_NAMES: Record<string, string[]> = {
 /** 랜덤 구단주 이름 생성 */
 function randomOwnerName(): string {
   const pools = Object.values(OWNER_NAMES);
-  const pool = pools[Math.floor(Math.random() * pools.length)];
-  return pool[Math.floor(Math.random() * pool.length)];
-}
-
-/** 랜덤 정수 (min ~ max 포함) */
-function randInt(min: number, max: number): number {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
+  const pool = pickRandom(pools);
+  return pickRandom(pool);
 }
 
 // ─────────────────────────────────────────
@@ -106,15 +102,15 @@ export async function initOwnership(
     : tier === 'B' ? 'moderate'
     : 'low';
 
-  const patience = investmentLevel === 'sugar_daddy' ? randInt(6, 9)
-    : investmentLevel === 'high' ? randInt(4, 7)
-    : investmentLevel === 'moderate' ? randInt(3, 6)
-    : randInt(2, 5);
+  const patience = investmentLevel === 'sugar_daddy' ? randomInt(6, 9)
+    : investmentLevel === 'high' ? randomInt(4, 7)
+    : investmentLevel === 'moderate' ? randomInt(3, 6)
+    : randomInt(2, 5);
 
-  const ambition = investmentLevel === 'sugar_daddy' ? randInt(7, 10)
-    : investmentLevel === 'high' ? randInt(6, 9)
-    : investmentLevel === 'moderate' ? randInt(4, 7)
-    : randInt(2, 5);
+  const ambition = investmentLevel === 'sugar_daddy' ? randomInt(7, 10)
+    : investmentLevel === 'high' ? randomInt(6, 9)
+    : investmentLevel === 'moderate' ? randomInt(4, 7)
+    : randomInt(2, 5);
 
   const ownerName = randomOwnerName();
 
@@ -174,7 +170,7 @@ export async function checkOwnershipChange(
   }
 
   // 20% 확률로 교체
-  if (Math.random() > 0.20) {
+  if (nextRandom() > 0.20) {
     return { changed: false, message: '구단주가 한 번 더 기회를 줍니다.' };
   }
 
@@ -185,10 +181,10 @@ export async function checkOwnershipChange(
   );
 
   // 새 구단주 생성
-  const newInvestment = ['low', 'moderate', 'high', 'sugar_daddy'][randInt(0, 3)] as InvestmentLevel;
+  const newInvestment = ['low', 'moderate', 'high', 'sugar_daddy'][randomInt(0, 3)] as InvestmentLevel;
   const newOwnerName = randomOwnerName();
-  const patience = randInt(3, 8);
-  const ambition = randInt(3, 8);
+  const patience = randomInt(3, 8);
+  const ambition = randomInt(3, 8);
 
   const result = await db.execute(
     `INSERT INTO club_ownership (team_id, owner_name, investment_level, patience, ambition, is_active, start_date)

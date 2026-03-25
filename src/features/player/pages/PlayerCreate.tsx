@@ -138,7 +138,7 @@ export function PlayerCreate() {
   const handleCreate = () => {
     if (!isComplete) return;
 
-    let finalTraits = [...positiveTraits];
+    const finalTraits = [...positiveTraits];
 
     // 천재형: 랜덤 부정 특성 1개 자동 부여
     if (rules.negative.mode === 'random' && rules.negative.count > 0) {

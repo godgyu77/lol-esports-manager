@@ -9,6 +9,7 @@
 
 import { getDatabase } from '../../db/database';
 import { getPlayersByTeamId, batchUpsertPlayerConditions } from '../../db/queries';
+import { shuffleArray } from '../../utils/random';
 
 // ─────────────────────────────────────────
 // 타입
@@ -59,7 +60,7 @@ export async function processBootcampDay(
 
   // 2. 랜덤 2명 친밀도 +3/일 (player_relations 테이블)
   if (players.length >= 2) {
-    const shuffled = [...players].sort(() => Math.random() - 0.5);
+    const shuffled = shuffleArray(players);
     const pair = [shuffled[0], shuffled[1]];
 
     // 친밀도 업데이트 (양방향)

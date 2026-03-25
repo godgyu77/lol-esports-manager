@@ -41,6 +41,39 @@ interface Milestone {
   target: number;
 }
 
+// DB Row 타입
+interface CareerStatsRow {
+  player_id: string;
+  team_id: string | null;
+  total_games: number;
+  total_kills: number;
+  total_deaths: number;
+  total_assists: number;
+  total_cs: number;
+  total_damage: number;
+}
+
+interface SeasonStatRow {
+  season_id: number;
+  year: number;
+  split: string;
+  games: number;
+  wins: number;
+  team_name: string | null;
+}
+
+interface AwardRow {
+  award_type: string;
+  award_name: string | null;
+  season_id: number;
+  year: number | null;
+  team_name: string | null;
+}
+
+interface MaxValueRow {
+  v: number | null;
+}
+
 function getTrophyBadgeClass(type: string): string {
   switch (type) {
     case 'champion': return 'fm-badge--warning';
@@ -93,14 +126,14 @@ export function PlayerCareerView() {
         setTotalGames(player.career_games);
 
         // 커리어 스탯 (player_career_stats)
-        const careerRows = await db.select<any[]>(
+        const careerRows = await db.select<CareerStatsRow[]>(
           'SELECT * FROM player_career_stats WHERE player_id = $1',
           [player.id],
         );
         const careerStats = careerRows[0];
 
         // 시즌별 경기 기록 (매치 기반 집계)
-        const seasonRows = await db.select<any[]>(
+        const seasonRows = await db.select<SeasonStatRow[]>(
           `SELECT m.season_id,
                   s.year, s.split,
                   COUNT(DISTINCT m.id) as games,
@@ -120,7 +153,7 @@ export function PlayerCareerView() {
           [player.id],
         );
 
-        setCareer(seasonRows.map((r: any) => ({
+        setCareer(seasonRows.map((r) => ({
           season: `${r.year} ${r.split === 'spring' ? '\uC2A4\uD504\uB9C1' : '\uC11C\uBA38'}`,
           team: r.team_name ?? '',
           games: r.games ?? 0,
@@ -131,7 +164,7 @@ export function PlayerCareerView() {
         })));
 
         // 수상 기록 (awards 테이블)
-        const awardRows = await db.select<any[]>(
+        const awardRows = await db.select<AwardRow[]>(
           `SELECT a.award_type, a.award_name, a.season_id, s.year, t.name as team_name
            FROM awards a
            LEFT JOIN seasons s ON s.id = a.season_id
@@ -141,7 +174,7 @@ export function PlayerCareerView() {
           [player.id],
         );
 
-        setTrophies(awardRows.map((r: any) => ({
+        setTrophies(awardRows.map((r) => ({
           name: r.award_name ?? r.award_type,
           year: r.year ?? 0,
           team: r.team_name ?? '',
@@ -152,16 +185,16 @@ export function PlayerCareerView() {
         })));
 
         // 개인 기록 (player_game_stats 기반)
-        const maxKills = await db.select<any[]>(
+        const maxKills = await db.select<MaxValueRow[]>(
           'SELECT MAX(kills) as v FROM player_game_stats WHERE player_id = $1', [player.id],
         );
-        const maxAssists = await db.select<any[]>(
+        const maxAssists = await db.select<MaxValueRow[]>(
           'SELECT MAX(assists) as v FROM player_game_stats WHERE player_id = $1', [player.id],
         );
-        const maxCs = await db.select<any[]>(
+        const maxCs = await db.select<MaxValueRow[]>(
           'SELECT MAX(cs) as v FROM player_game_stats WHERE player_id = $1', [player.id],
         );
-        const maxDamage = await db.select<any[]>(
+        const maxDamage = await db.select<MaxValueRow[]>(
           'SELECT MAX(damage_dealt) as v FROM player_game_stats WHERE player_id = $1', [player.id],
         );
 

@@ -13,6 +13,8 @@ import { useBgm } from '../../hooks/useBgm';
 import {
   createDraftState,
   executeDraftAction,
+  swapChampions,
+  finalizeDraft,
   aiSelectBan,
   aiSelectPick,
   buildDraftTeamInfo,
@@ -116,7 +118,7 @@ export function DraftView() {
     }, 800); // AI 딜레이
 
     return () => clearTimeout(timer);
-  }, [draft?.currentStep, draft?.currentSide, userSide, blueInfo, redInfo, mode]);
+  }, [draft, userSide, blueInfo, redInfo, mode]);
 
   // 추천 목록
   const recommendations = useMemo(() => {
@@ -137,7 +139,7 @@ export function DraftView() {
         position: r.position,
       }));
     }
-  }, [draft?.currentStep, draft?.currentSide, userSide, blueInfo, redInfo, isUserBlue]);
+  }, [draft, userSide, blueInfo, redInfo, isUserBlue]);
 
   // 유저 턴 시 AI 조언 생성
   useEffect(() => {
@@ -172,9 +174,12 @@ export function DraftView() {
     }).finally(() => {
       setAiAdviceLoading(false);
     });
-  }, [draft?.currentStep, draft?.currentSide, mode, userSide]);
+  }, [draft, mode, userSide, isUserBlue, homeTeam?.shortName, awayTeam?.shortName, recommendations]);
 
-  // 밴픽 완료 시
+  // 스왑용 선택 상태
+  const [swapSelection, setSwapSelection] = useState<number | null>(null);
+
+  // 밴픽 완료 시 (스왑 완료 후)
   useEffect(() => {
     if (draft?.isComplete) {
       setDraftResult(draft);
@@ -184,7 +189,28 @@ export function DraftView() {
       }, 1500);
       return () => clearTimeout(timer);
     }
-  }, [draft?.isComplete, navigate, setDayPhase, setDraftResult]);
+  }, [draft, navigate, setDayPhase, setDraftResult, basePath]);
+
+  const handleSwap = useCallback((index: number) => {
+    if (!draft || draft.phase !== 'swap') return;
+    if (swapSelection === null) {
+      setSwapSelection(index);
+    } else {
+      if (swapSelection !== index) {
+        const newDraft = structuredClone(draft);
+        swapChampions(newDraft, userSide, swapSelection, index);
+        setDraft(newDraft);
+      }
+      setSwapSelection(null);
+    }
+  }, [draft, swapSelection, userSide]);
+
+  const handleFinalizeDraft = useCallback(() => {
+    if (!draft) return;
+    const newDraft = structuredClone(draft);
+    finalizeDraft(newDraft);
+    setDraft(newDraft);
+  }, [draft]);
 
   const handleConfirm = useCallback(() => {
     if (!draft || !selectedChampion) return;
@@ -306,7 +332,7 @@ export function DraftView() {
       )}
 
       {/* AI 코치 조언 (유저 턴에만 표시) */}
-      {currentIsUser && !draft.isComplete && (
+      {currentIsUser && !draft.isComplete && draft.phase !== 'swap' && (
         <div className="draft-ai-advice">
           <span className="draft-ai-advice-label">AI 코치 조언</span>
           {aiAdviceLoading ? (
@@ -320,6 +346,32 @@ export function DraftView() {
           ) : (
             <span className="draft-ai-advice-loading">조언을 불러올 수 없습니다.</span>
           )}
+        </div>
+      )}
+
+      {/* 챔피언 스왑 단계 */}
+      {draft.phase === 'swap' && mode === 'manager' && (
+        <div className="draft-swap-phase">
+          <h3 className="draft-swap-title">챔피언 스왑</h3>
+          <p className="draft-swap-desc">두 챔피언을 클릭하여 교환하세요. 완료 후 경기 시작 버튼을 누르세요.</p>
+          <div className="draft-swap-picks">
+            {(userSide === 'blue' ? draft.blue : draft.red).picks.map((pick, idx) => {
+              const champ = CHAMPION_DB.find(c => c.id === pick.championId);
+              return (
+                <button
+                  key={idx}
+                  className={`draft-swap-card ${swapSelection === idx ? 'draft-swap-card--selected' : ''}`}
+                  onClick={() => handleSwap(idx)}
+                >
+                  <span className="draft-swap-pos">{pick.position.toUpperCase()}</span>
+                  <span className="draft-swap-champ">{champ?.name ?? pick.championId}</span>
+                </button>
+              );
+            })}
+          </div>
+          <button className="fm-btn fm-btn--primary fm-btn--lg" onClick={handleFinalizeDraft}>
+            경기 시작
+          </button>
         </div>
       )}
     </div>

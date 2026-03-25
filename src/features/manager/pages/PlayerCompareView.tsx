@@ -8,6 +8,7 @@ import { useState, useEffect } from 'react';
 import { useGameStore } from '../../../stores/gameStore';
 import { getFreeAgents } from '../../../db/queries';
 import type { Player } from '../../../types/player';
+import { POSITION_LABELS_SHORT as POSITION_LABELS } from '../../../utils/constants';
 
 const STAT_KEYS = ['mechanical', 'gameSense', 'teamwork', 'consistency', 'laning', 'aggression'] as const;
 const STAT_LABELS: Record<(typeof STAT_KEYS)[number], string> = {
@@ -17,10 +18,6 @@ const STAT_LABELS: Record<(typeof STAT_KEYS)[number], string> = {
   consistency: '일관성',
   laning: '라인전',
   aggression: '공격성',
-};
-
-const POSITION_LABELS: Record<string, string> = {
-  top: 'TOP', jungle: 'JGL', mid: 'MID', adc: 'ADC', support: 'SUP',
 };
 
 function calcOvr(player: Player): number {

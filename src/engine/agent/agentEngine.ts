@@ -8,7 +8,9 @@
 import { getDatabase } from '../../db/database';
 import { calculateFairSalary } from '../economy/transferEngine';
 import type { Player } from '../../types/player';
+import { getPlayerOverall } from '../../utils/playerUtils';
 import type { PlayerAgent, AgentNegotiationResult, AgentBringOfferResult } from '../../types/agent';
+import { nextRandom, pickRandom, randomInt } from '../../utils/random';
 
 // ─────────────────────────────────────────
 // 에이전트 이름 풀
@@ -81,9 +83,9 @@ export async function getPlayerAgent(playerId: string): Promise<PlayerAgent> {
   }
 
   // 자동 생성
-  const agentName = ALL_AGENT_NAMES[Math.floor(Math.random() * ALL_AGENT_NAMES.length)];
-  const greedLevel = Math.floor(Math.random() * 7) + 2; // 2~8
-  const loyaltyToPlayer = Math.floor(Math.random() * 5) + 5; // 5~9
+  const agentName = pickRandom(ALL_AGENT_NAMES);
+  const greedLevel = randomInt(2, 8);
+  const loyaltyToPlayer = randomInt(5, 9);
 
   const result = await db.execute(
     `INSERT INTO player_agents (player_id, agent_name, greed_level, loyalty_to_player)
@@ -136,7 +138,7 @@ export async function agentNegotiate(
     multiplierMax = 1.5;
   }
 
-  const multiplier = multiplierMin + Math.random() * (multiplierMax - multiplierMin);
+  const multiplier = multiplierMin + nextRandom() * (multiplierMax - multiplierMin);
   const counterOffer = Math.round(fairSalary * multiplier);
 
   // 거절 확률: (요구연봉 - 제안연봉) / 요구연봉
@@ -150,7 +152,7 @@ export async function agentNegotiate(
   }
 
   const rejectRate = Math.max(0, (counterOffer - offeredSalary) / counterOffer);
-  const roll = Math.random();
+  const roll = nextRandom();
 
   if (roll >= rejectRate) {
     // 수락 (제안이 요구보다 낮지만 운 좋게 수락)
@@ -172,12 +174,6 @@ export async function agentNegotiate(
 // ─────────────────────────────────────────
 // 에이전트가 타팀 제안을 가져옴
 // ─────────────────────────────────────────
-
-/** 선수 OVR 계산 */
-function getPlayerOverall(player: Player): number {
-  const s = player.stats;
-  return (s.mechanical + s.gameSense + s.teamwork + s.consistency + s.laning + s.aggression) / 6;
-}
 
 /**
  * 에이전트가 타팀 제안을 가져올 확률 체크
@@ -202,7 +198,7 @@ export async function agentBringOffer(
   // 주당 확률: 시즌 20% / 18주 ≈ 1.2% per week
   // loyalty가 높으면 확률 감소 (선수 잔류 우선)
   const weeklyRate = 0.012 * (1 - (agent.loyaltyToPlayer - 5) * 0.05);
-  if (Math.random() >= weeklyRate) {
+  if (nextRandom() >= weeklyRate) {
     return { hasOffer: false, message: '' };
   }
 
@@ -217,11 +213,11 @@ export async function agentBringOffer(
   }
 
   // reputation 가장 높은 팀 선택
-  const offeringTeam = teams[Math.floor(Math.random() * Math.min(3, teams.length))];
+  const offeringTeam = pickRandom(teams.slice(0, Math.min(3, teams.length)));
 
   // 적정연봉 * 1.2~1.5 제안
   const fairSalary = calculateFairSalary(player);
-  const offerMultiplier = 1.2 + Math.random() * 0.3;
+  const offerMultiplier = 1.2 + nextRandom() * 0.3;
   const offeredSalary = Math.round(fairSalary * offerMultiplier);
 
   return {

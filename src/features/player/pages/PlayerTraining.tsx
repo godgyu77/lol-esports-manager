@@ -148,7 +148,7 @@ JSON: {"training": "훈련 유형명", "reason": "추천 이유 (30자 이내)"}
 
     loadRecommendation();
     return () => { cancelled = true; };
-  }, [myPlayer?.id, save?.userPlayerId]);
+  }, [myPlayer, save?.userPlayerId]);
 
   const handleSelectTraining = useCallback((slotIndex: number, trainingId: string) => {
     if (executed) return;

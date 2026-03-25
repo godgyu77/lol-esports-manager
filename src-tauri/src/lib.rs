@@ -303,6 +303,24 @@ pub fn run() {
             sql: include_str!("../migrations/049_missing_tables.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 50,
+            description: "create achievements table",
+            sql: include_str!("../migrations/050_achievements.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 51,
+            description: "add rng seed to save metadata",
+            sql: include_str!("../migrations/051_rng_seed.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 52,
+            description: "add secondary position to players",
+            sql: include_str!("../migrations/052_secondary_position.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -317,6 +335,16 @@ pub fn run() {
             process: Mutex::new(None),
         })
         .setup(|app| {
+            // Stronghold 플러그인 초기화 (argon2 기반 암호화)
+            let salt_path = app
+                .path()
+                .app_local_data_dir()
+                .expect("앱 데이터 디렉토리를 찾을 수 없습니다")
+                .join("salt.txt");
+            app.handle().plugin(
+                tauri_plugin_stronghold::Builder::with_argon2(&salt_path).build(),
+            )?;
+
             // Ollama sidecar 자동 시작 시도 (실패해도 앱은 계속 실행)
             let handle = app.handle().clone();
             if let Err(e) = ollama_manager::start_ollama(&handle) {
@@ -327,6 +355,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::llm::check_ollama_status,
             commands::llm::chat_with_llm,
+            commands::llm::chat_with_openai,
+            commands::llm::chat_with_claude,
+            commands::llm::chat_with_gemini,
+            commands::llm::chat_with_grok,
             ollama_manager::pull_model,
             ollama_manager::list_models,
             ollama_manager::delete_model,

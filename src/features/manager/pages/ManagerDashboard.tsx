@@ -1,9 +1,15 @@
+import { useState, useCallback, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { ErrorBoundary } from '../../../components/ErrorBoundary';
 import { useAutoSave } from '../../../hooks/useAutoSave';
 import { useNavBadges } from '../../../hooks/useNavBadges';
 import { useKeyboardShortcuts } from '../../../hooks/useKeyboardShortcuts';
 import { useGameStore } from '../../../stores/gameStore';
+import { useSettingsStore } from '../../../stores/settingsStore';
+import { advanceDay, skipToNextMatchDay } from '../../../engine/season/dayAdvancer';
+import { CommandPalette } from '../../../components/CommandPalette';
+import type { DayType } from '../../../engine/season/calendar';
+import { formatAmount } from '../../../utils/formatUtils';
 
 /* ── 사이드바 네비게이션 그룹 정의 ── */
 interface NavItem {
@@ -23,7 +29,6 @@ const NAV_GROUPS: NavGroup[] = [
     title: 'Home',
     items: [
       { to: '/manager', label: '대시보드', icon: 'H', end: true },
-      { to: '/manager/day', label: '시즌 진행', icon: '\u25B6' },
       { to: '/manager/inbox', label: '편지함', icon: '\u2709' },
       { to: '/manager/news', label: '뉴스', icon: 'N' },
     ],
@@ -89,20 +94,88 @@ const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
-function formatBudget(value: number): string {
-  if (value >= 10000) return `${(value / 10000).toFixed(1)}억`;
-  return `${value.toLocaleString()}만`;
-}
-
 export function ManagerDashboard() {
   const navigate = useNavigate();
   const save = useGameStore((s) => s.save);
   const season = useGameStore((s) => s.season);
   const teams = useGameStore((s) => s.teams);
+  const setSeason = useGameStore((s) => s.setSeason);
+  const setDayPhase = useGameStore((s) => s.setDayPhase);
+  const [showAdvanceModal, setShowAdvanceModal] = useState(false);
+  const [selectedActivity, setSelectedActivity] = useState<DayType | null>(null);
+  const [isAdvancing, setIsAdvancing] = useState(false);
+  const [advanceResult, setAdvanceResult] = useState<string | null>(null);
+  const [showCommandPalette, setShowCommandPalette] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
   useAutoSave();
   useKeyboardShortcuts({
     onSave: () => navigate('/save-load'),
   });
+
+  // Ctrl+K 커맨드 팔레트
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        setShowCommandPalette(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
+  const handleAdvanceDay = useCallback(async () => {
+    if (!season || !save || isAdvancing) return;
+    setIsAdvancing(true);
+    setAdvanceResult(null);
+    try {
+      const result = await advanceDay(
+        season.id, season.currentDate, save.userTeamId, save.mode,
+        selectedActivity ?? undefined, save.id, useSettingsStore.getState().difficulty,
+      );
+      setSeason({ ...season, currentDate: result.nextDate });
+      if (result.hasUserMatch && result.userMatch) {
+        setShowAdvanceModal(false);
+        setDayPhase('draft');
+        navigate('/manager/draft');
+        return;
+      }
+      setAdvanceResult(`${result.date} 완료 (${result.dayType})`);
+    } catch (e: unknown) {
+      setAdvanceResult(`오류: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setIsAdvancing(false);
+    }
+  }, [season, save, selectedActivity, isAdvancing, setSeason, setDayPhase, navigate]);
+
+  const handleSkipToMatch = useCallback(async () => {
+    if (!season || !save || isAdvancing) return;
+    setIsAdvancing(true);
+    setAdvanceResult(null);
+    try {
+      const endDate = season.endDate ?? '2026-12-31';
+      const results = await skipToNextMatchDay(
+        season.id, season.currentDate, save.userTeamId, save.mode,
+        endDate, selectedActivity ?? undefined, useSettingsStore.getState().difficulty,
+      );
+      if (results.length > 0) {
+        const last = results[results.length - 1];
+        setSeason({ ...season, currentDate: last.nextDate });
+        if (last.hasUserMatch) {
+          setShowAdvanceModal(false);
+          setDayPhase('draft');
+          navigate('/manager/draft');
+          return;
+        }
+      }
+      setAdvanceResult(`${results.length}일 스킵 완료`);
+    } catch (e: unknown) {
+      setAdvanceResult(`오류: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setIsAdvancing(false);
+    }
+  }, [season, save, isAdvancing, selectedActivity, setSeason, setDayPhase, navigate]);
 
   const badges = useNavBadges(
     save?.userTeamId ?? '',
@@ -119,8 +192,16 @@ export function ManagerDashboard() {
 
   return (
     <div className="fm-layout">
+      {/* ── Sidebar backdrop (mobile) ── */}
+      {sidebarOpen && (
+        <div
+          className="fm-sidebar-backdrop"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
       {/* ── Sidebar ── */}
-      <nav className="fm-sidebar" aria-label="주 메뉴">
+      <nav className={`fm-sidebar${sidebarOpen ? ' fm-sidebar--open' : ''}`} aria-label="주 메뉴">
         {/* Team header */}
         <div className="fm-sidebar__header">
           <div className="fm-sidebar__team-logo">
@@ -147,6 +228,7 @@ export function ManagerDashboard() {
                     className={({ isActive }) =>
                       `fm-nav-item${isActive ? ' fm-nav-item--active' : ''}`
                     }
+                    onClick={() => setSidebarOpen(false)}
                   >
                     <span className="fm-nav-item__icon">{item.icon}</span>
                     <span className="fm-nav-item__label">{item.label}</span>
@@ -172,6 +254,12 @@ export function ManagerDashboard() {
           </button>
           <button
             className="fm-sidebar__footer-btn"
+            onClick={() => navigate('/settings')}
+          >
+            설정
+          </button>
+          <button
+            className="fm-sidebar__footer-btn"
             onClick={() => navigate('/')}
           >
             메인 메뉴
@@ -183,6 +271,14 @@ export function ManagerDashboard() {
       <div className="fm-main">
         {/* Top bar */}
         <div className="fm-topbar">
+          {/* 햄버거 버튼 (모바일) */}
+          <button
+            className="fm-sidebar-toggle"
+            onClick={() => setSidebarOpen((prev) => !prev)}
+            aria-label="메뉴 열기"
+          >
+            ☰
+          </button>
           <div className="fm-topbar__section">
             <span className="fm-topbar__label">시즌</span>
             <span className="fm-topbar__value">{seasonLabel}</span>
@@ -201,7 +297,7 @@ export function ManagerDashboard() {
               <div className="fm-topbar__divider" />
               <div className="fm-topbar__section">
                 <span className="fm-topbar__label">예산</span>
-                <span className="fm-topbar__value">{formatBudget(userTeam.budget)}</span>
+                <span className="fm-topbar__value">{formatAmount(userTeam.budget)}</span>
               </div>
               <div className="fm-topbar__divider" />
               <div className="fm-topbar__section">
@@ -227,7 +323,7 @@ export function ManagerDashboard() {
           <button
             className="fm-btn fm-btn--primary fm-btn--sm"
             style={{ padding: '6px 16px', fontWeight: 600, letterSpacing: 0.5 }}
-            onClick={() => navigate('/manager/day')}
+            onClick={() => { setShowAdvanceModal(true); setAdvanceResult(null); }}
           >
             ▶ 시즌 진행
           </button>
@@ -240,6 +336,66 @@ export function ManagerDashboard() {
           </ErrorBoundary>
         </div>
       </div>
+
+      {/* 커맨드 팔레트 */}
+      <CommandPalette isOpen={showCommandPalette} onClose={() => setShowCommandPalette(false)} />
+
+      {/* 시즌 진행 모달 */}
+      {showAdvanceModal && (
+        <div className="fm-modal-overlay" onClick={() => !isAdvancing && setShowAdvanceModal(false)}>
+          <div className="fm-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 440 }}>
+            <div className="fm-modal__header">
+              <h3 style={{ margin: 0 }}>시즌 진행</h3>
+              <span style={{ color: 'var(--fm-text-muted)', fontSize: '0.85rem' }}>
+                {season?.currentDate ?? ''}
+              </span>
+            </div>
+            <div className="fm-modal__body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {(['training', 'rest', 'scrim'] as const).map(act => (
+                  <button
+                    key={act}
+                    className={`fm-btn fm-btn--sm ${selectedActivity === act ? 'fm-btn--primary' : 'fm-btn--ghost'}`}
+                    onClick={() => setSelectedActivity(prev => prev === act ? null : act)}
+                    disabled={isAdvancing}
+                  >
+                    {act === 'training' ? '훈련' : act === 'rest' ? '휴식' : '스크림'}
+                  </button>
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  className="fm-btn fm-btn--primary"
+                  onClick={handleAdvanceDay}
+                  disabled={isAdvancing}
+                  style={{ flex: 1 }}
+                >
+                  {isAdvancing ? '진행 중...' : '다음 날 →'}
+                </button>
+                <button
+                  className="fm-btn fm-btn--ghost"
+                  onClick={handleSkipToMatch}
+                  disabled={isAdvancing}
+                  style={{ flex: 1 }}
+                >
+                  {isAdvancing ? '진행 중...' : '경기일까지 스킵'}
+                </button>
+              </div>
+              {advanceResult && (
+                <div style={{
+                  padding: '8px 12px',
+                  borderRadius: 6,
+                  background: advanceResult.startsWith('오류') ? 'var(--fm-danger-bg, #3a1a1a)' : 'var(--fm-success-bg, #1a3a1a)',
+                  color: advanceResult.startsWith('오류') ? 'var(--fm-danger, #e74c3c)' : 'var(--fm-success, #2ecc71)',
+                  fontSize: '0.85rem',
+                }}>
+                  {advanceResult}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

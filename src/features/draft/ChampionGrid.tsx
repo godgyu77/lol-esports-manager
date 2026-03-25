@@ -1,14 +1,7 @@
 import type { Position } from '../../types/game';
 import type { Champion } from '../../types/champion';
+import { POSITION_LABELS_KR as POSITION_LABELS } from '../../utils/constants';
 import './draft.css';
-
-const POSITION_LABELS: Record<Position, string> = {
-  top: '탑',
-  jungle: '정글',
-  mid: '미드',
-  adc: '원딜',
-  support: '서포터',
-};
 
 interface ChampionGridProps {
   filteredChampions: Champion[];

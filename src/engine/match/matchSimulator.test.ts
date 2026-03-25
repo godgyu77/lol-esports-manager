@@ -12,10 +12,12 @@ import type { Position } from '../../types/game';
 // 헬퍼: mock 데이터 생성
 // ─────────────────────────────────────────
 
+let _mockPlayerCounter = 0;
+
 /** 기본 선수 생성 (모든 필드 채움) */
 function createMockPlayer(overrides: Partial<Player> & { position: Position; id?: string }): Player {
   const defaults: Player = {
-    id: overrides.id ?? `player_${overrides.position}_${Math.random().toString(36).slice(2, 6)}`,
+    id: overrides.id ?? `player_${overrides.position}_${++_mockPlayerCounter}`,
     name: `Test ${overrides.position}`,
     teamId: 'team_test',
     position: overrides.position,

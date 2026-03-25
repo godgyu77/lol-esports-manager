@@ -5,7 +5,7 @@
 
 /* ─── Live Match Container ─── */
 .match-container {
-  max-width: 900px;
+  max-width: 1100px;
   margin: 0 auto;
 }
 
@@ -53,12 +53,129 @@
   margin-bottom: var(--space-lg);
 }
 
+/* ─── 새 메인 영역: 미니맵(좌) + 중계/채팅(우) ─── */
+.match-main-area {
+  display: flex;
+  gap: var(--space-lg);
+  margin-bottom: var(--space-md);
+}
+
+.match-main-left {
+  flex: 0 0 auto;
+}
+
+.match-main-right {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  min-width: 0;
+  max-height: 450px;
+}
+
+.match-main-right .match-commentary-panel {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.match-main-right .match-chat-panel {
+  width: 100%;
+  flex: 1;
+  max-height: 200px;
+}
+
 .match-minimap-placeholder {
-  width: 280px;
-  height: 280px;
+  width: 450px;
+  height: 450px;
   background: #0a1a0a;
   border-radius: var(--radius-lg);
 }
+
+/* ─── 실시간 선수 스탯 테이블 ─── */
+.pst-container {
+  display: flex;
+  gap: var(--space-md);
+  margin-bottom: var(--space-md);
+}
+
+.pst-team {
+  flex: 1;
+}
+
+.pst-team-header {
+  padding: 6px 12px;
+  font-weight: 700;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+
+.pst-team-header--home {
+  background: rgba(52, 152, 219, 0.15);
+  color: var(--info);
+  border-bottom: 2px solid var(--info);
+}
+
+.pst-team-header--away {
+  background: rgba(231, 76, 60, 0.15);
+  color: var(--danger);
+  border-bottom: 2px solid var(--danger);
+}
+
+.pst-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.pst-table th {
+  padding: 4px 6px;
+  text-align: center;
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.pst-table td {
+  padding: 4px 6px;
+  text-align: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.pst-row--mvp {
+  background: rgba(200, 155, 60, 0.08);
+}
+
+.pst-pos {
+  font-weight: 700;
+  color: var(--text-muted);
+  width: 36px;
+}
+
+.pst-kda {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pst-k { color: var(--success); }
+.pst-d { color: var(--danger); }
+.pst-a { color: var(--text-secondary); }
+.pst-slash { color: var(--text-muted); margin: 0 1px; }
+
+.pst-kda-ratio {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.pst-cs-min {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.pst-gold { color: var(--accent); }
+.pst-dmg { color: var(--warning); }
 
 /* ─── Live Chat Panel ─── */
 .match-chat-panel {
@@ -970,4 +1087,228 @@
   gap: 12px;
   font-size: 11px;
   margin-top: 4px;
+}
+
+/* ═══════════════════════════════════════════════════
+   Post Game Stats — LCK Broadcast Style
+   ═══════════════════════════════════════════════════ */
+
+.pgs-container {
+  background: linear-gradient(135deg, #0a0e1a 0%, #0f1520 100%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.pgs-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 20px;
+  background: rgba(0, 0, 0, 0.3);
+  border-bottom: 1px solid var(--border);
+}
+
+.pgs-team-name {
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.pgs-team-name--loss { opacity: 0.5; }
+
+.pgs-score-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.pgs-game-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  letter-spacing: 1px;
+}
+
+.pgs-game-time {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-family: monospace;
+}
+
+.pgs-result--win { color: var(--success); font-weight: 700; font-size: 11px; }
+.pgs-result--loss { color: var(--danger); font-weight: 700; font-size: 11px; }
+
+.pgs-body {
+  display: flex;
+  gap: 1px;
+  background: var(--border);
+}
+
+.pgs-stats-panel {
+  flex: 0 0 280px;
+  padding: 12px 16px;
+  background: var(--bg-primary);
+}
+
+.pgs-charts-panel {
+  flex: 1;
+  padding: 12px 16px;
+  background: var(--bg-primary);
+}
+
+.pgs-section-title {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 1.5px;
+  margin: 0 0 10px;
+}
+
+.pgs-stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 5px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.pgs-stat-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.5px;
+  text-align: center;
+  flex: 0 0 70px;
+}
+
+.pgs-stat-home {
+  flex: 1;
+  text-align: left;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--info);
+}
+
+.pgs-stat-away {
+  flex: 1;
+  text-align: right;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--danger);
+}
+
+/* 데미지 차트 */
+.pgs-dmg-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pgs-dmg-row {
+  display: flex;
+  gap: 8px;
+}
+
+.pgs-dmg-player {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pgs-dmg-player--home { flex-direction: row; }
+.pgs-dmg-player--away { flex-direction: row-reverse; }
+
+.pgs-dmg-pos {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--text-muted);
+  width: 28px;
+  text-align: center;
+}
+
+.pgs-dmg-bar-wrap {
+  flex: 1;
+  height: 18px;
+  position: relative;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.pgs-dmg-bar {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.pgs-dmg-bar--home { background: rgba(52, 152, 219, 0.6); }
+.pgs-dmg-bar--away { background: rgba(231, 76, 60, 0.6); float: right; }
+
+.pgs-dmg-val {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-primary);
+  padding: 0 4px;
+}
+
+.pgs-dmg-bar-wrap--home .pgs-dmg-val { left: 4px; }
+.pgs-dmg-bar-wrap--away .pgs-dmg-val { right: 4px; }
+
+/* 골드 차이 그래프 */
+.pgs-gold-graph {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: var(--radius-sm);
+  padding: 8px;
+}
+
+.pgs-gold-svg {
+  width: 100%;
+  height: 80px;
+}
+
+/* ═══════════════════════════════════════════════════
+   2D / 3D Minimap Toggle
+   ═══════════════════════════════════════════════════ */
+
+.minimap-toggle-bar {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 4px;
+  justify-content: flex-end;
+}
+
+.minimap-toggle-btn {
+  padding: 3px 10px;
+  font-size: 10px;
+  font-weight: 700;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.minimap-toggle-btn--active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg-primary);
+}
+
+.minimap-3d-container {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.minimap-3d-container canvas {
+  display: block;
 }

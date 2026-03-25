@@ -8,6 +8,7 @@
 import { getDatabase } from '../../db/database';
 import type { Position } from '../../types/game';
 import type { AcademyPlayer, RookieDraftEntry } from '../../types/academy';
+import { nextRandom, pickRandom, randomInt } from '../../utils/random';
 
 // ─────────────────────────────────────────
 // Row 매핑
@@ -93,16 +94,16 @@ const FIRST_NAME_CHARS = [
 ];
 
 function generateKoreanName(): string {
-  const last = LAST_NAMES[Math.floor(Math.random() * LAST_NAMES.length)];
-  const first1 = FIRST_NAME_CHARS[Math.floor(Math.random() * FIRST_NAME_CHARS.length)];
-  const first2 = FIRST_NAME_CHARS[Math.floor(Math.random() * FIRST_NAME_CHARS.length)];
+  const last = pickRandom(LAST_NAMES);
+  const first1 = pickRandom(FIRST_NAME_CHARS);
+  const first2 = pickRandom(FIRST_NAME_CHARS);
   return `${last}${first1}${first2}`;
 }
 
 const POSITIONS: Position[] = ['top', 'jungle', 'mid', 'adc', 'support'];
 
 function randomPosition(): Position {
-  return POSITIONS[Math.floor(Math.random() * POSITIONS.length)];
+  return pickRandom(POSITIONS);
 }
 
 // ─────────────────────────────────────────
@@ -131,10 +132,10 @@ export async function addAcademyPlayer(
 
   const playerName = name ?? generateKoreanName();
   const playerPosition = position ?? randomPosition();
-  const playerPotential = potential ?? (50 + Math.floor(Math.random() * 40)); // 50~89
+  const playerPotential = potential ?? randomInt(50, 89);
 
   // 잠재력에 비례한 초기 스탯 (낮은 수치, 15~35 범위)
-  const baseStat = () => 15 + Math.floor(Math.random() * 20);
+  const baseStat = () => randomInt(15, 34);
 
   const mechanical = baseStat();
   const gameSense = baseStat();
@@ -151,7 +152,7 @@ export async function addAcademyPlayer(
     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
     [
       teamId, playerName, playerPosition,
-      16 + Math.floor(Math.random() * 3), // 16~18세
+      randomInt(16, 18), // 16~18세
       playerPotential,
       mechanical, gameSense, teamwork, consistency, laning, aggression,
       0, 0, joinedDate,
@@ -163,7 +164,7 @@ export async function addAcademyPlayer(
     teamId,
     name: playerName,
     position: playerPosition,
-    age: 16 + Math.floor(Math.random() * 3),
+    age: randomInt(16, 18),
     potential: playerPotential,
     stats: { mechanical, gameSense, teamwork, consistency, laning, aggression },
     trainingProgress: 0,
@@ -183,12 +184,12 @@ export async function trainAcademyPlayer(playerId: number): Promise<AcademyPlaye
   if (rows.length === 0) return null;
 
   const row = rows[0];
-  const progressGain = 10 + Math.floor(Math.random() * 11); // 10~20
+  const progressGain = randomInt(10, 20);
   const newProgress = Math.min(100, row.training_progress + progressGain);
 
   // 스탯 상승 (각 스탯 +1~3, 잠재력이 높을수록 상승폭 큼)
   const potentialBonus = row.potential / 100;
-  const statGain = () => Math.floor((1 + Math.random() * 2) * potentialBonus);
+  const statGain = () => Math.floor((1 + nextRandom() * 2) * potentialBonus);
 
   const newMech = Math.min(99, row.mechanical + statGain());
   const newGS = Math.min(99, row.game_sense + statGain());
@@ -275,7 +276,7 @@ export async function promoteToMainRoster(
       200, // salary (신인 최저)
       seasonId + 2, // 2시즌 계약
       p.potential,
-      22 + Math.floor(Math.random() * 3), // peakAge 22~24
+      randomInt(22, 24), // peakAge 22~24
       10, // popularity (신인은 낮음)
       'main', // division
       0, // is_user_player
@@ -296,16 +297,16 @@ export async function generateRookieDraftPool(
   count?: number,
 ): Promise<RookieDraftEntry[]> {
   const db = await getDatabase();
-  const poolSize = count ?? (15 + Math.floor(Math.random() * 6)); // 15~20명
+  const poolSize = count ?? randomInt(15, 20);
 
   const entries: RookieDraftEntry[] = [];
 
   for (let i = 0; i < poolSize; i++) {
     const name = generateKoreanName();
     const position = randomPosition();
-    const age = 17 + Math.floor(Math.random() * 2); // 17~18세
-    const potential = 40 + Math.floor(Math.random() * 50); // 40~89
-    const estimatedAbility = Math.max(20, potential - 10 + Math.floor(Math.random() * 21) - 10); // 잠재력 기반 추정치
+    const age = randomInt(17, 18);
+    const potential = randomInt(40, 89);
+    const estimatedAbility = Math.max(20, potential - 10 + randomInt(0, 20) - 10); // 잠재력 기반 추정치
 
     const result = await db.execute(
       `INSERT INTO rookie_draft_pool (
@@ -364,7 +365,7 @@ export async function draftRookie(
   const r = rows[0];
 
   // 아카데미에 등록
-  const baseStat = () => 15 + Math.floor(Math.random() * 15);
+  const baseStat = () => randomInt(15, 29);
   await db.execute(
     `INSERT INTO academy_players (
       team_id, name, position, age, potential,
@@ -405,12 +406,12 @@ export async function advanceAcademyDay(teamId: string): Promise<void> {
 
   for (const row of rows) {
     // 매일 progress +1~3, 스탯 미세 증가 (코칭 스태프 보너스 적용)
-    const progressGain = Math.round((1 + Math.floor(Math.random() * 3)) * staffTrainingMul);
+    const progressGain = Math.round((1 + randomInt(0, 2)) * staffTrainingMul);
     const newProgress = Math.min(100, row.training_progress + progressGain);
 
     const potentialBonus = row.potential / 100;
     // 일간 자동 훈련 (스태프 효율 적용)
-    const statGain = () => Math.random() < potentialBonus * 0.3 * staffTrainingMul ? 1 : 0;
+    const statGain = () => nextRandom() < potentialBonus * 0.3 * staffTrainingMul ? 1 : 0;
 
     const newMech = Math.min(99, row.mechanical + statGain());
     const newGS = Math.min(99, row.game_sense + statGain());

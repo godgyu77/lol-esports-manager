@@ -183,7 +183,7 @@ export function calculateGrowth(
 
   for (const stat of statKeys) {
     // 기본 변동: range 내에서 랜덤
-    let baseChange = range.min + rand() * (range.max - range.min);
+    const baseChange = range.min + rand() * (range.max - range.min);
 
     // 잠재력 보정 (성장기에만 양방향 적용)
     const potentialBonus = phase === 'growing' ? baseChange * potentialFactor * 0.5 : 0;
@@ -198,7 +198,9 @@ export function calculateGrowth(
 
     // 성장기/피크: 출전 수 + 코칭 + 고잠재력 보정 적용
     if (phase === 'growing' || phase === 'peak') {
-      totalChange *= playtimeFactor * coachingFactor * highPotentialFactor;
+      // 신인 폭발 성장: 17~19세는 성장 가속 x1.3
+      const rookieBurstFactor = (phase === 'growing' && player.age >= 17 && player.age <= 19) ? 1.3 : 1.0;
+      totalChange *= playtimeFactor * coachingFactor * highPotentialFactor * rookieBurstFactor;
     }
 
     // 하락기: 일관성 기반 하락 완화 적용

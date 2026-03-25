@@ -8,6 +8,7 @@ import { getDatabase } from '../../db/database';
 import { getPlayersByTeamId } from '../../db/queries';
 import type { Player, PlayerStats } from '../../types/player';
 import type { PlayerGoal, PlayerGoalType } from '../../types/playerGoal';
+import { nextRandom } from '../../utils/random';
 
 // ─────────────────────────────────────────
 // DB 매핑
@@ -84,7 +85,7 @@ export async function generatePlayerGoals(
 
     if (ovr >= 80) {
       // 고능력 선수: MVP 후보 or All-Pro
-      goalType = Math.random() < 0.5 ? 'mvp_candidate' : 'all_pro';
+      goalType = nextRandom() < 0.5 ? 'mvp_candidate' : 'all_pro';
       rewardMorale = 15;
     } else if (player.age <= 20) {
       // 젊은 선수: 스탯 향상 (가장 낮은 스탯 +10)

@@ -15,6 +15,8 @@ import {
   getChampionStatModifier,
 } from '../../db/queries';
 import { getDatabase } from '../../db/database';
+import { nextRandom, pickRandom, pickRandomN, randomInt } from '../../utils/random';
+import { clamp } from '../../utils/mathUtils';
 
 // ─────────────────────────────────────────
 // 타입
@@ -87,36 +89,6 @@ const NERF_REASONS = [
   '상위 티어에서 대안 부재 문제를 해결하기 위해 너프',
 ];
 
-// ─────────────────────────────────────────
-// 유틸
-// ─────────────────────────────────────────
-
-/** min 이상 max 이하 랜덤 정수 */
-function randInt(min: number, max: number): number {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-/** 배열에서 랜덤 요소 선택 */
-function pickRandom<T>(arr: readonly T[]): T {
-  if (arr.length === 0) throw new Error('pickRandom: empty array');
-  return arr[Math.floor(Math.random() * arr.length)]!;
-}
-
-/** 배열에서 중복 없이 n개 선택 (Fisher-Yates 셔플 기반) */
-function pickRandomN<T>(arr: readonly T[], n: number): T[] {
-  const shuffled = [...arr];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-  }
-  return shuffled.slice(0, n);
-}
-
-/** 0~100 범위 클램프 */
-function clamp(value: number, min = 0, max = 100): number {
-  return Math.max(min, Math.min(max, value));
-}
-
 /** 티어 인덱스 → 티어 문자 */
 function tierFromIndex(index: number): Champion['tier'] {
   return TIER_ORDER[Math.max(0, Math.min(TIER_ORDER.length - 1, index))];
@@ -149,7 +121,7 @@ function toCamelStat(snake: PatchStatKey): keyof Champion['stats'] | null {
  * - 3~5개 챔피언 선택
  */
 function selectPatchTargets(): Champion[] {
-  const count = randInt(3, 5);
+  const count = randomInt(3, 5);
 
   // 가중치 배열: S/D 티어에 높은 가중치
   const weighted: Champion[] = [];
@@ -198,10 +170,10 @@ function generateChampionPatchEntries(champ: Champion): PatchEntry[] {
     champ.tier === 'C' ? 0.7 :
     champ.tier === 'S' ? 0.1 :
     champ.tier === 'A' ? 0.3 : 0.5;
-  const isBuff = Math.random() < isBuffChance;
+  const isBuff = nextRandom() < isBuffChance;
 
   // 1~2개 스탯 변경
-  const statCount = randInt(1, 2);
+  const statCount = randomInt(1, 2);
   const targetStats = pickRandomN(PATCHABLE_STATS, statCount);
 
   for (const statKey of targetStats) {
@@ -209,7 +181,7 @@ function generateChampionPatchEntries(champ: Champion): PatchEntry[] {
     if (!camelKey) continue;
 
     const currentValue = champ.stats[camelKey];
-    const delta = randInt(STAT_DELTA_MIN, STAT_DELTA_MAX) * (isBuff ? 1 : -1);
+    const delta = randomInt(STAT_DELTA_MIN, STAT_DELTA_MAX) * (isBuff ? 1 : -1);
     const newValue = clamp(currentValue + delta);
 
     entries.push({
@@ -224,7 +196,7 @@ function generateChampionPatchEntries(champ: Champion): PatchEntry[] {
   }
 
   // 20% 확률로 티어 변경도 포함
-  if (Math.random() < 0.2) {
+  if (nextRandom() < 0.2) {
     const tierDelta = isBuff ? -1 : 1; // 티어는 인덱스가 낮을수록 높음
     const newTierIdx = Math.max(0, Math.min(TIER_ORDER.length - 1, tierIdx + tierDelta));
     if (newTierIdx !== tierIdx) {
@@ -422,27 +394,27 @@ function generateMetaModifiers(entries: PatchEntry[]): PatchMetaModifiers {
   let teamfightBias = 0;
   let splitBias = 0;
   let earlyBias = 0;
-  let objectiveBias = 0;
+  const objectiveBias = 0;
 
   for (const entry of entries) {
     if (entry.statKey === 'tier') continue;
     const direction = entry.delta > 0 ? 1 : -1;
     switch (entry.statKey) {
-      case 'teamfight': teamfightBias += direction * 0.01; break;
-      case 'split_push': splitBias += direction * 0.01; break;
-      case 'early_game': earlyBias += direction * 0.01; break;
-      case 'late_game': earlyBias -= direction * 0.005; break;
+      case 'teamfight': teamfightBias += direction * 0.03; break;
+      case 'split_push': splitBias += direction * 0.03; break;
+      case 'early_game': earlyBias += direction * 0.03; break;
+      case 'late_game': earlyBias -= direction * 0.015; break;
     }
   }
 
   // 랜덤 노이즈 추가 (패치마다 미세한 메타 변동)
-  const noise = () => (Math.random() - 0.5) * 0.02;
+  const noise = () => (nextRandom() - 0.5) * 0.04;
 
   return {
-    teamfightEfficiency: Math.max(-0.1, Math.min(0.1, teamfightBias + noise())),
-    splitPushEfficiency: Math.max(-0.1, Math.min(0.1, splitBias + noise())),
-    earlyAggroEfficiency: Math.max(-0.1, Math.min(0.1, earlyBias + noise())),
-    objectiveEfficiency: Math.max(-0.1, Math.min(0.1, objectiveBias + noise())),
+    teamfightEfficiency: Math.max(-0.15, Math.min(0.15, teamfightBias + noise())),
+    splitPushEfficiency: Math.max(-0.15, Math.min(0.15, splitBias + noise())),
+    earlyAggroEfficiency: Math.max(-0.15, Math.min(0.15, earlyBias + noise())),
+    objectiveEfficiency: Math.max(-0.15, Math.min(0.15, objectiveBias + noise())),
   };
 }
 
@@ -598,7 +570,7 @@ export function calculateTeamMetaFitness(
 
   // 3. 시간 기반 적응 보정
   // 패치 직후 0~7일: 적응 중 (-20% ~ 0%), 7일 후: 완전 적응
-  const ADAPTATION_DAYS = 7;
+  const ADAPTATION_DAYS = 17;
   const adaptationDaysLeft = Math.max(0, ADAPTATION_DAYS - daysSincePatch);
   const adaptationPenalty = (adaptationDaysLeft / ADAPTATION_DAYS) * 20;
 

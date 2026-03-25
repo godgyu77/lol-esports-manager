@@ -21,11 +21,9 @@ import { getMentoringProgress } from '../../../engine/mentoring/mentoringEngine'
 import type { MentoringProgress } from '../../../engine/mentoring/mentoringEngine';
 import type { AcademyPlayer, RookieDraftEntry } from '../../../types/academy';
 
-type Tab = 'academy' | 'draft' | 'scouting' | 'mentoring';
+import { POSITION_LABELS_SHORT as POSITION_LABELS } from '../../../utils/constants';
 
-const POSITION_LABELS: Record<string, string> = {
-  top: 'TOP', jungle: 'JGL', mid: 'MID', adc: 'ADC', support: 'SUP',
-};
+type Tab = 'academy' | 'draft' | 'scouting' | 'mentoring';
 
 const POS_CLASS: Record<string, string> = {
   top: 'fm-pos-badge--top',

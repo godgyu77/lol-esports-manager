@@ -19,6 +19,7 @@ export interface GameSave {
   playTimeMinutes: number;
   teamName?: string;
   seasonInfo?: string;
+  rngSeed?: string;
 }
 
 /** 저장 슬롯 표시용 (빈 슬롯 포함) */

@@ -7,6 +7,7 @@
 import { getDatabase } from '../../db/database';
 import type { TalkType, TalkTone } from '../../types/teamTalk';
 import { TALK_TONE_EFFECTS } from '../../types/teamTalk';
+import { nextRandom, pickRandom } from '../../utils/random';
 
 // ─────────────────────────────────────────
 // 팀 토크 대사 템플릿
@@ -89,7 +90,7 @@ export const TALK_MESSAGES: Record<TalkTone, string[]> = {
 
 export function pickTalkMessage(tone: TalkTone): string {
   const messages = TALK_MESSAGES[tone];
-  return messages[Math.floor(Math.random() * messages.length)];
+  return pickRandom(messages);
 }
 
 export async function conductTeamTalk(
@@ -243,7 +244,7 @@ export function calculatePlayerReaction(
   const reaction = determineReaction(moraleChange, personality, tone);
 
   const messages = REACTION_MESSAGES[reaction];
-  const reactionMessage = `${playerName}: ${messages[Math.floor(Math.random() * messages.length)]}`;
+  const reactionMessage = `${playerName}: ${pickRandom(messages)}`;
 
   return { playerId, playerName, reaction, moraleChange, formChange, reactionMessage };
 }
@@ -471,7 +472,7 @@ export function checkPersonalityEvents(
 
       // 기질 충돌 이벤트 (둘 다 기질 낮음, 3% 확률)
       if (a.personality.temperament <= 3 && b.personality.temperament <= 3) {
-        if (Math.random() < 0.03) {
+        if (nextRandom() < 0.03) {
           events.push({
             type: 'conflict',
             involvedPlayers: [a.personality.playerId, b.personality.playerId],
@@ -484,7 +485,7 @@ export function checkPersonalityEvents(
 
       // 야망 충돌 (둘 다 야망 8+, 같은 포지션 경쟁 가정, 2% 확률)
       if (a.personality.ambition >= 8 && b.personality.ambition >= 8) {
-        if (Math.random() < 0.02) {
+        if (nextRandom() < 0.02) {
           events.push({
             type: 'ambition_clash',
             involvedPlayers: [a.personality.playerId, b.personality.playerId],
@@ -497,7 +498,7 @@ export function checkPersonalityEvents(
 
       // 선후배 유대 (나이 차이 5+ + 프로의식 7+, 2% 확률)
       if (Math.abs(a.age - b.age) >= 5 && a.personality.professionalism >= 7 && b.personality.professionalism >= 7) {
-        if (Math.random() < 0.02) {
+        if (nextRandom() < 0.02) {
           const senior = a.age > b.age ? a : b;
           const junior = a.age > b.age ? b : a;
           events.push({
@@ -514,7 +515,7 @@ export function checkPersonalityEvents(
     // 리더십 발현 (결단력 8+ & 기질 7+ & 프로의식 7+, 1% 확률)
     const p = personalities[i];
     if (p.personality.determination >= 8 && p.personality.temperament >= 7 && p.personality.professionalism >= 7) {
-      if (Math.random() < 0.01) {
+      if (nextRandom() < 0.01) {
         events.push({
           type: 'leadership_emerge',
           involvedPlayers: [p.personality.playerId],
@@ -527,7 +528,7 @@ export function checkPersonalityEvents(
 
     // 분위기 메이커 (기질 8+ & 충성심 7+, 2% 확률)
     if (p.personality.temperament >= 8 && p.personality.loyalty >= 7) {
-      if (Math.random() < 0.02) {
+      if (nextRandom() < 0.02) {
         events.push({
           type: 'morale_boost',
           involvedPlayers: [p.personality.playerId],
@@ -540,7 +541,7 @@ export function checkPersonalityEvents(
 
     // 디바 요구 (야망 9+ & 충성심 3-, 2% 확률)
     if (p.personality.ambition >= 9 && p.personality.loyalty <= 3) {
-      if (Math.random() < 0.02) {
+      if (nextRandom() < 0.02) {
         events.push({
           type: 'diva_demand',
           involvedPlayers: [p.personality.playerId],

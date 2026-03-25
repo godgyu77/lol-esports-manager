@@ -137,7 +137,7 @@ export function SeasonEndView() {
 
     loadSummary();
     return () => { cancelled = true; };
-  }, [fullResult, regularResult, userTeam?.id]);
+  }, [fullResult, regularResult, userTeam, season]);
 
   // 다음 스플릿 시작
   const handleNextSeason = useCallback(async () => {

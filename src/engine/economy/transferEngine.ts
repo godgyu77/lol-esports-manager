@@ -27,6 +27,8 @@ import { getDatabase } from '../../db/database';
 import { agentNegotiate } from '../agent/agentEngine';
 import { canSignForeignPlayer } from '../rules/leagueRulesEngine';
 import type { Player } from '../../types/player';
+import { getPlayerOverall } from '../../utils/playerUtils';
+import { nextRandom, pickRandom, randomInt, shuffleArray } from '../../utils/random';
 import type { Position, Region } from '../../types/game';
 import { initializeTeamChemistry } from '../chemistry/chemistryEngine';
 
@@ -53,12 +55,6 @@ function getAgeFactor(age: number): number {
 // ─────────────────────────────────────────
 // 선수 가치 평가
 // ─────────────────────────────────────────
-
-/** 선수 평균 스탯 (OVR 대용) */
-function getPlayerOverall(player: Player): number {
-  const s = player.stats;
-  return (s.mechanical + s.gameSense + s.teamwork + s.consistency + s.laning + s.aggression) / 6;
-}
 
 /**
  * 선수 시장 가치 계산 (만 원 단위)
@@ -553,7 +549,7 @@ export async function processAIFreeAgentSignings(
   const aiTeams = teams.filter(t => t.id !== userTeamId);
 
   // 팀 순서를 랜덤으로 섞어 공정하게 영입 기회 부여
-  const shuffledTeams = aiTeams.sort(() => Math.random() - 0.5);
+  const shuffledTeams = shuffleArray(aiTeams);
 
   for (const team of shuffledTeams) {
     // 매주 최대 1명만 영입
@@ -574,7 +570,7 @@ export async function processAIFreeAgentSignings(
 
     // 최고 OVR 선수 선택 (상위 3명 중 랜덤)
     const topCandidates = candidates.slice(0, Math.min(3, candidates.length));
-    const target = topCandidates[Math.floor(Math.random() * topCandidates.length)];
+    const target = pickRandom(topCandidates);
 
     // 연봉 검증: 팀 연봉 상한 확인
     const fairSalary = calculateFairSalary(target);
@@ -589,7 +585,7 @@ export async function processAIFreeAgentSignings(
     const agentResult = await agentNegotiate(target.id, fairSalary, fairSalary);
     if (!agentResult.accepted) continue; // 에이전트 거절 시 스킵
 
-    const contractYears = Math.floor(Math.random() * 2) + 1; // 1~2년
+    const contractYears = randomInt(1, 2); // 1~2년
     const offerId = await createTransferOffer({
       seasonId,
       fromTeamId: team.id,
@@ -643,11 +639,11 @@ export async function processAITransfers(
 
   // AI 팀만 필터 (유저 팀 제외)
   const aiTeams = teams.filter(t => t.id !== userTeamId);
-  const shuffledTeams = aiTeams.sort(() => Math.random() - 0.5);
+  const shuffledTeams = shuffleArray(aiTeams);
 
   for (const buyingTeam of shuffledTeams) {
     // 팀당 10% 확률로 이적 시도
-    if (Math.random() >= AI_TRANSFER_ATTEMPT_RATE) continue;
+    if (nextRandom() >= AI_TRANSFER_ATTEMPT_RATE) continue;
 
     const roster = await getPlayersByTeamId(buyingTeam.id);
     const weak = findWeakestPosition(roster);
@@ -679,7 +675,7 @@ export async function processAITransfers(
     // OVR 높은 순으로 정렬, 상위 3명 중 랜덤 선택
     benchCandidates.sort((a, b) => getPlayerOverall(b.player) - getPlayerOverall(a.player));
     const topCandidates = benchCandidates.slice(0, Math.min(3, benchCandidates.length));
-    const selected = topCandidates[Math.floor(Math.random() * topCandidates.length)];
+    const selected = pickRandom(topCandidates);
 
     const transferFee = calculatePlayerValue(selected.player);
     const offeredSalary = Math.round(calculateFairSalary(selected.player) * 1.2);
@@ -706,7 +702,7 @@ export async function processAITransfers(
 
     // 유저 팀 선수에 대한 제안은 자동 수락 안 함 (제안만 생성)
     if (selected.sellingTeamId === userTeamId) {
-      const contractYears = Math.floor(Math.random() * 2) + 1;
+      const contractYears = randomInt(1, 2);
       await createTransferOffer({
         seasonId,
         fromTeamId: buyingTeam.id,
@@ -722,7 +718,7 @@ export async function processAITransfers(
     }
 
     // AI 팀 간 이적: 제안 생성 + 즉시 수락
-    const contractYears = Math.floor(Math.random() * 2) + 1;
+    const contractYears = randomInt(1, 2);
     const offerId = await createTransferOffer({
       seasonId,
       fromTeamId: buyingTeam.id,

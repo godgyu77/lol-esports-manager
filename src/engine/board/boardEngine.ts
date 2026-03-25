@@ -5,6 +5,7 @@
 
 import type { BoardExpectation, FanReaction } from '../../types/board';
 import { getDatabase } from '../../db/database';
+import { clamp } from '../../utils/mathUtils';
 
 // ─────────────────────────────────────────
 // Row 타입
@@ -86,11 +87,6 @@ function expectsInternational(reputation: number): boolean {
   return reputation >= 80;
 }
 
-/** 값을 0-100 범위로 클램프 */
-function clamp(value: number, min = 0, max = 100): number {
-  return Math.max(min, Math.min(max, value));
-}
-
 // ─────────────────────────────────────────
 // 공개 함수
 // ─────────────────────────────────────────
@@ -168,7 +164,7 @@ export async function updateBoardSatisfaction(
   if (winRate >= 0.7) satisfactionDelta += 5;
   else if (winRate <= 0.3) satisfactionDelta -= 5;
 
-  const newSatisfaction = clamp(expectations.satisfaction + satisfactionDelta);
+  const newSatisfaction = clamp(expectations.satisfaction + satisfactionDelta, 0, 100);
 
   const db = await getDatabase();
   await db.execute(
@@ -230,8 +226,8 @@ export async function processMatchResult(
     }
   }
 
-  const newSatisfaction = clamp(expectations.satisfaction + satisfactionDelta);
-  const newFanHappiness = clamp(expectations.fanHappiness + fanDelta);
+  const newSatisfaction = clamp(expectations.satisfaction + satisfactionDelta, 0, 100);
+  const newFanHappiness = clamp(expectations.fanHappiness + fanDelta, 0, 100);
   await db.execute(
     `UPDATE board_expectations SET satisfaction = $1, fan_happiness = $2 WHERE team_id = $3 AND season_id = $4`,
     [newSatisfaction, newFanHappiness, teamId, seasonId],

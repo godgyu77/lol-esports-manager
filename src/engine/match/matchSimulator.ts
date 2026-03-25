@@ -91,6 +91,10 @@ export interface GameResult {
   goldDiffAt15: number;
   killsHome: number;
   killsAway: number;
+  goldHome: number;
+  goldAway: number;
+  towersHome: number;
+  towersAway: number;
   events: MatchEvent[];
   playerStatsHome: PlayerGameStatLine[];
   playerStatsAway: PlayerGameStatLine[];
@@ -99,6 +103,8 @@ export interface GameResult {
   /** 보이드 그럽 (각 팀) */
   grubsHome: number;
   grubsAway: number;
+  /** 골드 차이 히스토리 */
+  goldHistory: { tick: number; diff: number }[];
 }
 
 /** 세트간 선수 교체 기록 */
@@ -143,12 +149,12 @@ const PLAY_STYLE_EVENT_MODIFIERS: Record<PlayStyle, {
 
 /** 킬 분배 가중치 (포지션별) */
 const KILL_WEIGHT: Record<Position, number> = {
-  top: 0.18, jungle: 0.20, mid: 0.22, adc: 0.28, support: 0.12,
+  top: 0.18, jungle: 0.20, mid: 0.22, adc: 0.30, support: 0.10,
 };
 
 /** 데스 분배 가중치 (역방향 — 서포트/탑이 더 많이 죽음) */
 const DEATH_WEIGHT: Record<Position, number> = {
-  top: 0.22, jungle: 0.20, mid: 0.18, adc: 0.15, support: 0.25,
+  top: 0.25, jungle: 0.20, mid: 0.18, adc: 0.15, support: 0.18,
 };
 
 /** 데미지 비율 가중치 */
@@ -158,7 +164,7 @@ const DAMAGE_WEIGHT: Record<Position, number> = {
 
 /** CS/분 기본값 */
 const BASE_CS_PER_MIN: Record<Position, number> = {
-  top: 8.0, jungle: 5.5, mid: 8.5, adc: 9.0, support: 1.5,
+  top: 8.0, jungle: 5.5, mid: 8.5, adc: 9.5, support: 1.5,
 };
 
 /**
@@ -217,8 +223,9 @@ function generatePlayerStats(
     const deaths = deathAssigned[i];
 
     // 어시스트: 킬당 평균 2명, 킬러 제외 랜덤
-    // 총 어시스트 = 팀 킬 * 2 정도, 각 선수는 자기 킬 제외 나머지에서 분배
-    const assistBase = Math.round((teamKills - kills) * 0.5 + rand() * 2);
+    // 서포트는 어시스트 비중 상향 (0.7), 나머지 포지션 (0.5)
+    const assistRate = pos === 'support' ? 0.7 : 0.5;
+    const assistBase = Math.round((teamKills - kills) * assistRate + rand() * 2);
     const assists = Math.max(0, assistBase);
 
     // CS
@@ -226,13 +233,13 @@ function generatePlayerStats(
     const cs = Math.round(BASE_CS_PER_MIN[pos] * durationMinutes * laningMod + (rand() - 0.5) * 20);
 
     // 골드
-    const killGold = kills * 300;
-    const csGold = cs * 20;
-    const baseGold = durationMinutes * 100;
+    const killGold = kills * 275;
+    const csGold = cs * 17;
+    const baseGold = durationMinutes * 82;
     const goldEarned = killGold + csGold + baseGold;
 
     // 데미지
-    const baseDamage = durationMinutes * 600;
+    const baseDamage = durationMinutes * 450;
     const mechanicalMod = 1 + (player.stats.mechanical - 60) * 0.005;
     const aggressionMod = 1 + (player.stats.aggression - 60) * 0.003;
     const damageDealt = Math.round(baseDamage * DAMAGE_WEIGHT[pos] / 0.2 * mechanicalMod * aggressionMod + (rand() - 0.5) * 2000);
@@ -653,11 +660,22 @@ function simulateGame(
 
   events.sort((a, b) => a.tick - b.tick);
 
+  // 타워 파괴 횟수 집계 (events에서 tower_destroy 카운트)
+  const towersHome = events.filter(e => e.type === 'tower_destroy' && e.side === 'home').length;
+  const towersAway = events.filter(e => e.type === 'tower_destroy' && e.side === 'away').length;
+
+  // 골드 히스토리: 15분 골드차 + 최종 골드차
+  const finalGoldDiff = goldHome - goldAway;
+  const goldHistory: { tick: number; diff: number }[] = [
+    { tick: 900, diff: goldDiffAt15 },
+    { tick: durationMinutes * 60, diff: finalGoldDiff },
+  ];
+
   // 선수별 스탯 생성 (사후 분배)
   const playerStatsHome = generatePlayerStats(homeLineup, killsHome, killsAway, durationMinutes, rand);
   const playerStatsAway = generatePlayerStats(awayLineup, killsAway, killsHome, durationMinutes, rand);
 
-  return { winnerSide, durationMinutes, goldDiffAt15, killsHome, killsAway, events, playerStatsHome, playerStatsAway, dragonSoul, grubsHome, grubsAway };
+  return { winnerSide, durationMinutes, goldDiffAt15, killsHome, killsAway, goldHome, goldAway, towersHome, towersAway, events, playerStatsHome, playerStatsAway, dragonSoul, grubsHome, grubsAway, goldHistory };
 }
 
 // ─────────────────────────────────────────
@@ -757,52 +775,52 @@ function calculateMomentumModifier(
   let modifier = 0;
   const positions: Position[] = ['top', 'jungle', 'mid', 'adc', 'support'];
 
-  // 1. 연승 보너스: 시리즈 내 연속 승리 → +2% per streak
+  // 1. 연승 보너스: 시리즈 내 연속 승리 → +4% per streak
   if (state.homeConsecutiveWins > 1) {
-    modifier += (state.homeConsecutiveWins - 1) * 0.02;
+    modifier += (state.homeConsecutiveWins - 1) * 0.04;
   }
   if (state.awayConsecutiveWins > 1) {
-    modifier -= (state.awayConsecutiveWins - 1) * 0.02;
+    modifier -= (state.awayConsecutiveWins - 1) * 0.04;
   }
 
-  // 2. 컴백 모멘텀: 뒤지고 있다가 이기면 +3% 사기 부스트
+  // 2. 컴백 모멘텀: 뒤지고 있다가 이기면 +6% 사기 부스트
   if (lastGameWinner === 'home' && state.homeWasBehind) {
-    modifier += 0.03;
+    modifier += 0.06;
   }
   if (lastGameWinner === 'away' && state.awayWasBehind) {
-    modifier -= 0.03;
+    modifier -= 0.06;
   }
 
-  // 3. 틸트: 패배 팀에서 멘탈이 낮은 선수 → -1~3% 페널티
+  // 3. 틸트: 패배 팀에서 멘탈이 낮은 선수 → -2~6% 페널티
   const losingLineup = lastGameWinner === 'home' ? awayLineup : homeLineup;
   const losingSide = lastGameWinner === 'home' ? 'away' : 'home';
   for (const pos of positions) {
     const player = losingLineup[pos];
     if (player.mental.mental < 50) {
-      // 멘탈이 낮을수록 큰 페널티 (30 → -3%, 40 → -2%, 50 → 0%)
-      const tiltPenalty = (50 - player.mental.mental) / 50 * 0.03 * (0.5 + rand() * 0.5);
+      // 멘탈이 낮을수록 큰 페널티 (30 → -6%, 40 → -4%, 50 → 0%)
+      const tiltPenalty = (50 - player.mental.mental) / 50 * 0.06 * (0.5 + rand() * 0.5);
       if (losingSide === 'home') modifier -= tiltPenalty;
       else modifier += tiltPenalty;
     }
   }
 
-  // 4. 베테랑 클러치: 24세+ & 높은 consistency → 결정 세트(Bo3 game3, Bo5 game5)에서 +1%
+  // 4. 베테랑 클러치: 24세+ & 높은 consistency → 결정 세트(Bo3 game3, Bo5 game5)에서 +2%
   const isDecidingGame = (maxGames === 3 && gameNum === 3) || (maxGames === 5 && gameNum === 5);
   if (isDecidingGame) {
     for (const pos of positions) {
       const homePlayer = homeLineup[pos];
       if (homePlayer.age >= 24 && homePlayer.stats.consistency >= 70) {
-        modifier += 0.01;
+        modifier += 0.02;
       }
       const awayPlayer = awayLineup[pos];
       if (awayPlayer.age >= 24 && awayPlayer.stats.consistency >= 70) {
-        modifier -= 0.01;
+        modifier -= 0.02;
       }
     }
   }
 
-  // 클램프: 모멘텀 합산 최대 ±4%
-  return Math.max(-0.04, Math.min(0.04, modifier));
+  // 클램프: 모멘텀 합산 최대 ±8%
+  return Math.max(-0.08, Math.min(0.08, modifier));
 }
 
 // ─────────────────────────────────────────

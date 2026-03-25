@@ -39,6 +39,7 @@ class BgmManager {
   private enabled = true;
   private fadeInterval: ReturnType<typeof setInterval> | null = null;
   private trackIndex = 0;
+  private failedTracks = new Set<string>();
 
   setEnabled(v: boolean): void {
     this.enabled = v;
@@ -115,6 +116,7 @@ class BgmManager {
     if (!tracks || tracks.length === 0) return;
 
     const trackPath = tracks[this.trackIndex % tracks.length];
+    if (this.failedTracks.has(trackPath)) return; // 이전에 실패한 트랙 스킵
     const sceneVol = SCENE_VOLUME[scene] ?? 0.5;
 
     try {
@@ -122,9 +124,12 @@ class BgmManager {
       audio.loop = true;
       audio.volume = 0; // 페이드인 시작
 
-      // 파일 로드 실패 시 무시
+      // 파일 로드 실패 시 무시 (1회만 로그)
       audio.onerror = () => {
-        console.warn(`[BGM] 트랙 로드 실패: ${trackPath}`);
+        if (!this.failedTracks.has(trackPath)) {
+          this.failedTracks.add(trackPath);
+          console.warn(`[BGM] 트랙 로드 실패 (파일 없음): ${trackPath}`);
+        }
       };
 
       // 트랙 끝나면 다음 트랙 (loop가 true이므로 보통 안 옴)

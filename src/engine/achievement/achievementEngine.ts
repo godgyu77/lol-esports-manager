@@ -95,15 +95,7 @@ const ACHIEVEMENT_DEFINITIONS: AchievementDefinition[] = [
 // ─────────────────────────────────────────
 
 async function ensureTable(): Promise<void> {
-  const db = await getDatabase();
-  await db.execute(`
-    CREATE TABLE IF NOT EXISTS achievements (
-      save_id INTEGER NOT NULL,
-      achievement_id TEXT NOT NULL,
-      unlocked_date TEXT NOT NULL,
-      PRIMARY KEY (save_id, achievement_id)
-    )
-  `);
+  // 마이그레이션 050에서 테이블 생성 완료 — 트랜잭션 내 DDL 충돌 방지
 }
 
 // ─────────────────────────────────────────

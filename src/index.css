@@ -17,7 +17,7 @@
   /* Text */
   --text-primary: #e8e6e3;
   --text-secondary: #8b8fa3;
-  --text-muted: #5a5f73;
+  --text-muted: #6b7189;
   --text-accent: #c8aa6e;
 
   /* Accent */
@@ -37,7 +37,7 @@
   --info-dim: rgba(59, 130, 246, 0.12);
 
   /* Borders */
-  --border: #1e2640;
+  --border: #283050;
   --border-subtle: #1a2035;
   --border-hover: #2a3450;
   --border-accent: rgba(200, 170, 110, 0.3);

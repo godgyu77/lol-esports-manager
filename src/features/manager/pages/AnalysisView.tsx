@@ -15,16 +15,9 @@ import type {
   OpponentWeaknesses,
 } from '../../../types/analysis';
 import { Skeleton } from '../../../components/Skeleton';
+import { POSITION_LABELS_SHORT as POSITION_LABELS } from '../../../utils/constants';
 
 type Tab = 'generate' | 'history';
-
-const POSITION_LABELS: Record<string, string> = {
-  top: 'TOP',
-  jungle: 'JGL',
-  mid: 'MID',
-  adc: 'ADC',
-  support: 'SUP',
-};
 
 const PHASE_LABELS: Record<string, string> = {
   early: '초반',

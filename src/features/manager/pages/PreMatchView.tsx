@@ -12,15 +12,9 @@ import { useGameStore } from '../../../stores/gameStore';
 import { getPlayersByTeamId } from '../../../db/queries';
 import { getStandings } from '../../../db/queries';
 import type { Player } from '../../../types/player';
+import { POSITION_LABELS_SHORT as POSITION_LABELS } from '../../../utils/constants';
 
 const POSITION_ORDER = ['top', 'jungle', 'mid', 'adc', 'support'] as const;
-const POSITION_LABELS: Record<string, string> = {
-  top: 'TOP',
-  jungle: 'JGL',
-  mid: 'MID',
-  adc: 'ADC',
-  support: 'SUP',
-};
 
 const POSITION_BADGE_MAP: Record<string, string> = {
   top: 'fm-pos-badge fm-pos-badge--top',

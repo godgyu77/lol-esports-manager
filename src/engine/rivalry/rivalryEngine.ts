@@ -7,6 +7,8 @@
 import { getDatabase } from '../../db/database';
 import type { CoachRivalry, InterviewType, PreMatchInterview } from '../../types/rivalry';
 import type { MatchType } from '../../types/match';
+import { clamp } from '../../utils/mathUtils';
+import { pickRandom } from '../../utils/random';
 
 // ─────────────────────────────────────────
 // Row 매핑
@@ -58,10 +60,6 @@ function mapRowToInterview(row: InterviewRow): PreMatchInterview {
 // 유틸
 // ─────────────────────────────────────────
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
-
 function orderTeamIds(teamAId: string, teamBId: string): [string, string] {
   return teamAId < teamBId ? [teamAId, teamBId] : [teamBId, teamAId];
 }
@@ -93,7 +91,7 @@ const INTERVIEW_TEMPLATES: Record<InterviewType, string[]> = {
 
 function generateInterviewText(type: InterviewType): string {
   const templates = INTERVIEW_TEMPLATES[type];
-  return templates[Math.floor(Math.random() * templates.length)];
+  return pickRandom(templates);
 }
 
 // ─────────────────────────────────────────

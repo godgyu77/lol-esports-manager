@@ -11,6 +11,7 @@ import type { InjuryType, PlayerInjury } from '../../types/injury';
 import { INJURY_TYPE_LABELS } from '../../types/injury';
 import type { DayType } from '../season/calendar';
 import { addDays } from '../season/calendar';
+import { nextRandom, pickRandom, randomInt } from '../../utils/random';
 
 // ─────────────────────────────────────────
 // Row 매핑
@@ -79,16 +80,12 @@ const DAYS_BY_SEVERITY: Record<number, [number, number]> = {
 
 function pickWeighted<T extends { weight: number }>(items: T[]): T {
   const total = items.reduce((sum, i) => sum + i.weight, 0);
-  let roll = Math.random() * total;
+  let roll = nextRandom() * total;
   for (const item of items) {
     roll -= item.weight;
     if (roll <= 0) return item;
   }
   return items[items.length - 1];
-}
-
-function randomInt(min: number, max: number): number {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
 // ─────────────────────────────────────────
@@ -124,7 +121,7 @@ export async function checkForInjuries(
       chance *= 1.5;
     }
 
-    if (Math.random() >= chance) continue;
+    if (nextRandom() >= chance) continue;
 
     // 부상 발생
     const injuryType = pickWeighted(INJURY_TYPE_WEIGHTS).type;
@@ -169,9 +166,9 @@ export async function advanceInjuryDay(teamId: string, _date: string, gymLevel?:
   const recoveredNames: string[] = [];
 
   // daysRemaining 감소 (gym 레벨 3+ → 10% 확률로 추가 1일 감소)
-  const gymExtra = (gymLevel ?? 0) >= 3 && Math.random() < 0.1 ? 1 : 0;
+  const gymExtra = (gymLevel ?? 0) >= 3 && nextRandom() < 0.1 ? 1 : 0;
   // 물리치료사 보너스: injuryRecoveryBonus는 음수(-0.05~-0.2), 확률적으로 추가 1일 감소
-  const staffExtra = staffInjuryRecoveryBonus < 0 && Math.random() < Math.abs(staffInjuryRecoveryBonus) ? 1 : 0;
+  const staffExtra = staffInjuryRecoveryBonus < 0 && nextRandom() < Math.abs(staffInjuryRecoveryBonus) ? 1 : 0;
   const extraRecovery = gymExtra + staffExtra;
   await db.execute(
     `UPDATE player_injuries
@@ -306,12 +303,12 @@ export async function checkOvertrainingInjury(
   else if (stamina < 30 && trainingIntensity === 'intense') chance = 0.10;
   else return null;
 
-  if (Math.random() >= chance) return null;
+  if (nextRandom() >= chance) return null;
 
   // 과훈련 부상은 주로 손목/번아웃
   const overtrainingTypes: InjuryType[] = ['wrist', 'mental_burnout', 'back'];
-  const injuryType = overtrainingTypes[Math.floor(Math.random() * overtrainingTypes.length)];
-  const severity = Math.random() < 0.7 ? 1 : 2; // 주로 경미~보통
+  const injuryType = pickRandom(overtrainingTypes);
+  const severity = nextRandom() < 0.7 ? 1 : 2; // 주로 경미~보통
   const [minDays, maxDays] = DAYS_BY_SEVERITY[severity];
   const daysRemaining = randomInt(minDays, maxDays);
   const expectedReturn = addDays(date, daysRemaining);

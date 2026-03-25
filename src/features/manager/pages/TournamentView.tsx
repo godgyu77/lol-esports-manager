@@ -90,7 +90,7 @@ export function TournamentView() {
     return () => {
       cancelled = true;
     };
-  }, [season]);
+  }, [season, selectedId]);
 
   if (!season) {
     return <p className="fm-text-muted fm-text-md">시즌 데이터를 불러오는 중...</p>;

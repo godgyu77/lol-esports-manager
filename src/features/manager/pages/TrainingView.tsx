@@ -38,6 +38,7 @@ import {
 } from '../../../engine/season/scrimEngine';
 import type { TrainingRecommendation } from '../../../engine/season/scrimEngine';
 import type { Player } from '../../../types/player';
+import { POSITION_LABELS_SHORT as POSITION_LABELS } from '../../../utils/constants';
 
 type Tab = 'schedule' | 'individual' | 'logs' | 'mentoring';
 
@@ -49,10 +50,6 @@ const STAT_LABELS: Record<TrainableStat, string> = {
   mechanical: '기계적', gameSense: '판단력', teamwork: '팀워크',
   consistency: '일관성', laning: '라인전', aggression: '공격성',
 };
-const POSITION_LABELS: Record<string, string> = {
-  top: 'TOP', jungle: 'JGL', mid: 'MID', adc: 'ADC', support: 'SUP',
-};
-
 const POS_CLASS: Record<string, string> = {
   top: 'fm-pos-badge--top',
   jungle: 'fm-pos-badge--jgl',

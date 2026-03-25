@@ -16,19 +16,8 @@ import {
   resolveTeamId,
 } from './contextBuilder';
 import { augmentPromptWithKnowledge } from './rag/ragEngine';
-
-// ─────────────────────────────────────────
-// 유틸
-// ─────────────────────────────────────────
-
-function pickRandom<T>(arr: readonly T[]): T {
-  if (arr.length === 0) throw new Error('pickRandom: empty array');
-  return arr[Math.floor(Math.random() * arr.length)]!;
-}
-
-function fillTemplate(text: string, vars: Record<string, string>): string {
-  return Object.entries(vars).reduce((t, [k, v]) => t.replaceAll(`{${k}}`, v), text);
-}
+import { nextRandom, pickRandom, randomInt } from '../utils/random';
+import { fillTemplate } from '../utils/stringUtils';
 
 // ─────────────────────────────────────────
 // 상태 캐시
@@ -137,7 +126,7 @@ export async function generateDailyEvent(context: {
   teamId?: string;
 }): Promise<DailyEvent | null> {
   // 20% 확률로 이벤트 발생
-  if (Math.random() > 0.2) return null;
+  if (nextRandom() > 0.2) return null;
 
   const aiReady = await isAiAvailable();
 
@@ -390,6 +379,7 @@ JSON 형식: {"accept": true/false, "reason": "판단 이유 (30자 이내)"}`;
 // ─────────────────────────────────────────
 
 import type { MeetingResponse, PressConferenceResponse } from './schemas/meeting';
+import { meetingResponseSchema, pressConferenceSchema } from './schemas/meeting';
 
 /**
  * 선수 면담 AI 응답 생성
@@ -427,7 +417,7 @@ ${playerCtx || `${context.playerName} (${context.playerPosition}, 사기 ${conte
 JSON 형식: {"dialogue": "감독의 대사 (50자 이내)", "loyaltyChange": -30~30, "moraleChange": -20~20, "approved": true/false, "reason": "판단 근거 (20자 이내)"}`;
 
       const augmented = await augmentPromptWithKnowledge(prompt, context.topic);
-      return await chatWithLlmJson<MeetingResponse>(augmented);
+      return await chatWithLlmJson<MeetingResponse>(augmented, { schema: meetingResponseSchema });
     } catch {
       // AI 실패 → 폴백
     }
@@ -489,7 +479,7 @@ ${matchCtx ? `\n[최근 경기]\n${matchCtx}` : ''}
 JSON 형식: {"dialogue": "기자회견 발언 (80자 이내)", "teamMoraleEffect": -10~10, "publicOpinionChange": -15~15}`;
 
       const augmented = await augmentPromptWithKnowledge(prompt, `기자회견 ${context.teamName}`);
-      return await chatWithLlmJson<PressConferenceResponse>(augmented);
+      return await chatWithLlmJson<PressConferenceResponse>(augmented, { schema: pressConferenceSchema });
     } catch {
       // AI 실패 → 폴백
     }
@@ -502,7 +492,7 @@ JSON 형식: {"dialogue": "기자회견 발언 (80자 이내)", "teamMoraleEffec
   });
   return {
     dialogue: fb,
-    teamMoraleEffect: Math.floor(Math.random() * 7) - 2, // -2 ~ 4
-    publicOpinionChange: Math.floor(Math.random() * 11) - 3, // -3 ~ 7
+    teamMoraleEffect: randomInt(-2, 4),
+    publicOpinionChange: randomInt(-3, 7),
   };
 }

@@ -8,6 +8,7 @@
 import { getDatabase } from '../../db/database';
 import { getPlayersByTeamId } from '../../db/queries';
 import { buildLineup, evaluateMatchup } from '../match/teamRating';
+import { nextRandom, pickRandom, randomInt } from '../../utils/random';
 
 export interface ScrimResult {
   opponentTeamId: string;
@@ -85,7 +86,7 @@ export async function simulateScrim(
   );
   if (opponents.length === 0) return null;
 
-  const opponent = opponents[Math.floor(Math.random() * opponents.length)];
+  const opponent = pickRandom(opponents);
 
   // Bo3 시뮬
   const homePlayers = await getPlayersByTeamId(teamId);
@@ -108,7 +109,7 @@ export async function simulateScrim(
   let losses = 0;
 
   for (let i = 0; i < 3; i++) {
-    const roll = Math.random();
+    const roll = nextRandom();
     if (roll < adjustedWinRate) wins++;
     else losses++;
     if (wins >= 2 || losses >= 2) break;
@@ -130,7 +131,7 @@ export async function simulateScrim(
   // 테스트한 챔피언의 숙련도 소량 증가
   if (testedChampions && testedChampions.length > 0) {
     for (const champId of testedChampions) {
-      const profGain = Math.round(2 + Math.random() * 3); // 2-4 숙련도
+      const profGain = randomInt(2, 4); // 2-4 숙련도
       try {
         // 모든 주전 선수에게 해당 챔피언 숙련도 증가 (실제로는 해당 포지션만)
         await db.execute(
@@ -179,9 +180,9 @@ function generateFeedback(
   teamfightDiff: number,
   testedStrategy?: string,
 ): ScrimFeedback {
-  const laningPerf = Math.round(laningDiff + (Math.random() - 0.5) * 10);
-  const teamfightPerf = Math.round(teamfightDiff + (Math.random() - 0.5) * 10);
-  const objectivePerf = Math.round((wins - losses) * 15 + (Math.random() - 0.5) * 10);
+  const laningPerf = Math.round(laningDiff + (nextRandom() - 0.5) * 10);
+  const teamfightPerf = Math.round(teamfightDiff + (nextRandom() - 0.5) * 10);
+  const objectivePerf = Math.round((wins - losses) * 15 + (nextRandom() - 0.5) * 10);
 
   const summaryParts: string[] = [];
 
@@ -214,7 +215,7 @@ function generateFeedback(
 
 export async function getRecentScrims(teamId: string, limit = 10): Promise<ScrimResult[]> {
   const db = await getDatabase();
-  const rows = await db.select<any[]>(
+  const rows = await db.select<Record<string, unknown>[]>(
     `SELECT sr.*, t.name as opponent_name FROM scrim_results sr
      JOIN teams t ON t.id = sr.opponent_team_id
      WHERE sr.team_id = $1 ORDER BY sr.scrim_date DESC LIMIT $2`,

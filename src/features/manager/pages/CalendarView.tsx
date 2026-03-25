@@ -70,7 +70,7 @@ export function CalendarView() {
   const save = useGameStore((s) => s.save);
   const teams = useGameStore((s) => s.teams);
 
-  const currentDate = season?.currentDate ?? '2026-01-12';
+  const currentDate = season?.currentDate ?? '2025-12-01';
   const userTeamId = save?.userTeamId ?? '';
 
   // 현재 표시 중인 월 (0-indexed)
@@ -83,6 +83,7 @@ export function CalendarView() {
   useEffect(() => {
     if (!season) return;
     let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 비동기 로드 전 로딩 상태 초기화
     setIsLoading(true);
     getMatchesBySeason(season.id)
       .then((data) => {

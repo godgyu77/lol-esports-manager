@@ -45,6 +45,7 @@
 - `skills/build-test` — 빌드/테스트
 - `skills/fix-issue` — 이슈 수정
 - `skills/explain-code` — 코드 설명
+- `skills/balance-test` — 밸런스 시뮬레이션 (100시즌 자동 시뮬)
 
 ## 사용 가능한 에이전트
 

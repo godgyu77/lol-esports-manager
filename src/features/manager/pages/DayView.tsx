@@ -57,7 +57,7 @@ export function DayView() {
   const [todayTraining, setTodayTraining] = useState<TrainingScheduleEntry | null>(null);
   const [offseasonEvents, setOffseasonEvents] = useState<OffseasonEvent[]>([]);
 
-  const currentDate = season?.currentDate ?? '2026-01-12';
+  const currentDate = season?.currentDate ?? '2025-12-01';
   const userTeamId = save?.userTeamId ?? '';
   const userTeam = teams.find((t) => t.id === userTeamId);
 
@@ -440,7 +440,7 @@ export function DayView() {
                                   console.warn('이벤트 선택지 처리 실패:', e);
                                 }
                               }}
-                              title={choice.effect}
+                              title={choice.effect.displayText}
                             >
                               {choice.label}
                             </button>

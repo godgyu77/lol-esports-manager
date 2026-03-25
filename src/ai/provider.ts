@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
-import { useSettingsStore } from '../stores/settingsStore';
+import { useSettingsStore, type AiProvider } from '../stores/settingsStore';
+import { type ZodSchema } from 'zod';
 
 interface LlmMessage {
   role: 'system' | 'user' | 'assistant';
@@ -18,7 +19,7 @@ const getModel = (): string =>
   useSettingsStore.getState().aiModel || DEFAULT_FALLBACK_MODEL;
 
 // ─────────────────────────────────────────
-// Ollama (로컬 LLM)
+// Ollama (로컬 LLM) — Rust invoke
 // ─────────────────────────────────────────
 
 async function chatWithOllama(
@@ -41,7 +42,7 @@ async function chatWithOllama(
 }
 
 // ─────────────────────────────────────────
-// OpenAI API
+// OpenAI API — Rust invoke (API 키 비노출)
 // ─────────────────────────────────────────
 
 async function chatWithOpenAI(
@@ -49,50 +50,29 @@ async function chatWithOpenAI(
   options: AiProviderOptions,
 ): Promise<string> {
   const settings = useSettingsStore.getState();
-  const apiKey = settings.getApiKey();
+  const apiKey = await settings.getApiKey();
   if (!apiKey) throw new Error('OpenAI API key not set');
 
   const endpoint = settings.apiEndpoint || 'https://api.openai.com/v1/chat/completions';
   const model = settings.apiModel || 'gpt-4o-mini';
 
-  const messages: { role: string; content: string }[] = [];
+  const messages: LlmMessage[] = [];
   if (options.systemPrompt) {
     messages.push({ role: 'system', content: options.systemPrompt });
   }
   messages.push({ role: 'user', content: userMessage });
 
-  const body: Record<string, unknown> = {
+  return invoke<string>('chat_with_openai', {
+    apiKey,
+    endpoint,
     model,
     messages,
-    temperature: 0.7,
-  };
-
-  if (options.format === 'json') {
-    body.response_format = { type: 'json_object' };
-  }
-
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify(body),
+    formatJson: options.format === 'json',
   });
-
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '');
-    throw new Error(`OpenAI API error ${res.status}: ${errText}`);
-  }
-
-  const data = await res.json();
-  const content = data.choices?.[0]?.message?.content;
-  if (!content) throw new Error('OpenAI API returned empty or invalid response');
-  return content;
 }
 
 // ─────────────────────────────────────────
-// Claude (Anthropic) API
+// Claude (Anthropic) API — Rust invoke (API 키 비노출)
 // ─────────────────────────────────────────
 
 async function chatWithClaude(
@@ -100,48 +80,110 @@ async function chatWithClaude(
   options: AiProviderOptions,
 ): Promise<string> {
   const settings = useSettingsStore.getState();
-  const apiKey = settings.getApiKey();
+  const apiKey = await settings.getApiKey();
   if (!apiKey) throw new Error('Claude API key not set');
 
   const endpoint = settings.apiEndpoint || 'https://api.anthropic.com/v1/messages';
   const model = settings.apiModel || 'claude-haiku-4-5-20251001';
 
-  const body: Record<string, unknown> = {
+  const messages: LlmMessage[] = [];
+  messages.push({ role: 'user', content: userMessage });
+
+  return invoke<string>('chat_with_claude', {
+    apiKey,
+    endpoint,
     model,
-    max_tokens: 1024,
-    messages: [{ role: 'user', content: userMessage }],
-  };
-
-  if (options.systemPrompt) {
-    body.system = options.systemPrompt;
-  }
-
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      // TODO: Tauri Rust 커맨드를 통한 프록시로 전환 필요
-      'anthropic-dangerous-direct-browser-access': 'true',
-    },
-    body: JSON.stringify(body),
+    messages,
+    systemPrompt: options.systemPrompt ?? null,
+    maxTokens: 1024,
   });
-
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '');
-    throw new Error(`Claude API error ${res.status}: ${errText}`);
-  }
-
-  const data = await res.json();
-  const text = data.content?.[0]?.text;
-  if (!text) throw new Error('Claude API returned empty or invalid response');
-  return text;
 }
 
 // ─────────────────────────────────────────
-// 통합 라우터
+// Google Gemini API — Rust invoke (API 키 비노출)
 // ─────────────────────────────────────────
+
+async function chatWithGemini(
+  userMessage: string,
+  options: AiProviderOptions,
+): Promise<string> {
+  const settings = useSettingsStore.getState();
+  const apiKey = await settings.getApiKey();
+  if (!apiKey) throw new Error('Gemini API key not set');
+
+  const model = settings.apiModel || 'gemini-2.0-flash';
+
+  const messages: LlmMessage[] = [];
+  messages.push({ role: 'user', content: userMessage });
+
+  return invoke<string>('chat_with_gemini', {
+    apiKey,
+    model,
+    messages,
+    systemPrompt: options.systemPrompt ?? null,
+    formatJson: options.format === 'json',
+  });
+}
+
+// ─────────────────────────────────────────
+// Grok (xAI) API — Rust invoke (OpenAI 호환)
+// ─────────────────────────────────────────
+
+async function chatWithGrok(
+  userMessage: string,
+  options: AiProviderOptions,
+): Promise<string> {
+  const settings = useSettingsStore.getState();
+  const apiKey = await settings.getApiKey();
+  if (!apiKey) throw new Error('Grok API key not set');
+
+  const endpoint = settings.apiEndpoint || 'https://api.x.ai/v1/chat/completions';
+  const model = settings.apiModel || 'grok-3-mini';
+
+  const messages: LlmMessage[] = [];
+  if (options.systemPrompt) {
+    messages.push({ role: 'system', content: options.systemPrompt });
+  }
+  messages.push({ role: 'user', content: userMessage });
+
+  return invoke<string>('chat_with_grok', {
+    apiKey,
+    endpoint,
+    model,
+    messages,
+    formatJson: options.format === 'json',
+  });
+}
+
+// ─────────────────────────────────────────
+// 프로바이더 폴백 체인
+// ─────────────────────────────────────────
+
+const PROVIDER_CHAIN: AiProvider[] = ['ollama', 'openai', 'claude', 'gemini', 'grok'];
+
+type ProviderFn = (msg: string, opts: AiProviderOptions) => Promise<string>;
+
+const PROVIDER_FN_MAP: Record<string, ProviderFn> = {
+  ollama: chatWithOllama,
+  openai: chatWithOpenAI,
+  claude: chatWithClaude,
+  gemini: chatWithGemini,
+  grok: chatWithGrok,
+};
+
+async function isProviderAvailable(provider: AiProvider): Promise<boolean> {
+  if (provider === 'template') return false;
+  if (provider === 'ollama') {
+    try {
+      return await invoke<boolean>('check_ollama_status');
+    } catch {
+      return false;
+    }
+  }
+  // openai / claude / gemini / grok — API key 필요
+  const key = await useSettingsStore.getState().getApiKey();
+  return !!key;
+}
 
 /**
  * Ollama 상태 확인 (프로바이더에 따라 분기)
@@ -151,8 +193,9 @@ export async function checkOllamaStatus(): Promise<boolean> {
 
   if (provider === 'template') return false;
 
-  if (provider === 'openai' || provider === 'claude') {
-    return !!useSettingsStore.getState().getApiKey();
+  if (provider === 'openai' || provider === 'claude' || provider === 'gemini' || provider === 'grok') {
+    const key = await useSettingsStore.getState().getApiKey();
+    return !!key;
   }
 
   // Ollama 로컬 확인
@@ -164,62 +207,110 @@ export async function checkOllamaStatus(): Promise<boolean> {
 }
 
 /**
- * LLM 대화 요청 - 설정된 프로바이더에 따라 자동 라우팅
+ * LLM 대화 요청 - 설정된 프로바이더부터 시작, 실패 시 자동 폴백
+ * 체인: configured → 나머지 (ollama/openai/claude)
+ * 모든 프로바이더 실패 시 throw → 호출부의 template fallback 동작
  */
 export async function chatWithLlm(
   userMessage: string,
   options: AiProviderOptions = {},
 ): Promise<string> {
-  const provider = useSettingsStore.getState().aiProvider;
+  const configured = useSettingsStore.getState().aiProvider;
 
-  switch (provider) {
-    case 'ollama':
-      try {
-        return await chatWithOllama(userMessage, options);
-      } catch (error) {
-        console.warn('Ollama LLM 호출 실패, 폴백 사용:', error);
-        throw error;
-      }
-
-    case 'openai':
-      try {
-        return await chatWithOpenAI(userMessage, options);
-      } catch (error) {
-        console.warn('OpenAI API 호출 실패:', error);
-        throw error;
-      }
-
-    case 'claude':
-      try {
-        return await chatWithClaude(userMessage, options);
-      } catch (error) {
-        console.warn('Claude API 호출 실패:', error);
-        throw error;
-      }
-
-    case 'template':
-    default:
-      throw new Error('Template mode - no LLM available');
+  if (configured === 'template') {
+    throw new Error('Template mode - no LLM available');
   }
+
+  // configured부터 시작하는 순환 체인 구성
+  const startIdx = PROVIDER_CHAIN.indexOf(configured);
+  const chain =
+    startIdx >= 0
+      ? [...PROVIDER_CHAIN.slice(startIdx), ...PROVIDER_CHAIN.slice(0, startIdx)]
+      : PROVIDER_CHAIN;
+
+  const errors: string[] = [];
+
+  for (const provider of chain) {
+    const fn = PROVIDER_FN_MAP[provider];
+    if (!fn) continue;
+
+    const available = await isProviderAvailable(provider);
+    if (!available) {
+      console.warn(`[AI Fallback] ${provider} 사용 불가 (설정 미완료), 건너뜀`);
+      continue;
+    }
+
+    try {
+      const result = await fn(userMessage, options);
+      if (provider !== configured) {
+        console.info(`[AI Fallback] ${configured} 실패 → ${provider}로 대체 성공`);
+      }
+      return result;
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      console.warn(`[AI Fallback] ${provider} 호출 실패: ${msg}`);
+      errors.push(`${provider}: ${msg}`);
+    }
+  }
+
+  throw new Error(`모든 AI 프로바이더 실패: ${errors.join(' | ')}`);
+}
+
+// ─────────────────────────────────────────
+// 구조화된 JSON 응답 (Zod 검증 지원)
+// ─────────────────────────────────────────
+
+interface ChatJsonOptions<T> extends Omit<AiProviderOptions, 'format'> {
+  schema?: ZodSchema<T>;
 }
 
 /**
  * 구조화된 JSON 응답 요청
+ * schema 전달 시 safeParse 검증 → 실패 시 1회 재시도 → 재실패 시 throw
  */
 export async function chatWithLlmJson<T>(
   userMessage: string,
-  options: Omit<AiProviderOptions, 'format'> = {},
+  options: ChatJsonOptions<T> = {},
 ): Promise<T> {
-  const response = await chatWithLlm(userMessage, {
-    ...options,
-    format: 'json',
-  });
+  const { schema, ...llmOptions } = options;
 
-  const cleaned = response.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
+  const tryOnce = async (): Promise<T> => {
+    const response = await chatWithLlm(userMessage, {
+      ...llmOptions,
+      format: 'json',
+    });
+
+    const cleaned = response
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/```\s*$/i, '')
+      .trim();
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch {
+      throw new Error(`AI 응답 JSON 파싱 실패: ${cleaned.slice(0, 100)}`);
+    }
+
+    if (!schema) return parsed as T;
+
+    const result = schema.safeParse(parsed);
+    if (result.success) return result.data;
+
+    const issues = result.error.issues
+      .map((i) => `${i.path.join('.')}: ${i.message}`)
+      .join(', ');
+    throw new Error(`AI 응답 스키마 검증 실패: ${issues}`);
+  };
+
   try {
-    return JSON.parse(cleaned) as T;
-  } catch {
-    throw new Error(`AI 응답 JSON 파싱 실패: ${cleaned.slice(0, 100)}`);
+    return await tryOnce();
+  } catch (error) {
+    if (schema) {
+      console.warn('AI 응답 검증 실패, 1회 재시도:', error);
+      return await tryOnce();
+    }
+    throw error;
   }
 }
 

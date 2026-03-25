@@ -32,18 +32,18 @@ const DRAGON_TYPE_LABELS: Record<DragonType, string> = {
 
 /** 드래곤 소울 효과 (승률 보정) */
 const DRAGON_SOUL_BONUS: Record<DragonType, number> = {
-  infernal: 0.10,   // 화염 소울: 큰 공격력 보정
-  ocean: 0.07,      // 바다 소울: 지속력 보정
-  mountain: 0.08,   // 대지 소울: 방어력 보정
-  cloud: 0.06,      // 바람 소울: 이동속도/유틸 보정
+  infernal: 0.05,   // 화염 소울: 큰 공격력 보정
+  ocean: 0.035,     // 바다 소울: 지속력 보정
+  mountain: 0.04,   // 대지 소울: 방어력 보정
+  cloud: 0.03,      // 바람 소울: 이동속도/유틸 보정
 };
 
 /** 개별 드래곤 스택 효과 */
 const DRAGON_STACK_BONUS: Record<DragonType, number> = {
-  infernal: 0.02,   // 스택당 승률 보정
-  ocean: 0.015,
-  mountain: 0.02,
-  cloud: 0.01,
+  infernal: 0.01,    // 스택당 승률 보정
+  ocean: 0.0075,
+  mountain: 0.01,
+  cloud: 0.005,
 };
 
 // ─────────────────────────────────────────
@@ -133,6 +133,9 @@ commentary: Commentary[];
   /** 선수별 실시간 스탯 (어웨이) */
   playerStatsAway: LivePlayerStat[];
 
+  /** 골드 차이 히스토리 (매 틱 기록) */
+  goldHistory: { tick: number; diff: number }[];
+
   /** 게임 종료 여부 */
   isFinished: boolean;
   /** 승리 팀 */
@@ -147,6 +150,8 @@ export interface LivePlayerStat {
   deaths: number;
   assists: number;
   cs: number;
+  goldEarned: number;
+  damageDealt: number;
 }
 
 // ─────────────────────────────────────────
@@ -670,13 +675,14 @@ export class LiveMatchEngine {
       playerStatsHome: positions.map(pos => ({
         playerId: params.homeLineup[pos].id,
         position: pos,
-        kills: 0, deaths: 0, assists: 0, cs: 0,
+        kills: 0, deaths: 0, assists: 0, cs: 0, goldEarned: 0, damageDealt: 0,
       })),
       playerStatsAway: positions.map(pos => ({
         playerId: params.awayLineup[pos].id,
         position: pos,
-        kills: 0, deaths: 0, assists: 0, cs: 0,
+        kills: 0, deaths: 0, assists: 0, cs: 0, goldEarned: 0, damageDealt: 0,
       })),
+      goldHistory: [],
       isFinished: false,
     };
   }
@@ -910,7 +916,7 @@ export class LiveMatchEngine {
 
   private processTickEvents(tick: number): void {
     const { matchup } = this;
-    let wr = this.state.currentWinRate;
+    const wr = this.state.currentWinRate;
 
     // 개별 선수 지시사항 보정은 setPlayerInstruction에서 1회 반영됨
     // (매 틱 누적 방지)
@@ -934,8 +940,28 @@ export class LiveMatchEngine {
       for (let i = 0; i < positions.length; i++) {
         const pos = positions[i];
         const base = Math.round(csPerMin[pos] * 3 + (this.rand() - 0.5) * 4);
-        this.state.playerStatsHome[i].cs += Math.max(0, base);
-        this.state.playerStatsAway[i].cs += Math.max(0, base + Math.round((this.rand() - 0.5) * 4));
+        const homeCs = Math.max(0, base);
+        const awayCs = Math.max(0, base + Math.round((this.rand() - 0.5) * 4));
+        this.state.playerStatsHome[i].cs += homeCs;
+        this.state.playerStatsHome[i].goldEarned += homeCs * 17;
+        this.state.playerStatsAway[i].cs += awayCs;
+        this.state.playerStatsAway[i].goldEarned += awayCs * 17;
+      }
+    }
+
+    // 매 틱마다 기본 골드 + 데미지 누적
+    {
+      const dmgWeight: Record<Position, number> = { top: 0.18, jungle: 0.15, mid: 0.25, adc: 0.30, support: 0.12 };
+      const positions: Position[] = ['top', 'jungle', 'mid', 'adc', 'support'];
+      for (let i = 0; i < positions.length; i++) {
+        const pos = positions[i];
+        // 분당 기본 골드 82 (포지션별 균등)
+        this.state.playerStatsHome[i].goldEarned += 82;
+        this.state.playerStatsAway[i].goldEarned += 82;
+        // 분당 데미지 450 * 포지션 가중치
+        const baseDmg = Math.round(450 * dmgWeight[pos] * (0.9 + this.rand() * 0.2));
+        this.state.playerStatsHome[i].damageDealt += baseDmg;
+        this.state.playerStatsAway[i].damageDealt += Math.round(baseDmg * (0.9 + this.rand() * 0.2));
       }
     }
 
@@ -986,29 +1012,34 @@ export class LiveMatchEngine {
         // 6마리 달성 시 추가 보정
         const totalGrubs = grubSide === 'home' ? this.state.grubsHome : this.state.grubsAway;
         if (totalGrubs >= 6) {
-          this.adjustWinRate(grubSide === 'home' ? 0.03 : -0.03);
+          this.adjustWinRate(grubSide === 'home' ? 0.015 : -0.015);
           this.addCommentary(tick, `${sideLabel(grubSide)}팀 보이드 그럽 6마리 달성! 강화 버프!`, 'highlight');
         }
       }
     }
 
-    // ── 중반 (16~24분) ──
-    if (tick > 15 && tick <= 24) {
-      // 드래곤 (18, 22분) — 타입별 드래곤 + 소울 시스템
-      if (tick === 18 || tick === 22) {
-        const tfDiff = matchup.homeRating.teamfightPower - matchup.awayRating.teamfightPower;
-        const dragonBonus = dragonMod > 1.0 ? 0.1 : 0;
-        const dragonWin = this.rand() < 0.5 + tfDiff * 0.008 + (wr - 0.5) * 0.2 + dragonBonus;
-        const side = dragonWin ? 'home' : 'away';
+    // ── 드래곤 (5분 간격: tick 5, 10, 15, 20, 25, 30...) ──
+    if (tick >= 5 && tick % 5 === 0) {
+      const soul = this.state.dragonSoul;
+      const isElder = !!soul.soulTeam; // 소울 달성 후에는 엘더 드래곤
 
-        // 드래곤 타입 결정
+      const tfDiff = matchup.homeRating.teamfightPower - matchup.awayRating.teamfightPower;
+      const dragonBonus = dragonMod > 1.0 ? 0.1 : 0;
+      const dragonWin = this.rand() < 0.5 + tfDiff * 0.008 + (wr - 0.5) * 0.2 + dragonBonus;
+      const side = dragonWin ? 'home' : 'away';
+
+      if (isElder) {
+        // 엘더 드래곤: 큰 승률 보정, 소울 스택은 증가하지 않음
+        this.adjustWinRate(side === 'home' ? 0.06 : -0.06);
+        this.addEvent(tick, 'elder_dragon', side, '엘더 드래곤 처치', 400);
+        this.addCommentary(tick, `${sideLabel(side)}팀이 엘더 드래곤을 처치합니다! 처형 버프 획득!`, 'highlight');
+      } else {
+        // 일반 드래곤: 타입별 소울 스택 누적
         const dragonType = DRAGON_TYPES[Math.floor(this.rand() * DRAGON_TYPES.length)];
 
         if (side === 'home') this.state.dragonsHome++;
         else this.state.dragonsAway++;
 
-        // 드래곤 소울 스택 추적
-        const soul = this.state.dragonSoul;
         if (side === 'home') soul.homeStacks++;
         else soul.awayStacks++;
         soul.dragonTypes.push({ type: dragonType, side });
@@ -1030,22 +1061,61 @@ export class LiveMatchEngine {
           this.adjustWinRate(side === 'home' ? soulBonus : -soulBonus);
           this.addCommentary(tick, `${sideLabel(side)}팀 ${typeLabel} 드래곤 소울 획득! 강력한 버프!`, 'highlight');
         }
-
-        // 드래곤 교전 킬
-        if (this.rand() < 0.5 * dragonMod) {
-          const kills = 1 + Math.floor(this.rand() * 2);
-          for (let k = 0; k < kills; k++) this.registerKill(tick, side, '드래곤 교전');
-          this.addCommentary(tick, this.pick(COMMENTARY_TEMPLATES.dragonFight, { kills: String(kills), side: sideLabel(side) }), 'teamfight');
-        }
       }
 
-      // 타워 (매 4분마다 확인)
-      if (tick % 4 === 0) {
-        const leading = this.state.goldHome > this.state.goldAway ? 'home' : 'away';
-        if (this.rand() < 0.4) {
+      // 드래곤 교전 킬
+      if (this.rand() < 0.5 * dragonMod) {
+        const kills = 1 + Math.floor(this.rand() * 2);
+        for (let k = 0; k < kills; k++) this.registerKill(tick, side, '드래곤 교전');
+        this.addCommentary(tick, this.pick(COMMENTARY_TEMPLATES.dragonFight, { kills: String(kills), side: sideLabel(side) }), 'teamfight');
+      }
+    }
+
+    // ── 헤럴드 (tick 8, 14) ──
+    if (tick === 8 || tick === 14) {
+      const heraldWin = this.rand() < wr;
+      const side: 'home' | 'away' = heraldWin ? 'home' : 'away';
+      if (side === 'home') this.state.goldHome += 400;
+      else this.state.goldAway += 400;
+      this.addEvent(tick, 'rift_herald', side, '리프트 헤럴드 처치', 400);
+      this.addCommentary(tick, `${sideLabel(side)}팀이 리프트 헤럴드를 처치합니다!`, 'objective');
+
+      // 헤럴드 돌진: 70% 확률로 타워 1개 파괴
+      if (this.rand() < 0.70) {
+        if (side === 'home') this.state.towersHome++;
+        else this.state.towersAway++;
+        this.addEvent(tick, 'tower_destroy', side, '헤럴드 돌진 타워 파괴', 550);
+        this.addCommentary(tick, `${sideLabel(side)}팀, 헤럴드 돌진으로 타워를 무너뜨립니다!`, 'objective');
+      }
+    }
+
+    // ── 중반 (16~24분) ──
+    if (tick > 15 && tick <= 24) {
+      // 타워 파괴 — 단계별 현실화
+      // tick 14에서 첫 외곽 타워(헤럴드 처리에서 다뤄짐)
+      // tick 16~20: 매 2분마다 70% 확률로 우세팀 타워 1개
+      if (tick >= 16 && tick <= 20 && tick % 2 === 0) {
+        const leading: 'home' | 'away' = this.state.goldHome > this.state.goldAway ? 'home' : 'away';
+        if (this.rand() < 0.70) {
           if (leading === 'home') this.state.towersHome++;
           else this.state.towersAway++;
-          this.addEvent(tick, 'tower_destroy', leading, '타워 파괴', 550);
+          this.addEvent(tick, 'tower_destroy', leading, '외곽 타워 파괴', 550);
+        }
+      }
+      // tick 20~24: 매 2분마다 60% 확률로 양쪽 타워 파괴 (내부 타워)
+      if (tick > 20 && tick <= 24 && tick % 2 === 0) {
+        const leading: 'home' | 'away' = this.state.goldHome > this.state.goldAway ? 'home' : 'away';
+        const trailing: 'home' | 'away' = leading === 'home' ? 'away' : 'home';
+        if (this.rand() < 0.60) {
+          if (leading === 'home') this.state.towersHome++;
+          else this.state.towersAway++;
+          this.addEvent(tick, 'tower_destroy', leading, '내부 타워 파괴', 550);
+        }
+        // 열세팀도 40% 확률로 1개 파괴
+        if (this.rand() < 0.40) {
+          if (trailing === 'home') this.state.towersHome++;
+          else this.state.towersAway++;
+          this.addEvent(tick, 'tower_destroy', trailing, '타워 교환', 550);
         }
       }
 
@@ -1077,17 +1147,34 @@ export class LiveMatchEngine {
         }
       }
 
-      // 타워 파괴 (바론 후) — 바론 버프 1회 소모 후 해제
-      if ((this.state.baronHome || this.state.baronAway) && this.rand() < 0.3) {
-        const side = this.state.baronHome ? 'home' : 'away';
-        if (side === 'home') {
-          this.state.towersHome++;
-          this.state.baronHome = false; // 바론 버프 소모
-        } else {
-          this.state.towersAway++;
-          this.state.baronAway = false; // 바론 버프 소모
+      // 바론 후 타워 파괴 — 1~2개 추가 (바론 버프 소모)
+      if (this.state.baronHome || this.state.baronAway) {
+        const side: 'home' | 'away' = this.state.baronHome ? 'home' : 'away';
+        // 바론 버프 시 80% 확률로 타워 1개
+        if (this.rand() < 0.80) {
+          if (side === 'home') this.state.towersHome++;
+          else this.state.towersAway++;
+          this.addEvent(tick, 'tower_destroy', side, '바론 버프 타워 파괴', 550);
         }
-        this.addEvent(tick, 'tower_destroy', side, '내부 타워 파괴', 550);
+        // 추가 40% 확률로 2번째 타워
+        if (this.rand() < 0.40) {
+          if (side === 'home') this.state.towersHome++;
+          else this.state.towersAway++;
+          this.addEvent(tick, 'tower_destroy', side, '바론 버프 추가 타워 파괴', 550);
+        }
+        // 바론 버프 소모
+        if (side === 'home') this.state.baronHome = false;
+        else this.state.baronAway = false;
+      }
+
+      // 억제기 타워 (tick 28+): 매 2분 50% 확률
+      if (tick >= 28 && tick % 2 === 0) {
+        const leading: 'home' | 'away' = this.state.goldHome > this.state.goldAway ? 'home' : 'away';
+        if (this.rand() < 0.50) {
+          if (leading === 'home') this.state.towersHome++;
+          else this.state.towersAway++;
+          this.addEvent(tick, 'tower_destroy', leading, '억제기 타워 파괴', 550);
+        }
       }
 
       // 후반 교전 — 적극 교전 전술 시 확률 증가
@@ -1098,6 +1185,12 @@ export class LiveMatchEngine {
         this.addCommentary(tick, this.pick(COMMENTARY_TEMPLATES.lateTeamfight, { side: sideLabel(winner), kills: String(kills) }), 'teamfight');
       }
     }
+
+    // ── 골드 히스토리 기록 (매 틱) ──
+    this.state.goldHistory.push({
+      tick,
+      diff: this.state.goldHome - this.state.goldAway,
+    });
   }
 
   /** 남은 코치보이스 횟수 조회 */
@@ -1151,8 +1244,26 @@ export class LiveMatchEngine {
     // 최종 교전
     const tick = this.state.maxTick;
     const winner: 'home' | 'away' = this.rand() < this.state.currentWinRate ? 'home' : 'away';
+    const loser: 'home' | 'away' = winner === 'home' ? 'away' : 'home';
     const finalKills = 2 + Math.floor(this.rand() * 3);
     for (let k = 0; k < finalKills; k++) this.registerKill(tick, winner, '최종 교전');
+
+    // 승리팀 타워 최소값 보정 (넥서스 파괴에 필요한 현실적 타워 수)
+    const minWinnerTowers = this.state.maxTick < 30 ? 5 : 7;
+    const winnerTowers = winner === 'home' ? this.state.towersHome : this.state.towersAway;
+    if (winnerTowers < minWinnerTowers) {
+      const corrected = minWinnerTowers + Math.floor(this.rand() * 3);
+      if (winner === 'home') this.state.towersHome = corrected;
+      else this.state.towersAway = corrected;
+    }
+
+    // 패배팀도 최소 1~3개 보장
+    const loserTowers = loser === 'home' ? this.state.towersHome : this.state.towersAway;
+    if (loserTowers < 1) {
+      const corrected = 1 + Math.floor(this.rand() * 3);
+      if (loser === 'home') this.state.towersHome = corrected;
+      else this.state.towersAway = corrected;
+    }
 
     this.addCommentary(tick, this.pick(COMMENTARY_TEMPLATES.nexusDestroy, { side: sideLabel(winner) }), 'highlight');
 
@@ -1185,6 +1296,7 @@ export class LiveMatchEngine {
       if (r < cumulative) { killerIdx = i; break; }
     }
     killerStats[killerIdx].kills++;
+    killerStats[killerIdx].goldEarned += 275;
 
     // 피해자: 랜덤
     const victimIdx = Math.floor(this.rand() * 5);
@@ -1196,6 +1308,7 @@ export class LiveMatchEngine {
     for (let a = 0; a < Math.min(assistCount, assistCandidates.length); a++) {
       const idx = Math.floor(this.rand() * assistCandidates.length);
       killerStats[assistCandidates[idx]].assists++;
+      killerStats[assistCandidates[idx]].goldEarned += 75;
       assistCandidates.splice(idx, 1);
     }
   }

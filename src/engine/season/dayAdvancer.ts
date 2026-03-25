@@ -60,6 +60,11 @@ import { checkGoalAchievement } from '../playerGoal/playerGoalEngine';
 import { buildAchievementContext, checkAndUnlockAchievements } from '../achievement/achievementEngine';
 import { getDifficultyModifiers, type Difficulty } from '../difficulty/difficultyEngine';
 import { generateDailyPlayerEvents, processPlayerEvent } from '../event/playerEventEngine';
+import { clamp } from '../../utils/mathUtils';
+import { initGlobalRng, getBaseSeed, randomInt } from '../../utils/random';
+
+// 직렬화 큐: Promise 체인으로 advanceDay 동시 실행 방지
+let _dayAdvanceQueue: Promise<void> = Promise.resolve();
 
 // ─────────────────────────────────────────
 // 타입
@@ -118,9 +123,7 @@ const REST_EFFECT = { stamina: 12, morale: 4, form: -1 };
 const MATCH_DAY_EFFECT = { stamina: -15, morale: 0, form: 0 };
 
 /** 컨디션 클램프 */
-function clampCondition(value: number, min = 0, max = 100): number {
-  return Math.max(min, Math.min(max, value));
-}
+const clampCondition = (value: number, min = 0, max = 100): number => clamp(value, min, max);
 
 /**
  * 전체 팀 선수 컨디션 일괄 업데이트 (배치)
@@ -152,7 +155,7 @@ async function updateAllTeamConditions(
       const baseMorale = prev?.morale ?? player.mental.morale;
       const baseForm = prev?.form ?? 50;
 
-      const variance = Math.floor(Math.random() * 7) - 3;
+      const variance = randomInt(-3, 3);
 
       allRecords.push({
         playerId: player.id,
@@ -210,6 +213,18 @@ export async function advanceDay(
   saveId?: number,
   difficulty: Difficulty = 'normal',
 ): Promise<DayResult> {
+  // 직렬화 보장: Promise 체인으로 동시 실행 방지 (레이스 컨디션 없음)
+  const prev = _dayAdvanceQueue;
+  let releaseLock!: () => void;
+  _dayAdvanceQueue = new Promise<void>(resolve => { releaseLock = resolve; });
+  await prev;
+  try {
+  // 날짜 기반 RNG 재초기화 (동일 날짜 → 동일 시퀀스 보장)
+  const baseSeed = getBaseSeed();
+  if (baseSeed) {
+    initGlobalRng(`${baseSeed}_day_${currentDate}`);
+  }
+
   const dateObj = parseDate(currentDate);
   const dayOfWeek = dateObj.getDay();
   const dayName = getDayName(currentDate);
@@ -236,137 +251,15 @@ export async function advanceDay(
 
   if (dayType === 'match_day') {
     // ── 경기일 처리 ──
-    for (const match of todayMatches) {
-      if (match.isPlayed) continue;
-
-      // TBD 팀 매치 스킵 (녹아웃 팀 미배정 상태)
-      if (match.teamHomeId.startsWith('TBD') || match.teamAwayId.startsWith('TBD')) {
-        continue;
-      }
-
-      const isUserMatch =
-        match.teamHomeId === userTeamId || match.teamAwayId === userTeamId;
-
-      if (isUserMatch) {
-        // 유저 팀 경기: LiveMatch로 분기하기 위해 반환만 함
-        hasUserMatch = true;
-        userMatch = match;
-        events.push(`오늘 경기: 유저 팀 경기 (밴픽 → 라이브 매치)`);
-        continue;
-      }
-
-      // 타 팀 경기: 자동 시뮬레이션
-      const result = await simulateMatchAuto(match, currentDate, difficulty);
-      if (result) {
-        matchResults.push({
-          matchId: match.id,
-          homeTeamId: match.teamHomeId,
-          awayTeamId: match.teamAwayId,
-          result,
-          isUserMatch: false,
-        });
-
-        // 경기 결과 뉴스 생성
-        try {
-          await generateMatchResultNews(seasonId, currentDate, match.teamHomeId, match.teamAwayId, result.scoreHome, result.scoreAway);
-        } catch (e) {
-          console.warn('[dayAdvancer] generateMatchResultNews failed:', e);
-        }
-
-        // 플레이오프 / 토너먼트 경기 결과 → 다음 라운드 자동 처리
-        if (match.matchType !== 'regular') {
-          const winnerTeamId = result.winner === 'home' ? match.teamHomeId : match.teamAwayId;
-
-          const tournamentPrefixes = ['msi_', 'worlds_', 'lck_cup_', 'fst_', 'ewc_'];
-          const isTournament = tournamentPrefixes.some(p => match.id.startsWith(p));
-
-          if (isTournament) {
-            // 대회 경기 (MSI, Worlds, LCK Cup, FST, EWC)
-            await processTournamentMatchResult(seasonId, match.id, winnerTeamId);
-          } else {
-            // 플레이오프 경기
-            await processPlayoffMatchResult(seasonId, match.id, winnerTeamId);
-          }
-        }
-      }
-    }
-
-    events.push(`경기일 — ${todayMatches.length}경기 진행`);
-    await insertDailyEvent(seasonId, currentDate, 'match_day', undefined, `${todayMatches.length}경기 진행`);
-
+    const matchDayResult = await processMatchDay(todayMatches, userTeamId, seasonId, currentDate, difficulty);
+    matchResults.push(...matchDayResult.matchResults);
+    events.push(...matchDayResult.events);
+    hasUserMatch = matchDayResult.hasUserMatch;
+    userMatch = matchDayResult.userMatch;
   } else {
     // ── 비경기일 처리 ──
-    const typeLabel = dayType === 'training' ? '훈련' : dayType === 'scrim' ? '스크림' : '휴식';
-    events.push(`${typeLabel}일 — 선수 컨디션 변화`);
-    await insertDailyEvent(seasonId, currentDate, dayType, userTeamId, `${typeLabel} 진행`);
-
-    // 스크림일에 스크림 결과 시뮬
-    if (dayType === 'scrim') {
-      try {
-        const scrimResult = await simulateScrim(userTeamId, currentDate);
-        if (scrimResult) {
-          events.push(`스크림 vs ${scrimResult.opponentName}: ${scrimResult.wins}승 ${scrimResult.losses}패`);
-        }
-      } catch { /* 스크림 테이블 미생성 시 무시 */ }
-    }
-
-    // 휴식일에 시설 보너스 반영 (gym → 스태미나, cafeteria → 사기)
-    if (dayType === 'rest') {
-      try {
-        const restResult = await processRestDay(userTeamId);
-        if (restResult.facilityGymBonus > 0 || restResult.facilityCafeteriaBonus > 0) {
-          events.push(`시설 보너스: 스태미나 +${restResult.facilityGymBonus}, 사기 +${restResult.facilityCafeteriaBonus}`);
-        }
-      } catch { /* 무시 */ }
-    }
-
-    // 훈련/스크림일에 훈련 효과 적용
-    if (dayType === 'training' || dayType === 'scrim') {
-      try {
-        const trainingResult = await processTrainingDay(userTeamId, currentDate, dayOfWeek);
-        if (trainingResult.statChanges.length > 0) {
-          events.push(`훈련 효과: ${trainingResult.statChanges.length}건 스탯 변화`);
-        }
-        if (trainingResult.championChanges.length > 0) {
-          events.push(`챔피언 숙련도: ${trainingResult.championChanges.length}건 향상`);
-        }
-
-        // 과훈련 위험 → 부상 체크
-        for (const risk of trainingResult.overtrainingRisks) {
-          try {
-            const { checkOvertrainingInjury } = await import('../injury/injuryEngine');
-            const intensity = risk.risk === 'critical' ? 'intense' : 'normal';
-            const injury = await checkOvertrainingInjury(risk.playerId, userTeamId, risk.stamina, intensity, currentDate);
-            if (injury) {
-              const playerName = (await getPlayersByTeamId(userTeamId)).find(p => p.id === risk.playerId)?.name ?? risk.playerId;
-              events.push(`과훈련 부상: ${formatInjuryEvent(playerName, injury)}`);
-            }
-          } catch { /* 무시 */ }
-        }
-      } catch (e) {
-        console.warn('[dayAdvancer] processTrainingDay failed:', e);
-      }
-    }
-
-    // AI 일간 이벤트 생성 (비경기일에만)
-    const userPlayers = await getPlayersByTeamId(userTeamId);
-    const dailyEvent = await generateDailyEvent({
-      teamName: userTeamId,
-      playerNames: userPlayers.slice(0, 5).map(p => p.name),
-      currentDate,
-    });
-
-    if (dailyEvent) {
-      events.push(`[${dailyEvent.title}] ${dailyEvent.description}`);
-      await insertDailyEvent(seasonId, currentDate, 'event', userTeamId, `${dailyEvent.title}: ${dailyEvent.description}`);
-    }
-
-    // 일간 뉴스 생성
-    try {
-      await generateDailyNews(seasonId, currentDate, []);
-    } catch (e) {
-      console.warn('[dayAdvancer] generateDailyNews failed:', e);
-    }
+    const nonMatchResult = await processNonMatchDay(dayType, dayOfWeek, userTeamId, seasonId, currentDate);
+    events.push(...nonMatchResult.events);
   }
 
   // 스태프 보너스 로드 (부상 예방/회복에 활용)
@@ -481,145 +374,368 @@ export async function advanceDay(
     console.warn('[dayAdvancer] updateSeasonDate failed:', e);
   }
 
-  // 주차 업데이트 + 주간 재정 처리 (월요일마다)
+  // 주간 태스크 (월요일마다)
   if (dayOfWeek === 1) {
-    const db = await getDatabase();
-    await db.execute(
-      'UPDATE seasons SET current_week = current_week + 1 WHERE id = $1',
-      [seasonId],
-    );
-    await processWeeklyFinances(seasonId, currentDate);
-    events.push('주간 재정 처리 완료 (주급 지급 / 스폰서십 수입)');
+    const weeklyResult = await processWeeklyTasks(seasonId, userTeamId, currentDate);
+    events.push(...weeklyResult.events);
+  }
 
-    // 선수 불만 체크 (주 1회)
-    try {
-      const complaints = await checkForComplaints(userTeamId, seasonId, currentDate);
-      if (complaints.length > 0) {
-        events.push(`선수 불만 ${complaints.length}건 접수`);
-      }
-    } catch (e) {
-      console.warn('[dayAdvancer] checkForComplaints failed:', e);
+  // 월간 태스크 (매월 1일)
+  if (dateObj.getDate() === 1) {
+    const monthlyResult = await processMonthlyTasks(seasonId, userTeamId, currentDate);
+    events.push(...monthlyResult.events);
+  }
+
+  // 시즌 전환 처리 (시즌 종료 감지 + 업적)
+  const seasonTransitionResult = await processSeasonTransition(saveId, userTeamId, seasonId, currentDate, dayType, nextDate);
+  events.push(...seasonTransitionResult.events);
+  const isSeasonEnd = seasonTransitionResult.isSeasonEnd;
+
+  return {
+    date: currentDate,
+    nextDate,
+    dayOfWeek,
+    dayName,
+    dayType,
+    matchResults,
+    hasUserMatch,
+    userMatch,
+    events,
+    playerEvents: dailyPlayerEvents.length > 0 ? dailyPlayerEvents : undefined,
+    isSeasonEnd,
+  };
+  } finally {
+    releaseLock();
+  }
+}
+
+// ─────────────────────────────────────────
+// advanceDay 서브 함수
+// ─────────────────────────────────────────
+
+/** 경기일 처리: 타 팀 자동 시뮬 + 유저 팀 경기 플래그 */
+async function processMatchDay(
+  todayMatches: Match[],
+  userTeamId: string,
+  seasonId: number,
+  currentDate: string,
+  difficulty: Difficulty,
+): Promise<{ matchResults: DayMatchResult[]; events: string[]; hasUserMatch: boolean; userMatch?: Match }> {
+  const events: string[] = [];
+  const matchResults: DayMatchResult[] = [];
+  let hasUserMatch = false;
+  let userMatch: Match | undefined;
+
+  for (const match of todayMatches) {
+    if (match.isPlayed) continue;
+
+    // TBD 팀 매치 스킵 (녹아웃 팀 미배정 상태)
+    if (match.teamHomeId.startsWith('TBD') || match.teamAwayId.startsWith('TBD')) {
+      continue;
     }
 
-    // 스폰서 동적 변동 체크
-    try {
-      const sponsorChanges = await checkSponsorChanges(userTeamId, seasonId, currentDate);
-      if (sponsorChanges.lostSponsors.length > 0) {
-        events.push(`스폰서 이탈: ${sponsorChanges.lostSponsors.join(', ')}`);
+    const isUserMatch =
+      match.teamHomeId === userTeamId || match.teamAwayId === userTeamId;
+
+    if (isUserMatch) {
+      // 유저 팀 경기: LiveMatch로 분기하기 위해 반환만 함
+      hasUserMatch = true;
+      userMatch = match;
+      events.push(`오늘 경기: 유저 팀 경기 (밴픽 → 라이브 매치)`);
+      continue;
+    }
+
+    // 타 팀 경기: 자동 시뮬레이션
+    const result = await simulateMatchAuto(match, currentDate, difficulty);
+    if (result) {
+      matchResults.push({
+        matchId: match.id,
+        homeTeamId: match.teamHomeId,
+        awayTeamId: match.teamAwayId,
+        result,
+        isUserMatch: false,
+      });
+
+      // 경기 결과 뉴스 생성
+      try {
+        await generateMatchResultNews(seasonId, currentDate, match.teamHomeId, match.teamAwayId, result.scoreHome, result.scoreAway);
+      } catch (e) {
+        console.warn('[dayAdvancer] generateMatchResultNews failed:', e);
       }
-      if (sponsorChanges.newOffers.length > 0) {
-        // 유저 팀은 첫 번째 제안만 자동 수락 (추후 UI에서 선택 가능하도록 확장 가능)
-        for (const offer of sponsorChanges.newOffers) {
-          await acceptSponsor(userTeamId, seasonId, offer, currentDate);
-          events.push(`새 스폰서 계약: ${offer.name} (${offer.tier}, 주 ${offer.weeklyPayout}만)`);
+
+      // 플레이오프 / 토너먼트 경기 결과 → 다음 라운드 자동 처리
+      if (match.matchType !== 'regular') {
+        const winnerTeamId = result.winner === 'home' ? match.teamHomeId : match.teamAwayId;
+
+        const tournamentPrefixes = ['msi_', 'worlds_', 'lck_cup_', 'fst_', 'ewc_'];
+        const isTournament = tournamentPrefixes.some(p => match.id.startsWith(p));
+
+        if (isTournament) {
+          await processTournamentMatchResult(seasonId, match.id, winnerTeamId);
+        } else {
+          await processPlayoffMatchResult(seasonId, match.id, winnerTeamId);
         }
       }
-    } catch (e) {
-      console.warn('[dayAdvancer] checkSponsorChanges failed:', e);
-    }
-
-    // 약속 이행 체크 (주 1회)
-    try {
-      const promiseResult = await checkPromises(userTeamId, currentDate);
-      if (promiseResult.fulfilled > 0) events.push(`약속 이행: ${promiseResult.fulfilled}건`);
-      if (promiseResult.broken > 0) events.push(`약속 불이행: ${promiseResult.broken}건 (사기 하락)`);
-    } catch (e) {
-      console.warn('[dayAdvancer] checkPromises failed:', e);
-    }
-
-    // 주간 만족도 체크 + 불만 자동 생성
-    try {
-      await processWeeklySatisfaction(userTeamId, seasonId, currentDate);
-      events.push('주간 만족도 체크 완료');
-    } catch (e) {
-      console.warn('[dayAdvancer] processWeeklySatisfaction failed:', e);
-    }
-
-    // 성격 갈등 체크 (주 1회)
-    try {
-      const conflicts = await checkTeamConflicts(userTeamId);
-      if (conflicts.length > 0) {
-        for (const c of conflicts) {
-          events.push(`선수 갈등: ${c.playerAName} vs ${c.playerBName} (${c.severity})`);
-        }
-      }
-    } catch (e) {
-      console.warn('[dayAdvancer] checkTeamConflicts failed:', e);
-    }
-
-    // AI 팀 자유계약 영입 처리
-    try {
-      const signedIds = await processAIFreeAgentSignings(seasonId, currentDate, userTeamId);
-      if (signedIds.length > 0) {
-        events.push(`AI 팀 자유계약 영입: ${signedIds.length}명`);
-      }
-    } catch (e) {
-      console.warn('[dayAdvancer] processAIFreeAgentSignings failed:', e);
-    }
-
-    // AI 팀 간 이적 거래 처리
-    try {
-      const aiTransfers = await processAITransfers(seasonId, currentDate, userTeamId);
-      if (aiTransfers.length > 0) {
-        events.push(`AI 팀 이적: ${aiTransfers.map(t => `${t.playerName}(${t.fromTeam}→${t.toTeam})`).join(', ')}`);
-      }
-    } catch (e) {
-      console.warn('[dayAdvancer] processAITransfers failed:', e);
-    }
-
-    // 스태프 사기 자연 회복 (주 1회)
-    try {
-      await weeklyStaffMoraleRecovery(userTeamId);
-    } catch (e) {
-      console.warn('[dayAdvancer] weeklyStaffMoraleRecovery failed:', e);
-    }
-
-    // 시설 노후화 + 유지보수 비용 (주 1회)
-    try {
-      const decayEvents = await processFacilityDecay(userTeamId);
-      for (const de of decayEvents) events.push(de);
-      const maintenanceCost = await calculateMaintenanceCost(userTeamId);
-      if (maintenanceCost > 0) {
-        await db.execute('UPDATE teams SET budget = budget - $1 WHERE id = $2', [maintenanceCost, userTeamId]);
-        events.push(`시설 유지보수 비용: ${maintenanceCost.toLocaleString()}만`);
-      }
-    } catch (e) {
-      console.warn('[dayAdvancer] facility maintenance failed:', e);
-    }
-
-    // 스캔들 뉴스 생성 (주 1회 체크)
-    try {
-      const allTeams = await getAllTeams();
-      const teamsInfo = allTeams.map(t => ({ id: t.id, name: t.name, shortName: t.shortName ?? t.name }));
-      const scandal = await generateScandalNews(seasonId, currentDate, teamsInfo);
-      if (scandal) {
-        events.push(`스캔들 발생: ${scandal.teamId}`);
-        // 스캔들 팀 사기 하락
-        const scandalPlayers = await getPlayersByTeamId(scandal.teamId);
-        if (scandalPlayers.length > 0) {
-          await db.execute(
-            `UPDATE player_daily_condition SET morale = MAX(0, morale - $1)
-             WHERE player_id IN (${scandalPlayers.map((_, i) => `$${i + 2}`).join(',')})`,
-            [scandal.moralePenalty, ...scandalPlayers.map(p => p.id)],
-          ).catch(() => { /* 무시 */ });
-        }
-      }
-    } catch (e) {
-      console.warn('[dayAdvancer] scandal news failed:', e);
-    }
-
-    // 2주마다 챔피언 밸런스 패치 (짝수 주차)
-    const season2 = await getActiveSeason();
-    const currentWeek = season2?.currentWeek ?? 0;
-    if (currentWeek > 0 && currentWeek % 2 === 0) {
-      const patchNumber = Math.floor(currentWeek / 2);
-      const patchResult = await generatePatch(seasonId, patchNumber, currentWeek);
-      events.push(`챔피언 밸런스 패치 ${patchNumber} 적용 (${patchResult.entries.length}건 변경)`);
-      await insertDailyEvent(seasonId, currentDate, 'patch', undefined, patchResult.patchNote);
     }
   }
 
-  // 시즌 종료 감지: 시즌 종료일을 넘겼으면 플래그
+  events.push(`경기일 — ${todayMatches.length}경기 진행`);
+  await insertDailyEvent(seasonId, currentDate, 'match_day', undefined, `${todayMatches.length}경기 진행`);
+
+  return { matchResults, events, hasUserMatch, userMatch };
+}
+
+/** 비경기일 처리: 훈련/스크림/휴식 + AI 이벤트 */
+async function processNonMatchDay(
+  dayType: DayType,
+  dayOfWeek: number,
+  userTeamId: string,
+  seasonId: number,
+  currentDate: string,
+): Promise<{ events: string[] }> {
+  const events: string[] = [];
+
+  const typeLabel = dayType === 'training' ? '훈련' : dayType === 'scrim' ? '스크림' : '휴식';
+  events.push(`${typeLabel}일 — 선수 컨디션 변화`);
+  await insertDailyEvent(seasonId, currentDate, dayType, userTeamId, `${typeLabel} 진행`);
+
+  // 스크림일에 스크림 결과 시뮬
+  if (dayType === 'scrim') {
+    try {
+      const scrimResult = await simulateScrim(userTeamId, currentDate);
+      if (scrimResult) {
+        events.push(`스크림 vs ${scrimResult.opponentName}: ${scrimResult.wins}승 ${scrimResult.losses}패`);
+      }
+    } catch { /* 스크림 테이블 미생성 시 무시 */ }
+  }
+
+  // 휴식일에 시설 보너스 반영 (gym → 스태미나, cafeteria → 사기)
+  if (dayType === 'rest') {
+    try {
+      const restResult = await processRestDay(userTeamId);
+      if (restResult.facilityGymBonus > 0 || restResult.facilityCafeteriaBonus > 0) {
+        events.push(`시설 보너스: 스태미나 +${restResult.facilityGymBonus}, 사기 +${restResult.facilityCafeteriaBonus}`);
+      }
+    } catch { /* 무시 */ }
+  }
+
+  // 훈련/스크림일에 훈련 효과 적용
+  if (dayType === 'training' || dayType === 'scrim') {
+    try {
+      const trainingResult = await processTrainingDay(userTeamId, currentDate, dayOfWeek);
+      if (trainingResult.statChanges.length > 0) {
+        events.push(`훈련 효과: ${trainingResult.statChanges.length}건 스탯 변화`);
+      }
+      if (trainingResult.championChanges.length > 0) {
+        events.push(`챔피언 숙련도: ${trainingResult.championChanges.length}건 향상`);
+      }
+
+      // 과훈련 위험 → 부상 체크
+      for (const risk of trainingResult.overtrainingRisks) {
+        try {
+          const { checkOvertrainingInjury } = await import('../injury/injuryEngine');
+          const intensity = risk.risk === 'critical' ? 'intense' : 'normal';
+          const injury = await checkOvertrainingInjury(risk.playerId, userTeamId, risk.stamina, intensity, currentDate);
+          if (injury) {
+            const playerName = (await getPlayersByTeamId(userTeamId)).find(p => p.id === risk.playerId)?.name ?? risk.playerId;
+            events.push(`과훈련 부상: ${formatInjuryEvent(playerName, injury)}`);
+          }
+        } catch { /* 무시 */ }
+      }
+    } catch (e) {
+      console.warn('[dayAdvancer] processTrainingDay failed:', e);
+    }
+  }
+
+  // AI 일간 이벤트 생성 (비경기일에만)
+  const userPlayers = await getPlayersByTeamId(userTeamId);
+  const dailyEvent = await generateDailyEvent({
+    teamName: userTeamId,
+    playerNames: userPlayers.slice(0, 5).map(p => p.name),
+    currentDate,
+  });
+
+  if (dailyEvent) {
+    events.push(`[${dailyEvent.title}] ${dailyEvent.description}`);
+    await insertDailyEvent(seasonId, currentDate, 'event', userTeamId, `${dailyEvent.title}: ${dailyEvent.description}`);
+  }
+
+  // 일간 뉴스 생성
+  try {
+    await generateDailyNews(seasonId, currentDate, []);
+  } catch (e) {
+    console.warn('[dayAdvancer] generateDailyNews failed:', e);
+  }
+
+  return { events };
+}
+
+/** 주간 태스크: 재정, 불만, 스폰서, 이적, 시설 등 (매주 월요일) */
+async function processWeeklyTasks(
+  seasonId: number,
+  userTeamId: string,
+  currentDate: string,
+): Promise<{ events: string[] }> {
+  const events: string[] = [];
+  const db = await getDatabase();
+
+  await db.execute(
+    'UPDATE seasons SET current_week = current_week + 1 WHERE id = $1',
+    [seasonId],
+  );
+  await processWeeklyFinances(seasonId, currentDate);
+  events.push('주간 재정 처리 완료 (주급 지급 / 스폰서십 수입)');
+
+  // 선수 불만 체크 (주 1회)
+  try {
+    const complaints = await checkForComplaints(userTeamId, seasonId, currentDate);
+    if (complaints.length > 0) {
+      events.push(`선수 불만 ${complaints.length}건 접수`);
+    }
+  } catch (e) {
+    console.warn('[dayAdvancer] checkForComplaints failed:', e);
+  }
+
+  // 스폰서 동적 변동 체크
+  try {
+    const sponsorChanges = await checkSponsorChanges(userTeamId, seasonId, currentDate);
+    if (sponsorChanges.lostSponsors.length > 0) {
+      events.push(`스폰서 이탈: ${sponsorChanges.lostSponsors.join(', ')}`);
+    }
+    if (sponsorChanges.newOffers.length > 0) {
+      for (const offer of sponsorChanges.newOffers) {
+        await acceptSponsor(userTeamId, seasonId, offer, currentDate);
+        events.push(`새 스폰서 계약: ${offer.name} (${offer.tier}, 주 ${offer.weeklyPayout}만)`);
+      }
+    }
+  } catch (e) {
+    console.warn('[dayAdvancer] checkSponsorChanges failed:', e);
+  }
+
+  // 약속 이행 체크 (주 1회)
+  try {
+    const promiseResult = await checkPromises(userTeamId, currentDate);
+    if (promiseResult.fulfilled > 0) events.push(`약속 이행: ${promiseResult.fulfilled}건`);
+    if (promiseResult.broken > 0) events.push(`약속 불이행: ${promiseResult.broken}건 (사기 하락)`);
+  } catch (e) {
+    console.warn('[dayAdvancer] checkPromises failed:', e);
+  }
+
+  // 주간 만족도 체크 + 불만 자동 생성
+  try {
+    await processWeeklySatisfaction(userTeamId, seasonId, currentDate);
+    events.push('주간 만족도 체크 완료');
+  } catch (e) {
+    console.warn('[dayAdvancer] processWeeklySatisfaction failed:', e);
+  }
+
+  // 성격 갈등 체크 (주 1회)
+  try {
+    const conflicts = await checkTeamConflicts(userTeamId);
+    if (conflicts.length > 0) {
+      for (const c of conflicts) {
+        events.push(`선수 갈등: ${c.playerAName} vs ${c.playerBName} (${c.severity})`);
+      }
+    }
+  } catch (e) {
+    console.warn('[dayAdvancer] checkTeamConflicts failed:', e);
+  }
+
+  // AI 팀 자유계약 영입 처리
+  try {
+    const signedIds = await processAIFreeAgentSignings(seasonId, currentDate, userTeamId);
+    if (signedIds.length > 0) {
+      events.push(`AI 팀 자유계약 영입: ${signedIds.length}명`);
+    }
+  } catch (e) {
+    console.warn('[dayAdvancer] processAIFreeAgentSignings failed:', e);
+  }
+
+  // AI 팀 간 이적 거래 처리
+  try {
+    const aiTransfers = await processAITransfers(seasonId, currentDate, userTeamId);
+    if (aiTransfers.length > 0) {
+      events.push(`AI 팀 이적: ${aiTransfers.map(t => `${t.playerName}(${t.fromTeam}→${t.toTeam})`).join(', ')}`);
+    }
+  } catch (e) {
+    console.warn('[dayAdvancer] processAITransfers failed:', e);
+  }
+
+  // 스태프 사기 자연 회복 (주 1회)
+  try {
+    await weeklyStaffMoraleRecovery(userTeamId);
+  } catch (e) {
+    console.warn('[dayAdvancer] weeklyStaffMoraleRecovery failed:', e);
+  }
+
+  // 시설 노후화 + 유지보수 비용 (주 1회)
+  try {
+    const decayEvents = await processFacilityDecay(userTeamId);
+    for (const de of decayEvents) events.push(de);
+    const maintenanceCost = await calculateMaintenanceCost(userTeamId);
+    if (maintenanceCost > 0) {
+      await db.execute('UPDATE teams SET budget = budget - $1 WHERE id = $2', [maintenanceCost, userTeamId]);
+      events.push(`시설 유지보수 비용: ${maintenanceCost.toLocaleString()}만`);
+    }
+  } catch (e) {
+    console.warn('[dayAdvancer] facility maintenance failed:', e);
+  }
+
+  // 스캔들 뉴스 생성 (주 1회 체크)
+  try {
+    const allTeams = await getAllTeams();
+    const teamsInfo = allTeams.map(t => ({ id: t.id, name: t.name, shortName: t.shortName ?? t.name }));
+    const scandal = await generateScandalNews(seasonId, currentDate, teamsInfo);
+    if (scandal) {
+      events.push(`스캔들 발생: ${scandal.teamId}`);
+      const scandalPlayers = await getPlayersByTeamId(scandal.teamId);
+      if (scandalPlayers.length > 0) {
+        await db.execute(
+          `UPDATE player_daily_condition SET morale = MAX(0, morale - $1)
+           WHERE player_id IN (${scandalPlayers.map((_, i) => `$${i + 2}`).join(',')})`,
+          [scandal.moralePenalty, ...scandalPlayers.map(p => p.id)],
+        ).catch(() => { /* 무시 */ });
+      }
+    }
+  } catch (e) {
+    console.warn('[dayAdvancer] scandal news failed:', e);
+  }
+
+  // 2주마다 챔피언 밸런스 패치 (짝수 주차)
+  const season2 = await getActiveSeason();
+  const currentWeek = season2?.currentWeek ?? 0;
+  if (currentWeek > 0 && currentWeek % 2 === 0) {
+    const patchNumber = Math.floor(currentWeek / 2);
+    const patchResult = await generatePatch(seasonId, patchNumber, currentWeek);
+    events.push(`챔피언 밸런스 패치 ${patchNumber} 적용 (${patchResult.entries.length}건 변경)`);
+    await insertDailyEvent(seasonId, currentDate, 'patch', undefined, patchResult.patchNote);
+  }
+
+  return { events };
+}
+
+/** 월간 태스크 (매월 1일) — 향후 월간 리포트, 정산 등 추가 예정 */
+async function processMonthlyTasks(
+  _seasonId: number,
+  _userTeamId: string,
+  _currentDate: string,
+): Promise<{ events: string[] }> {
+  const events: string[] = [];
+  // TODO: 월간 리포트, 월간 정산 등 구현 시 여기에 추가
+  return { events };
+}
+
+/** 시즌 전환 처리: 시즌 종료 감지, 목표 달성, 업적 */
+async function processSeasonTransition(
+  saveId: number | undefined,
+  userTeamId: string,
+  seasonId: number,
+  currentDate: string,
+  dayType: DayType,
+  nextDate: string,
+): Promise<{ events: string[]; isSeasonEnd: boolean }> {
+  const events: string[] = [];
+
   const season = await getActiveSeason();
   const isSeasonEnd = season ? nextDate > season.endDate : false;
 
@@ -628,10 +744,10 @@ export async function advanceDay(
 
     // 선수 개인 목표 달성 체크
     try {
-      const userPlayers2 = await getPlayersByTeamId(userTeamId);
+      const userPlayers = await getPlayersByTeamId(userTeamId);
       let goalsAchieved = 0;
       let goalsFailed = 0;
-      for (const p of userPlayers2) {
+      for (const p of userPlayers) {
         const result = await checkGoalAchievement(p.id, seasonId);
         if (result?.achieved) goalsAchieved++;
         else if (result) goalsFailed++;
@@ -661,19 +777,7 @@ export async function advanceDay(
     }
   }
 
-  return {
-    date: currentDate,
-    nextDate,
-    dayOfWeek,
-    dayName,
-    dayType,
-    matchResults,
-    hasUserMatch,
-    userMatch,
-    events,
-    playerEvents: dailyPlayerEvents.length > 0 ? dailyPlayerEvents : undefined,
-    isSeasonEnd,
-  };
+  return { events, isSeasonEnd };
 }
 
 /**

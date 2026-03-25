@@ -21,6 +21,14 @@ import { processSponsorWeeklyIncome, expireSponsors } from './sponsorEngine';
 /** 경기 승리 상금 (만 원 단위) */
 const MATCH_WIN_PRIZE = 500;
 
+/** 주간 고정 지출 (만 원 단위) */
+const WEEKLY_FIXED_EXPENSES = {
+  facility: 500,    // 시설 유지비
+  staff: 300,       // 스태프 급여
+  operations: 200,  // 숙소/운영비
+} as const;
+const WEEKLY_FIXED_TOTAL = WEEKLY_FIXED_EXPENSES.facility + WEEKLY_FIXED_EXPENSES.staff + WEEKLY_FIXED_EXPENSES.operations;
+
 /** reputation → 스폰서십 티어 매핑 */
 function getSponsorshipTier(reputation: number): keyof typeof FINANCIAL_CONSTANTS.tierSupport {
   if (reputation >= 80) return 'S';
@@ -124,6 +132,24 @@ export async function processWeeklyFinances(
         }
       }
     } catch { /* club_owners 테이블 없으면 무시 */ }
+  }
+
+  // 6. 고정 지출 (시설 유지비 + 스태프 급여 + 숙소/운영비)
+  for (const team of teams) {
+    await insertFinanceLog(
+      team.id,
+      seasonId,
+      gameDate,
+      'expense',
+      'operations',
+      WEEKLY_FIXED_TOTAL,
+      `주간 고정 지출 (시설 ${WEEKLY_FIXED_EXPENSES.facility} + 스태프 ${WEEKLY_FIXED_EXPENSES.staff} + 운영 ${WEEKLY_FIXED_EXPENSES.operations})`,
+    );
+
+    await db.execute(
+      'UPDATE teams SET budget = budget - $1 WHERE id = $2',
+      [WEEKLY_FIXED_TOTAL, team.id],
+    );
   }
 }
 

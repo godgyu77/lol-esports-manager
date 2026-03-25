@@ -8,6 +8,7 @@ import { MATCH_CONSTANTS } from '../../data/systemPrompt';
 import { TRAIT_LIBRARY, type TraitTier } from '../../data/traitLibrary';
 import type { Position } from '../../types/game';
 import type { Player } from '../../types/player';
+import { clamp as clampValue } from '../../utils/mathUtils';
 import type { PlayStyle } from '../../types/team';
 import type { ChampionSynergy, ChampionTag } from '../../types/champion';
 
@@ -208,10 +209,10 @@ export function evaluateTeam(
   const finalOverall = weightedSum + extraBonus;
 
   return {
-    overall: clamp(finalOverall),
+    overall: Math.round(clampValue(finalOverall, 0, 100) * 10) / 10,
     byPosition,
-    laningPower: clamp(laningSum),
-    teamfightPower: clamp(teamfightSum),
+    laningPower: Math.round(clampValue(laningSum, 0, 100) * 10) / 10,
+    teamfightPower: Math.round(clampValue(teamfightSum, 0, 100) * 10) / 10,
     traitBonus: traitBonusTotal,
     mentalModifier: mentalTotal,
   };
@@ -334,11 +335,6 @@ export function buildLineup(
 /** 시그모이드 함수: 전력 차이 → 확률 (0~1) */
 function sigmoid(x: number): number {
   return 1 / (1 + Math.exp(-x));
-}
-
-/** 값을 0~100 범위로 제한 */
-function clamp(value: number): number {
-  return Math.max(0, Math.min(100, Math.round(value * 10) / 10));
 }
 
 /** 승률 범위 제한: 최소 15%, 최대 85% (업셋 보장) */

@@ -22,7 +22,7 @@ export function MainMenu() {
   // 시작 시 저장된 창모드 적용
   useEffect(() => {
     applyWindowMode(windowMode);
-  }, []);
+  }, [windowMode]);
 
   const handleExit = async () => {
     await exitApp();

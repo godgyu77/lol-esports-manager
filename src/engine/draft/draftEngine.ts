@@ -10,13 +10,14 @@ import type { Position } from '../../types/game';
 import type { Champion, ChampionSynergy } from '../../types/champion';
 import type { ChampionProficiency } from '../../types/player';
 import { getDatabase } from '../../db/database';
+import { pickRandom } from '../../utils/random';
 
 // ─────────────────────────────────────────
 // 타입
 // ─────────────────────────────────────────
 
 /** 드래프트 페이즈 */
-export type DraftPhase = 'ban1' | 'pick1' | 'ban2' | 'pick2' | 'complete';
+export type DraftPhase = 'ban1' | 'pick1' | 'ban2' | 'pick2' | 'swap' | 'complete';
 
 /** 밴/픽 행동 */
 export interface DraftAction {
@@ -189,6 +190,8 @@ export function executeDraftAction(
   } else {
     // pick에는 포지션 필요
     if (!position) return false;
+    // 이미 선택된 포지션이면 거부
+    if (teamState.picks.some(p => p.position === position)) return false;
     teamState.picks.push({ championId, position });
     state.pickedChampions.push(championId);
   }
@@ -204,8 +207,7 @@ export function executeDraftAction(
   state.currentStep++;
 
   if (state.currentStep >= DRAFT_ORDER.length) {
-    state.isComplete = true;
-    state.phase = 'complete';
+    state.phase = 'swap';
   } else {
     const next = DRAFT_ORDER[state.currentStep];
     state.phase = next.phase;
@@ -214,6 +216,35 @@ export function executeDraftAction(
   }
 
   return true;
+}
+
+/**
+ * 챔피언 스왑 (같은 팀 내에서 두 픽의 챔피언+포지션 교환)
+ */
+export function swapChampions(
+  state: DraftState,
+  side: 'blue' | 'red',
+  indexA: number,
+  indexB: number,
+): boolean {
+  if (state.phase !== 'swap') return false;
+  const team = side === 'blue' ? state.blue : state.red;
+  if (indexA < 0 || indexA >= team.picks.length) return false;
+  if (indexB < 0 || indexB >= team.picks.length) return false;
+  if (indexA === indexB) return false;
+
+  const temp = team.picks[indexA];
+  team.picks[indexA] = team.picks[indexB];
+  team.picks[indexB] = temp;
+  return true;
+}
+
+/**
+ * 스왑 단계 완료 → 드래프트 최종 완료
+ */
+export function finalizeDraft(state: DraftState): void {
+  state.phase = 'complete';
+  state.isComplete = true;
 }
 
 // ─────────────────────────────────────────
@@ -327,13 +358,13 @@ export async function aiSelectBan(
       const currentTier = tierMap.get(c.id) ?? c.tier;
       return (currentTier === 'S' || currentTier === 'A') && isChampionAvailable(state, c.id);
     });
-    return highTier[Math.floor(Math.random() * highTier.length)]?.id ?? 'aatrox';
+    return highTier.length > 0 ? pickRandom(highTier).id : 'aatrox';
   }
 
   // 상위 3개 중 랜덤 (예측 불가능성)
   const topN = sorted.slice(0, Math.min(3, sorted.length));
-  const pick = topN[Math.floor(Math.random() * topN.length)];
-  return pick?.[0] ?? 'aatrox';
+  const picked = pickRandom(topN);
+  return picked?.[0] ?? 'aatrox';
 }
 
 /**
@@ -418,7 +449,7 @@ export async function aiSelectPick(
         && (currentTier === 'S' || currentTier === 'A' || currentTier === 'B')
         && isChampionAvailable(state, c.id);
     });
-    bestChampId = available[Math.floor(Math.random() * available.length)]?.id ?? 'aatrox';
+    bestChampId = available.length > 0 ? pickRandom(available).id : 'aatrox';
     bestPosition = fallbackPos;
   }
 
