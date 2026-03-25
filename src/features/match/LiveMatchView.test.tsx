@@ -1,4 +1,4 @@
-import { renderWithProviders, screen, resetStores } from '../../test/testUtils';
+import { renderWithProviders, resetStores } from '../../test/testUtils';
 import { LiveMatchView } from './LiveMatchView';
 import type { Match, Team, GameSave } from '../../types';
 import type { DraftState } from '../../engine/draft/draftEngine';

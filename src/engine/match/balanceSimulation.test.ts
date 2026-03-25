@@ -95,7 +95,7 @@ function generateDoubleRoundRobin(numTeams: number): ScheduleMatch[] {
 // 통계 수집
 // ─────────────────────────────────────────
 
-interface SeasonStats {
+interface _SeasonStats {
   wins: number[];       // 팀별 승수
   losses: number[];     // 팀별 패수
   championIdx: number;  // 최다승 팀 인덱스
@@ -235,7 +235,6 @@ describe('밸런스 시뮬레이션 (100시즌)', () => {
       const avgK = kills / games;
       const avgD = deaths / games;
       const avgA = assists / games;
-      const kda = deaths > 0 ? (kills + assists) / Math.max(1, deaths) : 0;
       const avgKDA = (kills + assists) / Math.max(1, deaths);
       kdaByPos[pos] = avgKDA;
       console.log(`  ${pos}: K=${avgK.toFixed(1)} D=${avgD.toFixed(1)} A=${avgA.toFixed(1)} KDA=${avgKDA.toFixed(2)} (${games} games)`);
