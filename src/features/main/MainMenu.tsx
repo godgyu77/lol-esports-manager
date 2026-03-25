@@ -1,15 +1,13 @@
 import { useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { checkOllamaStatus } from '../../ai/provider';
-import { useSettingsStore } from '../../stores/settingsStore';
-import { applyWindowMode, exitApp } from '../../utils/windowManager';
+import { exitApp } from '../../utils/windowManager';
 import { useBgm } from '../../hooks/useBgm';
 import './MainMenu.css';
 
 export function MainMenu() {
   const navigate = useNavigate();
   const [ollamaStatus, setOllamaStatus] = useState<boolean | null>(null);
-  const windowMode = useSettingsStore((s) => s.windowMode);
 
   useBgm('menu');
 
@@ -18,11 +16,6 @@ export function MainMenu() {
       .then(setOllamaStatus)
       .catch(() => setOllamaStatus(false));
   }, []);
-
-  // 시작 시 저장된 창모드 적용
-  useEffect(() => {
-    applyWindowMode(windowMode);
-  }, [windowMode]);
 
   const handleExit = async () => {
     await exitApp();

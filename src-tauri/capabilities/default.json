@@ -33,6 +33,7 @@
     "core:event:allow-emit",
     "stronghold:default",
     "process:allow-exit",
+    "process:allow-restart",
     "core:window:default",
     "core:window:allow-set-fullscreen",
     "core:window:allow-set-decorations",

@@ -15,6 +15,7 @@ pub struct OllamaChatResponse {
 fn http_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .timeout(Duration::from_secs(30))
+        .no_proxy()
         .build()
         .map_err(|e| format!("HTTP 클라이언트 생성 실패: {}", e))
 }
@@ -24,7 +25,10 @@ pub async fn check_ollama_status() -> Result<bool, String> {
     let client = http_client()?;
     match client.get("http://localhost:11434/api/tags").send().await {
         Ok(resp) => Ok(resp.status().is_success()),
-        Err(_) => Ok(false),
+        Err(e) => {
+            eprintln!("[Ollama] 상태 확인 실패: {}", e);
+            Ok(false)
+        }
     }
 }
 

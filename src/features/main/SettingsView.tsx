@@ -19,9 +19,11 @@ const DIFFICULTY_OPTIONS: { value: Difficulty; label: string; desc: string; colo
   { value: 'hard', label: '어려움', desc: 'AI 이적 강화, 승률 불리, 예산 80%', color: '#ef4444' },
 ];
 
+const IS_MOBILE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
 const AI_PROVIDER_OPTIONS: { value: AiProvider; label: string; desc: string }[] = [
   { value: 'template', label: '템플릿 모드 (오프라인)', desc: '사전 정의된 템플릿으로 동작' },
-  { value: 'ollama', label: 'Ollama (로컬)', desc: '로컬 LLM 서버 사용' },
+  ...(!IS_MOBILE ? [{ value: 'ollama' as AiProvider, label: 'Ollama (로컬)', desc: '로컬 LLM 서버 사용' }] : []),
   { value: 'openai', label: 'OpenAI API', desc: 'GPT-4o, GPT-4.1 등 사용' },
   { value: 'claude', label: 'Claude API', desc: 'Anthropic Claude 사용' },
   { value: 'gemini', label: 'Gemini API', desc: 'Google Gemini 사용' },
@@ -79,6 +81,8 @@ export function SettingsView() {
     message: string;
   } | null>(null);
   const [isTesting, setIsTesting] = useState(false);
+  const [dbResetConfirm, setDbResetConfirm] = useState(false);
+  const [dbResetting, setDbResetting] = useState(false);
 
   const isCloudProvider = aiProvider === 'openai' || aiProvider === 'claude' || aiProvider === 'gemini' || aiProvider === 'grok';
 
@@ -813,6 +817,66 @@ export function SettingsView() {
               </button>
             ))}
           </div>
+        </div>
+      </div>
+
+      {/* 데이터 관리 */}
+      <div className="fm-panel fm-mb-md">
+        <div className="fm-panel__header">
+          <span className="fm-panel__title">데이터 관리</span>
+        </div>
+        <div className="fm-panel__body">
+          <p className="fm-text-sm fm-text-muted fm-mb-md">
+            데이터베이스를 초기화하면 모든 게임 데이터(세이브, 선수, 팀 등)가 삭제됩니다.
+          </p>
+          {!dbResetConfirm ? (
+            <button
+              className="fm-btn"
+              style={{ color: '#ef4444', borderColor: '#ef4444' }}
+              onClick={() => setDbResetConfirm(true)}
+            >
+              데이터베이스 초기화
+            </button>
+          ) : (
+            <div className="fm-flex fm-gap-sm fm-items-center">
+              <span className="fm-text-sm" style={{ color: '#ef4444' }}>
+                정말 초기화하시겠습니까? 모든 데이터가 삭제됩니다.
+              </span>
+              <button
+                className="fm-btn"
+                style={{ background: '#ef4444', color: '#fff', borderColor: '#ef4444' }}
+                disabled={dbResetting}
+                onClick={async () => {
+                  setDbResetting(true);
+                  try {
+                    const { closeDatabase } = await import('../../db/database');
+                    await closeDatabase();
+                    const { appDataDir } = await import('@tauri-apps/api/path');
+                    const { remove } = await import('@tauri-apps/plugin-fs');
+                    const dir = await appDataDir();
+                    await remove(`${dir}/lol_esports_manager.db`).catch(() => {});
+                    await remove(`${dir}/lol_esports_manager.db-wal`).catch(() => {});
+                    await remove(`${dir}/lol_esports_manager.db-shm`).catch(() => {});
+                    const { exit } = await import('@tauri-apps/plugin-process');
+                    await exit(0);
+                  } catch (e) {
+                    console.error('[SettingsView] DB 초기화 실패:', e);
+                    setDbResetting(false);
+                    setDbResetConfirm(false);
+                  }
+                }}
+              >
+                {dbResetting ? '초기화 중...' : '확인'}
+              </button>
+              <button
+                className="fm-btn"
+                onClick={() => setDbResetConfirm(false)}
+                disabled={dbResetting}
+              >
+                취소
+              </button>
+            </div>
+          )}
         </div>
       </div>
 

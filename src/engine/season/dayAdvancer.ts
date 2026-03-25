@@ -562,7 +562,11 @@ async function processNonMatchDay(
 
   // 일간 뉴스 생성
   try {
-    await generateDailyNews(seasonId, currentDate, []);
+    const allTeamsForNews = await getAllTeams();
+    const teamsForNews = allTeamsForNews.map(t => ({ id: t.id, name: t.name, shortName: t.shortName }));
+    if (teamsForNews.length > 0) {
+      await generateDailyNews(seasonId, currentDate, teamsForNews);
+    }
   } catch (e) {
     console.warn('[dayAdvancer] generateDailyNews failed:', e);
   }

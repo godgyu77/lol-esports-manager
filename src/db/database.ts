@@ -5,7 +5,25 @@ let txLock = false;
 
 export async function getDatabase(): Promise<Database> {
   if (!db) {
-    db = await Database.load('sqlite:lol_esports_manager.db');
+    try {
+      db = await Database.load('sqlite:lol_esports_manager.db');
+    } catch (err) {
+      // 마이그레이션 체크섬 불일치 등 — 마커 파일 생성 후 앱 재시작
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[database] DB 로드 실패 (마이그레이션 오류):', msg);
+      if (msg.includes('migration')) {
+        try {
+          const { invoke } = await import('@tauri-apps/api/core');
+          await invoke('mark_db_for_reset');
+          console.warn('[database] DB 리셋 마커 생성 완료, 앱을 재시작합니다.');
+          const proc = await import('@tauri-apps/plugin-process');
+          await proc.exit(0);
+        } catch (e) {
+          console.error('[database] 자동 복구 실패:', e);
+        }
+      }
+      throw err;
+    }
     await db.execute('PRAGMA journal_mode = WAL');
     await db.execute('PRAGMA busy_timeout = 15000');
     await db.execute('PRAGMA foreign_keys = ON');

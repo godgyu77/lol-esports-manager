@@ -220,6 +220,10 @@ export async function initializeNewGame(
     const lckTeamIds = lckTeams.map(t => t.id);
     await generateLCKCup(seasonId, 2026, lckTeamIds);
 
+    // 시드 생성 + RNG 초기화 (케미스트리/목표 생성 전에 필요)
+    const rngSeed = crypto.randomUUID();
+    initGlobalRng(rngSeed);
+
     // 모든 팀의 케미스트리 초기화 + 선수 목표 생성
     try {
       const allTeams = await getAllTeams();
@@ -231,8 +235,7 @@ export async function initializeNewGame(
       console.warn('[initGame] 케미스트리/목표 초기화 실패:', e);
     }
 
-    // 시드 생성 + 세이브 생성
-    const rngSeed = crypto.randomUUID();
+    // 세이브 생성
     const saveId = await createSave(mode, teamId, userPlayerId, seasonId, rngSeed);
     const save = await getSaveById(saveId);
 

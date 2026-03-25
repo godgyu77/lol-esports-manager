@@ -159,7 +159,10 @@ async function chatWithGrok(
 // 프로바이더 폴백 체인
 // ─────────────────────────────────────────
 
-const PROVIDER_CHAIN: AiProvider[] = ['ollama', 'openai', 'claude', 'gemini', 'grok'];
+const IS_MOBILE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+const PROVIDER_CHAIN: AiProvider[] = IS_MOBILE
+  ? ['openai', 'claude', 'gemini', 'grok']
+  : ['ollama', 'openai', 'claude', 'gemini', 'grok'];
 
 type ProviderFn = (msg: string, opts: AiProviderOptions) => Promise<string>;
 

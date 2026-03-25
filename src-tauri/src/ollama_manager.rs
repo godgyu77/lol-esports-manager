@@ -35,6 +35,7 @@ pub fn start_ollama(app: &tauri::AppHandle) -> Result<(), String> {
 pub async fn pull_model(model_name: String, app: tauri::AppHandle) -> Result<String, String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(3600))
+        .no_proxy()
         .build()
         .map_err(|e| format!("HTTP 클라이언트 생성 실패: {}", e))?;
 
@@ -118,7 +119,10 @@ pub async fn pull_model(model_name: String, app: tauri::AppHandle) -> Result<Str
 /// 설치된 모델 목록 조회
 #[tauri::command]
 pub async fn list_models() -> Result<Vec<String>, String> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .build()
+        .map_err(|e| format!("HTTP 클라이언트 생성 실패: {}", e))?;
 
     let response = client
         .get("http://localhost:11434/api/tags")
@@ -147,7 +151,10 @@ pub async fn list_models() -> Result<Vec<String>, String> {
 /// 모델 삭제
 #[tauri::command]
 pub async fn delete_model(model_name: String) -> Result<String, String> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .build()
+        .map_err(|e| format!("HTTP 클라이언트 생성 실패: {}", e))?;
 
     let response = client
         .delete("http://localhost:11434/api/delete")

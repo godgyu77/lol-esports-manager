@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect, useRef } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Skeleton } from './components/Skeleton';
@@ -166,6 +166,15 @@ function AppRoutes() {
 
 function App() {
   useTheme();
+
+  // 앱 최초 로드 시 저장된 창모드 1회 적용
+  const applied = useRef(false);
+  useEffect(() => {
+    if (applied.current) return;
+    applied.current = true;
+    const mode = useSettingsStore.getState().windowMode;
+    import('./utils/windowManager').then(({ applyWindowMode }) => applyWindowMode(mode));
+  }, []);
 
   return (
     <BrowserRouter>

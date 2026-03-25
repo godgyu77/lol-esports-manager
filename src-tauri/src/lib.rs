@@ -6,8 +6,49 @@ use ollama_manager::OllamaState;
 use std::sync::Mutex;
 use tauri::Manager;
 
+/// 앱 데이터 디렉토리에 DB 리셋 마커 파일 생성
+#[tauri::command]
+fn mark_db_for_reset(app: tauri::AppHandle) -> Result<(), String> {
+    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
+    std::fs::write(data_dir.join("db_reset_marker"), "reset").map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Pre-startup: 마커 파일이 있으면 DB 삭제 (마이그레이션 오류 자동 복구)
+fn check_db_reset_marker() {
+    let app_data = if cfg!(target_os = "windows") {
+        std::env::var("APPDATA")
+            .ok()
+            .map(|p| std::path::PathBuf::from(p).join("com.lolesportsmanager.app"))
+    } else if cfg!(target_os = "macos") {
+        std::env::var("HOME")
+            .ok()
+            .map(|h| std::path::PathBuf::from(h).join("Library/Application Support/com.lolesportsmanager.app"))
+    } else {
+        std::env::var("XDG_DATA_HOME")
+            .or_else(|_| std::env::var("HOME").map(|h| format!("{}/.local/share", h)))
+            .ok()
+            .map(|p| std::path::PathBuf::from(p).join("com.lolesportsmanager.app"))
+    };
+
+    if let Some(dir) = app_data {
+        let marker = dir.join("db_reset_marker");
+        if marker.exists() {
+            eprintln!("[DB] 리셋 마커 감지 — DB 파일 삭제 후 재생성합니다.");
+            let _ = std::fs::remove_file(dir.join("lol_esports_manager.db"));
+            let _ = std::fs::remove_file(dir.join("lol_esports_manager.db-wal"));
+            let _ = std::fs::remove_file(dir.join("lol_esports_manager.db-shm"));
+            let _ = std::fs::remove_file(marker);
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Pre-startup: 마이그레이션 오류 시 DB 자동 재생성
+    check_db_reset_marker();
+
     let migrations = vec![
         Migration {
             version: 1,
@@ -321,6 +362,12 @@ pub fn run() {
             sql: include_str!("../migrations/052_secondary_position.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 53,
+            description: "add philosophy and nationality to staff",
+            sql: include_str!("../migrations/053_staff_philosophy_nationality.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -349,6 +396,24 @@ pub fn run() {
             let handle = app.handle().clone();
             if let Err(e) = ollama_manager::start_ollama(&handle) {
                 eprintln!("Ollama 자동 시작 실패 (수동 시작 필요): {}", e);
+            } else {
+                // 사이드카 시작 후 준비될 때까지 최대 5초 대기
+                std::thread::spawn(|| {
+                    let client = reqwest::blocking::Client::builder()
+                        .timeout(std::time::Duration::from_secs(2))
+                        .no_proxy()
+                        .build();
+                    if let Ok(client) = client {
+                        for _ in 0..10 {
+                            std::thread::sleep(std::time::Duration::from_millis(500));
+                            if client.get("http://localhost:11434/api/tags").send().is_ok() {
+                                eprintln!("[Ollama] sidecar 준비 완료");
+                                return;
+                            }
+                        }
+                        eprintln!("[Ollama] sidecar 준비 대기 타임아웃 (5초)");
+                    }
+                });
             }
             Ok(())
         })
@@ -362,6 +427,7 @@ pub fn run() {
             ollama_manager::pull_model,
             ollama_manager::list_models,
             ollama_manager::delete_model,
+            mark_db_for_reset,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
