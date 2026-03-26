@@ -16,9 +16,13 @@ interface MeetingModalProps {
   players: Player[];
   currentDate: string;
   recentResults: string;
-  onClose: () => void;
-  /** 쿨다운 잔여 일수 (0이면 사용 가능) */
+  onClose: (didComplete: boolean) => void;
+  /** 쿨다운 잔여 일수 (0이면 사용 가능) — 기자회견용 */
   cooldownDays: number;
+  /** 선수별 마지막 면담 날짜 (선수ID → 날짜) — 면담용 */
+  playerMeetingDates?: Record<string, string>;
+  /** 면담 완료 시 호출: 면담한 선수 ID 전달 */
+  onMeetingComplete?: (playerId: string) => void;
 }
 
 const MEETING_TOPICS = [
@@ -41,6 +45,16 @@ const positionLabel: Record<string, string> = {
 // 컴포넌트
 // ─────────────────────────────────────────
 
+const MEETING_COOLDOWN_DAYS = 7;
+
+function getPlayerCooldown(playerId: string, meetingDates: Record<string, string> | undefined, currentDate: string): number {
+  if (!meetingDates || !meetingDates[playerId]) return 0;
+  const d1 = new Date(meetingDates[playerId]);
+  const d2 = new Date(currentDate);
+  const diff = Math.floor((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24));
+  return Math.max(0, MEETING_COOLDOWN_DAYS - diff);
+}
+
 export function MeetingModal({
   mode,
   teamName,
@@ -49,6 +63,8 @@ export function MeetingModal({
   recentResults,
   onClose,
   cooldownDays,
+  playerMeetingDates,
+  onMeetingComplete,
 }: MeetingModalProps) {
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
   const [selectedTopic, setSelectedTopic] = useState(MEETING_TOPICS[0]);
@@ -105,6 +121,9 @@ export function MeetingModal({
     } finally {
       setLoading(false);
       setApplied(true);
+      if (selectedPlayer) {
+        onMeetingComplete?.(selectedPlayer.id);
+      }
     }
   };
 
@@ -148,7 +167,7 @@ export function MeetingModal({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') onClose();
+    if (e.key === 'Escape') onClose(false);
   };
 
   return (
@@ -157,7 +176,7 @@ export function MeetingModal({
         {/* Header */}
         <div className="fm-modal__header">
           <span className="fm-modal__title">{title}</span>
-          <button className="fm-modal__close" onClick={onClose} aria-label="닫기">
+          <button className="fm-modal__close" onClick={() => onClose(applied)} aria-label="닫기">
             ×
           </button>
         </div>
@@ -169,7 +188,7 @@ export function MeetingModal({
               다음 {title}까지 <span className="fm-font-bold fm-text-accent">{cooldownDays}일</span> 남았습니다.
             </p>
             <div className="fm-modal__footer" style={{ borderTop: 'none', justifyContent: 'center' }}>
-              <button className="fm-btn fm-btn--primary" onClick={onClose} autoFocus>
+              <button className="fm-btn fm-btn--primary" onClick={() => onClose(false)} autoFocus>
                 닫기
               </button>
             </div>
@@ -212,7 +231,7 @@ export function MeetingModal({
             )}
 
             <div className="fm-modal__footer" style={{ width: '100%', borderTop: 'none', justifyContent: 'center', padding: '8px 0 0' }}>
-              <button className="fm-btn fm-btn--primary" onClick={onClose}>
+              <button className="fm-btn fm-btn--primary" onClick={() => onClose(true)}>
                 확인
               </button>
             </div>
@@ -225,21 +244,30 @@ export function MeetingModal({
               <div className="fm-flex-col fm-gap-sm">
                 <label className="fm-text-sm fm-font-semibold fm-text-primary">면담 대상</label>
                 <div className="fm-flex-col fm-gap-xs">
-                  {players.map((p) => (
-                    <button
-                      key={p.id}
-                      className={`fm-card fm-card--clickable fm-flex fm-items-center fm-gap-md ${
-                        selectedPlayer?.id === p.id ? 'fm-card--highlight' : ''
-                      }`}
-                      style={{ padding: '10px 14px' }}
-                      onClick={() => setSelectedPlayer(p)}
-                    >
-                      <span className="fm-text-sm fm-font-semibold fm-text-accent" style={{ minWidth: 40 }}>
-                        {positionLabel[p.position] ?? p.position}
-                      </span>
-                      <span className="fm-text-lg fm-font-medium fm-text-primary">{p.name}</span>
-                    </button>
-                  ))}
+                  {players.map((p) => {
+                    const pCooldown = getPlayerCooldown(p.id, playerMeetingDates, currentDate);
+                    return (
+                      <button
+                        key={p.id}
+                        className={`fm-card fm-card--clickable fm-flex fm-items-center fm-gap-md ${
+                          selectedPlayer?.id === p.id ? 'fm-card--highlight' : ''
+                        }`}
+                        style={{ padding: '10px 14px', opacity: pCooldown > 0 ? 0.5 : 1 }}
+                        onClick={() => pCooldown === 0 && setSelectedPlayer(p)}
+                        disabled={pCooldown > 0}
+                      >
+                        <span className="fm-text-sm fm-font-semibold fm-text-accent" style={{ minWidth: 40 }}>
+                          {positionLabel[p.position] ?? p.position}
+                        </span>
+                        <span className="fm-text-lg fm-font-medium fm-text-primary">{p.name}</span>
+                        {pCooldown > 0 && (
+                          <span className="fm-text-xs fm-text-muted" style={{ marginLeft: 'auto' }}>
+                            {pCooldown}일 후 가능
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -261,7 +289,7 @@ export function MeetingModal({
             </div>
 
             <div className="fm-modal__footer">
-              <button className="fm-btn" onClick={onClose}>
+              <button className="fm-btn" onClick={() => onClose(false)}>
                 취소
               </button>
               <button
@@ -297,7 +325,7 @@ export function MeetingModal({
             </div>
 
             <div className="fm-modal__footer">
-              <button className="fm-btn" onClick={onClose}>
+              <button className="fm-btn" onClick={() => onClose(false)}>
                 취소
               </button>
               <button

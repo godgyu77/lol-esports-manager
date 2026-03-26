@@ -85,7 +85,12 @@ export async function submitBoardRequest(
 
 export async function getBoardRequests(teamId: string, seasonId: number): Promise<BoardRequest[]> {
   const db = await getDatabase();
-  const rows = await db.select<Record<string, unknown>[]>(
+  const rows = await db.select<{
+    id: number; team_id: string; season_id: number;
+    request_type: BoardRequestType; request_amount: number | null;
+    status: 'pending' | 'approved' | 'rejected';
+    request_date: string; resolved_date: string | null; board_response: string | null;
+  }[]>(
     'SELECT * FROM board_requests WHERE team_id = $1 AND season_id = $2 ORDER BY request_date DESC',
     [teamId, seasonId],
   );

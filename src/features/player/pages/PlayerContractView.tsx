@@ -71,7 +71,6 @@ function getLoyaltyLabel(loyalty: number): string {
 }
 
 export function PlayerContractView() {
-  const _save = useGameStore((s) => s.save);
   const season = useGameStore((s) => s.season);
 
   const [contract, setContract] = useState<ContractInfo | null>(null);

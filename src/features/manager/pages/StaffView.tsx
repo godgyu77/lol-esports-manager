@@ -22,7 +22,7 @@ import { generateStaffReaction } from '../../../engine/social/socialEngine';
 import type { Staff, StaffRole } from '../../../types/staff';
 import { STAFF_ROLE_LABELS, STAFF_SPECIALTY_LABELS, STAFF_ROLE_EFFECTS } from '../../../types/staff';
 
-const ROLES: StaffRole[] = ['head_coach', 'coach', 'analyst', 'scout_manager'];
+const ROLES: StaffRole[] = ['coach', 'analyst', 'scout_manager', 'sports_psychologist', 'nutritionist', 'physiotherapist', 'data_analyst'];
 
 export function StaffView() {
   const season = useGameStore((s) => s.season);

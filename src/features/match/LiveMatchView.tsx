@@ -119,7 +119,6 @@ export function LiveMatchView() {
 
   const commentaryRef = useRef<HTMLDivElement>(null);
   const chatRef = useRef<HTMLDivElement>(null);
-  const _tickTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastAiCommentaryTime = useRef<number>(0);
   const lastProcessedEventCount = useRef<number>(0);
   const lastChatEventCount = useRef<number>(0);

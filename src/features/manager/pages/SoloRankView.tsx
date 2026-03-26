@@ -257,7 +257,7 @@ function mapRankRow(r: SoloRankRow): PlayerRankInfo {
     tier: r.tier,
     lp: r.lp,
     recentWinRate: r.recent_win_rate,
-    practiceChampionId: r.practice_champion_id,
+    practiceChampionId: r.practice_champion_id ?? undefined,
     gamesPlayedToday: 0,
     rank: r.rank_position ?? 0,
   };

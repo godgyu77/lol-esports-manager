@@ -1,6 +1,7 @@
 import { renderWithProviders, resetStores } from '../../test/testUtils';
 import { LiveMatchView } from './LiveMatchView';
 import type { Match, Team, GameSave } from '../../types';
+import type { Season } from '../../types/game';
 import type { DraftState } from '../../engine/draft/draftEngine';
 
 // 외부 의존성 모킹
@@ -78,16 +79,16 @@ vi.mock('./PostGameStats', () => ({
 }));
 vi.mock('./match.css', () => ({}));
 
-const mockSave: GameSave = {
+const mockSave = {
   id: 'save-1',
   userTeamId: 'team-home',
   seasonId: 'season-1',
   currentDate: '2025-01-15',
   managerName: '테스트 감독',
   mode: 'manager',
-} as GameSave;
+} as unknown as GameSave;
 
-const mockPendingMatch: Match = {
+const mockPendingMatch = {
   id: 'match-1',
   seasonId: 1,
   teamHomeId: 'team-home',
@@ -95,9 +96,9 @@ const mockPendingMatch: Match = {
   date: '2025-01-15',
   matchType: 'regular',
   boFormat: 'Bo3',
-} as Match;
+} as unknown as Match;
 
-const mockDraftResult: DraftState = {
+const mockDraftResult = {
   phase: 'complete',
   currentStep: 20,
   currentSide: 'blue',
@@ -127,7 +128,7 @@ const mockDraftResult: DraftState = {
   pickedChampions: [],
   fearlessMode: false,
   fearlessPool: { blue: [], red: [] },
-} as DraftState;
+} as unknown as DraftState;
 
 const mockTeams: Team[] = [
   { id: 'team-home', name: 'T1', shortName: 'T1', region: 'LCK', players: [] } as unknown as Team,
@@ -160,7 +161,7 @@ describe('LiveMatchView', () => {
         draftResult: mockDraftResult,
         mode: 'manager',
         fearlessPool: { blue: [], red: [] },
-        season: { id: 1, year: 2025, split: 'spring', currentDate: '2025-01-15', currentWeek: 3 },
+        season: { id: 1, year: 2025, split: 'spring', currentDate: '2025-01-15', currentWeek: 3 } as unknown as Season,
       },
       matchState: {
         speed: 1,
@@ -187,7 +188,7 @@ describe('LiveMatchView', () => {
         draftResult: mockDraftResult,
         mode: 'manager',
         fearlessPool: { blue: [], red: [] },
-        season: { id: 1, year: 2025, split: 'spring', currentDate: '2025-01-15', currentWeek: 3 },
+        season: { id: 1, year: 2025, split: 'spring', currentDate: '2025-01-15', currentWeek: 3 } as unknown as Season,
       },
       matchState: { speed: 1, boFormat: 'Bo3' },
     });

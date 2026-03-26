@@ -182,7 +182,7 @@ function generateChampionPatchEntries(champ: Champion): PatchEntry[] {
 
     const currentValue = champ.stats[camelKey];
     const delta = randomInt(STAT_DELTA_MIN, STAT_DELTA_MAX) * (isBuff ? 1 : -1);
-    const newValue = clamp(currentValue + delta);
+    const newValue = clamp(currentValue + delta, 0, 100);
 
     entries.push({
       championId: champ.id,

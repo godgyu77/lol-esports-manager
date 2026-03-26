@@ -95,12 +95,6 @@ function generateDoubleRoundRobin(numTeams: number): ScheduleMatch[] {
 // 통계 수집
 // ─────────────────────────────────────────
 
-interface _SeasonStats {
-  wins: number[];       // 팀별 승수
-  losses: number[];     // 팀별 패수
-  championIdx: number;  // 최다승 팀 인덱스
-}
-
 interface PositionKDA {
   kills: number;
   deaths: number;

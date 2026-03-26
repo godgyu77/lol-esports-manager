@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { getDatabase } from '../../../../db/database';
-import { POSITION_LABELS_KR as POSITION_LABELS } from '../../../../utils/constants';
+import { POSITION_LABELS_KR } from '../../../../utils/constants';
+
+const POSITION_LABELS: Record<string, string> = POSITION_LABELS_KR;
 import {
   type SatisfactionRow,
   POSITION_BADGE_MAP,

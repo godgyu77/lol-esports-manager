@@ -96,7 +96,7 @@ export function ManagerHome() {
   const [alerts, setAlerts] = useState<DashboardAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalMode, setModalMode] = useState<'meeting' | 'press' | null>(null);
-  const [lastMeetingDate, setLastMeetingDate] = useState<string | null>(null);
+  const [playerMeetingDates, setPlayerMeetingDates] = useState<Record<string, string>>({});
   const [lastPressDate, setLastPressDate] = useState<string | null>(null);
   const [briefing, setBriefing] = useState<DailyBriefing | null>(null);
   const [briefingLoading, setBriefingLoading] = useState(true);
@@ -346,10 +346,6 @@ export function ManagerHome() {
 
   const COOLDOWN_DAYS = 7;
 
-  const meetingCooldown = lastMeetingDate && season
-    ? Math.max(0, COOLDOWN_DAYS - getDaysDiff(lastMeetingDate, season.currentDate))
-    : 0;
-
   const pressCooldown = lastPressDate && season
     ? Math.max(0, COOLDOWN_DAYS - getDaysDiff(lastPressDate, season.currentDate))
     : 0;
@@ -427,13 +423,19 @@ export function ManagerHome() {
     }
   };
 
-  const handleCloseModal = () => {
-    if (modalMode === 'meeting' && season) {
-      setLastMeetingDate(season.currentDate);
-    } else if (modalMode === 'press' && season) {
-      setLastPressDate(season.currentDate);
+  const handleCloseModal = (didComplete: boolean) => {
+    if (didComplete && season) {
+      if (modalMode === 'press') {
+        setLastPressDate(season.currentDate);
+      }
     }
     setModalMode(null);
+  };
+
+  const handleMeetingComplete = (playerId: string) => {
+    if (season) {
+      setPlayerMeetingDates(prev => ({ ...prev, [playerId]: season.currentDate }));
+    }
   };
 
   /** 최근 경기 결과 요약 텍스트 */
@@ -662,14 +664,10 @@ export function ManagerHome() {
       <div className="fm-grid fm-grid--3 fm-mb-md">
         <button
           className="mh-action-card"
-          style={{ opacity: meetingCooldown > 0 ? 0.5 : 1 }}
           onClick={() => setModalMode('meeting')}
         >
           <span className="mh-action-icon">🗣️</span>
           <span className="mh-action-label">선수 면담</span>
-          {meetingCooldown > 0 && (
-            <span className="mh-action-cooldown">{meetingCooldown}일 후 가능</span>
-          )}
         </button>
         <button
           className="mh-action-card"
@@ -790,7 +788,9 @@ export function ManagerHome() {
           players={displayRoster}
           currentDate={season.currentDate}
           recentResults={recentResultsText}
-          cooldownDays={modalMode === 'meeting' ? meetingCooldown : pressCooldown}
+          cooldownDays={modalMode === 'press' ? pressCooldown : 0}
+          playerMeetingDates={playerMeetingDates}
+          onMeetingComplete={handleMeetingComplete}
           onClose={handleCloseModal}
         />
       )}
@@ -919,7 +919,7 @@ export function ManagerHome() {
               <p className="fm-text-base fm-text-muted">아직 기록된 이벤트가 없습니다</p>
             ) : (
               <div className="fm-flex-col fm-gap-sm">
-                {newsEvents.map((event) => {
+                {newsEvents.filter(e => e.eventType !== 'patch').map((event) => {
                   const color = NEWS_EVENT_COLORS[event.eventType] ?? '#6a6a7a';
                   return (
                     <div key={event.id} className="fm-flex fm-gap-sm" style={{ alignItems: 'flex-start' }}>

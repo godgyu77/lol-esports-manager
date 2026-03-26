@@ -14,13 +14,13 @@ vi.mock('./roster/SatisfactionTab', () => ({
   SatisfactionTab: () => <div data-testid="satisfaction-tab">SatisfactionTab</div>,
 }));
 
-const mockSave: GameSave = {
+const mockSave = {
   id: 'save-1',
   userTeamId: 'team-1',
   seasonId: 'season-1',
   currentDate: '2025-01-15',
   managerName: '테스트 감독',
-} as GameSave;
+} as unknown as GameSave;
 
 const mockTeam: Team = {
   id: 'team-1',

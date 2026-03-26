@@ -49,9 +49,6 @@ const AWAY_COLOR = 0xff4444;
 const PLAYER_RADIUS = 7;
 const GRID_SPACING = 50;
 
-/** 포지션 라벨 (미니맵 플레이어 표시) */
-const _POS_LABEL = ['T', 'J', 'M', 'A', 'S'];
-
 /** 이벤트 타입별 플래시 색상 */
 const EVENT_FLASH_COLORS: Partial<Record<MatchEventType, number>> = {
   kill: 0xffdd44,
@@ -212,7 +209,6 @@ export function MatchMinimap({
   }, [width, height]);
 
   // ─── 플레이어 위치 보간 (lerp) ───
-  const _prevPositions = useRef<Map<string, { x: number; y: number }>>(new Map());
   const displayPositions = useRef<Map<string, { x: number; y: number }>>(new Map());
 
   useEffect(() => {
@@ -361,32 +357,6 @@ const drawLanes = (g: Graphics, w: number, _h: number) => {
     const color = i < 8 ? HOME_COLOR : AWAY_COLOR;
     g.rect(margin + tp.x * usable - 3, margin + tp.y * usable - 3, 6, 6);
     g.fill({ color, alpha: 0.4 });
-  }
-};
-
-/** 플레이어 점 */
-const _drawPlayers = (
-  g: Graphics,
-  tick: number,
-  homeIds: string[],
-  awayIds: string[],
-  w: number,
-  _h: number,
-) => {
-  g.clear();
-
-  // 홈 팀 (블루)
-  for (let i = 0; i < Math.min(homeIds.length, 5); i++) {
-    const pos = getPlayerPosition(tick, i, 'home', w);
-    g.circle(pos.x, pos.y, PLAYER_RADIUS);
-    g.fill(HOME_COLOR);
-  }
-
-  // 어웨이 팀 (레드)
-  for (let i = 0; i < Math.min(awayIds.length, 5); i++) {
-    const pos = getPlayerPosition(tick, i, 'away', w);
-    g.circle(pos.x, pos.y, PLAYER_RADIUS);
-    g.fill(AWAY_COLOR);
   }
 };
 

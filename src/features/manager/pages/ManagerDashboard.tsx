@@ -137,7 +137,7 @@ export function ManagerDashboard() {
       setSeason({ ...season, currentDate: result.nextDate });
       if (result.hasUserMatch && result.userMatch) {
         setShowAdvanceModal(false);
-        setDayPhase('draft');
+        setDayPhase('banpick');
         navigate('/manager/draft');
         return;
       }
@@ -164,7 +164,7 @@ export function ManagerDashboard() {
         setSeason({ ...season, currentDate: last.nextDate });
         if (last.hasUserMatch) {
           setShowAdvanceModal(false);
-          setDayPhase('draft');
+          setDayPhase('banpick');
           navigate('/manager/draft');
           return;
         }

@@ -86,7 +86,15 @@
       "Read(//c/Users/godha/Desktop/Project/lol-esports-manager/Local/**)",
       "Read(//c/Users/godha/Desktop/Project/lol-esports-manager/$HOME/.local/share/**)",
       "Read(//c/Users/godha/Desktop/Project/lol-esports-manager/**)",
-      "Bash(taskkill //F //IM \"lol-esports-manager.exe\")"
+      "Bash(taskkill //F //IM \"lol-esports-manager.exe\")",
+      "Bash(git fetch:*)",
+      "Bash(xargs -n1 basename)",
+      "Bash(for dir:*)",
+      "Bash(do echo:*)",
+      "Read(//c/Users/user/Desktop/KANG/Study/project/lol-esports-manager/src/engine/$dir/**)",
+      "Bash(wc -l /c/Users/user/Desktop/KANG/Study/project/lol-esports-manager/src/ai/*.ts /c/Users/user/Desktop/KANG/Study/project/lol-esports-manager/src/ai/rag/*.ts)",
+      "Bash(npx husky:*)",
+      "Bash(sort -t: -k1 -n)"
     ]
   }
 }

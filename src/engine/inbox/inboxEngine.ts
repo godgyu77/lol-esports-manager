@@ -31,7 +31,11 @@ export async function getInboxMessages(
 ): Promise<InboxMessage[]> {
   const db = await getDatabase();
   const where = unreadOnly ? 'AND is_read = 0' : '';
-  const rows = await db.select<Record<string, unknown>[]>(
+  const rows = await db.select<{
+    id: number; team_id: string; category: InboxCategory;
+    title: string; content: string; is_read: number; action_required: number;
+    action_route: string | null; related_id: string | null; created_date: string;
+  }[]>(
     `SELECT * FROM inbox_messages WHERE team_id = $1 ${where} ORDER BY created_date DESC, id DESC LIMIT $2`,
     [teamId, limit],
   );

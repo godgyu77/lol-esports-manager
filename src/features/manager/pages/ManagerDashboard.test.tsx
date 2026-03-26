@@ -26,14 +26,14 @@ vi.mock('../../../utils/formatUtils', () => ({
   formatAmount: (v: number) => `₩${v}`,
 }));
 
-const mockSave: GameSave = {
+const mockSave = {
   id: 'save-1',
   userTeamId: 'team-1',
   seasonId: 'season-1',
   currentDate: '2025-01-15',
   managerName: '테스트 감독',
   mode: 'manager',
-} as GameSave;
+} as unknown as GameSave;
 
 const mockSeason: Season = {
   id: 1,

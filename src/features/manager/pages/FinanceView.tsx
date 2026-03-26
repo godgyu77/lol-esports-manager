@@ -7,6 +7,8 @@ import {
   acceptSponsor,
   SPONSOR_TIER_LABELS,
   SPONSOR_TIER_COLORS,
+  MAX_ACTIVE_SPONSORS,
+  MAX_REROLLS_PER_SEASON,
   type SponsorOffer,
   type SponsorTier,
 } from '../../../engine/economy/sponsorEngine';
@@ -43,6 +45,15 @@ export function FinanceView() {
   const [offers, setOffers] = useState<SponsorOffer[]>([]);
   const [isGeneratingOffers, setIsGeneratingOffers] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // 리롤 횟수 (시즌당 제한, localStorage로 유지)
+  const rerollKey = season ? `sponsor_rerolls_${season.id}` : '';
+  const [rerollsUsed, setRerollsUsed] = useState<number>(() => {
+    if (!rerollKey) return 0;
+    return Number(localStorage.getItem(rerollKey) ?? '0');
+  });
+  const rerollsRemaining = MAX_REROLLS_PER_SEASON - rerollsUsed;
+  const isMaxSponsors = activeSponsors.length >= MAX_ACTIVE_SPONSORS;
 
   const loadData = useCallback(async () => {
     if (!season || !save) return;
@@ -83,12 +94,18 @@ export function FinanceView() {
     };
   }, [loadData]);
 
-  /** 스폰서 제안 새로 생성 */
+  /** 스폰서 제안 새로 생성 (리롤) */
   const handleGenerateOffers = () => {
+    if (rerollsRemaining <= 0) return;
     setIsGeneratingOffers(true);
     const activeNames = activeSponsors.map((s) => s.name);
     const newOffers = generateSponsorOffers(reputation, activeNames);
     setOffers(newOffers);
+
+    const newCount = rerollsUsed + 1;
+    setRerollsUsed(newCount);
+    if (rerollKey) localStorage.setItem(rerollKey, String(newCount));
+
     setIsGeneratingOffers(false);
   };
 
@@ -101,10 +118,9 @@ export function FinanceView() {
       const currentDate = season.currentDate;
       await acceptSponsor(save.userTeamId, season.id, offer, currentDate);
 
-      // 제안 목록에서 제거 + 활성 스폰서 다시 로딩
+      // 제안 목록에서 제거 + 전체 재정 데이터 다시 로딩
       setOffers((prev) => prev.filter((o) => o.name !== offer.name));
-      const sponsors = await getActiveSponsors(save.userTeamId, season.id);
-      setActiveSponsors(sponsors);
+      await loadData();
     } catch (err) {
       console.error('스폰서 수락 실패:', err);
       setError('스폰서 제안 수락 중 오류가 발생했습니다.');
@@ -175,7 +191,12 @@ export function FinanceView() {
         </div>
         <div className="fm-panel__body">
           {/* 활성 스폰서 목록 */}
-          <h3 className="fm-text-lg fm-font-semibold fm-text-primary fm-mb-sm">현재 스폰서 계약</h3>
+          <div className="fm-flex fm-justify-between fm-items-center fm-mb-sm">
+            <h3 className="fm-text-lg fm-font-semibold fm-text-primary">현재 스폰서 계약</h3>
+            <span className="fm-badge fm-badge--default">
+              {activeSponsors.length} / {MAX_ACTIVE_SPONSORS}
+            </span>
+          </div>
           {activeSponsors.length === 0 ? (
             <p className="fm-text-muted fm-text-md fm-mb-md">
               현재 활성 스폰서가 없습니다.
@@ -218,9 +239,17 @@ export function FinanceView() {
             <button
               className="fm-btn fm-btn--info fm-btn--sm"
               onClick={handleGenerateOffers}
-              disabled={isGeneratingOffers}
+              disabled={isGeneratingOffers || rerollsRemaining <= 0 || isMaxSponsors}
+              title={
+                isMaxSponsors
+                  ? `최대 스폰서 수(${MAX_ACTIVE_SPONSORS}개)에 도달했습니다`
+                  : rerollsRemaining <= 0
+                  ? '시즌 리롤 횟수를 모두 사용했습니다'
+                  : undefined
+              }
             >
               {offers.length > 0 ? '새로운 제안 받기' : '스폰서 제안 확인'}
+              {' '}({rerollsRemaining}/{MAX_REROLLS_PER_SEASON})
             </button>
           </div>
 
@@ -262,8 +291,10 @@ export function FinanceView() {
                     <button
                       className="fm-btn fm-btn--success fm-flex-1"
                       onClick={() => handleAcceptOffer(offer)}
+                      disabled={isMaxSponsors}
+                      title={isMaxSponsors ? `최대 ${MAX_ACTIVE_SPONSORS}개까지만 계약할 수 있습니다` : undefined}
                     >
-                      수락
+                      {isMaxSponsors ? '슬롯 없음' : '수락'}
                     </button>
                     <button
                       className="fm-btn fm-btn--danger fm-flex-1"

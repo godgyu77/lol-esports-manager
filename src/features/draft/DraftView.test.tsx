@@ -58,16 +58,16 @@ vi.mock('./ChampionGrid', () => ({
 }));
 vi.mock('./draft.css', () => ({}));
 
-const mockSave: GameSave = {
+const mockSave = {
   id: 'save-1',
   userTeamId: 'team-home',
   seasonId: 'season-1',
   currentDate: '2025-01-15',
   managerName: '테스트 감독',
   mode: 'manager',
-} as GameSave;
+} as unknown as GameSave;
 
-const mockPendingMatch: Match = {
+const mockPendingMatch = {
   id: 'match-1',
   seasonId: 1,
   teamHomeId: 'team-home',
@@ -75,7 +75,7 @@ const mockPendingMatch: Match = {
   date: '2025-01-15',
   matchType: 'regular',
   fearlessDraft: false,
-} as Match;
+} as unknown as Match;
 
 const mockTeams: Team[] = [
   { id: 'team-home', name: 'T1', shortName: 'T1', region: 'LCK', players: [] } as unknown as Team,

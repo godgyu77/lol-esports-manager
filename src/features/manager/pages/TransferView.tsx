@@ -77,6 +77,7 @@ export function TransferView() {
   const [offerYears, setOfferYears] = useState(2);
   const [posFilter, setPosFilter] = useState<string>('all');
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const [offerError, setOfferError] = useState<string | null>(null);
 
   // 에이전트 협상 상태
   const [negotiationPlayer, setNegotiationPlayer] = useState<Player | null>(null);
@@ -137,6 +138,7 @@ export function TransferView() {
     setOfferSalary(calculateFairSalary(player));
     setOfferYears(2);
     setOfferModal(player);
+    setOfferError(null);
     setMessage(null);
   };
 
@@ -338,6 +340,7 @@ export function TransferView() {
 
   const handleSubmitOffer = async () => {
     if (!offerModal || !season || !save) return;
+    setOfferError(null);
 
     try {
       const result = await offerFreeAgent({
@@ -368,11 +371,11 @@ export function TransferView() {
         setOfferModal(null);
         await loadData();
       } else {
-        setMessage({ text: result.reason ?? '제안 실패', type: 'error' });
+        setOfferError(result.reason ?? '제안 실패');
       }
     } catch (err) {
       console.error('영입 제안 실패:', err);
-      setMessage({ text: '영입 제안 중 오류가 발생했습니다.', type: 'error' });
+      setOfferError('영입 제안 중 오류가 발생했습니다.');
     }
   };
 
@@ -954,8 +957,13 @@ export function TransferView() {
                 </div>
               </div>
             </div>
+            {offerError && (
+              <div className="fm-alert fm-alert--danger fm-mx-md fm-mb-sm">
+                <span className="fm-alert__text">{offerError}</span>
+              </div>
+            )}
             <div className="fm-modal__footer">
-              <button className="fm-btn" onClick={() => setOfferModal(null)}>취소</button>
+              <button className="fm-btn" onClick={() => { setOfferModal(null); setOfferError(null); }}>취소</button>
               <button className="fm-btn fm-btn--primary" onClick={handleSubmitOffer}>제안하기</button>
             </div>
           </div>

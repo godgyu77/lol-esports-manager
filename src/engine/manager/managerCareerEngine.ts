@@ -370,7 +370,7 @@ export async function getLegendPlayers(): Promise<LegendEntry[]> {
 
   // 최다 킬 선수
   try {
-    const killRows = await db.select<Record<string, unknown>[]>(
+    const killRows = await db.select<{ id: string; name: string; team_name: string | null; total_kills: number }[]>(
       `SELECT p.id, p.name, t.name as team_name, SUM(pgs.kills) as total_kills
        FROM player_game_stats pgs
        JOIN players p ON p.id = pgs.player_id
@@ -392,7 +392,7 @@ export async function getLegendPlayers(): Promise<LegendEntry[]> {
 
   // 최고 승률 (최소 10경기)
   try {
-    const wrRows = await db.select<Record<string, unknown>[]>(
+    const wrRows = await db.select<{ id: string; name: string; team_name: string | null; wins: number; games: number }[]>(
       `SELECT p.id, p.name, t.name as team_name,
               SUM(CASE WHEN pgs.result = 'win' THEN 1 ELSE 0 END) as wins,
               COUNT(*) as games

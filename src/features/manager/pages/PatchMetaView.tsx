@@ -426,7 +426,8 @@ export function PatchMetaView() {
                 </thead>
                 <tbody>
                   {latestPatch.map((p, idx) => {
-                    const isNum = !isNaN(Number(p.oldValue)) && !isNaN(Number(p.newValue));
+                    const isNum = p.oldValue !== '' && p.newValue !== ''
+                      && !isNaN(Number(p.oldValue)) && !isNaN(Number(p.newValue));
                     const delta = isNum ? Number(p.newValue) - Number(p.oldValue) : 0;
                     const changeClass = isNum
                       ? delta > 0 ? 'fm-cell--green' : delta < 0 ? 'fm-cell--red' : ''
@@ -513,7 +514,7 @@ function calculateTeamMetaFit(
   const topChamps = CHAMPION_DB.filter((c) => topChampIds.has(c.id));
 
   // 주전 5인 (starter 플래그가 있으면 사용, 아니면 앞 5명)
-  const starters = roster.filter((p) => p.isStarter !== false).slice(0, 5);
+  const starters = roster.slice(0, 5);
 
   let matchScore = 0;
   for (const player of starters) {

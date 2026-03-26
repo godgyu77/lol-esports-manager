@@ -68,6 +68,12 @@ const SPONSOR_POOL: SponsorOffer[] = [
   { name: 'Secretlab', tier: 'bronze', weeklyPayout: 55, durationWeeks: 12, requiredMinReputation: 15, description: '게이밍 의자 스폰서십' },
 ];
 
+/** 최대 활성 스폰서 수 */
+export const MAX_ACTIVE_SPONSORS = 4;
+
+/** 시즌당 최대 리롤 횟수 */
+export const MAX_REROLLS_PER_SEASON = 3;
+
 /** 명성에 따라 제안 수 결정 (2~4개) */
 function getOfferCount(reputation: number): number {
   if (reputation >= 70) return 4;

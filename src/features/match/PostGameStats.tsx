@@ -50,8 +50,8 @@ export function PostGameStats({
   const baronAway = r.events.filter(e => e.type === 'baron' && e.side === 'away').length;
 
   // 헤럴드 카운트
-  const heraldHome = r.events.filter(e => e.type === 'herald' && e.side === 'home').length;
-  const heraldAway = r.events.filter(e => e.type === 'herald' && e.side === 'away').length;
+  const heraldHome = r.events.filter(e => e.type === 'rift_herald' && e.side === 'home').length;
+  const heraldAway = r.events.filter(e => e.type === 'rift_herald' && e.side === 'away').length;
 
   // 데미지 최대값 (바 차트 스케일)
   const allDmg = [...r.playerStatsHome, ...r.playerStatsAway].map(s => s.damageDealt);

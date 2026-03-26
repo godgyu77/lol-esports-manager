@@ -222,10 +222,27 @@ export async function generateSocialMediaReaction(
   content: string,
   teamId: string | null = null,
 ): Promise<void> {
-  const title = `[SNS] ${content}`;
-  const body = `팬들 사이에서 '${content}' 관련 게시물이 화제가 되고 있다. 다양한 의견이 오가며 커뮤니티가 뜨겁게 달아오르고 있다.`;
+  const titles = [
+    `[SNS] ${content}`,
+    `[SNS] '${content}' 관련 게시물 실시간 트렌드 1위`,
+    `[SNS 화제] ${content}... 팬들 반응 폭발`,
+    `[커뮤니티] '${content}' 뜨거운 논쟁 중`,
+    `[SNS] ${content} — 실시간 댓글 수천 건 돌파`,
+    `[화제] '${content}' 밈 확산... 커뮤니티 축제`,
+  ];
 
-  await insertNews(seasonId, date, 'social_media', title, body, 1, teamId);
+  const bodies = [
+    `팬들 사이에서 '${content}' 관련 게시물이 화제가 되고 있다. 다양한 의견이 오가며 커뮤니티가 뜨겁게 달아오르고 있다.`,
+    `'${content}' 관련 SNS 게시물이 폭발적인 반응을 얻고 있다. 공유 수가 빠르게 증가하며 실시간 트렌드에 올랐다.`,
+    `커뮤니티에서 '${content}'에 대한 토론이 과열되고 있다. 찬반 의견이 팽팽히 맞서며 댓글이 수백 개를 넘어섰다.`,
+    `'${content}' 관련 밈이 SNS에서 빠르게 퍼지고 있다. 팬들의 창의적인 2차 창작물이 쏟아지며 분위기가 뜨겁다.`,
+    `LCK 팬 커뮤니티에서 '${content}' 이슈가 최대 화제다. 전문가들의 분석 글도 올라오며 깊이 있는 토론이 이어지고 있다.`,
+    `'${content}' 관련 게시물의 좋아요가 1만 건을 돌파했다. 해외 팬들까지 가세하며 글로벌 화제로 번지고 있다.`,
+  ];
+
+  const idx = randomInt(0, titles.length - 1);
+  const cIdx = randomInt(0, bodies.length - 1);
+  await insertNews(seasonId, date, 'social_media', titles[idx], bodies[cIdx], 1, teamId);
 }
 
 /** 인터뷰 뉴스 */
@@ -238,10 +255,27 @@ export async function generateInterviewNews(
   teamId: string | null = null,
   playerId: string | null = null,
 ): Promise<void> {
-  const title = `[인터뷰] ${teamName} ${playerName}, "${topic}"`;
-  const content = `${teamName} 소속 ${playerName}이 인터뷰에서 "${topic}"이라고 밝혔다. 팬들의 관심이 집중되고 있다.`;
+  const titles = [
+    `[인터뷰] ${teamName} ${playerName}, "${topic}"`,
+    `${playerName} 단독 인터뷰: "${topic}"`,
+    `[독점] ${teamName} ${playerName} '${topic}'... 진솔한 속마음 공개`,
+    `${playerName}, 인터뷰서 밝힌 각오 '${topic}'`,
+    `[인터뷰] '${topic}' — ${teamName} ${playerName}의 솔직한 이야기`,
+    `${teamName} ${playerName} '${topic}'... 팬들 뜨거운 반응`,
+  ];
 
-  await insertNews(seasonId, date, 'interview', title, content, 1, teamId, playerId);
+  const contents = [
+    `${teamName} 소속 ${playerName}이 인터뷰에서 "${topic}"이라고 밝혔다. 팬들의 관심이 집중되고 있다.`,
+    `${playerName}은 "${topic}"이라며 이번 시즌에 대한 강한 의지를 드러냈다. ${teamName} 팬들은 큰 기대를 보이고 있다.`,
+    `${teamName}의 ${playerName}이 인터뷰에서 "${topic}"이라고 말해 화제다. 관계자는 "팀 전체가 같은 마음"이라고 전했다.`,
+    `"${topic}" — ${playerName}의 이 한마디에 팬들의 반응이 폭발했다. SNS에서 관련 글이 빠르게 공유되고 있다.`,
+    `${playerName}은 인터뷰에서 "${topic}"이라며 자신감을 보였다. 전문가들은 ${playerName}의 최근 경기력이 이를 뒷받침한다고 분석했다.`,
+    `${teamName} ${playerName}이 팬들에게 전한 메시지: "${topic}". 진정성 있는 발언에 응원 댓글이 쏟아지고 있다.`,
+  ];
+
+  const idx = randomInt(0, titles.length - 1);
+  const cIdx = randomInt(0, contents.length - 1);
+  await insertNews(seasonId, date, 'interview', titles[idx], contents[cIdx], 1, teamId, playerId);
 }
 
 // ─────────────────────────────────────────
@@ -270,6 +304,14 @@ export async function generateDailyNews(
         `${team.shortName} 선수 스트리밍 화제`,
         `이번 주 MVP 논란`,
         `LCK 순위 예측 토론`,
+        `${team.shortName} 게임단 시설 공개 영상 화제`,
+        `${team.shortName} 선수 듀오 랭크 명장면`,
+        `LCK 역대 최고 경기 투표 결과`,
+        `${team.shortName} 코치진 전략 분석 유튜브 화제`,
+        `${team.shortName} 팬아트 대회 개최 소식`,
+        `프로 선수 솔로랭크 티어 비교 논쟁`,
+        `${team.shortName} 선수 브이로그 인기`,
+        `LCK 올스타전 팬 투표 시작`,
       ];
       const topic = pickRandom(snsTopics);
       await generateSocialMediaReaction(seasonId, date, topic, team.id);
@@ -296,14 +338,30 @@ export async function generateDailyNews(
         '매 경기 최선을 다하겠다',
         '팬들의 응원이 큰 힘이 된다',
         '개인 기량을 더 끌어올리겠다',
+        '솔로랭크도 열심히 돌리고 있다',
+        '스크림에서 손 맞추기가 좋아지고 있다',
+        '코치님이 많이 도와주신다',
+        '상대 팀 분석을 철저히 하고 있다',
+        '새 패치에 적응 중인데 자신 있다',
+        '올해는 국제대회 무대에 서고 싶다',
+        '팬들에게 좋은 경기 보여드리겠다',
+        '젊은 선수들의 성장이 눈에 띈다',
+        '팀 내 경쟁이 치열해서 긴장감이 좋다',
       ];
       const topic = pickRandom(topics);
       await generateInterviewNews(seasonId, date, playerName, team.name, topic, team.id, playerId);
     } else {
       // 팀 분석 기사 (간략 버전 — 실제 순위 없이)
-      const title = `[분석] ${team.name}, 최근 경기력 어떨까?`;
-      const content = `전문가들이 ${team.name}의 최근 경기력을 분석했다. 팀의 전략적 깊이와 개인기 조합이 주목받고 있으며, 앞으로의 행보가 기대된다.`;
-      await insertNews(seasonId, date, 'team_analysis', title, content, 1, team.id);
+      const analysisPool = [
+        { title: `[분석] ${team.name}, 최근 경기력 어떨까?`, content: `전문가들이 ${team.name}의 최근 경기력을 분석했다. 팀의 전략적 깊이와 개인기 조합이 주목받고 있으며, 앞으로의 행보가 기대된다.` },
+        { title: `[분석] ${team.name}의 드래프트 트렌드 변화`, content: `${team.name}이 최근 경기에서 새로운 드래프트 전략을 시도하고 있다. 전문가들은 메타 변화에 대한 빠른 적응력을 높이 평가했다.` },
+        { title: `[칼럼] ${team.name}, 올 시즌 진짜 실력은?`, content: `${team.name}의 올 시즌 경기력에 대해 전문가들의 의견이 분분하다. 라인전 능력과 매크로 운영 모두에서 개선점이 보인다는 분석이다.` },
+        { title: `[분석] ${team.name} 팀파이트 능력 집중 분석`, content: `${team.name}의 팀파이트 데이터를 분석한 결과, 오브젝트 컨트롤과 이니시에이팅 타이밍이 핵심 강점으로 꼽혔다.` },
+        { title: `전문가 칼럼: ${team.name}의 성장 포인트는?`, content: `전문가들이 ${team.name}의 성장 가능성을 진단했다. 선수 개인 역량과 팀 시너지가 시즌 중반을 향해 맞물려가는 양상이다.` },
+        { title: `[분석] ${team.name}, 미드-정글 시너지 돋보여`, content: `${team.name}의 미드-정글 라인이 최근 좋은 시너지를 보여주고 있다. 전문가들은 이 조합이 팀 승률의 핵심이라고 분석했다.` },
+      ];
+      const chosen = pickRandom(analysisPool);
+      await insertNews(seasonId, date, 'team_analysis', chosen.title, chosen.content, 1, team.id);
     }
   }
 }
@@ -413,16 +471,25 @@ export async function generateTransferCompleteNews(
     `[오피셜] ${toTeam}, ${playerName} 영입 확정! 이적료 ${feeStr}만`,
     `대어 낚았다! ${toTeam}, ${playerName} ${feeStr}만에 영입`,
     `${playerName}, ${fromTeam} 떠나 ${toTeam}로... 이적료 ${feeStr}만`,
+    `역대급 이적! ${toTeam}, ${playerName}에 ${feeStr}만 투자`,
+    `[속보] ${playerName} ${toTeam} 행 확정 — 이적료 ${feeStr}만으로 역대 TOP`,
+    `${toTeam}, 지갑 열었다! ${playerName} ${feeStr}만에 전격 영입`,
   ] : [
     `${toTeam}, ${playerName} 영입 발표`,
     `${playerName}, ${fromTeam}에서 ${toTeam}로 이적`,
     `${toTeam}, ${playerName} 합류 공식 발표`,
+    `[오피셜] ${playerName}, ${toTeam} 유니폼 입는다`,
+    `${fromTeam} 떠난 ${playerName}, ${toTeam}에서 새 출발`,
+    `${toTeam}, ${playerName} 영입으로 전력 보강 완료`,
   ];
 
   const contents = [
     `${toTeam}이 ${fromTeam}에서 ${playerName}을 이적료 ${feeStr}만 원에 영입했다고 공식 발표했다.`,
     `${playerName}이 ${fromTeam}을 떠나 ${toTeam}에 합류한다. 이적료는 ${feeStr}만 원으로 알려졌다.`,
     `${toTeam}의 로스터 보강이 완료되었다. ${playerName}이 ${fromTeam}에서 합류하며 전력 상승이 기대된다.`,
+    `${playerName}이 ${toTeam}의 새 유니폼을 입고 팬들 앞에 섰다. "새로운 도전이 기대된다"며 소감을 밝혔다.`,
+    `${toTeam} 관계자는 "${playerName} 영입으로 팀의 약점을 보완할 수 있게 됐다"며 만족감을 드러냈다.`,
+    `${fromTeam}에서 핵심 역할을 했던 ${playerName}이 ${toTeam}으로 둥지를 옮겼다. 팬들의 기대가 크다.`,
   ];
 
   const idx = randomInt(0, titles.length - 1);
@@ -485,22 +552,59 @@ export async function generateFanReactionNews(
 ): Promise<void> {
   const templates: Record<string, Record<string, string[]>> = {
     positive: {
-      win_streak: [`팬들 열광! ${teamName} 연승 질주에 커뮤니티 축제 분위기`, `${teamName} 연승 행진에 팬들 '올해는 우승이다!'`],
-      big_transfer: [`${teamName} 대형 영입에 팬들 환호! '역대급 로스터'`, `팬들 반응 폭발! ${teamName} 로스터 완성에 기대감 MAX`],
-      championship: [`${teamName} 우승에 팬들 감동의 눈물... '기다린 보람이 있었다'`],
+      win_streak: [
+        `팬들 열광! ${teamName} 연승 질주에 커뮤니티 축제 분위기`,
+        `${teamName} 연승 행진에 팬들 '올해는 우승이다!'`,
+        `${teamName} 연승 기록 갱신! 팬들 '역대 최강 로스터'`,
+        `커뮤니티 폭발! ${teamName} 연승에 승부 예측 적중한 팬 화제`,
+        `${teamName} 연승에 팬 카페 가입자 급증... '우승 기운 느껴진다'`,
+      ],
+      big_transfer: [
+        `${teamName} 대형 영입에 팬들 환호! '역대급 로스터'`,
+        `팬들 반응 폭발! ${teamName} 로스터 완성에 기대감 MAX`,
+        `${teamName} 영입 소식에 팬들 '드림팀 완성!' 축제 분위기`,
+        `${teamName} 로스터 보강 소식에 유니폼 판매량 급증`,
+      ],
+      championship: [
+        `${teamName} 우승에 팬들 감동의 눈물... '기다린 보람이 있었다'`,
+        `${teamName} 우승! 팬들 거리 응원전에 수천 명 운집`,
+        `'드디어 해냈다!' ${teamName} 팬들 SNS 축제 분위기`,
+      ],
     },
     negative: {
-      lose_streak: [`${teamName} 연패에 팬들 분노... '로스터 변경 시급'`, `팬들 한숨... ${teamName} 연패 늪에서 빠져나올 수 있을까`],
-      scandal: [`${teamName} 스캔들에 팬들 실망... '프로답지 못하다'`],
+      lose_streak: [
+        `${teamName} 연패에 팬들 분노... '로스터 변경 시급'`,
+        `팬들 한숨... ${teamName} 연패 늪에서 빠져나올 수 있을까`,
+        `${teamName} 연패에 팬 카페 분위기 싸늘... '감독 경질 요구'`,
+        `'이게 프로야?' ${teamName} 연패에 팬들 격분`,
+        `${teamName} 연패 기록 갱신... 팬들 '전력 분석 다시 해야'`,
+      ],
+      scandal: [
+        `${teamName} 스캔들에 팬들 실망... '프로답지 못하다'`,
+        `${teamName} 논란에 팬들 탈퇴 잇따라... 팬카페 분위기 냉각`,
+        `'실망스럽다' ${teamName} 스캔들에 팬들 뿔났다`,
+      ],
     },
     neutral: {
-      big_transfer: [`${teamName} 영입 소식에 팬들 반응 엇갈려... 기대와 우려 교차`],
+      big_transfer: [
+        `${teamName} 영입 소식에 팬들 반응 엇갈려... 기대와 우려 교차`,
+        `${teamName} 로스터 변경, 팬들 찬반 팽팽... '지켜봐야'`,
+      ],
     },
   };
 
   const pool = templates[sentiment]?.[event] ?? [`${teamName} 관련 팬 반응이 뜨겁다.`];
   const title = pickRandom(pool);
-  const content = `${teamName} 관련 소식에 팬들의 반응이 SNS와 커뮤니티를 뜨겁게 달구고 있다.`;
+
+  const contentPool = [
+    `${teamName} 관련 소식에 팬들의 반응이 SNS와 커뮤니티를 뜨겁게 달구고 있다.`,
+    `${teamName} 관련 게시물이 실시간 트렌드에 오르며 팬들의 댓글 전쟁이 벌어지고 있다.`,
+    `온라인 커뮤니티에서 ${teamName} 관련 토론이 과열되고 있다. 팬들 사이에서 다양한 의견이 충돌 중이다.`,
+    `${teamName} 소식에 SNS 반응이 폭발적이다. 관련 해시태그가 트렌드 상위권에 올랐다.`,
+    `팬 카페에서 ${teamName} 관련 글이 쏟아지고 있다. 찬성과 반대 의견이 팽팽히 맞서고 있다.`,
+    `${teamName} 소식이 전해지자 커뮤니티가 들끓고 있다. 전문가 분석 글부터 감정적 반응까지 다양한 글이 올라오고 있다.`,
+  ];
+  const content = pickRandom(contentPool);
 
   await insertNews(seasonId, date, 'fan_reaction', title, content, 1, teamId);
 }
@@ -527,15 +631,40 @@ export async function generateAwardNews(
     `${teamName} ${playerName}, ${label} 수상!`,
     `[수상] ${playerName}, ${label} 선정... ${teamName}의 자랑`,
     `${playerName}, ${label} 영예! ${teamName} 팬들 환호`,
+    `압도적 활약! ${playerName}, 만장일치로 ${label} 선정`,
+    `${playerName}, ${label} 수상 '팀 덕분에 가능했다'`,
+    `[시상식] ${teamName} ${playerName}, ${label} 트로피 품에 안아`,
   ];
   const contents = [
     `${teamName} 소속 ${playerName}이 이번 시즌 ${label}로 선정되었다. 뛰어난 활약이 높은 평가를 받았다.`,
     `${playerName}이 ${label}을 수상하며 최고의 시즌을 보내고 있음을 증명했다. ${teamName} 관계자는 "당연한 결과"라며 축하했다.`,
+    `${playerName}은 수상 소감에서 "팀원들과 코치진 덕분"이라며 겸손한 모습을 보였다. 팬들은 SNS에서 축하 인사를 보냈다.`,
+    `시상식에서 ${playerName}은 "${label}을 받게 되어 영광이다. 남은 시즌도 열심히 하겠다"고 소감을 밝혔다.`,
+    `${playerName}의 ${label} 수상에 대해 해설진은 "이번 시즌 가장 임팩트 있는 선수"라고 평가했다.`,
   ];
 
   const idx = randomInt(0, titles.length - 1);
   const cIdx = randomInt(0, contents.length - 1);
   await insertNews(seasonId, date, 'award_news', titles[idx], contents[cIdx], 3, teamId, playerId);
+}
+
+/** 패치 노트 뉴스 */
+export async function generatePatchNotesNews(
+  seasonId: number,
+  date: string,
+  patchNumber: number,
+  changeCount: number,
+  patchNote: string,
+): Promise<void> {
+  const titles = [
+    `패치 ${patchNumber} 적용 — 챔피언 ${changeCount}건 밸런스 조정`,
+    `[패치 ${patchNumber}] 대규모 밸런스 패치! ${changeCount}개 챔피언 변경`,
+    `패치 ${patchNumber} 라이브 적용 — 메타 변동 예고, ${changeCount}건 조정`,
+    `[속보] 패치 ${patchNumber} 공개! 프로씬 메타 뒤집힐까? (${changeCount}건)`,
+    `패치 ${patchNumber} 핵심 요약: ${changeCount}개 챔피언 너프/버프`,
+  ];
+  const title = pickRandom(titles);
+  await insertNews(seasonId, date, 'patch_notes', title, patchNote, 2);
 }
 
 // ─────────────────────────────────────────

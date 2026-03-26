@@ -215,7 +215,9 @@ function generateFeedback(
 
 export async function getRecentScrims(teamId: string, limit = 10): Promise<ScrimResult[]> {
   const db = await getDatabase();
-  const rows = await db.select<Record<string, unknown>[]>(
+  const rows = await db.select<{
+    opponent_team_id: string; opponent_name: string; wins: number; losses: number; notes: string | null;
+  }[]>(
     `SELECT sr.*, t.name as opponent_name FROM scrim_results sr
      JOIN teams t ON t.id = sr.opponent_team_id
      WHERE sr.team_id = $1 ORDER BY sr.scrim_date DESC LIMIT $2`,

@@ -87,7 +87,10 @@ export async function simulateSoloRankDay(
   // 현재 솔로랭크 상태 조회
   let current: PlayerSoloRank;
   try {
-    const rows = await db.select<Record<string, unknown>[]>(
+    const rows = await db.select<{
+      player_id: string; tier: SoloRankTier; lp: number;
+      recent_win_rate: number; practice_champion_id: string | null; rank_position: number;
+    }[]>(
       'SELECT * FROM player_solo_rank WHERE player_id = $1',
       [playerId],
     );
@@ -98,7 +101,7 @@ export async function simulateSoloRankDay(
         tier: r.tier,
         lp: r.lp,
         recentWinRate: r.recent_win_rate,
-        practiceChampionId: r.practice_champion_id,
+        practiceChampionId: r.practice_champion_id ?? undefined,
         gamesPlayedToday: 0,
         rank: r.rank_position,
       };
@@ -228,7 +231,10 @@ export async function processTeamSoloRank(
   const results: SoloRankDayResult[] = [];
 
   try {
-    const players = await db.select<Record<string, unknown>[]>(
+    const players = await db.select<{
+      id: string; mechanical: number; game_sense: number; teamwork: number;
+      consistency: number; laning: number; aggression: number; stamina: number;
+    }[]>(
       `SELECT id, mechanical, game_sense, teamwork, consistency, laning, aggression, stamina
        FROM players WHERE team_id = $1 AND division = 'main'`,
       [teamId],
@@ -240,7 +246,7 @@ export async function processTeamSoloRank(
       // 연습 챔피언 조회
       let practiceChampId: string | null = null;
       try {
-        const rankRow = await db.select<Record<string, unknown>[]>(
+        const rankRow = await db.select<{ practice_champion_id: string | null }[]>(
           'SELECT practice_champion_id FROM player_solo_rank WHERE player_id = $1',
           [p.id],
         );
@@ -292,7 +298,10 @@ export async function calculateSoloRankBonus(playerId: string): Promise<SoloRank
   const db = await getDatabase();
 
   try {
-    const rows = await db.select<Record<string, unknown>[]>(
+    const rows = await db.select<{
+      player_id: string; tier: SoloRankTier; lp: number;
+      recent_win_rate: number; practice_champion_id: string | null; rank_position: number;
+    }[]>(
       'SELECT * FROM player_solo_rank WHERE player_id = $1',
       [playerId],
     );
@@ -371,7 +380,11 @@ export async function getSoloRankLeaderboard(
 ): Promise<PlayerSoloRank[]> {
   const db = await getDatabase();
   try {
-    const rows = await db.select<Record<string, unknown>[]>(
+    const rows = await db.select<{
+      player_id: string; tier: SoloRankTier; lp: number;
+      recent_win_rate: number; practice_champion_id: string | null; rank_position: number;
+      player_name: string; team_id: string | null;
+    }[]>(
       `SELECT sr.*, p.name as player_name, p.team_id
        FROM player_solo_rank sr
        JOIN players p ON p.id = sr.player_id
@@ -383,7 +396,7 @@ export async function getSoloRankLeaderboard(
       tier: r.tier,
       lp: r.lp,
       recentWinRate: r.recent_win_rate,
-      practiceChampionId: r.practice_champion_id,
+      practiceChampionId: r.practice_champion_id ?? undefined,
       gamesPlayedToday: 0,
       rank: r.rank_position,
     }));

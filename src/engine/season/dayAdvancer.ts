@@ -38,7 +38,7 @@ import { generateDailyEvent } from '../../ai/gameAiService';
 import { generatePatch } from '../champion/patchEngine';
 import { advanceScoutingDay } from '../scouting/scoutingEngine';
 import { processTrainingDay, processRestDay } from '../training/trainingEngine';
-import { generateDailyNews, generateMatchResultNews, generateInjuryNews, generateScandalNews } from '../news/newsEngine';
+import { generateDailyNews, generateMatchResultNews, generateInjuryNews, generateScandalNews, generatePatchNotesNews } from '../news/newsEngine';
 import { checkForComplaints } from '../complaint/complaintEngine';
 import { checkSponsorChanges, acceptSponsor } from '../economy/sponsorEngine';
 import { processMatchResult as processBoardMatchResult, checkFiringRisk } from '../board/boardEngine';
@@ -713,6 +713,7 @@ async function processWeeklyTasks(
     const patchResult = await generatePatch(seasonId, patchNumber, currentWeek);
     events.push(`챔피언 밸런스 패치 ${patchNumber} 적용 (${patchResult.entries.length}건 변경)`);
     await insertDailyEvent(seasonId, currentDate, 'patch', undefined, patchResult.patchNote);
+    await generatePatchNotesNews(seasonId, currentDate, patchNumber, patchResult.entries.length, patchResult.patchNote);
   }
 
   return { events };

@@ -2,7 +2,6 @@
 
 ## 참조 문서
 
-- `.claude/rules/global-base-rules.md`
 - `.claude/rules/pipeline.md`
 - `.claude/rules/code-quality-principles.md`
 - `.claude/rules/language-react-typescript-rules.md`
