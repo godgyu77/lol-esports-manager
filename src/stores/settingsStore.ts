@@ -15,10 +15,6 @@ const isMobile = (): boolean => {
   return /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth <= 480;
 };
 
-// ─────────────────────────────────────────
-// Stronghold API 키 관리
-// ─────────────────────────────────────────
-
 const VAULT_PASSWORD = 'lol-esports-manager';
 const CLIENT_NAME = 'api-keys';
 const API_KEY_RECORD = 'cloud-api-key';
@@ -72,13 +68,9 @@ async function deleteApiKeyFromVault(): Promise<void> {
       await strongholdInstance.save();
     }
   } catch {
-    // 삭제 실패 무시
+    // 삭제 실패는 무시한다.
   }
 }
-
-// ─────────────────────────────────────────
-// Settings Store
-// ─────────────────────────────────────────
 
 interface SettingsState {
   defaultSpeed: number;
@@ -92,10 +84,8 @@ interface SettingsState {
   soundVolume: number;
   theme: Theme;
   windowMode: WindowMode;
-
-  // Cloud AI provider fields
   aiProvider: AiProvider;
-  hasApiKey: boolean; // API 키 존재 여부 (Stronghold에 저장됨)
+  hasApiKey: boolean;
   apiEndpoint: string;
   apiModel: string;
 
@@ -110,22 +100,17 @@ interface SettingsState {
   setSoundVolume: (volume: number) => void;
   setTheme: (theme: Theme) => void;
   setWindowMode: (mode: WindowMode) => void;
-
   setAiProvider: (provider: AiProvider) => void;
   setApiKey: (key: string) => Promise<void>;
   setApiEndpoint: (endpoint: string) => void;
   setApiModel: (model: string) => void;
-
-  /** Stronghold에서 복호화된 API 키 조회 (비동기) */
   getApiKey: () => Promise<string>;
-
-  /** 앱 시작 시 Stronghold에서 키 존재 여부 확인 */
   initApiKeyStatus: () => Promise<void>;
 }
 
 export const useSettingsStore = create<SettingsState>()(
   persist(
-    (set, _get) => ({
+    (set) => ({
       defaultSpeed: 1,
       aiEnabled: true,
       aiModel: '',
@@ -137,8 +122,6 @@ export const useSettingsStore = create<SettingsState>()(
       soundVolume: 0.5,
       theme: 'dark',
       windowMode: 'windowed',
-
-      // Cloud AI provider defaults
       aiProvider: isMobile() ? 'template' : 'ollama',
       hasApiKey: false,
       apiEndpoint: '',
@@ -161,7 +144,6 @@ export const useSettingsStore = create<SettingsState>()(
       },
       setTheme: (theme) => set({ theme }),
       setWindowMode: (mode) => set({ windowMode: mode }),
-
       setAiProvider: (provider) => set({ aiProvider: provider }),
       setApiKey: async (key) => {
         if (key) {
@@ -174,9 +156,7 @@ export const useSettingsStore = create<SettingsState>()(
       },
       setApiEndpoint: (endpoint) => set({ apiEndpoint: endpoint }),
       setApiModel: (model) => set({ apiModel: model }),
-
       getApiKey: () => getApiKeyFromVault(),
-
       initApiKeyStatus: async () => {
         const key = await getApiKeyFromVault();
         set({ hasApiKey: !!key });
@@ -205,7 +185,6 @@ export const useSettingsStore = create<SettingsState>()(
         if (state) {
           soundManager.setEnabled(state.soundEnabled);
           soundManager.setVolume(state.soundVolume);
-          // 앱 시작 시 Stronghold에서 키 존재 여부 확인
           state.initApiKeyStatus().catch(() => {});
         }
       },

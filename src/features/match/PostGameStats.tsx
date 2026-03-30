@@ -1,23 +1,36 @@
-/**
- * LCK 방송 스타일 경기 후 통계 화면
- * - Game Stats: KDA, 골드, 타워, 드래곤, 바론
- * - Total Damage Dealt: 선수별 가로 바 차트
- * - Gold Difference: 시간대별 골드 차이 그래프
- */
-
 import type { GameResult, PlayerGameStatLine } from '../../engine/match/matchSimulator';
 import type { DragonType } from '../../types/match';
+import type { PostMatchInsightReport } from '../../engine/analysis/postMatchInsightEngine';
 
 const DRAGON_ICONS: Record<DragonType, string> = {
-  infernal: '🔥', ocean: '🌊', mountain: '⛰️', cloud: '💨',
+  infernal: 'F',
+  ocean: 'O',
+  mountain: 'M',
+  cloud: 'C',
 };
 
 const POS_LABELS: Record<string, string> = {
-  top: 'TOP', jungle: 'JGL', mid: 'MID', adc: 'ADC', support: 'SUP',
+  top: 'TOP',
+  jungle: 'JGL',
+  mid: 'MID',
+  adc: 'ADC',
+  support: 'SUP',
 };
 
 function formatGold(gold: number): string {
   return `${(gold / 1000).toFixed(1)}k`;
+}
+
+function sumKda(stats: PlayerGameStatLine[]) {
+  return stats.reduce(
+    (acc, player) => {
+      acc.k += player.kills;
+      acc.d += player.deaths;
+      acc.a += player.assists;
+      return acc;
+    },
+    { k: 0, d: 0, a: 0 },
+  );
 }
 
 interface PostGameStatsProps {
@@ -25,6 +38,7 @@ interface PostGameStatsProps {
   homeTeamName: string;
   awayTeamName: string;
   gameNumber: number;
+  insightReport?: PostMatchInsightReport;
 }
 
 export function PostGameStats({
@@ -32,56 +46,63 @@ export function PostGameStats({
   homeTeamName,
   awayTeamName,
   gameNumber,
+  insightReport,
 }: PostGameStatsProps) {
-  const r = gameResult;
-  const isHomeWin = r.winnerSide === 'home';
-
-  // KDA 합산
-  const sumKda = (stats: PlayerGameStatLine[]) => {
-    let k = 0, d = 0, a = 0;
-    for (const s of stats) { k += s.kills; d += s.deaths; a += s.assists; }
-    return { k, d, a };
-  };
-  const homeKda = sumKda(r.playerStatsHome);
-  const awayKda = sumKda(r.playerStatsAway);
-
-  // 바론 카운트 (이벤트에서)
-  const baronHome = r.events.filter(e => e.type === 'baron' && e.side === 'home').length;
-  const baronAway = r.events.filter(e => e.type === 'baron' && e.side === 'away').length;
-
-  // 헤럴드 카운트
-  const heraldHome = r.events.filter(e => e.type === 'rift_herald' && e.side === 'home').length;
-  const heraldAway = r.events.filter(e => e.type === 'rift_herald' && e.side === 'away').length;
-
-  // 데미지 최대값 (바 차트 스케일)
-  const allDmg = [...r.playerStatsHome, ...r.playerStatsAway].map(s => s.damageDealt);
-  const maxDmg = Math.max(...allDmg, 1);
-
-  // 골드 히스토리 SVG
-  const goldHistory = r.goldHistory ?? [];
-  const maxAbsDiff = Math.max(...goldHistory.map(g => Math.abs(g.diff)), 1000);
+  const isHomeWin = gameResult.winnerSide === 'home';
+  const homeKda = sumKda(gameResult.playerStatsHome);
+  const awayKda = sumKda(gameResult.playerStatsAway);
+  const baronHome = gameResult.events.filter((event) => event.type === 'baron' && event.side === 'home').length;
+  const baronAway = gameResult.events.filter((event) => event.type === 'baron' && event.side === 'away').length;
+  const heraldHome = gameResult.events.filter((event) => event.type === 'rift_herald' && event.side === 'home').length;
+  const heraldAway = gameResult.events.filter((event) => event.type === 'rift_herald' && event.side === 'away').length;
+  const allDamage = [...gameResult.playerStatsHome, ...gameResult.playerStatsAway].map((player) => player.damageDealt);
+  const maxDamage = Math.max(...allDamage, 1);
+  const goldHistory = gameResult.goldHistory ?? [];
+  const maxAbsDiff = Math.max(...goldHistory.map((point) => Math.abs(point.diff)), 1000);
 
   return (
     <div className="pgs-container">
-      {/* 헤더 */}
       <div className="pgs-header">
-        <div className={`pgs-team-name ${isHomeWin ? '' : 'pgs-team-name--loss'}`}>
-          {homeTeamName}
-        </div>
+        <div className={`pgs-team-name ${isHomeWin ? '' : 'pgs-team-name--loss'}`}>{homeTeamName}</div>
         <div className="pgs-score-center">
           <span className="pgs-game-label">GAME {gameNumber}</span>
-          <span className="pgs-game-time">{r.durationMinutes}:{((r.durationMinutes * 7) % 60).toString().padStart(2, '0')}</span>
+          <span className="pgs-game-time">
+            {gameResult.durationMinutes}:{((gameResult.durationMinutes * 7) % 60).toString().padStart(2, '0')}
+          </span>
           <span className={`pgs-result ${isHomeWin ? 'pgs-result--loss' : 'pgs-result--win'}`}>
-            {isHomeWin ? 'LOSS' : 'WIN'}
+            {isHomeWin ? 'HOME WIN' : 'AWAY WIN'}
           </span>
         </div>
-        <div className={`pgs-team-name ${isHomeWin ? 'pgs-team-name--loss' : ''}`}>
-          {awayTeamName}
-        </div>
+        <div className={`pgs-team-name ${isHomeWin ? 'pgs-team-name--loss' : ''}`}>{awayTeamName}</div>
       </div>
 
+      {insightReport && (
+        <div className="pgs-insight-panel">
+          <div className="pgs-insight-summary">
+            <span className="pgs-section-title">{insightReport.outcomeLabel}</span>
+            <h4 className="pgs-insight-headline">{insightReport.headline}</h4>
+          </div>
+          <div className="pgs-insight-grid">
+            {insightReport.reasons.map((reason) => (
+              <div key={`${reason.title}-${reason.nextAction}`} className={`pgs-insight-card pgs-insight-card--${reason.impact}`}>
+                <div className="pgs-insight-card__top">
+                  <span className="pgs-insight-impact">{reason.impact.toUpperCase()}</span>
+                  <span className="pgs-insight-title">{reason.title}</span>
+                </div>
+                <p className="pgs-insight-copy">{reason.summary}</p>
+                <span className="pgs-insight-action">Next lever: {reason.nextAction}</span>
+              </div>
+            ))}
+          </div>
+          <div className="pgs-action-row">
+            {insightReport.recommendedActions.map((action) => (
+              <span key={action} className="pgs-action-pill">{action}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="pgs-body">
-        {/* 좌: Game Stats */}
         <div className="pgs-stats-panel">
           <h4 className="pgs-section-title">GAME STATS</h4>
           <div className="pgs-stat-row">
@@ -90,19 +111,19 @@ export function PostGameStats({
             <span className="pgs-stat-away">{awayKda.k}/{awayKda.d}/{awayKda.a}</span>
           </div>
           <div className="pgs-stat-row">
-            <span className="pgs-stat-home">{formatGold(r.goldHome ?? 0)}</span>
+            <span className="pgs-stat-home">{formatGold(gameResult.goldHome ?? 0)}</span>
             <span className="pgs-stat-label">GOLD</span>
-            <span className="pgs-stat-away">{formatGold(r.goldAway ?? 0)}</span>
+            <span className="pgs-stat-away">{formatGold(gameResult.goldAway ?? 0)}</span>
           </div>
           <div className="pgs-stat-row">
-            <span className="pgs-stat-home">{r.towersHome ?? 0}</span>
+            <span className="pgs-stat-home">{gameResult.towersHome ?? 0}</span>
             <span className="pgs-stat-label">TOWERS</span>
-            <span className="pgs-stat-away">{r.towersAway ?? 0}</span>
+            <span className="pgs-stat-away">{gameResult.towersAway ?? 0}</span>
           </div>
           <div className="pgs-stat-row">
-            <span className="pgs-stat-home">{r.grubsHome}</span>
+            <span className="pgs-stat-home">{gameResult.grubsHome}</span>
             <span className="pgs-stat-label">GRUBS</span>
-            <span className="pgs-stat-away">{r.grubsAway}</span>
+            <span className="pgs-stat-away">{gameResult.grubsAway}</span>
           </div>
           <div className="pgs-stat-row">
             <span className="pgs-stat-home">{heraldHome}</span>
@@ -111,11 +132,11 @@ export function PostGameStats({
           </div>
           <div className="pgs-stat-row">
             <span className="pgs-stat-home">
-              {r.dragonSoul.dragonTypes.filter(d => d.side === 'home').map(d => DRAGON_ICONS[d.type]).join('')}
+              {gameResult.dragonSoul.dragonTypes.filter((dragon) => dragon.side === 'home').map((dragon) => DRAGON_ICONS[dragon.type]).join(' ')}
             </span>
             <span className="pgs-stat-label">DRAKES</span>
             <span className="pgs-stat-away">
-              {r.dragonSoul.dragonTypes.filter(d => d.side === 'away').map(d => DRAGON_ICONS[d.type]).join('')}
+              {gameResult.dragonSoul.dragonTypes.filter((dragon) => dragon.side === 'away').map((dragon) => DRAGON_ICONS[dragon.type]).join(' ')}
             </span>
           </div>
           <div className="pgs-stat-row">
@@ -125,72 +146,60 @@ export function PostGameStats({
           </div>
         </div>
 
-        {/* 우: 데미지 차트 + 골드 그래프 */}
         <div className="pgs-charts-panel">
           <h4 className="pgs-section-title">TOTAL DAMAGE DEALT</h4>
           <div className="pgs-dmg-chart">
-            {r.playerStatsHome.map((s, i) => {
-              const away = r.playerStatsAway[i];
+            {gameResult.playerStatsHome.map((player, index) => {
+              const awayPlayer = gameResult.playerStatsAway[index];
               return (
-                <div key={i} className="pgs-dmg-row">
+                <div key={player.playerId} className="pgs-dmg-row">
                   <div className="pgs-dmg-player pgs-dmg-player--home">
-                    <span className="pgs-dmg-pos">{POS_LABELS[s.position]}</span>
+                    <span className="pgs-dmg-pos">{POS_LABELS[player.position]}</span>
                     <div className="pgs-dmg-bar-wrap pgs-dmg-bar-wrap--home">
-                      <div
-                        className="pgs-dmg-bar pgs-dmg-bar--home"
-                        style={{ width: `${(s.damageDealt / maxDmg) * 100}%` }}
-                      />
-                      <span className="pgs-dmg-val">{formatGold(s.damageDealt)}</span>
+                      <div className="pgs-dmg-bar pgs-dmg-bar--home" style={{ width: `${(player.damageDealt / maxDamage) * 100}%` }} />
+                      <span className="pgs-dmg-val">{formatGold(player.damageDealt)}</span>
                     </div>
                   </div>
                   <div className="pgs-dmg-player pgs-dmg-player--away">
                     <div className="pgs-dmg-bar-wrap pgs-dmg-bar-wrap--away">
-                      <div
-                        className="pgs-dmg-bar pgs-dmg-bar--away"
-                        style={{ width: `${((away?.damageDealt ?? 0) / maxDmg) * 100}%` }}
-                      />
-                      <span className="pgs-dmg-val">{formatGold(away?.damageDealt ?? 0)}</span>
+                      <div className="pgs-dmg-bar pgs-dmg-bar--away" style={{ width: `${((awayPlayer?.damageDealt ?? 0) / maxDamage) * 100}%` }} />
+                      <span className="pgs-dmg-val">{formatGold(awayPlayer?.damageDealt ?? 0)}</span>
                     </div>
-                    <span className="pgs-dmg-pos">{POS_LABELS[away?.position ?? '']}</span>
+                    <span className="pgs-dmg-pos">{POS_LABELS[awayPlayer?.position ?? '']}</span>
                   </div>
                 </div>
               );
             })}
           </div>
 
-          {/* 골드 차이 그래프 (SVG) */}
           {goldHistory.length > 0 && (
             <>
               <h4 className="pgs-section-title" style={{ marginTop: 12 }}>GOLD DIFFERENCE</h4>
               <div className="pgs-gold-graph">
                 <svg viewBox="0 0 300 100" className="pgs-gold-svg">
-                  {/* 중앙선 (0차이) */}
                   <line x1="0" y1="50" x2="300" y2="50" stroke="#333" strokeWidth="0.5" />
-                  {/* 골드 차이 라인 */}
                   <polyline
                     fill="none"
                     stroke="#c89b3c"
                     strokeWidth="1.5"
-                    points={goldHistory.map((g, i) => {
-                      const x = (i / Math.max(goldHistory.length - 1, 1)) * 300;
-                      const y = 50 - (g.diff / maxAbsDiff) * 45;
+                    points={goldHistory.map((point, index) => {
+                      const x = (index / Math.max(goldHistory.length - 1, 1)) * 300;
+                      const y = 50 - (point.diff / maxAbsDiff) * 45;
                       return `${x},${y}`;
                     }).join(' ')}
                   />
-                  {/* 영역 채우기 */}
                   <polygon
                     fill="rgba(52, 152, 219, 0.15)"
-                    points={`0,50 ${goldHistory.map((g, i) => {
-                      const x = (i / Math.max(goldHistory.length - 1, 1)) * 300;
-                      const y = 50 - (g.diff / maxAbsDiff) * 45;
+                    points={`0,50 ${goldHistory.map((point, index) => {
+                      const x = (index / Math.max(goldHistory.length - 1, 1)) * 300;
+                      const y = 50 - (point.diff / maxAbsDiff) * 45;
                       return `${x},${y}`;
                     }).join(' ')} 300,50`}
                   />
-                  {/* 시간 라벨 */}
-                  {[5, 10, 15, 20, 25, 30].filter(t => t <= r.durationMinutes).map(t => {
-                    const x = (t / r.durationMinutes) * 300;
+                  {[5, 10, 15, 20, 25, 30].filter((tick) => tick <= gameResult.durationMinutes).map((tick) => {
+                    const x = (tick / gameResult.durationMinutes) * 300;
                     return (
-                      <text key={t} x={x} y="98" fill="#666" fontSize="7" textAnchor="middle">{t}</text>
+                      <text key={tick} x={x} y="98" fill="#666" fontSize="7" textAnchor="middle">{tick}</text>
                     );
                   })}
                 </svg>

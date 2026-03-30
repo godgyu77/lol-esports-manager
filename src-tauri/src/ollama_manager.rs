@@ -1,44 +1,201 @@
-use std::sync::Mutex;
 use futures_util::StreamExt;
+use serde::{Deserialize, Serialize};
+use std::sync::Mutex;
+use std::time::Duration;
 use tauri::Emitter;
 use tauri::Manager;
+use tauri::State;
 use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
 
-pub struct OllamaState {
-    pub process: Mutex<Option<CommandChild>>,
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum OllamaRuntimeStatus {
+    NotStarted,
+    Starting,
+    Ready,
+    Failed,
 }
 
-/// 앱 시작 시 Ollama sidecar 자동 시작
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OllamaStatusDetail {
+    pub status: OllamaRuntimeStatus,
+    pub ready: bool,
+    pub message: String,
+}
+
+impl Default for OllamaStatusDetail {
+    fn default() -> Self {
+        Self {
+            status: OllamaRuntimeStatus::NotStarted,
+            ready: false,
+            message: "Ollama가 아직 시작되지 않았습니다.".to_string(),
+        }
+    }
+}
+
+pub struct OllamaState {
+    pub process: Mutex<Option<CommandChild>>,
+    pub detail: Mutex<OllamaStatusDetail>,
+}
+
+fn http_client(timeout_secs: u64) -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(timeout_secs))
+        .no_proxy()
+        .build()
+        .map_err(|e| format!("Ollama HTTP 클라이언트 생성 실패: {e}"))
+}
+
+fn set_status(state: &OllamaState, status: OllamaRuntimeStatus, message: impl Into<String>) {
+    if let Ok(mut detail) = state.detail.lock() {
+        detail.ready = status == OllamaRuntimeStatus::Ready;
+        detail.status = status;
+        detail.message = message.into();
+    }
+}
+
+fn get_status(state: &OllamaState) -> OllamaStatusDetail {
+    state.detail.lock().map(|detail| detail.clone()).unwrap_or_default()
+}
+
+pub async fn wait_until_ready(
+    app: &tauri::AppHandle,
+    attempts: usize,
+    delay_ms: u64,
+) -> Result<OllamaStatusDetail, String> {
+    let client = http_client(3)?;
+
+    for _ in 0..attempts {
+        match client.get("http://localhost:11434/api/tags").send().await {
+            Ok(response) if response.status().is_success() => {
+                let state = app.state::<OllamaState>();
+                set_status(
+                    &state,
+                    OllamaRuntimeStatus::Ready,
+                    "Ollama가 준비되었습니다.",
+                );
+                return Ok(get_status(&state));
+            }
+            Ok(response) => {
+                let state = app.state::<OllamaState>();
+                set_status(
+                    &state,
+                    OllamaRuntimeStatus::Starting,
+                    format!("Ollama 응답 대기 중 (HTTP {})", response.status()),
+                );
+            }
+            Err(error) => {
+                let state = app.state::<OllamaState>();
+                set_status(
+                    &state,
+                    OllamaRuntimeStatus::Starting,
+                    format!("Ollama 준비 대기 중: {error}"),
+                );
+            }
+        }
+
+        tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+    }
+
+    let state = app.state::<OllamaState>();
+    let detail = get_status(&state);
+    if detail.status == OllamaRuntimeStatus::Ready {
+        return Ok(detail);
+    }
+
+    let message = "Ollama가 아직 준비되지 않았습니다. 잠시 후 다시 시도해 주세요.";
+    set_status(&state, OllamaRuntimeStatus::Failed, message);
+    Err(message.to_string())
+}
+
 pub fn start_ollama(app: &tauri::AppHandle) -> Result<(), String> {
+    let state = app.state::<OllamaState>();
+
+    if let Ok(process) = state.process.lock() {
+        if process.is_some() {
+            set_status(
+                &state,
+                OllamaRuntimeStatus::Starting,
+                "Ollama가 이미 시작되어 준비를 기다리는 중입니다.",
+            );
+            return Ok(());
+        }
+    }
+
+    set_status(
+        &state,
+        OllamaRuntimeStatus::Starting,
+        "Ollama sidecar를 시작하는 중입니다.",
+    );
+
     let sidecar = app
         .shell()
         .sidecar("ollama")
-        .map_err(|e| format!("Ollama sidecar 생성 실패: {}", e))?;
+        .map_err(|e| format!("Ollama sidecar 생성 실패: {e}"))?;
 
     let (_rx, child) = sidecar
         .args(["serve"])
         .spawn()
-        .map_err(|e| format!("Ollama 시작 실패: {}", e))?;
+        .map_err(|e| {
+            set_status(
+                &state,
+                OllamaRuntimeStatus::Failed,
+                format!("Ollama 실행 실패: {e}"),
+            );
+            format!("Ollama 실행 실패: {e}")
+        })?;
 
-    let state = app.state::<OllamaState>();
-    if let Ok(mut proc) = state.process.lock() {
-        *proc = Some(child);
+    if let Ok(mut process) = state.process.lock() {
+        *process = Some(child);
     }
 
-    log::info!("Ollama sidecar 시작됨");
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let _ = wait_until_ready(&app_handle, 30, 500).await;
+    });
+
+    log::info!("Ollama sidecar started");
     Ok(())
 }
 
-/// 모델 다운로드 (Ollama HTTP API 사용 - 스트리밍 진행률)
+#[tauri::command]
+pub async fn get_ollama_status_detail(
+    app: tauri::AppHandle,
+    state: State<'_, OllamaState>,
+) -> Result<OllamaStatusDetail, String> {
+    let detail = get_status(&state);
+    if detail.status == OllamaRuntimeStatus::Ready {
+        return Ok(detail);
+    }
+
+    if detail.status == OllamaRuntimeStatus::Starting {
+        let _ = wait_until_ready(&app, 2, 250).await;
+        return Ok(get_status(&state));
+    }
+
+    Ok(detail)
+}
+
+#[tauri::command]
+pub async fn ensure_ollama_ready(
+    app: tauri::AppHandle,
+    state: State<'_, OllamaState>,
+) -> Result<OllamaStatusDetail, String> {
+    let detail = get_status(&state);
+    if detail.status == OllamaRuntimeStatus::NotStarted {
+        start_ollama(&app)?;
+    }
+
+    wait_until_ready(&app, 30, 500).await?;
+    Ok(get_status(&state))
+}
+
 #[tauri::command]
 pub async fn pull_model(model_name: String, app: tauri::AppHandle) -> Result<String, String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(3600))
-        .no_proxy()
-        .build()
-        .map_err(|e| format!("HTTP 클라이언트 생성 실패: {}", e))?;
+    wait_until_ready(&app, 30, 500).await?;
 
+    let client = http_client(3600)?;
     let response = client
         .post("http://localhost:11434/api/pull")
         .json(&serde_json::json!({
@@ -47,13 +204,10 @@ pub async fn pull_model(model_name: String, app: tauri::AppHandle) -> Result<Str
         }))
         .send()
         .await
-        .map_err(|e| format!("모델 다운로드 요청 실패: {}", e))?;
+        .map_err(|e| format!("모델 다운로드 요청 실패: {e}"))?;
 
     if !response.status().is_success() {
-        return Err(format!(
-            "모델 다운로드 실패: HTTP {}",
-            response.status()
-        ));
+        return Err(format!("모델 다운로드 실패: HTTP {}", response.status()));
     }
 
     let mut last_status = String::new();
@@ -61,7 +215,7 @@ pub async fn pull_model(model_name: String, app: tauri::AppHandle) -> Result<Str
     let mut buffer = String::new();
 
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| format!("스트림 읽기 실패: {}", e))?;
+        let chunk = chunk.map_err(|e| format!("스트림 읽기 실패: {e}"))?;
         buffer.push_str(&String::from_utf8_lossy(&chunk));
 
         while let Some(newline_pos) = buffer.find('\n') {
@@ -79,10 +233,7 @@ pub async fn pull_model(model_name: String, app: tauri::AppHandle) -> Result<Str
                     .unwrap_or("")
                     .to_string();
 
-                let total = json
-                    .get("total")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0);
+                let total = json.get("total").and_then(|v| v.as_u64()).unwrap_or(0);
                 let completed = json
                     .get("completed")
                     .and_then(|v| v.as_u64())
@@ -112,56 +263,57 @@ pub async fn pull_model(model_name: String, app: tauri::AppHandle) -> Result<Str
     if last_status == "success" {
         Ok(format!("모델 '{}' 다운로드 완료", model_name))
     } else {
-        Ok(format!("모델 '{}' 처리 완료 (상태: {})", model_name, last_status))
+        Ok(format!(
+            "모델 '{}' 처리 완료 (상태: {})",
+            model_name, last_status
+        ))
     }
 }
 
-/// 설치된 모델 목록 조회
 #[tauri::command]
-pub async fn list_models() -> Result<Vec<String>, String> {
-    let client = reqwest::Client::builder()
-        .no_proxy()
-        .build()
-        .map_err(|e| format!("HTTP 클라이언트 생성 실패: {}", e))?;
+pub async fn list_models(app: tauri::AppHandle) -> Result<Vec<String>, String> {
+    wait_until_ready(&app, 30, 500).await?;
 
+    let client = http_client(10)?;
     let response = client
         .get("http://localhost:11434/api/tags")
         .send()
         .await
-        .map_err(|e| format!("모델 목록 조회 실패: {}", e))?;
+        .map_err(|e| format!("모델 목록 조회 실패: {e}"))?;
 
     let body: serde_json::Value = response
         .json()
         .await
-        .map_err(|e| format!("응답 파싱 실패: {}", e))?;
+        .map_err(|e| format!("응답 파싱 실패: {e}"))?;
 
-    let models = body
+    Ok(body
         .get("models")
-        .and_then(|m| m.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|m| m.get("name").and_then(|n| n.as_str()).map(String::from))
+        .and_then(|models| models.as_array())
+        .map(|models| {
+            models
+                .iter()
+                .filter_map(|model| {
+                    model
+                        .get("name")
+                        .and_then(|name| name.as_str())
+                        .map(|name| name.to_string())
+                })
                 .collect()
         })
-        .unwrap_or_default();
-
-    Ok(models)
+        .unwrap_or_default())
 }
 
-/// 모델 삭제
 #[tauri::command]
-pub async fn delete_model(model_name: String) -> Result<String, String> {
-    let client = reqwest::Client::builder()
-        .no_proxy()
-        .build()
-        .map_err(|e| format!("HTTP 클라이언트 생성 실패: {}", e))?;
+pub async fn delete_model(model_name: String, app: tauri::AppHandle) -> Result<String, String> {
+    wait_until_ready(&app, 30, 500).await?;
 
+    let client = http_client(30)?;
     let response = client
         .delete("http://localhost:11434/api/delete")
         .json(&serde_json::json!({ "name": model_name }))
         .send()
         .await
-        .map_err(|e| format!("모델 삭제 실패: {}", e))?;
+        .map_err(|e| format!("모델 삭제 실패: {e}"))?;
 
     if response.status().is_success() {
         Ok(format!("모델 '{}' 삭제 완료", model_name))
@@ -170,12 +322,16 @@ pub async fn delete_model(model_name: String) -> Result<String, String> {
     }
 }
 
-/// 앱 종료 시 Ollama 프로세스 정리
 pub fn stop_ollama(state: &OllamaState) {
     if let Ok(mut process) = state.process.lock() {
         if let Some(child) = process.take() {
             let _ = child.kill();
-            log::info!("Ollama 프로세스 종료됨");
+            set_status(
+                state,
+                OllamaRuntimeStatus::NotStarted,
+                "Ollama가 종료되었습니다.",
+            );
+            log::info!("Ollama process stopped");
         }
     }
 }

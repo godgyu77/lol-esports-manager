@@ -1,7 +1,9 @@
+use crate::ollama_manager::{self, OllamaRuntimeStatus, OllamaState};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
+use tauri::State;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct LlmMessage {
     pub role: String,
     pub content: String,
@@ -17,29 +19,32 @@ fn http_client() -> Result<reqwest::Client, String> {
         .timeout(Duration::from_secs(30))
         .no_proxy()
         .build()
-        .map_err(|e| format!("HTTP 클라이언트 생성 실패: {}", e))
+        .map_err(|e| format!("HTTP 클라이언트 생성에 실패했습니다: {e}"))
 }
 
 #[tauri::command]
-pub async fn check_ollama_status() -> Result<bool, String> {
-    let client = http_client()?;
-    match client.get("http://localhost:11434/api/tags").send().await {
-        Ok(resp) => Ok(resp.status().is_success()),
-        Err(e) => {
-            eprintln!("[Ollama] 상태 확인 실패: {}", e);
-            Ok(false)
-        }
-    }
+pub async fn check_ollama_status(
+    app: tauri::AppHandle,
+    state: State<'_, OllamaState>,
+) -> Result<bool, String> {
+    let detail = ollama_manager::get_ollama_status_detail(app, state).await?;
+    Ok(detail.ready)
 }
 
 #[tauri::command]
 pub async fn chat_with_llm(
+    app: tauri::AppHandle,
+    state: State<'_, OllamaState>,
     model: String,
     messages: Vec<LlmMessage>,
     format: Option<String>,
 ) -> Result<String, String> {
-    let client = http_client()?;
+    let detail = ollama_manager::ensure_ollama_ready(app, state).await?;
+    if detail.status != OllamaRuntimeStatus::Ready {
+        return Err(detail.message);
+    }
 
+    let client = http_client()?;
     let mut body = serde_json::json!({
         "model": model,
         "messages": messages,
@@ -55,19 +60,21 @@ pub async fn chat_with_llm(
         .json(&body)
         .send()
         .await
-        .map_err(|e| format!("Ollama 연결 실패: {}", e))?;
+        .map_err(|e| format!("Ollama 연결 실패: {e}"))?;
+
+    if !response.status().is_success() {
+        let status = response.status().as_u16();
+        let err_text = response.text().await.unwrap_or_default();
+        return Err(format!("Ollama 요청 실패 {status}: {err_text}"));
+    }
 
     let result: OllamaChatResponse = response
         .json()
         .await
-        .map_err(|e| format!("응답 파싱 실패: {}", e))?;
+        .map_err(|e| format!("Ollama 응답 파싱에 실패했습니다: {e}"))?;
 
     Ok(result.message.content)
 }
-
-// ─────────────────────────────────────────
-// OpenAI API (Rust 프록시)
-// ─────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
 struct OpenAiChoice {
@@ -107,33 +114,29 @@ pub async fn chat_with_openai(
     let response = client
         .post(&endpoint)
         .header("Content-Type", "application/json")
-        .header("Authorization", format!("Bearer {}", api_key))
+        .header("Authorization", format!("Bearer {api_key}"))
         .json(&body)
         .send()
         .await
-        .map_err(|e| format!("OpenAI API 연결 실패: {}", e))?;
+        .map_err(|e| format!("OpenAI API 연결에 실패했습니다: {e}"))?;
 
     if !response.status().is_success() {
         let status = response.status().as_u16();
         let err_text = response.text().await.unwrap_or_default();
-        return Err(format!("OpenAI API error {}: {}", status, err_text));
+        return Err(format!("OpenAI API 오류 {status}: {err_text}"));
     }
 
     let result: OpenAiResponse = response
         .json()
         .await
-        .map_err(|e| format!("OpenAI 응답 파싱 실패: {}", e))?;
+        .map_err(|e| format!("OpenAI 응답 파싱에 실패했습니다: {e}"))?;
 
     result
         .choices
-        .and_then(|c| c.into_iter().next())
-        .and_then(|c| c.message.content)
-        .ok_or_else(|| "OpenAI API returned empty or invalid response".to_string())
+        .and_then(|choices| choices.into_iter().next())
+        .and_then(|choice| choice.message.content)
+        .ok_or_else(|| "OpenAI API 응답이 비어 있거나 형식이 올바르지 않습니다.".to_string())
 }
-
-// ─────────────────────────────────────────
-// Claude (Anthropic) API (Rust 프록시)
-// ─────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
 struct ClaudeContentBlock {
@@ -156,11 +159,10 @@ pub async fn chat_with_claude(
 ) -> Result<String, String> {
     let client = http_client()?;
 
-    // Claude API는 messages에 system role을 넣지 않고 별도 system 필드 사용
     let api_messages: Vec<serde_json::Value> = messages
         .into_iter()
-        .filter(|m| m.role != "system")
-        .map(|m| serde_json::json!({ "role": m.role, "content": m.content }))
+        .filter(|message| message.role != "system")
+        .map(|message| serde_json::json!({ "role": message.role, "content": message.content }))
         .collect();
 
     let mut body = serde_json::json!({
@@ -169,8 +171,8 @@ pub async fn chat_with_claude(
         "messages": api_messages,
     });
 
-    if let Some(sys) = system_prompt {
-        body["system"] = serde_json::Value::String(sys);
+    if let Some(system_prompt) = system_prompt {
+        body["system"] = serde_json::Value::String(system_prompt);
     }
 
     let response = client
@@ -181,29 +183,25 @@ pub async fn chat_with_claude(
         .json(&body)
         .send()
         .await
-        .map_err(|e| format!("Claude API 연결 실패: {}", e))?;
+        .map_err(|e| format!("Claude API 연결에 실패했습니다: {e}"))?;
 
     if !response.status().is_success() {
         let status = response.status().as_u16();
         let err_text = response.text().await.unwrap_or_default();
-        return Err(format!("Claude API error {}: {}", status, err_text));
+        return Err(format!("Claude API 오류 {status}: {err_text}"));
     }
 
     let result: ClaudeResponse = response
         .json()
         .await
-        .map_err(|e| format!("Claude 응답 파싱 실패: {}", e))?;
+        .map_err(|e| format!("Claude 응답 파싱에 실패했습니다: {e}"))?;
 
     result
         .content
-        .and_then(|c| c.into_iter().next())
-        .and_then(|b| b.text)
-        .ok_or_else(|| "Claude API returned empty or invalid response".to_string())
+        .and_then(|content| content.into_iter().next())
+        .and_then(|block| block.text)
+        .ok_or_else(|| "Claude API 응답이 비어 있거나 형식이 올바르지 않습니다.".to_string())
 }
-
-// ─────────────────────────────────────────
-// Google Gemini API (Rust 프록시)
-// ─────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
 struct GeminiPart {
@@ -235,14 +233,13 @@ pub async fn chat_with_gemini(
 ) -> Result<String, String> {
     let client = http_client()?;
 
-    // Gemini API: system은 system_instruction, 나머지는 contents
     let contents: Vec<serde_json::Value> = messages
         .into_iter()
-        .filter(|m| m.role != "system")
-        .map(|m| {
+        .filter(|message| message.role != "system")
+        .map(|message| {
             serde_json::json!({
-                "role": if m.role == "assistant" { "model" } else { "user" },
-                "parts": [{ "text": m.content }]
+                "role": if message.role == "assistant" { "model" } else { "user" },
+                "parts": [{ "text": message.content }]
             })
         })
         .collect();
@@ -254,9 +251,9 @@ pub async fn chat_with_gemini(
         }
     });
 
-    if let Some(sys) = system_prompt {
+    if let Some(system_prompt) = system_prompt {
         body["system_instruction"] = serde_json::json!({
-            "parts": [{ "text": sys }]
+            "parts": [{ "text": system_prompt }]
         });
     }
 
@@ -276,32 +273,28 @@ pub async fn chat_with_gemini(
         .json(&body)
         .send()
         .await
-        .map_err(|e| format!("Gemini API 연결 실패: {}", e))?;
+        .map_err(|e| format!("Gemini API 연결에 실패했습니다: {e}"))?;
 
     if !response.status().is_success() {
         let status = response.status().as_u16();
         let err_text = response.text().await.unwrap_or_default();
-        return Err(format!("Gemini API error {}: {}", status, err_text));
+        return Err(format!("Gemini API 오류 {status}: {err_text}"));
     }
 
     let result: GeminiResponse = response
         .json()
         .await
-        .map_err(|e| format!("Gemini 응답 파싱 실패: {}", e))?;
+        .map_err(|e| format!("Gemini 응답 파싱에 실패했습니다: {e}"))?;
 
     result
         .candidates
-        .and_then(|c| c.into_iter().next())
-        .and_then(|c| c.content)
-        .and_then(|c| c.parts)
-        .and_then(|p| p.into_iter().next())
-        .and_then(|p| p.text)
-        .ok_or_else(|| "Gemini API returned empty or invalid response".to_string())
+        .and_then(|candidates| candidates.into_iter().next())
+        .and_then(|candidate| candidate.content)
+        .and_then(|content| content.parts)
+        .and_then(|parts| parts.into_iter().next())
+        .and_then(|part| part.text)
+        .ok_or_else(|| "Gemini API 응답이 비어 있거나 형식이 올바르지 않습니다.".to_string())
 }
-
-// ─────────────────────────────────────────
-// Grok (xAI) API (Rust 프록시) — OpenAI 호환
-// ─────────────────────────────────────────
 
 #[tauri::command]
 pub async fn chat_with_grok(
@@ -326,27 +319,26 @@ pub async fn chat_with_grok(
     let response = client
         .post(&endpoint)
         .header("Content-Type", "application/json")
-        .header("Authorization", format!("Bearer {}", api_key))
+        .header("Authorization", format!("Bearer {api_key}"))
         .json(&body)
         .send()
         .await
-        .map_err(|e| format!("Grok API 연결 실패: {}", e))?;
+        .map_err(|e| format!("Grok API 연결에 실패했습니다: {e}"))?;
 
     if !response.status().is_success() {
         let status = response.status().as_u16();
         let err_text = response.text().await.unwrap_or_default();
-        return Err(format!("Grok API error {}: {}", status, err_text));
+        return Err(format!("Grok API 오류 {status}: {err_text}"));
     }
 
-    // OpenAI 호환 응답 구조 재사용
     let result: OpenAiResponse = response
         .json()
         .await
-        .map_err(|e| format!("Grok 응답 파싱 실패: {}", e))?;
+        .map_err(|e| format!("Grok 응답 파싱에 실패했습니다: {e}"))?;
 
     result
         .choices
-        .and_then(|c| c.into_iter().next())
-        .and_then(|c| c.message.content)
-        .ok_or_else(|| "Grok API returned empty or invalid response".to_string())
+        .and_then(|choices| choices.into_iter().next())
+        .and_then(|choice| choice.message.content)
+        .ok_or_else(|| "Grok API 응답이 비어 있거나 형식이 올바르지 않습니다.".to_string())
 }

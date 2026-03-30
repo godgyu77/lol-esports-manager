@@ -26,6 +26,7 @@ import { calculateTeamSoloRankBonus } from '../../engine/soloRank/soloRankEngine
 import { saveUserMatchResult } from '../../engine/season/dayAdvancer';
 import { processPlayoffMatchResult } from '../../engine/season/playoffGenerator';
 import { processTournamentMatchResult } from '../../engine/tournament/tournamentEngine';
+import { buildPostMatchInsightReport } from '../../engine/analysis/postMatchInsightEngine';
 import { generatePostMatchComment, type PostMatchComment } from '../../ai/gameAiService';
 import { generateMatchCommentary, generateLiveChatMessages, type LiveChatMessage } from '../../ai/advancedAiService';
 import { accumulateFearlessChampions } from '../../engine/draft/draftEngine';
@@ -126,6 +127,9 @@ export function LiveMatchView() {
 
   const homeTeam = teams.find((t) => t.id === pendingMatch?.teamHomeId);
   const awayTeam = teams.find((t) => t.id === pendingMatch?.teamAwayId);
+  const userSide = pendingMatch && save?.userTeamId
+    ? (pendingMatch.teamHomeId === save.userTeamId ? 'home' : 'away')
+    : 'home';
 
   const currentDate = useGameStore((s) => s.season)?.currentDate ?? '';
 
@@ -664,6 +668,7 @@ export function LiveMatchView() {
                 homeTeamName={homeTeam?.shortName ?? '블루'}
                 awayTeamName={awayTeam?.shortName ?? '레드'}
                 gameNumber={currentGameNum}
+                insightReport={buildPostMatchInsightReport(gameResults[gameResults.length - 1], userSide)}
               />
             )}
 

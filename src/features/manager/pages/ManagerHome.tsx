@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useGameStore } from '../../../stores/gameStore';
 import { useSettingsStore } from '../../../stores/settingsStore';
@@ -106,6 +106,7 @@ export function ManagerHome() {
   const [coachMeetingLoading, setCoachMeetingLoading] = useState(false);
   const [coachMeetingOpen, setCoachMeetingOpen] = useState(false);
   const [lastCoachMeetingDate, setLastCoachMeetingDate] = useState<string | null>(null);
+  const briefingRequestRef = useRef<string | null>(null);
 
   const userTeam = teams.find((t) => t.id === save?.userTeamId);
 
@@ -221,6 +222,12 @@ export function ManagerHome() {
   useEffect(() => {
     if (!userTeam || !season) return;
     let cancelled = false;
+    const requestKey = `${userTeam.id}:${season.currentDate}`;
+
+    if (briefingRequestRef.current === requestKey) {
+      return;
+    }
+    briefingRequestRef.current = requestKey;
 
     const loadBriefing = async () => {
       setBriefingLoading(true);

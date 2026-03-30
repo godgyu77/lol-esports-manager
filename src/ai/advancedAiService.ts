@@ -9,6 +9,9 @@ import { isAiAvailable } from './gameAiService';
 import { augmentPromptWithKnowledge } from './rag/ragEngine';
 import { pickRandom, pickRandomN, randomInt } from '../utils/random';
 import { fillTemplate } from '../utils/stringUtils';
+import { COMMENTARY_TEMPLATE_ASSETS } from './templates/commentaryTemplates';
+import { FALLBACK_BAN_ADVICE_ASSETS, FALLBACK_PICK_ADVICE_ASSETS } from './templates/draftAdviceTemplates';
+import { GENERATED_NEWS_TEMPLATE_ASSETS } from './templates/generatedNewsTemplates';
 
 /** RAG 안전 래퍼 -- 실패 시 원본 프롬프트 반환 */
 async function safeAugment(prompt: string, query: string): Promise<string> {
@@ -185,6 +188,8 @@ const COMMENTARY_TEMPLATES: Record<string, readonly { text: string; excitement: 
   ],
 };
 
+void COMMENTARY_TEMPLATES;
+
 export async function generateMatchCommentary(context: {
   phase: 'laning' | 'mid_game' | 'late_game';
   event: string;
@@ -219,7 +224,7 @@ JSON 형식: {"text": "중계 멘트 (80자 이내)", "excitement": 1-10, "tone"
   }
 
   // 폴백: 이벤트별 템플릿
-  const templates = COMMENTARY_TEMPLATES[context.event] ?? COMMENTARY_TEMPLATES.teamfight;
+  const templates = COMMENTARY_TEMPLATE_ASSETS[context.event] ?? COMMENTARY_TEMPLATE_ASSETS.teamfight;
   const template = pickRandom(templates);
   // 플레이스홀더가 있으면 치환 (fillTemplate은 replaceAll 사용)
   const text = fillTemplate(template.text, {
@@ -275,6 +280,9 @@ const FALLBACK_PICK_ADVICE: readonly DraftAdvice[] = [
   { suggestion: '선수의 시그니처 챔피언을 선택하세요', reason: '높은 숙련도가 승률에 직접적으로 영향을 미칩니다.', confidence: 65 },
 ];
 
+void FALLBACK_BAN_ADVICE;
+void FALLBACK_PICK_ADVICE;
+
 export async function generateDraftAdvice(context: {
   phase: 'ban' | 'pick';
   turn: number;
@@ -324,7 +332,7 @@ JSON 형식: {"suggestion": "구체적 조언 (30자 이내)", "reason": "이유
     }
   }
 
-  const pool = context.phase === 'ban' ? FALLBACK_BAN_ADVICE : FALLBACK_PICK_ADVICE;
+  const pool = context.phase === 'ban' ? FALLBACK_BAN_ADVICE_ASSETS : FALLBACK_PICK_ADVICE_ASSETS;
   return pickRandom(pool);
 }
 
@@ -514,6 +522,8 @@ const FALLBACK_NEWS_TEMPLATES: Record<string, readonly { title: string; content:
   ],
 };
 
+void FALLBACK_NEWS_TEMPLATES;
+
 export async function generateNewsArticle(context: {
   eventType: 'match_result' | 'transfer' | 'injury' | 'milestone' | 'scandal';
   details: string;
@@ -542,7 +552,7 @@ JSON 형식: {"title": "기사 제목 (25자 이내)", "content": "기사 본문
   }
 
   // 폴백: eventType별 템플릿
-  const templates = FALLBACK_NEWS_TEMPLATES[context.eventType] ?? FALLBACK_NEWS_TEMPLATES.match_result;
+  const templates = GENERATED_NEWS_TEMPLATE_ASSETS[context.eventType] ?? GENERATED_NEWS_TEMPLATE_ASSETS.match_result;
   const template = pickRandom(templates);
 
   const team1 = context.teamNames[0] ?? '팀';

@@ -30,5 +30,3 @@ Thumbs.db
 # Rust build artifacts
 src-tauri/target/
 
-# Claude worktrees
-.claude/worktrees/

@@ -208,6 +208,39 @@ export function DayView() {
     return <p className="fm-text-muted fm-text-md">데이터를 불러오는 중...</p>;
   }
 
+  const weeklyDecisionCards = [
+    {
+      title: 'Training',
+      value: todayTraining ? TRAINING_TYPE_LABELS[todayTraining.trainingType] : 'Set today plan',
+      detail: 'Use the weekly schedule to fix execution before the next match.',
+      route: '/manager/training',
+    },
+    {
+      title: 'Tactics',
+      value: dayResult?.hasUserMatch ? 'Match prep live' : 'Review default plan',
+      detail: 'Check draft priorities and lane plan before results start locking in.',
+      route: '/manager/tactics',
+    },
+    {
+      title: 'Roster',
+      value: dayResult?.playerEvents?.length ? 'Monitor lineup stress' : 'Starter stability',
+      detail: 'Look for underperforming roles before they snowball into a loss streak.',
+      route: '/manager/roster',
+    },
+    {
+      title: 'Finance',
+      value: season.currentWeek % 4 === 0 ? 'Budget checkpoint' : 'Keep options open',
+      detail: 'Avoid spending away future flexibility unless this stretch is must-win.',
+      route: '/manager/finance',
+    },
+    {
+      title: 'Player care',
+      value: selectedActivity === 'rest' ? 'Recovery priority' : 'Confidence watch',
+      detail: 'Player condition and morale are still one of the fastest levers to move.',
+      route: '/manager/complaints',
+    },
+  ];
+
   return (
     <div>
       {/* 페이지 헤더 */}
@@ -227,6 +260,26 @@ export function DayView() {
         <div className="dv-date-info">
           <span className="fm-badge fm-badge--default">{season.currentWeek}주차</span>
           <span className="fm-text-lg fm-font-semibold fm-text-accent">{userTeam.shortName}</span>
+        </div>
+      </div>
+
+      <div className="fm-panel fm-mb-md">
+        <div className="fm-panel__header">
+          <span className="fm-panel__title">This week&apos;s key decisions</span>
+        </div>
+        <div className="fm-panel__body">
+          <div className="dv-focus-grid">
+            {weeklyDecisionCards.map((card) => (
+              <div key={card.title} className="dv-focus-card">
+                <span className="dv-focus-card__title">{card.title}</span>
+                <span className="dv-focus-card__value">{card.value}</span>
+                <p className="dv-focus-card__detail">{card.detail}</p>
+                <button className="dv-training-link" onClick={() => navigate(card.route)}>
+                  Review
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 

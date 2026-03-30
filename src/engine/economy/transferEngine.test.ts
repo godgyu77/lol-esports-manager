@@ -5,7 +5,13 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { calculatePlayerValue, calculateFairSalary } from './transferEngine';
+import {
+  advanceCulturalAdaptation,
+  assessInternationalTransfer,
+  calculateFairSalary,
+  calculatePlayerValue,
+} from './transferEngine';
+import { calculateAgentFee, findWeakestPosition } from './transferValuation';
 import type { Player } from '../../types/player';
 
 // ─────────────────────────────────────────
@@ -143,5 +149,70 @@ describe('calculateFairSalary', () => {
     });
 
     expect(calculateFairSalary(worstPlayer)).toBeGreaterThanOrEqual(300);
+  });
+});
+
+describe('transfer valuation helpers', () => {
+  it('agent fee has a minimum floor', () => {
+    expect(calculateAgentFee(100)).toBe(500);
+  });
+
+  it('finds a missing position as the weakest slot', () => {
+    const roster = [
+      createMockPlayer({ id: 'top', position: 'top' }),
+      createMockPlayer({ id: 'jg', position: 'jungle' }),
+      createMockPlayer({ id: 'mid', position: 'mid' }),
+      createMockPlayer({ id: 'adc', position: 'adc' }),
+    ];
+
+    expect(findWeakestPosition(roster)).toEqual({ position: 'support', currentOvr: 0 });
+  });
+
+  it('finds the lowest-overall filled position when roster is complete', () => {
+    const roster = [
+      createMockPlayer({ id: 'top', position: 'top', stats: { mechanical: 80, gameSense: 80, teamwork: 80, consistency: 80, laning: 80, aggression: 80 } }),
+      createMockPlayer({ id: 'jg', position: 'jungle', stats: { mechanical: 78, gameSense: 78, teamwork: 78, consistency: 78, laning: 78, aggression: 78 } }),
+      createMockPlayer({ id: 'mid', position: 'mid', stats: { mechanical: 76, gameSense: 76, teamwork: 76, consistency: 76, laning: 76, aggression: 76 } }),
+      createMockPlayer({ id: 'adc', position: 'adc', stats: { mechanical: 60, gameSense: 60, teamwork: 60, consistency: 60, laning: 60, aggression: 60 } }),
+      createMockPlayer({ id: 'sup', position: 'support', stats: { mechanical: 70, gameSense: 70, teamwork: 70, consistency: 70, laning: 70, aggression: 70 } }),
+    ];
+
+    expect(findWeakestPosition(roster)?.position).toBe('adc');
+  });
+});
+
+describe('international transfer helpers', () => {
+  it('treats domestic moves as low-risk transfers', () => {
+    const result = assessInternationalTransfer('KR', 22, 'LCK', 'LCK');
+
+    expect(result.riskLevel).toBe('low');
+    expect(result.languageBarrier).toBe(0);
+    expect(result.canTransfer).toBe(true);
+  });
+
+  it('assigns adaptation risk to cross-region moves', () => {
+    const result = assessInternationalTransfer('KR', 19, 'LCK', 'LEC');
+
+    expect(result.languageBarrier).toBeGreaterThan(0);
+    expect(result.culturalAdaptationDays).toBeGreaterThan(0);
+    expect(result.relocationCost).toBeGreaterThan(0);
+  });
+
+  it('accelerates cultural adaptation with support factors', () => {
+    const base = {
+      playerId: 'player_1',
+      homeRegion: 'LCK' as const,
+      currentRegion: 'LEC' as const,
+      adaptationLevel: 10,
+      daysRemaining: 30,
+      currentPenalty: 0.3,
+      languageProficiency: 20,
+    };
+
+    const withoutSupport = advanceCulturalAdaptation(base, false, false);
+    const withSupport = advanceCulturalAdaptation(base, true, true);
+
+    expect(withSupport.adaptationLevel).toBeGreaterThan(withoutSupport.adaptationLevel);
+    expect(withSupport.currentPenalty).toBeLessThan(withoutSupport.currentPenalty);
   });
 });

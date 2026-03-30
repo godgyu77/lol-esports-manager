@@ -493,7 +493,7 @@ export function SettingsView() {
             ))}
           </div>
 
-          {/* Cloud provider settings (only shown for openai/claude) */}
+          {/* Cloud provider settings */}
           {isCloudProvider && (
             <>
               <div className="fm-divider" />
@@ -907,7 +907,7 @@ export function SettingsView() {
                   ? `OpenAI (${apiModel})`
                   : aiProvider === 'claude'
                     ? `Claude (${apiModel})`
-                    : aiProvider === 'gemini'
+                  : aiProvider === 'gemini'
                       ? `Gemini (${apiModel})`
                       : aiProvider === 'grok'
                         ? `Grok (${apiModel})`

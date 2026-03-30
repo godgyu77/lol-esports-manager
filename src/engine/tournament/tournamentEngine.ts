@@ -1,10 +1,10 @@
 /**
- * 국제 대회 엔진 (LCK Cup / FST / MSI / EWC / Worlds)
- * - LCK Cup: 10팀 더블 라운드로빈 Bo3 → 플레이오프 (피어리스)
- * - FST: 8팀 싱글 엘리미네이션 Bo5 (동일 리전 내전 방지)
- * - MSI: 스프링 챔피언 4팀 → 그룹 더블 라운드로빈 → 세미 → 결승
- * - EWC: 8팀 싱글 엘리미네이션 (8강 Bo3, 4강/결승 Bo5)
- * - Worlds: 14팀 스위스 스테이지 → 8팀 녹아웃
+ * �?�� ?�???�진 (LCK Cup / FST / MSI / EWC / Worlds)
+ * - LCK Cup: 10?� ?�블 ?�운?�로�?Bo3 ???�레?�오??(?�어리스)
+ * - FST: 8?� ?��? ?�리미네?�션 Bo5 (?�일 리전 ?�전 방�?)
+ * - MSI: ?�프�?챔피??4?� ??그룹 ?�블 ?�운?�로�????��? ??결승
+ * - EWC: 8?� ?��? ?�리미네?�션 (8�?Bo3, 4�?결승 Bo5)
+ * - Worlds: 14?� ?�위???�테?��? ??8?� ?�아??
  */
 
 import type { Region } from '../../types/game';
@@ -14,10 +14,11 @@ import { getDatabase } from '../../db/database';
 import { insertMatch, getMatchById, getPlayersByTeamId } from '../../db/queries';
 import { addDays, getTournamentDates } from '../season/calendar';
 import { registerTournamentAbsence, clearTournamentAbsence } from './tournamentAbsence';
+import { buildSeededQuarterfinalPairs, drawFSTBracket } from './tournamentPairings';
 
-// ─────────────────────────────────────────
-// 타입
-// ─────────────────────────────────────────
+// ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�
+// ?�??
+// ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�
 
 export type TournamentType = 'msi' | 'worlds' | 'lck_cup' | 'fst' | 'ewc';
 export type TournamentStatus = 'scheduled' | 'group_stage' | 'swiss_stage' | 'knockout' | 'completed';
@@ -58,11 +59,11 @@ export interface SwissRecord {
   status: 'active' | 'advanced' | 'eliminated';
 }
 
-// ─────────────────────────────────────────
-// DB 헬퍼
-// ─────────────────────────────────────────
+// ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�
+// DB ?�퍼
+// ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�
 
-/** 대회 생성 */
+/** ?�???�성 */
 export async function createTournament(
   type: TournamentType,
   year: number,
@@ -80,7 +81,7 @@ export async function createTournament(
   return id;
 }
 
-/** 대회 참가팀 추가 */
+/** ?�??참�??� 추�? */
 export async function addTournamentParticipant(
   tournamentId: string,
   teamId: string,
@@ -96,7 +97,7 @@ export async function addTournamentParticipant(
   );
 }
 
-/** 대회 상태 변경 */
+/** ?�???�태 변�?*/
 export async function updateTournamentStatus(
   tournamentId: string,
   status: TournamentStatus,
@@ -107,13 +108,13 @@ export async function updateTournamentStatus(
     [status, tournamentId],
   );
 
-  // 대회 완료 시 참가 선수 부재 기록 해제
+  // ?�???�료 ??참�? ?�수 부??기록 ?�제
   if (status === 'completed') {
     await clearTournamentAbsence(tournamentId);
   }
 }
 
-/** 대회 조회 */
+/** ?�??조회 */
 export async function getTournament(tournamentId: string): Promise<Tournament | null> {
   const db = await getDatabase();
   const rows = await db.select<{
@@ -133,7 +134,7 @@ export async function getTournament(tournamentId: string): Promise<Tournament | 
   };
 }
 
-/** 연도별 대회 목록 조회 */
+/** ?�도�??�??목록 조회 */
 export async function getTournamentsByYear(year: number): Promise<Tournament[]> {
   const db = await getDatabase();
   const rows = await db.select<{
@@ -151,7 +152,7 @@ export async function getTournamentsByYear(year: number): Promise<Tournament[]> 
   }));
 }
 
-/** 대회 참가팀 조회 */
+/** ?�??참�??� 조회 */
 export async function getTournamentParticipants(
   tournamentId: string,
 ): Promise<TournamentParticipant[]> {
@@ -172,7 +173,7 @@ export async function getTournamentParticipants(
   }));
 }
 
-/** 그룹 스탠딩 조회 (MSI/LCK Cup 용) */
+/** 그룹 ?�탠??조회 (MSI/LCK Cup ?? */
 export async function getTournamentStandings(
   tournamentId: string,
   groupName?: string,
@@ -182,7 +183,7 @@ export async function getTournamentStandings(
   const tournament = await getTournament(tournamentId);
   if (!tournament) return [];
 
-  // 대회별 그룹 매치타입 결정
+  // ?�?�별 그룹 매치?�??결정
   let matchTypePrefix: string;
   if (tournament.type === 'msi') matchTypePrefix = 'msi_group';
   else if (tournament.type === 'lck_cup') matchTypePrefix = 'lck_cup_regular';
@@ -232,11 +233,11 @@ export async function getTournamentStandings(
   return [...standingMap.values()].sort((a, b) => b.wins - a.wins || a.losses - b.losses);
 }
 
-// ─────────────────────────────────────────
-// 스위스 레코드 DB 헬퍼
-// ─────────────────────────────────────────
+// ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�
+// ?�위???�코??DB ?�퍼
+// ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�
 
-/** 스위스 레코드 초기화 */
+/** ?�위???�코??초기??*/
 async function initSwissRecords(
   tournamentId: string,
   participants: TournamentParticipant[],
@@ -251,7 +252,7 @@ async function initSwissRecords(
   }
 }
 
-/** 스위스 레코드 조회 */
+/** ?�위???�코??조회 */
 export async function getSwissRecords(tournamentId: string): Promise<SwissRecord[]> {
   const db = await getDatabase();
   const rows = await db.select<{
@@ -261,7 +262,7 @@ export async function getSwissRecords(tournamentId: string): Promise<SwissRecord
     'SELECT * FROM swiss_records WHERE tournament_id = $1 ORDER BY wins DESC, losses ASC',
     [tournamentId],
   );
-  // 참가팀 정보에서 리전 가져오기
+  // 참�??� ?�보?�서 리전 가?�오�?
   const participants = await getTournamentParticipants(tournamentId);
   const regionMap = new Map(participants.map(p => [p.teamId, p.region]));
 
@@ -276,7 +277,7 @@ export async function getSwissRecords(tournamentId: string): Promise<SwissRecord
   }));
 }
 
-/** 스위스 레코드 업데이트 (승/패 증가) */
+/** ?�위???�코???�데?�트 (????증�?) */
 async function updateSwissRecord(
   tournamentId: string,
   teamId: string,
@@ -297,7 +298,7 @@ async function updateSwissRecord(
   }
 }
 
-/** 스위스 레코드 상태 변경 (진출/탈락) */
+/** ?�위???�코???�태 변�?(진출/?�락) */
 async function updateSwissStatus(
   tournamentId: string,
   teamId: string,
@@ -310,11 +311,11 @@ async function updateSwissStatus(
   );
 }
 
-// ─────────────────────────────────────────
-// 국제대회 참가 선수 부재 등록 헬퍼
-// ─────────────────────────────────────────
+// ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�
+// �?��?�??참�? ?�수 부???�록 ?�퍼
+// ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�
 
-/** 참가팀 선수들의 대회 기간 부재 일괄 등록 */
+/** 참�??� ?�수?�의 ?�??기간 부???�괄 ?�록 */
 async function registerAbsenceForParticipants(
   tournamentId: string,
   teamIds: string[],
@@ -329,11 +330,11 @@ async function registerAbsenceForParticipants(
   }
 }
 
-// ─────────────────────────────────────────
-// 그룹 스케줄 생성 (라운드로빈)
-// ─────────────────────────────────────────
+// ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�
+// 그룹 ?��?�??�성 (?�운?�로�?
+// ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�
 
-/** 더블 라운드로빈 매치 생성 */
+/** ?�블 ?�운?�로�?매치 ?�성 */
 export async function generateGroupSchedule(
   tournamentId: string,
   seasonId: number,
@@ -350,7 +351,7 @@ export async function generateGroupSchedule(
   for (const [groupName, teamIds] of groups) {
     const pairs: [string, string][] = [];
 
-    // 더블 라운드로빈
+    // ?�블 ?�운?�로�?
     for (let i = 0; i < teamIds.length; i++) {
       for (let j = i + 1; j < teamIds.length; j++) {
         pairs.push([teamIds[i], teamIds[j]]);
@@ -389,14 +390,14 @@ export async function generateGroupSchedule(
   }
 }
 
-// ─────────────────────────────────────────
-// LCK Cup 생성
-// ─────────────────────────────────────────
+// ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�
+// LCK Cup ?�성
+// ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�
 
 /**
- * LCK Cup (윈터 스플릿) 생성
- * - 10팀 더블 라운드로빈 Bo3 (피어리스 드래프트)
- * - 상위 6팀 플레이오프
+ * LCK Cup (?�터 ?�플�? ?�성
+ * - 10?� ?�블 ?�운?�로�?Bo3 (?�어리스 ?�래?�트)
+ * - ?�위 6?� ?�레?�오??
  */
 export async function generateLCKCup(
   seasonId: number,
@@ -406,12 +407,12 @@ export async function generateLCKCup(
   const dates = getTournamentDates('lck_cup', year);
   const tournamentId = await createTournament('lck_cup', year, seasonId, dates.start, dates.end);
 
-  // 참가팀 등록
+  // 참�??� ?�록
   for (let i = 0; i < lckTeamIds.length; i++) {
     await addTournamentParticipant(tournamentId, lckTeamIds[i], 'LCK', i + 1, null);
   }
 
-  // 더블 라운드로빈 Bo3 (피어리스)
+  // ?�블 ?�운?�로�?Bo3 (?�어리스)
   const groups = new Map<string, string[]>();
   groups.set('A', lckTeamIds);
 
@@ -422,7 +423,7 @@ export async function generateLCKCup(
     dates.start,
     'lck_cup_regular',
     'Bo3',
-    true, // 피어리스 드래프트
+    true, // ?�어리스 ?�래?�트
   );
 
   await updateTournamentStatus(tournamentId, 'group_stage');
@@ -430,8 +431,8 @@ export async function generateLCKCup(
 }
 
 /**
- * LCK Cup 정규시즌 종료 → 플레이오프 생성
- * 상위 6팀: 3vs6, 4vs5 (Bo3), 1/2시드 준결승 직행 (Bo5), 결승 (Bo5)
+ * LCK Cup ?�규?�즌 종료 ???�레?�오???�성
+ * ?�위 6?�: 3vs6, 4vs5 (Bo3), 1/2?�드 준결승 직행 (Bo5), 결승 (Bo5)
  */
 export async function generateLCKCupPlayoff(
   tournamentId: string,
@@ -440,7 +441,7 @@ export async function generateLCKCupPlayoff(
 ): Promise<void> {
   const db = await getDatabase();
 
-  // 마지막 정규경기 날짜 + 3일
+  // 마�?�??�규경기 ?�짜 + 3??
   const lastMatch = await db.select<{ match_date: string }[]>(
     `SELECT match_date FROM matches WHERE id LIKE $1 AND match_type = 'lck_cup_regular' AND is_played = TRUE ORDER BY match_date DESC LIMIT 1`,
     [`${tournamentId}%`],
@@ -450,7 +451,7 @@ export async function generateLCKCupPlayoff(
 
   const top6 = standings.slice(0, 6);
 
-  // 8강: 3vs6, 4vs5 (Bo3)
+  // 8�? 3vs6, 4vs5 (Bo3)
   await insertMatch({
     id: `${tournamentId}_q1`, seasonId, week: 0,
     teamHomeId: top6[2].teamId, teamAwayId: top6[5].teamId,
@@ -464,7 +465,7 @@ export async function generateLCKCupPlayoff(
     fearlessDraft: true,
   });
 
-  // 준결승: 1vs(4v5승자), 2vs(3v6승자) (Bo5)
+  // 준결승: 1vs(4v5?�자), 2vs(3v6?�자) (Bo5)
   await insertMatch({
     id: `${tournamentId}_sf1`, seasonId, week: 0,
     teamHomeId: top6[1].teamId, teamAwayId: 'TBD',
@@ -489,15 +490,15 @@ export async function generateLCKCupPlayoff(
   await updateTournamentStatus(tournamentId, 'knockout');
 }
 
-// ─────────────────────────────────────────
-// First Stand (FST) 생성
-// ─────────────────────────────────────────
+// ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�
+// First Stand (FST) ?�성
+// ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�
 
 /**
- * First Stand 국제전 생성
- * - 8팀 싱글 엘리미네이션 Bo5
- * - 동일 리전 내전 방지 드로우
- * - 참가: LCK Cup 우승/준우승 + 각 리전 1시드 (LPL, LEC, LCS) + 와일드카드
+ * First Stand �?��???�성
+ * - 8?� ?��? ?�리미네?�션 Bo5
+ * - ?�일 리전 ?�전 방�? ?�로??
+ * - 참�?: LCK Cup ?�승/준?�승 + �?리전 1?�드 (LPL, LEC, LCS) + ?�?�드카드
  */
 export async function generateFST(
   seasonId: number,
@@ -507,17 +508,17 @@ export async function generateFST(
   const dates = getTournamentDates('fst', year);
   const tournamentId = await createTournament('fst', year, seasonId, dates.start, dates.end);
 
-  // 참가팀 등록
+  // 참�??� ?�록
   for (let i = 0; i < participants.length; i++) {
     await addTournamentParticipant(
       tournamentId, participants[i].teamId, participants[i].region, i + 1, null,
     );
   }
 
-  // 동일 리전 내전 방지 드로우
+  // ?�일 리전 ?�전 방�? ?�로??
   const bracket = drawFSTBracket(participants);
 
-  // 8강 4경기 (Bo5)
+  // 8�?4경기 (Bo5)
   for (let i = 0; i < bracket.length; i++) {
     const [home, away] = bracket[i];
     await insertMatch({
@@ -529,7 +530,7 @@ export async function generateFST(
     });
   }
 
-  // 4강 2경기 (Bo5)
+  // 4�?2경기 (Bo5)
   await insertMatch({
     id: `${tournamentId}_sf1`, seasonId, week: 0,
     teamHomeId: 'TBD', teamAwayId: 'TBD',
@@ -551,7 +552,7 @@ export async function generateFST(
     fearlessDraft: true,
   });
 
-  // 참가 선수 부재 등록
+  // 참�? ?�수 부???�록
   const fstTeamIds = participants.map((p) => p.teamId);
   await registerAbsenceForParticipants(tournamentId, fstTeamIds, dates.start, dates.end);
 
@@ -559,53 +560,17 @@ export async function generateFST(
   return tournamentId;
 }
 
-/** 동일 리전 내전 방지 8강 드로우 */
-function drawFSTBracket(
-  participants: { teamId: string; region: Region }[],
-): [string, string][] {
-  const teams = [...participants];
-  const bracket: [string, string][] = [];
+/** ?�일 리전 ?�전 방�? 8�??�로??*/
 
-  // 시드 순으로 배치하되, 같은 리전끼리 1라운드에서 만나지 않도록
-  const used = new Set<number>();
-
-  for (let i = 0; i < teams.length; i++) {
-    if (used.has(i)) continue;
-
-    // i번째 팀의 상대를 찾음 (가능한 한 다른 리전)
-    let opponentIdx = -1;
-    for (let j = teams.length - 1; j > i; j--) {
-      if (used.has(j)) continue;
-      if (teams[j].region !== teams[i].region) {
-        opponentIdx = j;
-        break;
-      }
-    }
-    // 같은 리전밖에 없으면 그냥 매칭
-    if (opponentIdx === -1) {
-      for (let j = teams.length - 1; j > i; j--) {
-        if (!used.has(j)) { opponentIdx = j; break; }
-      }
-    }
-    if (opponentIdx === -1) break;
-
-    bracket.push([teams[i].teamId, teams[opponentIdx].teamId]);
-    used.add(i);
-    used.add(opponentIdx);
-  }
-
-  return bracket;
-}
-
-// ─────────────────────────────────────────
-// MSI 생성
-// ─────────────────────────────────────────
+// ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�
+// MSI ?�성
+// ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�
 
 /**
- * MSI 대회 생성
- * - 4팀 (각 리전 스프링 챔피언)
- * - 그룹: 더블 라운드로빈 Bo1
- * - 세미: 1st vs 4th, 2nd vs 3rd Bo5
+ * MSI ?�???�성
+ * - 4?� (�?리전 ?�프�?챔피??
+ * - 그룹: ?�블 ?�운?�로�?Bo1
+ * - ?��?: 1st vs 4th, 2nd vs 3rd Bo5
  * - 결승: Bo5
  */
 export async function generateMSI(
@@ -625,7 +590,7 @@ export async function generateMSI(
     await addTournamentParticipant(tournamentId, teamId, region, i + 1, null);
   }
 
-  // 그룹 스테이지: 4팀 단일 그룹
+  // 그룹 ?�테?��?: 4?� ?�일 그룹
   const groups = new Map<string, string[]>();
   groups.set('A', teamIds);
 
@@ -633,7 +598,7 @@ export async function generateMSI(
     tournamentId, seasonId, groups, dates.start, 'msi_group', 'Bo1', true,
   );
 
-  // 세미파이널
+  // ?��??�이??
   const semiStartDate = addDays(dates.start, 7);
   await insertMatch({
     id: `${tournamentId}_sf1`, seasonId, week: 0,
@@ -656,22 +621,22 @@ export async function generateMSI(
     fearlessDraft: true,
   });
 
-  // 참가 선수 부재 등록
+  // 참�? ?�수 부???�록
   await registerAbsenceForParticipants(tournamentId, teamIds, dates.start, dates.end);
 
   await updateTournamentStatus(tournamentId, 'group_stage');
   return tournamentId;
 }
 
-// ─────────────────────────────────────────
-// EWC (Esports World Cup) 생성
-// ─────────────────────────────────────────
+// ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�
+// EWC (Esports World Cup) ?�성
+// ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�
 
 /**
- * EWC 생성
- * - 8팀 싱글 엘리미네이션
- * - 8강: Bo3, 4강/결승: Bo5
- * - 참가팀은 서머 1주차 컨디션 피로 패널티 적용
+ * EWC ?�성
+ * - 8?� ?��? ?�리미네?�션
+ * - 8�? Bo3, 4�?결승: Bo5
+ * - 참�??�?� ?�머 1주차 컨디???�로 ?�널???�용
  */
 export async function generateEWC(
   seasonId: number,
@@ -681,7 +646,7 @@ export async function generateEWC(
   const dates = getTournamentDates('ewc', year);
   const tournamentId = await createTournament('ewc', year, seasonId, dates.start, dates.end);
 
-  // 각 리전 상위 2팀 (총 8팀)
+  // �?리전 ?�위 2?� (�?8?�)
   const participants: { teamId: string; region: Region }[] = [];
   const regions: Region[] = ['LCK', 'LPL', 'LEC', 'LCS'];
   for (const region of regions) {
@@ -697,21 +662,22 @@ export async function generateEWC(
     );
   }
 
-  // 8강 4경기 (Bo3) — 시드 기반 매칭 (1vs8, 2vs7, 3vs6, 4vs5)
+  // 8�?4경기 (Bo3) ???�드 기반 매칭 (1vs8, 2vs7, 3vs6, 4vs5)
   const teamIds = participants.map(p => p.teamId);
-  const qfPairs: [number, number][] = [[0, 7], [1, 6], [2, 5], [3, 4]];
+  const qfPairs = buildSeededQuarterfinalPairs(teamIds);
 
   for (let i = 0; i < qfPairs.length; i++) {
-    const [h, a] = qfPairs[i];
+    const pair = qfPairs[i];
     await insertMatch({
       id: `${tournamentId}_qf${i + 1}`, seasonId, week: 0,
-      teamHomeId: teamIds[h] ?? 'TBD', teamAwayId: teamIds[a] ?? 'TBD',
+      teamHomeId: pair[0],
+      teamAwayId: pair[1],
       matchDate: addDays(dates.start, i),
       matchType: 'ewc_quarter', boFormat: 'Bo3',
     });
   }
 
-  // 4강 (Bo5)
+  // 4�?(Bo5)
   await insertMatch({
     id: `${tournamentId}_sf1`, seasonId, week: 0,
     teamHomeId: 'TBD', teamAwayId: 'TBD',
@@ -730,7 +696,7 @@ export async function generateEWC(
     matchDate: addDays(dates.start, 10), matchType: 'ewc_final', boFormat: 'Bo5',
   });
 
-  // 참가 선수 부재 등록
+  // 참�? ?�수 부???�록
   const ewcTeamIds = participants.map((p) => p.teamId);
   await registerAbsenceForParticipants(tournamentId, ewcTeamIds, dates.start, dates.end);
 
@@ -738,14 +704,14 @@ export async function generateEWC(
   return tournamentId;
 }
 
-// ─────────────────────────────────────────
-// Worlds 생성 (스위스 스테이지)
-// ─────────────────────────────────────────
+// ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�
+// Worlds ?�성 (?�위???�테?��?)
+// ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�
 
 /**
- * Worlds 대회 생성
- * - 14팀 (LCK 4 + LPL 4 + LEC 3 + LCS 3) 스위스 스테이지
- * - 3승 8팀 녹아웃: 8강/4강/결승 모두 Bo5
+ * Worlds ?�???�성
+ * - 14?� (LCK 4 + LPL 4 + LEC 3 + LCS 3) ?�위???�테?��?
+ * - 3??8?� ?�아?? 8�?4�?결승 모두 Bo5
  */
 export async function generateWorlds(
   seasonId: number,
@@ -755,7 +721,7 @@ export async function generateWorlds(
   const dates = getTournamentDates('worlds', year);
   const tournamentId = await createTournament('worlds', year, seasonId, dates.start, dates.end);
 
-  // 참가팀 등록
+  // 참�??� ?�록
   const regions: Region[] = ['LCK', 'LPL', 'LEC', 'LCS'];
   const allParticipants: TournamentParticipant[] = [];
 
@@ -774,14 +740,14 @@ export async function generateWorlds(
     }
   }
 
-  // 스위스 레코드 초기화
+  // ?�위???�코??초기??
   await initSwissRecords(tournamentId, allParticipants);
 
-  // 1라운드 매칭 생성
+  // 1?�운??매칭 ?�성
   await generateSwissRound(tournamentId, seasonId, 1, dates.start);
 
-  // 녹아웃 TBD 매치 미리 생성
-  const knockoutStart = addDays(dates.start, 25); // 스위스 완료 후
+  // ?�아??TBD 매치 미리 ?�성
+  const knockoutStart = addDays(dates.start, 25); // ?�위???�료 ??
   for (let i = 1; i <= 4; i++) {
     await insertMatch({
       id: `${tournamentId}_qf${i}`, seasonId, week: 0,
@@ -806,7 +772,7 @@ export async function generateWorlds(
     matchDate: addDays(knockoutStart, 14), matchType: 'worlds_final', boFormat: 'Bo5',
   });
 
-  // 참가 선수 부재 등록
+  // 참�? ?�수 부???�록
   const worldsTeamIds = allParticipants.map((p) => p.teamId);
   await registerAbsenceForParticipants(tournamentId, worldsTeamIds, dates.start, dates.end);
 
@@ -815,10 +781,10 @@ export async function generateWorlds(
 }
 
 /**
- * 스위스 스테이지 라운드별 매칭 생성
- * - 같은 전적(W-L)끼리 매칭
- * - 같은 리전 회피 (가능한 한)
- * - 라운드 1~2: Bo1, 라운드 3~4(진출/탈락전): Bo3
+ * ?�위???�테?��? ?�운?�별 매칭 ?�성
+ * - 같�? ?�적(W-L)?�리 매칭
+ * - 같�? 리전 ?�피 (가?�한 ??
+ * - ?�운??1~2: Bo1, ?�운??3~4(진출/?�락??: Bo3
  */
 export async function generateSwissRound(
   tournamentId: string,
@@ -829,7 +795,7 @@ export async function generateSwissRound(
   const records = await getSwissRecords(tournamentId);
   const active = records.filter(r => r.status === 'active');
 
-  // 전적별 그룹핑
+  // ?�적�?그룹??
   const groups = new Map<string, typeof active>();
   for (const r of active) {
     const key = `${r.wins}-${r.losses}`;
@@ -838,18 +804,18 @@ export async function generateSwissRound(
     groups.set(key, arr);
   }
 
-  // 매칭 생성
+  // 매칭 ?�성
   const pairs: [string, string][] = [];
   const matched = new Set<string>();
 
-  // 전적 내림차순 처리 (높은 전적부터)
+  // ?�적 ?�림차순 처리 (?��? ?�적부??
   const sortedKeys = [...groups.keys()].sort((a, b) => {
     const [aw] = a.split('-').map(Number);
     const [bw] = b.split('-').map(Number);
     return bw - aw;
   });
 
-  const overflow: typeof active = []; // 매칭 안 된 팀
+  const overflow: typeof active = []; // 매칭 ?????�
 
   for (const key of sortedKeys) {
     const pool = [...(groups.get(key) ?? []), ...overflow.splice(0)];
@@ -859,7 +825,7 @@ export async function generateSwissRound(
       if (matched.has(pool[i].teamId)) continue;
 
       let found = false;
-      // 같은 리전이 아닌 상대 우선
+      // 같�? 리전???�닌 ?��? ?�선
       for (let j = i + 1; j < pool.length; j++) {
         if (matched.has(pool[j].teamId)) continue;
         if (pool[j].region !== pool[i].region) {
@@ -871,7 +837,7 @@ export async function generateSwissRound(
         }
       }
       if (!found) {
-        // 같은 리전이어도 매칭
+        // 같�? 리전?�어??매칭
         for (let j = i + 1; j < pool.length; j++) {
           if (matched.has(pool[j].teamId)) continue;
           pairs.push([pool[i].teamId, pool[j].teamId]);
@@ -887,15 +853,15 @@ export async function generateSwissRound(
     overflow.push(...unmatched);
   }
 
-  // 남은 팀 매칭 (홀수인 경우 — 14팀이면 7쌍으로 딱 맞음)
+  // ?��? ?� 매칭 (?�?�인 경우 ??14?�?�면 7?�으�???맞음)
   for (let i = 0; i < overflow.length - 1; i += 2) {
     pairs.push([overflow[i].teamId, overflow[i + 1].teamId]);
   }
 
-  // 포맷 결정: 라운드 1~2는 Bo1, 라운드 3~4(진출전/탈락전)는 Bo3
+  // ?�맷 결정: ?�운??1~2??Bo1, ?�운??3~4(진출???�락????Bo3
   const boFormat: 'Bo1' | 'Bo3' = round <= 2 ? 'Bo1' : 'Bo3';
 
-  // 매치 생성
+  // 매치 ?�성
   const roundStartDate = addDays(startDate, (round - 1) * 4);
   for (let i = 0; i < pairs.length; i++) {
     const [home, away] = pairs[i];
@@ -913,10 +879,10 @@ export async function generateSwissRound(
 }
 
 /**
- * 스위스 라운드 결과 처리
- * - 3승 → advanced, 3패 → eliminated
- * - 모든 active 팀이 3승 또는 3패이면 스위스 종료
- * - 아직 active 팀 남으면 다음 라운드 생성
+ * ?�위???�운??결과 처리
+ * - 3????advanced, 3????eliminated
+ * - 모든 active ?�??3???�는 3?�이�??�위??종료
+ * - ?�직 active ?� ?�으�??�음 ?�운???�성
  */
 export async function advanceSwissStage(
   tournamentId: string,
@@ -924,7 +890,7 @@ export async function advanceSwissStage(
 ): Promise<{ isSwissComplete: boolean; advancedTeams?: string[] }> {
   const records = await getSwissRecords(tournamentId);
 
-  // 3승 도달 팀 → advanced
+  // 3???�달 ?� ??advanced
   for (const r of records) {
     if (r.status === 'active' && r.wins >= 3) {
       await updateSwissStatus(tournamentId, r.teamId, 'advanced');
@@ -934,18 +900,18 @@ export async function advanceSwissStage(
     }
   }
 
-  // 갱신된 레코드
+  // 갱신???�코??
   const updatedRecords = await getSwissRecords(tournamentId);
   const activeCount = updatedRecords.filter(r => r.status === 'active').length;
   const advancedTeams = updatedRecords.filter(r => r.status === 'advanced').map(r => r.teamId);
 
   if (activeCount === 0) {
-    // 모든 active 팀이 결정됨 → 스위스 완료, 녹아웃 팀 배정
+    // 모든 active ?�??결정?????�위???�료, ?�아???� 배정
     await assignWorldsKnockout(tournamentId, advancedTeams.slice(0, 8));
     return { isSwissComplete: true, advancedTeams: advancedTeams.slice(0, 8) };
   }
 
-  // 8팀 이상 진출했더라도 아직 active 팀이 남아있으면 다음 라운드 계속 진행
+  // 8?� ?�상 진출?�더?�도 ?�직 active ?�???�아?�으�??�음 ?�운??계속 진행
   const currentRound = Math.max(...updatedRecords.map(r => r.round)) + 1;
   const tournament = await getTournament(tournamentId);
   if (tournament) {
@@ -956,8 +922,8 @@ export async function advanceSwissStage(
 }
 
 /**
- * Worlds 녹아웃 팀 배정
- * 스위스 진출 순서대로 시드 배정 (1vs8, 2vs7, 3vs6, 4vs5)
+ * Worlds ?�아???� 배정
+ * ?�위??진출 ?�서?��??�드 배정 (1vs8, 2vs7, 3vs6, 4vs5)
  */
 async function assignWorldsKnockout(
   tournamentId: string,
@@ -965,7 +931,7 @@ async function assignWorldsKnockout(
 ): Promise<void> {
   const db = await getDatabase();
 
-  // 시드 기반 8강 매칭
+  // ?�드 기반 8�?매칭
   const qfPairs: [number, number][] = [[0, 7], [1, 6], [2, 5], [3, 4]];
 
   for (let i = 0; i < qfPairs.length; i++) {
@@ -981,13 +947,13 @@ async function assignWorldsKnockout(
   await updateTournamentStatus(tournamentId, 'knockout');
 }
 
-// ─────────────────────────────────────────
-// Worlds 출전 팀 결정
-// ─────────────────────────────────────────
+// ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�
+// Worlds 출전 ?� 결정
+// ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�
 
 /**
- * 각 리전별 Worlds 출전 팀 결정
- * LEAGUE_CONSTANTS.worldsSlots 기준으로 리그 순위 상위 팀 선발
+ * �?리전�?Worlds 출전 ?� 결정
+ * LEAGUE_CONSTANTS.worldsSlots 기�??�로 리그 ?�위 ?�위 ?� ?�발
  */
 export async function getWorldsQualifiedTeams(
   year: number,
@@ -1040,11 +1006,11 @@ export async function getWorldsQualifiedTeams(
   return result;
 }
 
-// ─────────────────────────────────────────
-// 녹아웃 스테이지 팀 배정 (MSI)
-// ─────────────────────────────────────────
+// ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�
+// ?�아???�테?��? ?� 배정 (MSI)
+// ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�
 
-/** MSI 그룹 결과에 따라 세미파이널 팀 배정 */
+/** MSI 그룹 결과???�라 ?��??�이???� 배정 */
 export async function assignMSISemiFinals(tournamentId: string): Promise<void> {
   const standings = await getTournamentStandings(tournamentId);
   if (standings.length < 4) return;
@@ -1090,15 +1056,15 @@ export async function assignMSISemiFinals(tournamentId: string): Promise<void> {
   await updateTournamentStatus(tournamentId, 'knockout');
 }
 
-// ─────────────────────────────────────────
-// 토너먼트 경기 결과 처리 (통합)
-// ─────────────────────────────────────────
+// ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�
+// ?�너먼트 경기 결과 처리 (?�합)
+// ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�
 
 /**
- * 토너먼트 경기 결과 처리
- * - 대회별 분기: MSI, Worlds, LCK Cup, FST, EWC
- * - 그룹/스위스 완료 감지 → 녹아웃 팀 배정
- * - 녹아웃 라운드 승자 → 다음 라운드 팀 업데이트
+ * ?�너먼트 경기 결과 처리
+ * - ?�?�별 분기: MSI, Worlds, LCK Cup, FST, EWC
+ * - 그룹/?�위???�료 감�? ???�아???� 배정
+ * - ?�아???�운???�자 ???�음 ?�운???� ?�데?�트
  */
 export async function processTournamentMatchResult(
   seasonId: number,
@@ -1113,7 +1079,7 @@ export async function processTournamentMatchResult(
 
   if (!isMSI && !isWorlds && !isLCKCup && !isFST && !isEWC) return;
 
-  // 토너먼트 ID 추출
+  // ?�너먼트 ID 추출
   const tournamentId = matchId.match(/^([a-z_]+_\d+)/)?.[1] ?? '';
   if (!tournamentId) return;
 
@@ -1158,7 +1124,7 @@ async function processWorldsResult(
   seasonId: number, db: Awaited<ReturnType<typeof getDatabase>>,
 ): Promise<void> {
   if (matchId.includes('_swiss_')) {
-    // 스위스 매치 결과 → 레코드 업데이트
+    // ?�위??매치 결과 ???�코???�데?�트
     const match = await getMatchById(matchId);
     if (!match) return;
 
@@ -1169,7 +1135,7 @@ async function processWorldsResult(
     await updateSwissRecord(tournamentId, winnerTeamId, true, round);
     await updateSwissRecord(tournamentId, loserTeamId, false, round);
 
-    // 라운드 내 모든 경기 완료 확인
+    // ?�운????모든 경기 ?�료 ?�인
     const unplayed = await db.select<{ cnt: number }[]>(
       `SELECT COUNT(*) as cnt FROM matches
        WHERE id LIKE $1 AND match_type = 'worlds_swiss' AND is_played = FALSE`,
@@ -1192,7 +1158,7 @@ async function processWorldsResult(
 async function processLCKCupResult(
   tournamentId: string, matchId: string, db: Awaited<ReturnType<typeof getDatabase>>,
 ): Promise<void> {
-  // 정규시즌 매치 완료 → 플레이오프 자동 생성
+  // ?�규?�즌 매치 ?�료 ???�레?�오???�동 ?�성
   if (matchId.includes('_A_')) {
     const tournament = await getTournament(tournamentId);
     if (!tournament) return;
@@ -1212,7 +1178,7 @@ async function processLCKCupResult(
   }
 
   if (matchId.includes('_q')) {
-    // 8강 결과 → 준결승 팀 배정
+    // 8�?결과 ??준결승 ?� 배정
     const q1 = await getMatchById(`${tournamentId}_q1`);
     const q2 = await getMatchById(`${tournamentId}_q2`);
 
@@ -1237,19 +1203,19 @@ async function processLCKCupResult(
   }
 }
 
-/** 싱글 엘리미네이션 결과 처리 (FST / EWC 공통) */
+/** ?��? ?�리미네?�션 결과 처리 (FST / EWC 공통) */
 async function processSingleElimResult(
   tournamentId: string, matchId: string, _prefix: string,
   db: Awaited<ReturnType<typeof getDatabase>>,
 ): Promise<void> {
   if (matchId.includes('_qf')) {
-    // 8강 → 4강 승자 배정
+    // 8�???4�??�자 배정
     const qf1 = await getMatchById(`${tournamentId}_qf1`);
     const qf2 = await getMatchById(`${tournamentId}_qf2`);
     const qf3 = await getMatchById(`${tournamentId}_qf3`);
     const qf4 = await getMatchById(`${tournamentId}_qf4`);
 
-    // SF1: QF1 승자 vs QF2 승자
+    // SF1: QF1 ?�자 vs QF2 ?�자
     if (qf1?.isPlayed && qf2?.isPlayed) {
       const w1 = qf1.scoreHome > qf1.scoreAway ? qf1.teamHomeId : qf1.teamAwayId;
       const w2 = qf2.scoreHome > qf2.scoreAway ? qf2.teamHomeId : qf2.teamAwayId;
@@ -1259,7 +1225,7 @@ async function processSingleElimResult(
       );
     }
 
-    // SF2: QF3 승자 vs QF4 승자
+    // SF2: QF3 ?�자 vs QF4 ?�자
     if (qf3?.isPlayed && qf4?.isPlayed) {
       const w3 = qf3.scoreHome > qf3.scoreAway ? qf3.teamHomeId : qf3.teamAwayId;
       const w4 = qf4.scoreHome > qf4.scoreAway ? qf4.teamHomeId : qf4.teamAwayId;
@@ -1275,7 +1241,7 @@ async function processSingleElimResult(
   }
 }
 
-/** 녹아웃 4강 → 결승 공통 로직 */
+/** ?�아??4�???결승 공통 로직 */
 async function processKnockoutAdvance(
   tournamentId: string, round: string, nextRound: string,
   db: Awaited<ReturnType<typeof getDatabase>>,
@@ -1306,7 +1272,7 @@ async function processKnockoutAdvance(
   }
 }
 
-/** Worlds 8강 → 4강 (4경기 → 2경기) */
+/** Worlds 8�???4�?(4경기 ??2경기) */
 async function processKnockout4to2(
   tournamentId: string,
   db: Awaited<ReturnType<typeof getDatabase>>,
@@ -1316,7 +1282,7 @@ async function processKnockout4to2(
   const qf3 = await getMatchById(`${tournamentId}_qf3`);
   const qf4 = await getMatchById(`${tournamentId}_qf4`);
 
-  // SF1: QF1 승자 vs QF2 승자
+  // SF1: QF1 ?�자 vs QF2 ?�자
   if (qf1?.isPlayed && qf2?.isPlayed) {
     const w1 = qf1.scoreHome > qf1.scoreAway ? qf1.teamHomeId : qf1.teamAwayId;
     const w2 = qf2.scoreHome > qf2.scoreAway ? qf2.teamHomeId : qf2.teamAwayId;
@@ -1326,7 +1292,7 @@ async function processKnockout4to2(
     );
   }
 
-  // SF2: QF3 승자 vs QF4 승자
+  // SF2: QF3 ?�자 vs QF4 ?�자
   if (qf3?.isPlayed && qf4?.isPlayed) {
     const w3 = qf3.scoreHome > qf3.scoreAway ? qf3.teamHomeId : qf3.teamAwayId;
     const w4 = qf4.scoreHome > qf4.scoreAway ? qf4.teamHomeId : qf4.teamAwayId;

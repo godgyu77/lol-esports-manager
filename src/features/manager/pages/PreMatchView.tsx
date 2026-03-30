@@ -126,6 +126,53 @@ export function PreMatchView() {
     .filter((p) => p.division === 'main')
     .sort((a, b) => POSITION_ORDER.indexOf(a.position as typeof POSITION_ORDER[number]) - POSITION_ORDER.indexOf(b.position as typeof POSITION_ORDER[number]));
 
+  const userAverageOvr = userStarters.length > 0
+    ? Math.round(userStarters.reduce((sum, player) => sum + calculateOVR(player), 0) / userStarters.length)
+    : 0;
+  const opponentAverageOvr = oppStarters.length > 0
+    ? Math.round(oppStarters.reduce((sum, player) => sum + calculateOVR(player), 0) / oppStarters.length)
+    : 0;
+  const pressureTag = opponentStanding && opponentStanding.rank <= 3
+    ? 'High-pressure match'
+    : 'Manageable matchup';
+  const focusCards = [
+    {
+      title: 'Training focus',
+      value: userAverageOvr >= opponentAverageOvr ? 'Sharpen execution' : 'Catch up mechanically',
+      detail: 'Use training to tighten weak lanes before draft.',
+      route: '/manager/training',
+      cta: 'Open training',
+    },
+    {
+      title: 'Tactics plan',
+      value: recommendedBans.length > 0 ? 'Draft plan ready' : 'Needs review',
+      detail: 'Review bans and lane priorities before you lock in.',
+      route: '/manager/tactics',
+      cta: 'Open tactics',
+    },
+    {
+      title: 'Roster readiness',
+      value: `${userAverageOvr} OVR vs ${opponentAverageOvr} OVR`,
+      detail: 'Starter strength is the quickest read on today’s matchup.',
+      route: '/manager/roster',
+      cta: 'Open roster',
+    },
+    {
+      title: 'Budget pressure',
+      value: userTeam ? `${Math.round(userTeam.budget / 1000000)}M budget` : 'Budget unavailable',
+      detail: 'Protect long-term spending if this match is not must-win.',
+      route: '/manager/finance',
+      cta: 'Open finance',
+    },
+    {
+      title: 'Player care',
+      value: pressureTag,
+      detail: 'If confidence is shaky, check complaints and promises before the series.',
+      route: '/manager/complaints',
+      cta: 'Open player care',
+    },
+  ];
+
   return (
     <div className="fm-animate-in" style={{ maxWidth: '800px', margin: '0 auto' }}>
       <div className="fm-page-header">
@@ -155,6 +202,28 @@ export function PreMatchView() {
                 </span>
               )}
             </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="fm-panel fm-mb-md">
+        <div className="fm-panel__header">
+          <span className="fm-panel__title">Matchday decision levers</span>
+        </div>
+        <div className="fm-panel__body">
+          <div className="fm-grid fm-grid--2" style={{ gap: '12px' }}>
+            {focusCards.map((card) => (
+              <div key={card.title} className="fm-card fm-flex-col fm-gap-sm">
+                <div className="fm-flex fm-items-center fm-justify-between fm-gap-sm">
+                  <span className="fm-text-sm fm-text-muted fm-text-upper">{card.title}</span>
+                  <span className="fm-badge fm-badge--default">{card.value}</span>
+                </div>
+                <p className="fm-text-sm fm-text-secondary" style={{ margin: 0 }}>{card.detail}</p>
+                <button className="fm-btn fm-btn--sm" onClick={() => navigate(card.route)}>
+                  {card.cta}
+                </button>
+              </div>
+            ))}
           </div>
         </div>
       </div>

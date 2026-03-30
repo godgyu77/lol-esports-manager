@@ -1,8 +1,3 @@
-/**
- * 커맨드 팔레트 (Ctrl+K)
- * - VS Code/Notion 스타일 검색 + 네비게이션
- */
-
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 
@@ -14,40 +9,40 @@ interface CommandItem {
 }
 
 const COMMAND_ITEMS: CommandItem[] = [
-  { to: '/manager', label: '대시보드', group: 'Home', icon: 'H' },
-  { to: '/manager/inbox', label: '편지함', group: 'Home', icon: '\u2709' },
-  { to: '/manager/news', label: '뉴스', group: 'Home', icon: 'N' },
-  { to: '/manager/roster', label: '로스터', group: 'Squad', icon: 'R' },
-  { to: '/manager/tactics', label: '전술', group: 'Squad', icon: 'T' },
-  { to: '/manager/training', label: '훈련', group: 'Squad', icon: 'TR' },
-  { to: '/manager/complaints', label: '선수 관리', group: 'Squad', icon: 'PM' },
-  { to: '/manager/promises', label: '약속 관리', group: 'Squad', icon: 'PR' },
-  { to: '/manager/schedule', label: '일정', group: 'Matches', icon: 'S' },
-  { to: '/manager/calendar', label: '캘린더', group: 'Matches', icon: 'C' },
-  { to: '/manager/standings', label: '순위표', group: 'Matches', icon: '#' },
-  { to: '/manager/tournament', label: '국제대회', group: 'Matches', icon: 'W' },
-  { to: '/manager/draft', label: '밴픽', group: 'Matches', icon: 'D' },
-  { to: '/manager/match', label: '경기', group: 'Matches', icon: 'M' },
-  { to: '/manager/scouting', label: '스카우팅', group: 'Scouting', icon: 'SC' },
-  { to: '/manager/academy', label: '아카데미', group: 'Scouting', icon: 'AC' },
-  { to: '/manager/compare', label: '선수 비교', group: 'Scouting', icon: 'CP' },
-  { to: '/manager/transfer', label: '이적 시장', group: 'Finance', icon: 'TF' },
-  { to: '/manager/contract', label: '계약', group: 'Finance', icon: 'CT' },
-  { to: '/manager/finance', label: '재정', group: 'Finance', icon: '\u20A9' },
-  { to: '/manager/staff', label: '스태프', group: 'Club', icon: 'ST' },
-  { to: '/manager/facility', label: '시설', group: 'Club', icon: 'FC' },
-  { to: '/manager/board', label: '구단', group: 'Club', icon: 'BD' },
-  { to: '/manager/social', label: '커뮤니티', group: 'Club', icon: 'CM' },
-  { to: '/manager/stats', label: '통계', group: 'Info', icon: 'G' },
-  { to: '/manager/records', label: '기록실', group: 'Info', icon: 'RC' },
-  { to: '/manager/awards', label: '어워드', group: 'Info', icon: 'AW' },
-  { to: '/manager/analysis', label: '상대 분석', group: 'Info', icon: 'AN' },
-  { to: '/manager/patch-meta', label: '패치 메타', group: 'Info', icon: 'MT' },
-  { to: '/manager/career', label: '커리어', group: 'Info', icon: 'CR' },
-  { to: '/manager/achievements', label: '업적', group: 'Info', icon: 'AC' },
-  { to: '/manager/team-history', label: '팀 히스토리', group: 'Info', icon: 'TH' },
-  { to: '/settings', label: '설정', group: 'System', icon: '\u2699' },
-  { to: '/save-load', label: '저장/불러오기', group: 'System', icon: '\uD83D\uDCBE' },
+  { to: '/manager', label: '대시보드', group: '편지함', icon: 'H' },
+  { to: '/manager/inbox', label: '편지함', group: '편지함', icon: '\u2709' },
+  { to: '/manager/news', label: '뉴스', group: '편지함', icon: 'N' },
+  { to: '/manager/roster', label: '로스터', group: '선수단', icon: 'R' },
+  { to: '/manager/tactics', label: '전술', group: '선수단', icon: 'T' },
+  { to: '/manager/training', label: '훈련', group: '선수단', icon: 'TR' },
+  { to: '/manager/complaints', label: '선수 케어', group: '선수단', icon: 'PC' },
+  { to: '/manager/promises', label: '약속 관리', group: '선수단', icon: 'PR' },
+  { to: '/manager/schedule', label: '일정', group: '경기 준비', icon: 'S' },
+  { to: '/manager/calendar', label: '캘린더', group: '경기 준비', icon: 'C' },
+  { to: '/manager/standings', label: '순위표', group: '경기 준비', icon: '#' },
+  { to: '/manager/tournament', label: '국제대회', group: '경기 준비', icon: 'INT' },
+  { to: '/manager/draft', label: '드래프트', group: '경기 준비', icon: 'D' },
+  { to: '/manager/match', label: '경기', group: '경기 준비', icon: 'M' },
+  { to: '/manager/transfer', label: '이적 시장', group: '재정', icon: 'TF' },
+  { to: '/manager/contract', label: '계약', group: '재정', icon: 'CT' },
+  { to: '/manager/finance', label: '재정', group: '재정', icon: '\u20A9' },
+  { to: '/manager/staff', label: '스태프', group: '구단', icon: 'ST' },
+  { to: '/manager/facility', label: '시설', group: '구단', icon: 'FC' },
+  { to: '/manager/board', label: '이사회와 목표', group: '구단', icon: 'BD' },
+  { to: '/manager/social', label: '커뮤니티', group: '구단', icon: 'CM' },
+  { to: '/manager/scouting', label: '스카우팅', group: '더 보기', icon: 'SC' },
+  { to: '/manager/academy', label: '아카데미', group: '더 보기', icon: 'AC' },
+  { to: '/manager/compare', label: '비교', group: '더 보기', icon: 'CP' },
+  { to: '/manager/stats', label: '통계', group: '더 보기', icon: 'G' },
+  { to: '/manager/records', label: '기록실', group: '더 보기', icon: 'RC' },
+  { to: '/manager/awards', label: '어워드', group: '더 보기', icon: 'AW' },
+  { to: '/manager/analysis', label: '상대 분석', group: '더 보기', icon: 'AN' },
+  { to: '/manager/patch-meta', label: '패치 메타', group: '더 보기', icon: 'MT' },
+  { to: '/manager/career', label: '커리어', group: '더 보기', icon: 'CR' },
+  { to: '/manager/achievements', label: '업적', group: '더 보기', icon: 'ACH' },
+  { to: '/manager/team-history', label: '팀 히스토리', group: '더 보기', icon: 'TH' },
+  { to: '/settings', label: '설정', group: '시스템', icon: '\u2699' },
+  { to: '/save-load', label: '저장 / 불러오기', group: '시스템', icon: '\uD83D\uDCBE' },
 ];
 
 interface CommandPaletteProps {
@@ -64,13 +59,12 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
   const filtered = query.trim()
     ? COMMAND_ITEMS.filter((item) =>
         item.label.toLowerCase().includes(query.toLowerCase()) ||
-        item.group.toLowerCase().includes(query.toLowerCase())
-      )
+        item.group.toLowerCase().includes(query.toLowerCase()))
     : COMMAND_ITEMS;
 
   useEffect(() => {
     if (isOpen) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- 열릴 때 초기화
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- palette open resets transient UI state
       setQuery('');
       setSelectedIndex(0);
       setTimeout(() => inputRef.current?.focus(), 50);
@@ -78,7 +72,7 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
   }, [isOpen]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- query change should reset active row
     setSelectedIndex(0);
   }, [query]);
 
@@ -87,16 +81,16 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
     onClose();
   }, [navigate, onClose]);
 
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setSelectedIndex((i) => Math.min(i + 1, filtered.length - 1));
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setSelectedIndex((i) => Math.max(i - 1, 0));
-    } else if (e.key === 'Enter' && filtered[selectedIndex]) {
+  const handleKeyDown = useCallback((event: React.KeyboardEvent) => {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setSelectedIndex((index) => Math.min(index + 1, filtered.length - 1));
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setSelectedIndex((index) => Math.max(index - 1, 0));
+    } else if (event.key === 'Enter' && filtered[selectedIndex]) {
       handleSelect(filtered[selectedIndex]);
-    } else if (e.key === 'Escape') {
+    } else if (event.key === 'Escape') {
       onClose();
     }
   }, [filtered, selectedIndex, handleSelect, onClose]);
@@ -105,7 +99,7 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
 
   return (
     <div className="cmd-overlay" onClick={onClose}>
-      <div className="cmd-palette" onClick={(e) => e.stopPropagation()}>
+      <div className="cmd-palette" onClick={(event) => event.stopPropagation()}>
         <div className="cmd-input-wrap">
           <span className="cmd-input-icon">{'\u{1F50D}'}</span>
           <input
@@ -114,20 +108,20 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
             type="text"
             placeholder="메뉴 검색... (Ctrl+K)"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(event) => setQuery(event.target.value)}
             onKeyDown={handleKeyDown}
           />
         </div>
         <div className="cmd-list">
           {filtered.length === 0 ? (
-            <div className="cmd-empty">검색 결과가 없습니다</div>
+            <div className="cmd-empty">검색 결과가 없습니다.</div>
           ) : (
-            filtered.map((item, i) => (
+            filtered.map((item, index) => (
               <div
                 key={item.to}
-                className={`cmd-item ${i === selectedIndex ? 'cmd-item--active' : ''}`}
+                className={`cmd-item ${index === selectedIndex ? 'cmd-item--active' : ''}`}
                 onClick={() => handleSelect(item)}
-                onMouseEnter={() => setSelectedIndex(i)}
+                onMouseEnter={() => setSelectedIndex(index)}
               >
                 <span className="cmd-item-icon">{item.icon}</span>
                 <span className="cmd-item-label">{item.label}</span>
@@ -137,9 +131,9 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
           )}
         </div>
         <div className="cmd-footer">
-          <span>\u2191\u2193 \uc774\ub3d9</span>
-          <span>\u23CE \uc120\ud0dd</span>
-          <span>Esc \ub2eb\uae30</span>
+          <span>↑↓ 이동</span>
+          <span>↵ 선택</span>
+          <span>Esc 닫기</span>
         </div>
       </div>
     </div>

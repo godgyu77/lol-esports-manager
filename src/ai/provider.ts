@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
-import { useSettingsStore, type AiProvider } from '../stores/settingsStore';
 import { type ZodSchema } from 'zod';
+import { useSettingsStore, type AiProvider } from '../stores/settingsStore';
 
 interface LlmMessage {
   role: 'system' | 'user' | 'assistant';
@@ -13,14 +13,40 @@ interface AiProviderOptions {
   systemPrompt?: string;
 }
 
+interface OllamaStatusDetail {
+  status: 'not_started' | 'starting' | 'ready' | 'failed';
+  ready: boolean;
+  message: string;
+}
+
 const DEFAULT_FALLBACK_MODEL = 'qwen3:0.6b';
+const DEFAULT_OPENAI_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
+const DEFAULT_CLAUDE_ENDPOINT = 'https://api.anthropic.com/v1/messages';
+const DEFAULT_GROK_ENDPOINT = 'https://api.x.ai/v1/chat/completions';
 
 const getModel = (): string =>
   useSettingsStore.getState().aiModel || DEFAULT_FALLBACK_MODEL;
 
-// ─────────────────────────────────────────
-// Ollama (로컬 LLM) — Rust invoke
-// ─────────────────────────────────────────
+const providerWarnings = new Set<string>();
+
+function warnOnce(key: string, message: string, error?: unknown): void {
+  if (providerWarnings.has(key)) return;
+  providerWarnings.add(key);
+  if (error) {
+    console.warn(message, error);
+  } else {
+    console.warn(message);
+  }
+}
+
+async function getOllamaStatusDetail(
+  waitForReady = false,
+): Promise<OllamaStatusDetail> {
+  if (waitForReady) {
+    return invoke<OllamaStatusDetail>('ensure_ollama_ready');
+  }
+  return invoke<OllamaStatusDetail>('get_ollama_status_detail');
+}
 
 async function chatWithOllama(
   userMessage: string,
@@ -41,19 +67,15 @@ async function chatWithOllama(
   });
 }
 
-// ─────────────────────────────────────────
-// OpenAI API — Rust invoke (API 키 비노출)
-// ─────────────────────────────────────────
-
 async function chatWithOpenAI(
   userMessage: string,
   options: AiProviderOptions,
 ): Promise<string> {
   const settings = useSettingsStore.getState();
   const apiKey = await settings.getApiKey();
-  if (!apiKey) throw new Error('OpenAI API key not set');
+  if (!apiKey) throw new Error('OpenAI 설정이 완료되지 않았습니다. API 키를 확인해 주세요.');
 
-  const endpoint = settings.apiEndpoint || 'https://api.openai.com/v1/chat/completions';
+  const endpoint = settings.apiEndpoint || DEFAULT_OPENAI_ENDPOINT;
   const model = settings.apiModel || 'gpt-4o-mini';
 
   const messages: LlmMessage[] = [];
@@ -71,23 +93,17 @@ async function chatWithOpenAI(
   });
 }
 
-// ─────────────────────────────────────────
-// Claude (Anthropic) API — Rust invoke (API 키 비노출)
-// ─────────────────────────────────────────
-
 async function chatWithClaude(
   userMessage: string,
   options: AiProviderOptions,
 ): Promise<string> {
   const settings = useSettingsStore.getState();
   const apiKey = await settings.getApiKey();
-  if (!apiKey) throw new Error('Claude API key not set');
+  if (!apiKey) throw new Error('Claude 설정이 완료되지 않았습니다. API 키를 확인해 주세요.');
 
-  const endpoint = settings.apiEndpoint || 'https://api.anthropic.com/v1/messages';
+  const endpoint = settings.apiEndpoint || DEFAULT_CLAUDE_ENDPOINT;
   const model = settings.apiModel || 'claude-haiku-4-5-20251001';
-
-  const messages: LlmMessage[] = [];
-  messages.push({ role: 'user', content: userMessage });
+  const messages: LlmMessage[] = [{ role: 'user', content: userMessage }];
 
   return invoke<string>('chat_with_claude', {
     apiKey,
@@ -99,22 +115,16 @@ async function chatWithClaude(
   });
 }
 
-// ─────────────────────────────────────────
-// Google Gemini API — Rust invoke (API 키 비노출)
-// ─────────────────────────────────────────
-
 async function chatWithGemini(
   userMessage: string,
   options: AiProviderOptions,
 ): Promise<string> {
   const settings = useSettingsStore.getState();
   const apiKey = await settings.getApiKey();
-  if (!apiKey) throw new Error('Gemini API key not set');
+  if (!apiKey) throw new Error('Gemini 설정이 완료되지 않았습니다. API 키를 확인해 주세요.');
 
   const model = settings.apiModel || 'gemini-2.0-flash';
-
-  const messages: LlmMessage[] = [];
-  messages.push({ role: 'user', content: userMessage });
+  const messages: LlmMessage[] = [{ role: 'user', content: userMessage }];
 
   return invoke<string>('chat_with_gemini', {
     apiKey,
@@ -125,19 +135,15 @@ async function chatWithGemini(
   });
 }
 
-// ─────────────────────────────────────────
-// Grok (xAI) API — Rust invoke (OpenAI 호환)
-// ─────────────────────────────────────────
-
 async function chatWithGrok(
   userMessage: string,
   options: AiProviderOptions,
 ): Promise<string> {
   const settings = useSettingsStore.getState();
   const apiKey = await settings.getApiKey();
-  if (!apiKey) throw new Error('Grok API key not set');
+  if (!apiKey) throw new Error('Grok 설정이 완료되지 않았습니다. API 키를 확인해 주세요.');
 
-  const endpoint = settings.apiEndpoint || 'https://api.x.ai/v1/chat/completions';
+  const endpoint = settings.apiEndpoint || DEFAULT_GROK_ENDPOINT;
   const model = settings.apiModel || 'grok-3-mini';
 
   const messages: LlmMessage[] = [];
@@ -155,18 +161,11 @@ async function chatWithGrok(
   });
 }
 
-// ─────────────────────────────────────────
-// 프로바이더 폴백 체인
-// ─────────────────────────────────────────
+const CLOUD_PROVIDER_CHAIN: AiProvider[] = ['openai', 'claude', 'gemini', 'grok'];
 
-const IS_MOBILE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-const PROVIDER_CHAIN: AiProvider[] = IS_MOBILE
-  ? ['openai', 'claude', 'gemini', 'grok']
-  : ['ollama', 'openai', 'claude', 'gemini', 'grok'];
+type ProviderFn = (message: string, options: AiProviderOptions) => Promise<string>;
 
-type ProviderFn = (msg: string, opts: AiProviderOptions) => Promise<string>;
-
-const PROVIDER_FN_MAP: Record<string, ProviderFn> = {
+const PROVIDER_FN_MAP: Record<Exclude<AiProvider, 'template'>, ProviderFn> = {
   ollama: chatWithOllama,
   openai: chatWithOpenAI,
   claude: chatWithClaude,
@@ -174,46 +173,52 @@ const PROVIDER_FN_MAP: Record<string, ProviderFn> = {
   grok: chatWithGrok,
 };
 
-async function isProviderAvailable(provider: AiProvider): Promise<boolean> {
-  if (provider === 'template') return false;
-  if (provider === 'ollama') {
-    try {
-      return await invoke<boolean>('check_ollama_status');
-    } catch {
-      return false;
-    }
-  }
-  // openai / claude / gemini / grok — API key 필요
+function getTemplateModeMessage(): string {
+  return '템플릿 모드에서는 실시간 LLM 호출을 직접 수행하지 않습니다.';
+}
+
+async function hasConfiguredCloudApiKey(): Promise<boolean> {
   const key = await useSettingsStore.getState().getApiKey();
   return !!key;
 }
 
-/**
- * Ollama 상태 확인 (프로바이더에 따라 분기)
- */
-export async function checkOllamaStatus(): Promise<boolean> {
-  const provider = useSettingsStore.getState().aiProvider;
-
-  if (provider === 'template') return false;
-
-  if (provider === 'openai' || provider === 'claude' || provider === 'gemini' || provider === 'grok') {
-    const key = await useSettingsStore.getState().getApiKey();
-    return !!key;
+async function tryCloudFallback(
+  configuredProvider: AiProvider,
+  userMessage: string,
+  options: AiProviderOptions,
+): Promise<string> {
+  if (!(await hasConfiguredCloudApiKey())) {
+    throw new Error('클라우드 AI 설정이 완료되지 않았습니다. API 키를 확인해 주세요.');
   }
 
-  // Ollama 로컬 확인
+  const cloudProviders =
+    configuredProvider !== 'template' && configuredProvider !== 'ollama'
+      ? [configuredProvider, ...CLOUD_PROVIDER_CHAIN.filter((provider) => provider !== configuredProvider)]
+      : CLOUD_PROVIDER_CHAIN;
+
+  const errors: string[] = [];
+  for (const provider of cloudProviders) {
+    try {
+      return await PROVIDER_FN_MAP[provider](userMessage, options);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      warnOnce(`cloud-${provider}`, `[AI 폴백] ${provider} 호출 실패: ${message}`);
+      errors.push(`${provider}: ${message}`);
+    }
+  }
+
+  throw new Error(errors.join(' | '));
+}
+
+export async function checkOllamaStatus(): Promise<boolean> {
   try {
-    return await invoke<boolean>('check_ollama_status');
+    const detail = await getOllamaStatusDetail(false);
+    return detail.ready;
   } catch {
     return false;
   }
 }
 
-/**
- * LLM 대화 요청 - 설정된 프로바이더부터 시작, 실패 시 자동 폴백
- * 체인: configured → 나머지 (ollama/openai/claude)
- * 모든 프로바이더 실패 시 throw → 호출부의 template fallback 동작
- */
 export async function chatWithLlm(
   userMessage: string,
   options: AiProviderOptions = {},
@@ -221,56 +226,37 @@ export async function chatWithLlm(
   const configured = useSettingsStore.getState().aiProvider;
 
   if (configured === 'template') {
-    throw new Error('Template mode - no LLM available');
+    throw new Error(getTemplateModeMessage());
   }
 
-  // configured부터 시작하는 순환 체인 구성
-  const startIdx = PROVIDER_CHAIN.indexOf(configured);
-  const chain =
-    startIdx >= 0
-      ? [...PROVIDER_CHAIN.slice(startIdx), ...PROVIDER_CHAIN.slice(0, startIdx)]
-      : PROVIDER_CHAIN;
-
-  const errors: string[] = [];
-
-  for (const provider of chain) {
-    const fn = PROVIDER_FN_MAP[provider];
-    if (!fn) continue;
-
-    const available = await isProviderAvailable(provider);
-    if (!available) {
-      console.warn(`[AI Fallback] ${provider} 사용 불가 (설정 미완료), 건너뜀`);
-      continue;
-    }
-
+  if (configured === 'ollama') {
     try {
-      const result = await fn(userMessage, options);
-      if (provider !== configured) {
-        console.info(`[AI Fallback] ${configured} 실패 → ${provider}로 대체 성공`);
+      const detail = await getOllamaStatusDetail(true);
+      if (detail.ready) {
+        return await chatWithOllama(userMessage, options);
       }
-      return result;
+      warnOnce('ollama-not-ready', `[AI 폴백] Ollama 준비 대기 실패: ${detail.message}`);
     } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      console.warn(`[AI Fallback] ${provider} 호출 실패: ${msg}`);
-      errors.push(`${provider}: ${msg}`);
+      const message = error instanceof Error ? error.message : String(error);
+      warnOnce('ollama-failed', `[AI 폴백] ollama 호출 실패: ${message}`);
     }
+
+    return tryCloudFallback(configured, userMessage, options);
   }
 
-  throw new Error(`모든 AI 프로바이더 실패: ${errors.join(' | ')}`);
+  try {
+    return await PROVIDER_FN_MAP[configured](userMessage, options);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    warnOnce(`configured-${configured}`, `[AI 폴백] ${configured} 호출 실패: ${message}`);
+    return tryCloudFallback(configured, userMessage, options);
+  }
 }
-
-// ─────────────────────────────────────────
-// 구조화된 JSON 응답 (Zod 검증 지원)
-// ─────────────────────────────────────────
 
 interface ChatJsonOptions<T> extends Omit<AiProviderOptions, 'format'> {
   schema?: ZodSchema<T>;
 }
 
-/**
- * 구조화된 JSON 응답 요청
- * schema 전달 시 safeParse 검증 → 실패 시 1회 재시도 → 재실패 시 throw
- */
 export async function chatWithLlmJson<T>(
   userMessage: string,
   options: ChatJsonOptions<T> = {},
@@ -292,7 +278,7 @@ export async function chatWithLlmJson<T>(
     try {
       parsed = JSON.parse(cleaned);
     } catch {
-      throw new Error(`AI 응답 JSON 파싱 실패: ${cleaned.slice(0, 100)}`);
+      throw new Error(`AI 응답의 JSON 파싱에 실패했습니다: ${cleaned.slice(0, 100)}`);
     }
 
     if (!schema) return parsed as T;
@@ -301,51 +287,51 @@ export async function chatWithLlmJson<T>(
     if (result.success) return result.data;
 
     const issues = result.error.issues
-      .map((i) => `${i.path.join('.')}: ${i.message}`)
+      .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
       .join(', ');
-    throw new Error(`AI 응답 스키마 검증 실패: ${issues}`);
+    throw new Error(`AI 응답이 스키마 검증을 통과하지 못했습니다: ${issues}`);
   };
 
   try {
     return await tryOnce();
   } catch (error) {
     if (schema) {
-      console.warn('AI 응답 검증 실패, 1회 재시도:', error);
+      console.warn('AI 응답 검증에 실패해 한 번 더 재시도합니다.', error);
       return await tryOnce();
     }
     throw error;
   }
 }
 
-/**
- * 클라우드 API 연결 테스트
- */
 export async function testCloudConnection(): Promise<{ ok: boolean; message: string }> {
   const provider = useSettingsStore.getState().aiProvider;
 
   if (provider === 'template') {
-    return { ok: false, message: '템플릿 모드에서는 연결 테스트가 필요하지 않습니다.' };
+    return {
+      ok: false,
+      message: '템플릿 모드에서는 연결 테스트가 필요하지 않습니다.',
+    };
   }
 
   if (provider === 'ollama') {
     try {
-      const status = await invoke<boolean>('check_ollama_status');
-      return status
-        ? { ok: true, message: 'Ollama 연결 성공' }
-        : { ok: false, message: 'Ollama가 실행되고 있지 않습니다.' };
-    } catch {
-      return { ok: false, message: 'Ollama 연결 실패' };
+      const detail = await getOllamaStatusDetail(true);
+      return detail.ready
+        ? { ok: true, message: 'Ollama 서버 연결에 성공했습니다.' }
+        : { ok: false, message: detail.message };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { ok: false, message: `Ollama 연결에 실패했습니다: ${message}` };
     }
   }
 
-  // Cloud API test: send a minimal request
   try {
-    const response = await chatWithLlm('Reply with exactly: OK', {
-      systemPrompt: 'You are a connection test. Reply with exactly one word: OK',
+    const response = await chatWithLlm('정확히 OK 한 단어만 답하세요.', {
+      systemPrompt: '당신은 연결 테스트용 AI입니다. 반드시 OK 한 단어만 답하세요.',
     });
-    return { ok: true, message: `연결 성공 (응답: ${response.slice(0, 20)})` };
+    return { ok: true, message: `연결에 성공했습니다. 응답: ${response.slice(0, 20)}` };
   } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
-    return { ok: false, message: `연결 실패: ${msg}` };
+    const message = error instanceof Error ? error.message : String(error);
+    return { ok: false, message: `연결에 실패했습니다: ${message}` };
   }
 }
