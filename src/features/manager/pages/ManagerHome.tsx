@@ -342,7 +342,7 @@ export function ManagerHome() {
     return () => {
       cancelled = true;
     };
-  }, [briefingRequestRef, buildFallbackBriefing, conditions, recentMatches, season, upcomingMatches, userTeam]);
+  }, [briefingRequestRef, buildFallbackBriefing, conditions, recentMatches, season, teams, upcomingMatches, userTeam]);
 
   if (!season || !save || !userTeam) {
     return <p className="fm-text-muted fm-text-md">Loading dashboard...</p>;

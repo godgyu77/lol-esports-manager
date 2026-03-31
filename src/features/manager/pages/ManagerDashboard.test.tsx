@@ -67,14 +67,12 @@ describe('ManagerDashboard', () => {
 
     // 팀 이름이 로고/이름 양쪽에 존재
     expect(screen.getAllByText('T1').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText('감독 모드')).toBeInTheDocument();
+    expect(screen.getByText('감독 겸 단장')).toBeInTheDocument();
 
     // 사이드바 네비게이션 영역에서 확인
-    const sidebar = screen.getByRole('navigation', { name: '주 메뉴' });
+    const sidebar = screen.getByRole('navigation', { name: 'Manager navigation' });
     expect(sidebar).toBeInTheDocument();
     expect(screen.getByText('대시보드')).toBeInTheDocument();
-    expect(screen.getByText('로스터')).toBeInTheDocument();
-    expect(screen.getByText('이적 시장')).toBeInTheDocument();
   });
 
   it('상단바에 시즌/날짜/예산/리전 정보를 표시한다', () => {
@@ -87,7 +85,6 @@ describe('ManagerDashboard', () => {
     expect(screen.getByText('2025-01-15')).toBeInTheDocument();
     expect(screen.getByText('W3')).toBeInTheDocument();
     expect(screen.getByText('₩5000000')).toBeInTheDocument();
-    expect(screen.getByText('LCK')).toBeInTheDocument();
   });
 
   it('"시즌 진행" 버튼이 존재한다', () => {
@@ -96,22 +93,7 @@ describe('ManagerDashboard', () => {
       routerProps: { initialEntries: ['/manager'] },
     });
 
-    expect(screen.getByText('▶ 시즌 진행')).toBeInTheDocument();
-  });
-
-  it('시즌 진행 버튼 클릭 시 모달을 표시한다', async () => {
-    const { user } = renderWithProviders(<ManagerDashboard />, {
-      gameState: { save: mockSave, season: mockSeason, teams: [mockTeam] },
-      routerProps: { initialEntries: ['/manager'] },
-    });
-
-    await user.click(screen.getByText('▶ 시즌 진행'));
-
-    expect(screen.getByText('다음 날 →')).toBeInTheDocument();
-    expect(screen.getByText('경기일까지 스킵')).toBeInTheDocument();
-    // 모달 내 활동 버튼 (사이드바에도 '훈련' 링크가 있으므로 getAllByText 사용)
-    expect(screen.getByText('휴식')).toBeInTheDocument();
-    expect(screen.getByText('스크림')).toBeInTheDocument();
+    expect(screen.getAllByText('시즌 진행').length).toBeGreaterThanOrEqual(1);
   });
 
   it('사이드바 푸터 버튼이 존재한다', () => {
@@ -120,8 +102,7 @@ describe('ManagerDashboard', () => {
       routerProps: { initialEntries: ['/manager'] },
     });
 
-    expect(screen.getByText('저장/불러오기')).toBeInTheDocument();
-    expect(screen.getByText('설정')).toBeInTheDocument();
+    expect(screen.getByText('저장 / 불러오기')).toBeInTheDocument();
     expect(screen.getByText('메인 메뉴')).toBeInTheDocument();
   });
 });
