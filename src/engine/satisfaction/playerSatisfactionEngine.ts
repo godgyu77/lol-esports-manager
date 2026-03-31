@@ -27,6 +27,15 @@ export interface PlayerSatisfaction {
   factors: SatisfactionFactors;
 }
 
+export interface PlayerManagementInsight {
+  playerId: string;
+  overallSatisfaction: number;
+  weakestFactor: keyof SatisfactionFactors;
+  weakestScore: number;
+  recommendation: string;
+  urgency: 'high' | 'medium' | 'low';
+}
+
 // ─────────────────────────────────────────
 // Row 타입
 // ─────────────────────────────────────────
@@ -92,6 +101,15 @@ export const FACTOR_WEIGHTS: Record<keyof SatisfactionFactors, number> = {
   teamChemistry: 0.15,
 };
 
+export const SATISFACTION_FACTOR_LABELS: Record<keyof SatisfactionFactors, string> = {
+  playtime: '출전 시간',
+  salary: '연봉 만족도',
+  teamPerformance: '팀 성적',
+  personalPerformance: '개인 경기력',
+  roleClarity: '역할 명확성',
+  teamChemistry: '팀 케미',
+};
+
 /** 불만 생성 임계값 */
 export const COMPLAINT_THRESHOLD = 30;
 
@@ -113,6 +131,15 @@ const COMPLAINT_MESSAGES: Record<string, string> = {
   personalPerformance: '최근 경기력이 좋지 않아 자신감이 떨어집니다.',
   roleClarity: '팀 내 역할이 불명확합니다. 주전인지 백업인지 알고 싶습니다.',
   teamChemistry: '팀원들과의 소통이 잘 되지 않습니다.',
+};
+
+const MANAGEMENT_RECOMMENDATIONS: Record<keyof SatisfactionFactors, string> = {
+  playtime: '출전 계획을 설명하거나 로테이션 방향을 면담에서 직접 조율하세요.',
+  salary: '재계약 시기와 보상 계획을 미리 설명해 기대치를 관리하세요.',
+  teamPerformance: '분위기 회복 면담과 함께 다음 경기 준비 우선순위를 다시 잡는 편이 좋습니다.',
+  personalPerformance: '개인 훈련 포커스를 조정하고 부담을 줄일 수 있는 면담을 권장합니다.',
+  roleClarity: '주전/백업 역할과 시즌 내 기대치를 명확하게 설명하세요.',
+  teamChemistry: '갈등 여부를 확인하고 멘토링이나 팀 대화로 관계를 정리하세요.',
 };
 
 // ─────────────────────────────────────────
@@ -286,6 +313,33 @@ export async function getSatisfactionReport(
   }
 
   return results;
+}
+
+export function buildManagementInsight(satisfaction: PlayerSatisfaction): PlayerManagementInsight {
+  const factorEntries = Object.entries(satisfaction.factors) as [keyof SatisfactionFactors, number][];
+  factorEntries.sort((a, b) => a[1] - b[1]);
+  const [weakestFactor, weakestScore] = factorEntries[0];
+
+  return {
+    playerId: satisfaction.playerId,
+    overallSatisfaction: satisfaction.overallSatisfaction,
+    weakestFactor,
+    weakestScore,
+    recommendation: MANAGEMENT_RECOMMENDATIONS[weakestFactor],
+    urgency: satisfaction.overallSatisfaction < 30 ? 'high' : satisfaction.overallSatisfaction < 50 ? 'medium' : 'low',
+  };
+}
+
+export async function getPlayerManagementInsights(
+  teamId: string,
+  seasonId?: number,
+  limit = 5,
+): Promise<PlayerManagementInsight[]> {
+  const report = await getSatisfactionReport(teamId, seasonId);
+  return report
+    .map(buildManagementInsight)
+    .sort((a, b) => a.overallSatisfaction - b.overallSatisfaction || a.weakestScore - b.weakestScore)
+    .slice(0, limit);
 }
 
 // ─────────────────────────────────────────

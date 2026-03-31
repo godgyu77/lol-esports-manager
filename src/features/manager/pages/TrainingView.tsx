@@ -19,11 +19,12 @@ import {
 import type {
   TrainingScheduleEntry,
   PlayerTrainingAssignment,
+  TrainingActivity,
   TrainingType,
   TrainingIntensity,
   TrainableStat,
 } from '../../../types/training';
-import { TRAINING_TYPE_LABELS } from '../../../types/training';
+import { TRAINING_ACTIVITY_LABELS, TRAINING_TYPE_LABELS } from '../../../types/training';
 import {
   getMentoringPairs,
   getEligibleMentors,
@@ -43,6 +44,7 @@ import { POSITION_LABELS_SHORT as POSITION_LABELS } from '../../../utils/constan
 type Tab = 'schedule' | 'individual' | 'logs' | 'mentoring';
 
 const DAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
+const ACTIVITY_OPTIONS: TrainingActivity[] = ['rest', 'training', 'scrim'];
 const TRAINING_TYPES: TrainingType[] = ['general', 'laning', 'teamfight', 'macro', 'champion_pool', 'mental', 'physical'];
 const INTENSITY_OPTIONS: TrainingIntensity[] = ['light', 'normal', 'intense'];
 const INTENSITY_LABELS: Record<TrainingIntensity, string> = { light: '가벼운', normal: '보통', intense: '강도 높은' };
@@ -127,14 +129,15 @@ export function TrainingView() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const handleScheduleChange = async (dayOfWeek: number, field: 'type' | 'intensity', value: string) => {
+  const handleScheduleChange = async (dayOfWeek: number, field: 'activity' | 'type' | 'intensity', value: string) => {
     const existing = schedule.find(s => s.dayOfWeek === dayOfWeek);
+    const activity = field === 'activity' ? value as TrainingActivity : (existing?.activityType ?? 'training');
     const type = field === 'type' ? value as TrainingType : (existing?.trainingType ?? 'general');
     const intensity = field === 'intensity' ? value as TrainingIntensity : (existing?.intensity ?? 'normal');
 
     try {
-      await setTrainingSchedule(userTeamId, dayOfWeek, type, intensity);
-      setMessage({ text: `${DAY_LABELS[dayOfWeek]}요일 훈련 변경 완료`, type: 'success' });
+      await setTrainingSchedule(userTeamId, dayOfWeek, activity, type, intensity);
+      setMessage({ text: `${DAY_LABELS[dayOfWeek]}요일 일정 변경 완료`, type: 'success' });
       await loadData();
     } catch (err) {
       console.error('스케줄 변경 실패:', err);
@@ -222,6 +225,7 @@ export function TrainingView() {
                 await setTrainingSchedule(
                   userTeamId,
                   targetDay,
+                  'scrim',
                   scrimRecommendation.trainingType as TrainingType,
                   scrimRecommendation.intensity as TrainingIntensity,
                 );
@@ -240,27 +244,42 @@ export function TrainingView() {
       {/* 탭 1: 주간 스케줄 */}
       {tab === 'schedule' && (
         <div>
-          <p className="fm-text-md fm-text-secondary fm-mb-md">경기일/일요일(휴식)을 제외한 요일별 훈련을 설정합니다.</p>
+          <p className="fm-text-md fm-text-secondary fm-mb-md">시즌 진행 시 이 주간 설정이 자동 적용됩니다. 경기일만 별도로 경기 일정이 우선됩니다.</p>
           <div className="fm-panel">
             <div className="fm-panel__body--flush fm-table-wrap">
               <table className="fm-table fm-table--striped">
                 <thead>
                   <tr>
                     <th>요일</th>
+                    <th>활동</th>
                     <th>훈련 유형</th>
                     <th>강도</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {[1, 2, 3, 4, 5, 6].map(day => {
+                  {[0, 1, 2, 3, 4, 5, 6].map(day => {
                     const entry = schedule.find(s => s.dayOfWeek === day);
+                    const activityType = entry?.activityType ?? (day === 0 ? 'rest' : 'training');
+                    const isRestDay = activityType === 'rest';
                     return (
                       <tr key={day}>
                         <td className="fm-cell--name">{DAY_LABELS[day]}</td>
                         <td>
                           <select
                             className="fm-select"
+                            value={activityType}
+                            onChange={e => handleScheduleChange(day, 'activity', e.target.value)}
+                          >
+                            {ACTIVITY_OPTIONS.map(activity => (
+                              <option key={activity} value={activity}>{TRAINING_ACTIVITY_LABELS[activity]}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td>
+                          <select
+                            className="fm-select"
                             value={entry?.trainingType ?? 'general'}
+                            disabled={isRestDay}
                             onChange={e => handleScheduleChange(day, 'type', e.target.value)}
                           >
                             {TRAINING_TYPES.map(t => (
@@ -272,6 +291,7 @@ export function TrainingView() {
                           <select
                             className="fm-select"
                             value={entry?.intensity ?? 'normal'}
+                            disabled={isRestDay}
                             onChange={e => handleScheduleChange(day, 'intensity', e.target.value)}
                           >
                             {INTENSITY_OPTIONS.map(i => (

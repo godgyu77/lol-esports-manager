@@ -32,8 +32,15 @@ const CHECK_INTERVAL = 5 * 60 * 1000;
 
 export async function isAiAvailable(): Promise<boolean> {
   // 설정에서 AI 비활성화 시 즉시 false 반환
-  const { aiEnabled } = useSettingsStore.getState();
+  const settings = useSettingsStore.getState();
+  const { aiEnabled, aiProvider } = settings;
   if (!aiEnabled) return false;
+  if (aiProvider === 'template') return false;
+
+  if (aiProvider !== 'ollama') {
+    const key = await settings.getApiKey();
+    return Boolean(key);
+  }
 
   // aiEnabled 상태가 변경되었으면 캐시 무효화
   if (_lastAiEnabled !== aiEnabled) {

@@ -15,7 +15,7 @@ function createGameResult(overrides: Partial<GameResult> = {}): GameResult {
     towersAway: 9,
     events: [
       { tick: 900, type: 'baron', side: 'away', description: 'baron', goldChange: 0 },
-      { tick: 1000, type: 'herald', side: 'away', description: 'herald', goldChange: 0 },
+      { tick: 1000, type: 'rift_herald', side: 'away', description: 'herald', goldChange: 0 },
     ],
     playerStatsHome: [
       { playerId: 'h1', position: 'top', kills: 1, deaths: 6, assists: 3, cs: 210, goldEarned: 9300, damageDealt: 12000 },
@@ -32,8 +32,8 @@ function createGameResult(overrides: Partial<GameResult> = {}): GameResult {
       { playerId: 'a5', position: 'support', kills: 1, deaths: 2, assists: 13, cs: 40, goldEarned: 8900, damageDealt: 7000 },
     ],
     dragonSoul: {
-      active: false,
-      soulOwner: null,
+      homeStacks: 1,
+      awayStacks: 2,
       dragonTypes: [
         { type: 'infernal', side: 'away' },
         { type: 'ocean', side: 'away' },

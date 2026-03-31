@@ -1,41 +1,83 @@
-/**
- * 일간 진행 뷰 (FM 스타일)
- * - 현재 날짜/요일/활동 유형 표시
- * - "다음 날" / "경기일까지 스킵" 버튼
- * - 경기 결과 표시
- * - 유저 경기 시 밴픽 → 라이브 매치 분기
- */
-
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { advanceDay, skipToNextMatchDay, type DayResult } from '../../../engine/season/dayAdvancer';
+import type { DayType } from '../../../engine/season/calendar';
+import { getActiveSeason } from '../../../db/queries';
+import { getManagerIdentity, getManagerIdentitySummaryLine } from '../../../engine/manager/managerIdentityEngine';
+import { getActiveInterventionEffects } from '../../../engine/manager/managerInterventionEngine';
+import { generateStaffRecommendations } from '../../../engine/staff/staffEngine';
+import { getTrainingSchedule } from '../../../engine/training/trainingEngine';
+import { useKeyboardShortcuts } from '../../../hooks/useKeyboardShortcuts';
 import { useGameStore } from '../../../stores/gameStore';
 import { useMatchStore } from '../../../stores/matchStore';
-import { useKeyboardShortcuts } from '../../../hooks/useKeyboardShortcuts';
-import { advanceDay, skipToNextMatchDay } from '../../../engine/season/dayAdvancer';
-import { processPlayerEvent } from '../../../engine/event/playerEventEngine';
-import { getTrainingSchedule } from '../../../engine/training/trainingEngine';
-import { TRAINING_TYPE_LABELS } from '../../../types/training';
-import type { TrainingScheduleEntry } from '../../../types/training';
-import type { DayResult } from '../../../engine/season/dayAdvancer';
-import type { DayType } from '../../../engine/season/calendar';
-import { OFFSEASON_PHASE_LABELS } from '../../../engine/season/offseasonEngine';
-import { generateOffseasonEvents, OFFSEASON_EVENT_LABELS, type OffseasonEvent } from '../../../engine/season/offseasonEvents';
 import { usePlayerStore } from '../../../stores/playerStore';
-import { useTeamStore } from '../../../stores/teamStore';
 import { useSettingsStore } from '../../../stores/settingsStore';
+import { useTeamStore } from '../../../stores/teamStore';
+import { TRAINING_ACTIVITY_LABELS, TRAINING_TYPE_LABELS, type TrainingScheduleEntry } from '../../../types/training';
 import './DayView.css';
 
-type ActivityChoice = 'training' | 'scrim' | 'rest';
+type ImpactTone = 'positive' | 'risk' | 'neutral';
 
-const DAY_NAMES = ['일', '월', '화', '수', '목', '금', '토'];
+interface ImpactSummaryItem {
+  title: string;
+  detail: string;
+  tone: ImpactTone;
+}
 
-const DAY_TYPE_LABELS: Record<DayType, { label: string; color: string }> = {
-  match_day: { label: '경기일', color: '#e74c3c' },
-  training: { label: '훈련', color: '#3498db' },
-  scrim: { label: '스크림', color: '#9b59b6' },
-  rest: { label: '휴식', color: '#2ecc71' },
-  event: { label: '이벤트', color: '#f39c12' },
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+const DAY_TYPE_LABELS: Record<DayType, string> = {
+  match_day: 'Match day',
+  training: 'Training',
+  scrim: 'Scrim',
+  rest: 'Rest',
+  event: 'Event',
 };
+
+function getAutoActivity(entry: TrainingScheduleEntry | null): 'training' | 'scrim' | 'rest' {
+  return entry?.activityType ?? 'training';
+}
+
+function getDecisionImpact(activity: DayType, training: TrainingScheduleEntry | null): string {
+  if (activity === 'rest') return 'Recovery-focused day. Stamina and morale should stabilize before the next match.';
+  if (activity === 'scrim') {
+    return training
+      ? `${TRAINING_TYPE_LABELS[training.trainingType]} focus will carry into today’s scrim feedback.`
+      : 'Scrim reps will sharpen execution and expose weak points before matchday.';
+  }
+  if (activity === 'match_day') return 'Your recent preparation is about to show up in a real result.';
+  return training
+    ? `${TRAINING_TYPE_LABELS[training.trainingType]} training is the main growth lever for today.`
+    : 'A standard training block will keep player condition and form moving.';
+}
+
+function getResultHighlights(result: DayResult, training: TrainingScheduleEntry | null): string[] {
+  const highlights: string[] = [];
+
+  if (result.dayType !== 'match_day') {
+    highlights.push(`Applied schedule: ${DAY_TYPE_LABELS[result.dayType]}`);
+  }
+
+  if (training && result.dayType !== 'rest' && result.dayType !== 'match_day') {
+    highlights.push(`Training focus: ${TRAINING_TYPE_LABELS[training.trainingType]} / ${training.intensity}`);
+  }
+
+  if (result.events.length > 0) {
+    highlights.push(`Main update: ${result.events[0]}`);
+  }
+
+  if (highlights.length === 0) {
+    highlights.push('No major surprises today. The schedule advanced as planned.');
+  }
+
+  return highlights;
+}
+
+function getToneClass(tone: ImpactTone): string {
+  if (tone === 'positive') return 'fm-text-success';
+  if (tone === 'risk') return 'fm-text-danger';
+  return 'fm-text-accent';
+}
 
 export function DayView() {
   const navigate = useNavigate();
@@ -53,44 +95,113 @@ export function DayView() {
   const [dayResult, setDayResult] = useState<DayResult | null>(null);
   const [skipResults, setSkipResults] = useState<DayResult[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [selectedActivity, setSelectedActivity] = useState<ActivityChoice>('training');
   const [todayTraining, setTodayTraining] = useState<TrainingScheduleEntry | null>(null);
-  const [offseasonEvents, setOffseasonEvents] = useState<OffseasonEvent[]>([]);
+  const [impactSummary, setImpactSummary] = useState<ImpactSummaryItem[]>([]);
 
-  const currentDate = season?.currentDate ?? '2025-12-01';
   const userTeamId = save?.userTeamId ?? '';
-  const userTeam = teams.find((t) => t.id === userTeamId);
-
-  // 현재 날짜의 요일
-  const dateObj = new Date(currentDate.replace(/-/g, '/'));
+  const userTeam = teams.find((team) => team.id === userTeamId);
+  const currentDate = season?.currentDate ?? '';
+  const dateObj = currentDate ? new Date(currentDate.replace(/-/g, '/')) : new Date();
   const dayOfWeek = dateObj.getDay();
+  const autoActivity = getAutoActivity(todayTraining);
 
-  // 훈련 스케줄 로드
   useEffect(() => {
     if (!userTeamId) return;
+
     getTrainingSchedule(userTeamId)
       .then((schedule) => {
-        const entry = schedule.find((s) => s.dayOfWeek === dayOfWeek) ?? null;
-        setTodayTraining(entry);
+        const todayEntry = schedule.find((entry) => entry.dayOfWeek === dayOfWeek) ?? null;
+        setTodayTraining(todayEntry);
       })
-      .catch((err) => {
-        console.warn('[DayView] 훈련 스케줄 로드 실패:', err);
+      .catch((error) => {
+        console.warn('[DayView] failed to load training schedule:', error);
         setTodayTraining(null);
       });
-  }, [userTeamId, dayOfWeek]);
+  }, [dayOfWeek, userTeamId]);
 
-  // 오프시즌 이벤트 생성
   useEffect(() => {
-    if (dayResult?.isOffseason && userTeam) {
-      const events = generateOffseasonEvents(userTeam.reputation);
-      setOffseasonEvents(events);
-    } else {
-      setOffseasonEvents([]);
-    }
-  }, [dayResult?.isOffseason, userTeam]);
+    if (!season || !save || !userTeam) return;
 
-  const handleNextDay = useCallback(async () => {
+    let cancelled = false;
+
+    const loadImpactSummary = async () => {
+      try {
+        const [identity, interventions, recommendations] = await Promise.all([
+          getManagerIdentity(save.id).catch(() => null),
+          getActiveInterventionEffects(season.currentDate).catch(() => new Map()),
+          generateStaffRecommendations(userTeam.id, season.id).catch(() => []),
+        ]);
+
+        if (cancelled) return;
+
+        const items: ImpactSummaryItem[] = [];
+
+        items.push({
+          title: 'Weekly training',
+          detail: todayTraining
+            ? `${TRAINING_ACTIVITY_LABELS[autoActivity]} / ${TRAINING_TYPE_LABELS[todayTraining.trainingType]} / ${todayTraining.intensity}`
+            : `${TRAINING_ACTIVITY_LABELS[autoActivity]} block is set to auto-apply today.`,
+          tone: autoActivity === 'rest' ? 'neutral' : 'positive',
+        });
+
+        const affectedPlayers = userTeam.roster
+          .map((player) => ({ player, effect: interventions.get(player.id) }))
+          .filter((entry) => entry.effect);
+        if (affectedPlayers.length > 0) {
+          const strongest = affectedPlayers
+            .sort((a, b) => ((b.effect?.moraleBonus ?? 0) + (b.effect?.formBonus ?? 0)) - ((a.effect?.moraleBonus ?? 0) + (a.effect?.formBonus ?? 0)))[0];
+          items.push({
+            title: 'Player meeting',
+            detail: `${strongest.player.name} is still benefiting from ${strongest.effect?.topic ?? 'recent management'} (${strongest.effect?.moraleBonus ?? 0} morale / ${strongest.effect?.formBonus ?? 0} form).`,
+            tone: 'positive',
+          });
+        }
+
+        if (recommendations.length > 0) {
+          items.push({
+            title: 'Staff read',
+            detail: recommendations[0].summary,
+            tone: recommendations[0].urgency === 'high' ? 'risk' : 'neutral',
+          });
+        }
+
+        if (identity) {
+          items.push({
+            title: 'Manager philosophy',
+            detail: getManagerIdentitySummaryLine(identity),
+            tone: 'neutral',
+          });
+        }
+
+        setImpactSummary(items.slice(0, 4));
+      } catch (error) {
+        console.warn('[DayView] failed to build impact summary:', error);
+        if (!cancelled) {
+          setImpactSummary([]);
+        }
+      }
+    };
+
+    void loadImpactSummary();
+    return () => {
+      cancelled = true;
+    };
+  }, [autoActivity, save, season, todayTraining, userTeam]);
+
+  const finalizeResult = useCallback(async (result: DayResult) => {
+    setCurrentDate(result.nextDate);
+    setDayType(result.dayType);
+    const latestSeason = await getActiveSeason().catch(() => null);
+    if (latestSeason) {
+      setSeason(latestSeason);
+    }
+    usePlayerStore.getState().invalidateTeam(userTeamId);
+    useTeamStore.getState().invalidateTeam(userTeamId);
+  }, [setCurrentDate, setDayType, setSeason, userTeamId]);
+
+  const handleAdvance = useCallback(async () => {
     if (!season || !save) return;
+
     setIsProcessing(true);
     setDayPhase('processing');
     setSkipResults([]);
@@ -101,47 +212,59 @@ export function DayView() {
         currentDate,
         userTeamId,
         save.mode,
-        selectedActivity,
+        undefined,
         save.id,
         useSettingsStore.getState().difficulty,
       );
 
       setDayResult(result);
-      setCurrentDate(result.nextDate);
-      setDayType(result.dayType);
-
-      // 캐시 무효화 (일간 진행 후 데이터 갱신)
-      usePlayerStore.getState().invalidateTeam(userTeamId);
-      useTeamStore.getState().invalidateTeam(userTeamId);
+      await finalizeResult(result);
 
       if (result.isSeasonEnd) {
-        // 시즌 종료 → 시즌 종료 화면으로
+        const latestSeason = await getActiveSeason().catch(() => null);
+        setSeason(latestSeason ?? { ...season, currentDate: result.nextDate });
         setDayPhase('idle');
-        setSeason({ ...season, currentDate: result.nextDate });
         navigate('/manager/season-end');
-      } else if (result.hasUserMatch && result.userMatch) {
-        // 유저 팀 경기 → 밴픽으로 분기 (시리즈 상태 초기화)
+        return;
+      }
+
+      if (result.hasUserMatch && result.userMatch) {
         resetSeries();
         setFearlessPool({ blue: [], red: [] });
         setPendingUserMatch(result.userMatch);
+        const latestSeason = await getActiveSeason().catch(() => null);
+        setSeason(latestSeason ?? { ...season, currentDate: result.nextDate });
         setDayPhase('banpick');
         navigate('/manager/pre-match');
-      } else {
-        setDayPhase('idle');
-        // season 날짜 동기화
-        setSeason({ ...season, currentDate: result.nextDate });
+        return;
       }
-    } catch (err) {
-      console.error('일간 진행 오류:', err);
+
+      const latestSeason = await getActiveSeason().catch(() => null);
+      setSeason(latestSeason ?? { ...season, currentDate: result.nextDate });
       setDayPhase('idle');
-      setDayResult(prev => prev ? { ...prev, events: [...prev.events, `⚠ 일부 처리 중 오류가 발생했습니다: ${err instanceof Error ? err.message : '알 수 없는 오류'}`] } : prev);
+    } catch (error) {
+      console.error('[DayView] advance failed:', error);
+      setDayPhase('idle');
     } finally {
       setIsProcessing(false);
     }
-  }, [season, save, currentDate, userTeamId, navigate, setDayPhase, setSeason, setPendingUserMatch, setCurrentDate, setDayType, selectedActivity, resetSeries, setFearlessPool]);
+  }, [
+    currentDate,
+    finalizeResult,
+    navigate,
+    resetSeries,
+    save,
+    season,
+    setDayPhase,
+    setFearlessPool,
+    setPendingUserMatch,
+    setSeason,
+    userTeamId,
+  ]);
 
-  const handleSkipToMatch = useCallback(async () => {
+  const handleSkip = useCallback(async () => {
     if (!season || !save) return;
+
     setIsProcessing(true);
     setDayPhase('processing');
     setDayResult(null);
@@ -153,406 +276,248 @@ export function DayView() {
         userTeamId,
         save.mode,
         season.endDate,
-        selectedActivity,
+        undefined,
         useSettingsStore.getState().difficulty,
       );
 
       setSkipResults(results);
+      const lastResult = results.at(-1);
+      if (!lastResult) {
+        setDayPhase('idle');
+        return;
+      }
 
-      const lastResult = results[results.length - 1];
-      if (lastResult) {
-        setCurrentDate(lastResult.nextDate);
-        setDayType(lastResult.dayType);
-        setSeason({ ...season, currentDate: lastResult.nextDate });
+      await finalizeResult(lastResult);
+      const latestSeason = await getActiveSeason().catch(() => null);
+      setSeason(latestSeason ?? { ...season, currentDate: lastResult.nextDate });
 
-        if (lastResult.isSeasonEnd) {
-          setDayPhase('idle');
-          navigate('/manager/season-end');
-          return;
-        }
+      if (lastResult.isSeasonEnd) {
+        setDayPhase('idle');
+        navigate('/manager/season-end');
+        return;
+      }
 
-        if (lastResult.hasUserMatch && lastResult.userMatch) {
-          resetSeries();
-          setFearlessPool({ blue: [], red: [] });
-          setPendingUserMatch(lastResult.userMatch);
-          setDayPhase('banpick');
-          navigate('/manager/pre-match');
-          return;
-        }
+      if (lastResult.hasUserMatch && lastResult.userMatch) {
+        resetSeries();
+        setFearlessPool({ blue: [], red: [] });
+        setPendingUserMatch(lastResult.userMatch);
+        setDayPhase('banpick');
+        navigate('/manager/pre-match');
+        return;
       }
 
       setDayPhase('idle');
-    } catch (err) {
-      console.error('스킵 오류:', err);
+    } catch (error) {
+      console.error('[DayView] skip failed:', error);
       setDayPhase('idle');
     } finally {
       setIsProcessing(false);
     }
-  }, [season, save, currentDate, userTeamId, navigate, setDayPhase, setSeason, setPendingUserMatch, setCurrentDate, setDayType, selectedActivity, resetSeries, setFearlessPool]);
+  }, [
+    currentDate,
+    finalizeResult,
+    navigate,
+    resetSeries,
+    save,
+    season,
+    setDayPhase,
+    setFearlessPool,
+    setPendingUserMatch,
+    setSeason,
+    userTeamId,
+  ]);
 
-  // Space키로 다음 날 진행 (처리 중이 아닐 때만)
-  const handleNextDayRef = useRef(handleNextDay);
-  handleNextDayRef.current = handleNextDay;
-  const isProcessingRef = useRef(isProcessing);
-  isProcessingRef.current = isProcessing;
+  const nextDayRef = useRef(handleAdvance);
+  nextDayRef.current = handleAdvance;
+  const processingRef = useRef(isProcessing);
+  processingRef.current = isProcessing;
 
   useKeyboardShortcuts({
     onAdvanceDay: useCallback(() => {
-      if (!isProcessingRef.current) {
-        handleNextDayRef.current();
+      if (!processingRef.current) {
+        void nextDayRef.current();
       }
     }, []),
   });
 
+  const resultSummaryCards = useMemo(() => impactSummary.slice(0, 4), [impactSummary]);
+
   if (!season || !save || !userTeam) {
-    return <p className="fm-text-muted fm-text-md">데이터를 불러오는 중...</p>;
+    return <p className="fm-text-muted fm-text-md">Loading season data...</p>;
   }
 
-  const weeklyDecisionCards = [
-    {
-      title: 'Training',
-      value: todayTraining ? TRAINING_TYPE_LABELS[todayTraining.trainingType] : 'Set today plan',
-      detail: 'Use the weekly schedule to fix execution before the next match.',
-      route: '/manager/training',
-    },
-    {
-      title: 'Tactics',
-      value: dayResult?.hasUserMatch ? 'Match prep live' : 'Review default plan',
-      detail: 'Check draft priorities and lane plan before results start locking in.',
-      route: '/manager/tactics',
-    },
-    {
-      title: 'Roster',
-      value: dayResult?.playerEvents?.length ? 'Monitor lineup stress' : 'Starter stability',
-      detail: 'Look for underperforming roles before they snowball into a loss streak.',
-      route: '/manager/roster',
-    },
-    {
-      title: 'Finance',
-      value: season.currentWeek % 4 === 0 ? 'Budget checkpoint' : 'Keep options open',
-      detail: 'Avoid spending away future flexibility unless this stretch is must-win.',
-      route: '/manager/finance',
-    },
-    {
-      title: 'Player care',
-      value: selectedActivity === 'rest' ? 'Recovery priority' : 'Confidence watch',
-      detail: 'Player condition and morale are still one of the fastest levers to move.',
-      route: '/manager/complaints',
-    },
-  ];
-
   return (
-    <div>
-      {/* 페이지 헤더 */}
+    <div className="fm-animate-in">
+      {isProcessing && (
+        <div className="fm-overlay" style={{ zIndex: 50 }}>
+          <div className="fm-modal" style={{ width: 360 }}>
+            <div className="fm-modal__body fm-text-center">
+              <h2 className="fm-text-xl fm-mb-sm">Processing day</h2>
+              <p className="fm-text-muted">Applying schedule, events, and match consequences. Please wait a moment.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="fm-page-header">
-        <h1 className="fm-page-title">시즌 진행</h1>
+        <h1 className="fm-page-title">Season progression</h1>
       </div>
 
-      {/* 날짜 카드 */}
       <div className="dv-date-card">
         <div className="dv-date-main">
-          <span className="fm-text-lg fm-text-muted">{currentDate.slice(0, 4)}년</span>
-          <span className="dv-date-day">
-            {currentDate.slice(5, 7)}월 {currentDate.slice(8)}일
-          </span>
-          <span className="fm-text-xl fm-text-secondary">({DAY_NAMES[dayOfWeek]}요일)</span>
+          <span className="fm-text-lg fm-text-muted">{currentDate}</span>
+          <span className="dv-date-day">{DAY_NAMES[dayOfWeek]}</span>
         </div>
         <div className="dv-date-info">
-          <span className="fm-badge fm-badge--default">{season.currentWeek}주차</span>
+          <span className="fm-badge fm-badge--default">Week {season.currentWeek}</span>
           <span className="fm-text-lg fm-font-semibold fm-text-accent">{userTeam.shortName}</span>
         </div>
       </div>
 
-      <div className="fm-panel fm-mb-md">
-        <div className="fm-panel__header">
-          <span className="fm-panel__title">This week&apos;s key decisions</span>
-        </div>
-        <div className="fm-panel__body">
-          <div className="dv-focus-grid">
-            {weeklyDecisionCards.map((card) => (
-              <div key={card.title} className="dv-focus-card">
-                <span className="dv-focus-card__title">{card.title}</span>
-                <span className="dv-focus-card__value">{card.value}</span>
-                <p className="dv-focus-card__detail">{card.detail}</p>
-                <button className="dv-training-link" onClick={() => navigate(card.route)}>
-                  Review
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* 오프시즌 배너 */}
-      {dayResult?.isOffseason && dayResult.offseasonPhase && (
-        <div className="fm-alert fm-alert--warning fm-mb-md">
-          <span className="fm-font-bold fm-text-lg">
-            {dayResult.offseasonPhase === 'preseason' ? '부트캠프' : '오프시즌'}
-          </span>
-          <span className="fm-badge fm-badge--default fm-font-semibold">
-            {OFFSEASON_PHASE_LABELS[dayResult.offseasonPhase]}
-          </span>
-          <span className="fm-text-secondary fm-text-md" style={{ marginLeft: 'auto' }}>
-            잔여 {dayResult.offseasonDaysRemaining ?? 0}일
-          </span>
-        </div>
-      )}
-
-      {/* 오프시즌 이벤트 */}
-      {offseasonEvents.length > 0 && (
-        <div className="fm-panel fm-mb-md">
+      <div className="fm-grid fm-grid--2 fm-mb-lg">
+        <div className="fm-panel">
           <div className="fm-panel__header">
-            <span className="fm-panel__title">오프시즌 이벤트</span>
+            <span className="fm-panel__title">Auto-applied schedule</span>
           </div>
-          <div className="fm-panel__body">
-            {offseasonEvents.map((evt, i) => (
-              <div key={i} className="dv-offseason-event">
-                <span className="fm-badge fm-badge--warning">
-                  {OFFSEASON_EVENT_LABELS[evt.type]}
-                </span>
-                <div className="dv-offseason-event__content">
-                  <span className="fm-text-md fm-font-semibold fm-text-primary">{evt.title}</span>
-                  <span className="fm-text-base fm-text-secondary">{evt.description}</span>
-                </div>
-                {(evt.effects.morale || evt.effects.reputation || evt.effects.fanHappiness) && (
-                  <div className="dv-offseason-event__effects">
-                    {evt.effects.morale && <span className="fm-text-sm fm-text-success">사기 +{evt.effects.morale}</span>}
-                    {evt.effects.reputation && <span className="fm-text-sm fm-text-info">명성 +{evt.effects.reputation}</span>}
-                    {evt.effects.fanHappiness && <span className="fm-text-sm fm-text-warning">팬 +{evt.effects.fanHappiness}</span>}
-                  </div>
-                )}
+          <div className="fm-panel__body fm-flex-col fm-gap-sm">
+            <div className="dv-focus-grid">
+              <div className="dv-focus-card">
+                <span className="dv-focus-card__title">Today’s activity</span>
+                <span className="dv-focus-card__value">{TRAINING_ACTIVITY_LABELS[autoActivity]}</span>
+                <p className="dv-focus-card__detail">The season advance button only moves the date. Activity comes from your saved weekly plan.</p>
               </div>
-            ))}
-          </div>
-        </div>
-      )}
+              <div className="dv-focus-card">
+                <span className="dv-focus-card__title">Training focus</span>
+                <span className="dv-focus-card__value">
+                  {todayTraining ? TRAINING_TYPE_LABELS[todayTraining.trainingType] : 'Standard training'}
+                </span>
+                <p className="dv-focus-card__detail">
+                  {todayTraining ? `Intensity ${todayTraining.intensity}` : 'Default intensity applies when no custom entry exists.'}
+                </p>
+              </div>
+              <div className="dv-focus-card">
+                <span className="dv-focus-card__title">Expected impact</span>
+                <span className="dv-focus-card__value">{DAY_TYPE_LABELS[autoActivity]}</span>
+                <p className="dv-focus-card__detail">{getDecisionImpact(autoActivity, todayTraining)}</p>
+              </div>
+            </div>
 
-      {/* 활동 선택 (비경기일) */}
-      <div className="fm-panel fm-mb-md">
-        <div className="fm-panel__header">
-          <span className="fm-panel__title">오늘의 활동</span>
-        </div>
-        <div className="fm-panel__body">
-          <div className="fm-grid fm-grid--3">
-            {([
-              { key: 'training', label: '훈련', desc: '폼↑ 체력↓' },
-              { key: 'scrim', label: '스크림', desc: '폼↑↑ 체력↓↓ 사기↑' },
-              { key: 'rest', label: '휴식', desc: '체력↑↑ 사기↑ 폼↓' },
-            ] as const).map(({ key, label, desc }) => (
-              <button
-                key={key}
-                className={`dv-activity-btn${selectedActivity === key ? ' dv-activity-btn--active' : ''}`}
-                style={{ borderColor: selectedActivity === key ? DAY_TYPE_LABELS[key].color : undefined }}
-                onClick={() => setSelectedActivity(key)}
-              >
-                <span className="fm-text-lg fm-font-semibold fm-text-primary">{label}</span>
-                <span className="fm-text-sm fm-text-muted">{desc}</span>
+            <p className="fm-text-muted">
+              Training, rest, and scrims are no longer chosen while progressing the season. Your weekly setup drives the day automatically.
+            </p>
+
+            <div className="fm-flex fm-gap-sm">
+              <button className="fm-btn fm-btn--primary" onClick={() => void handleAdvance()} disabled={isProcessing}>
+                Advance one day
               </button>
-            ))}
+              <button className="fm-btn fm-btn--info" onClick={() => void handleSkip()} disabled={isProcessing}>
+                Skip to next match
+              </button>
+              <button className="fm-btn" onClick={() => navigate('/manager/training')} disabled={isProcessing}>
+                Open training
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="fm-panel">
+          <div className="fm-panel__header">
+            <span className="fm-panel__title">This week’s impact summary</span>
+          </div>
+          <div className="fm-panel__body fm-flex-col fm-gap-sm">
+            {impactSummary.length === 0 ? (
+              <p className="fm-text-muted">We are building the latest manager impact summary.</p>
+            ) : (
+              <div className="dv-focus-grid">
+                {impactSummary.map((item) => (
+                  <div key={`${item.title}-${item.detail}`} className="dv-focus-card">
+                    <span className="dv-focus-card__title">{item.title}</span>
+                    <span className={`dv-focus-card__value ${getToneClass(item.tone)}`}>{item.tone === 'risk' ? 'Risk' : item.tone === 'positive' ? 'Boost' : 'Read'}</span>
+                    <p className="dv-focus-card__detail">{item.detail}</p>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* 훈련 미니 패널 */}
-      {selectedActivity === 'training' && todayTraining && (
-        <div className="fm-card fm-card--highlight fm-mb-md">
-          <div className="fm-mb-sm">
-            <span className="fm-text-md fm-font-semibold fm-text-info">오늘의 훈련 스케줄</span>
-          </div>
-          <div className="fm-flex fm-items-center fm-gap-lg fm-mb-md">
-            <span className="fm-text-lg fm-font-semibold fm-text-primary">
-              {TRAINING_TYPE_LABELS[todayTraining.trainingType]}
-            </span>
-            <span className="fm-badge fm-badge--default fm-text-md">
-              강도: {todayTraining.intensity === 'light' ? '가벼운' : todayTraining.intensity === 'normal' ? '보통' : '강도 높은'}
-            </span>
-          </div>
-          <button
-            className="dv-training-link"
-            onClick={() => navigate('/manager/training')}
-          >
-            훈련 상세 설정 →
-          </button>
-        </div>
-      )}
-
-      {/* 액션 버튼 */}
-      <div className="fm-flex fm-gap-md fm-mb-lg">
-        <button
-          className="fm-btn fm-btn--primary fm-btn--lg"
-          onClick={handleNextDay}
-          disabled={isProcessing}
-        >
-          {isProcessing ? '진행 중...' : '다음 날 →'}
-        </button>
-        <button
-          className="fm-btn fm-btn--lg"
-          onClick={handleSkipToMatch}
-          disabled={isProcessing}
-        >
-          {isProcessing ? '스킵 중...' : '경기일까지 스킵 ⏩'}
-        </button>
-      </div>
-
-      {/* 하루 결과 */}
       {dayResult && (
-        <div className="fm-panel fm-mb-md fm-animate-slide">
+        <div className="fm-panel fm-mb-lg">
           <div className="fm-panel__header">
-            <span className="fm-text-xl fm-font-semibold fm-text-primary">
-              {dayResult.date} ({dayResult.dayName})
-            </span>
-            <span
-              className="fm-badge"
-              style={{
-                background: DAY_TYPE_LABELS[dayResult.dayType].color + '22',
-                color: DAY_TYPE_LABELS[dayResult.dayType].color,
-              }}
-            >
-              {DAY_TYPE_LABELS[dayResult.dayType].label}
-            </span>
+            <span className="fm-panel__title">Today’s outcome</span>
           </div>
-
           <div className="fm-panel__body">
-            {dayResult.events.map((evt, i) => (
-              <p key={i} className="fm-text-md fm-text-secondary fm-mb-sm">• {evt}</p>
-            ))}
-
-            {/* 선수 개인 이벤트 */}
-            {dayResult.playerEvents && dayResult.playerEvents.length > 0 && (
-              <div className="fm-mt-md">
-                {dayResult.playerEvents.map((pe) => {
-                  const severityColor = pe.severity === 'critical' ? '#e74c3c'
-                    : pe.severity === 'major' ? '#f39c12'
-                    : pe.severity === 'moderate' ? '#3498db' : '#8a8a9a';
-                  return (
-                    <div
-                      key={pe.id}
-                      className="dv-player-event"
-                      style={{
-                        borderColor: `${severityColor}44`,
-                        borderLeftColor: severityColor,
-                        background: `${severityColor}08`,
-                      }}
-                    >
-                      <div className="dv-player-event__header">
-                        <span
-                          className="dv-player-event__category"
-                          style={{
-                            background: `${severityColor}20`,
-                            color: severityColor,
-                          }}
-                        >
-                          {pe.category === 'military' ? '군사' : pe.category === 'scandal' ? '스캔들'
-                            : pe.category === 'personal' ? '개인사' : pe.category === 'achievement' ? '업적'
-                            : pe.category === 'controversy' ? '논란' : pe.category === 'growth' ? '성장'
-                            : pe.category === 'media' ? '미디어' : pe.category === 'education' ? '교육' : pe.category}
-                        </span>
-                        <span className="fm-text-md fm-font-semibold fm-text-primary">
-                          {pe.title}
-                        </span>
-                        <span className="fm-text-sm fm-text-muted" style={{ marginLeft: 'auto' }}>
-                          {pe.playerName}
-                        </span>
-                      </div>
-                      <p className="dv-player-event__desc">{pe.description}</p>
-                      {pe.effects.moraleChange && (
-                        <span
-                          className="fm-text-sm"
-                          style={{
-                            color: pe.effects.moraleChange > 0 ? 'var(--success)' : 'var(--danger)',
-                            marginRight: '8px',
-                          }}
-                        >
-                          사기 {pe.effects.moraleChange > 0 ? '+' : ''}{pe.effects.moraleChange}
-                        </span>
-                      )}
-                      {pe.effects.daysAbsent && pe.effects.daysAbsent > 0 && (
-                        <span className="fm-text-sm fm-text-danger">결장 {pe.effects.daysAbsent}일</span>
-                      )}
-                      {pe.choices && pe.choices.length > 0 && (
-                        <div className="fm-flex fm-gap-sm fm-flex-wrap fm-mt-sm">
-                          {pe.choices.map((choice, ci) => (
-                            <button
-                              key={ci}
-                              className="dv-choice-btn"
-                              onClick={async () => {
-                                if (!season || !save) return;
-                                try {
-                                  await processPlayerEvent(pe, season.id, season.currentDate, save.userTeamId, ci);
-                                  // 선택 후 버튼 비활성화 (불변성 유지)
-                                  setDayResult(prev => {
-                                    if (!prev || !prev.playerEvents) return prev;
-                                    return {
-                                      ...prev,
-                                      playerEvents: prev.playerEvents.map(e =>
-                                        e.id === pe.id ? { ...e, choices: undefined } : e,
-                                      ),
-                                    };
-                                  });
-                                } catch (e) {
-                                  console.warn('이벤트 선택지 처리 실패:', e);
-                                }
-                              }}
-                              title={choice.effect.displayText}
-                            >
-                              {choice.label}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+            <div className="fm-flex fm-gap-lg fm-mb-md">
+              <div className="fm-stat">
+                <span className="fm-stat__label">Next date</span>
+                <span className="fm-stat__value">{dayResult.nextDate}</span>
               </div>
-            )}
+              <div className="fm-stat">
+                <span className="fm-stat__label">Processed as</span>
+                <span className="fm-stat__value">{DAY_TYPE_LABELS[dayResult.dayType] ?? dayResult.dayType}</span>
+              </div>
+            </div>
 
-            {/* 타 팀 경기 결과 */}
-            {dayResult.matchResults.length > 0 && (
-              <div className="fm-mt-md">
-                <div className="fm-divider" />
-                <h3 className="fm-panel__title fm-text-accent fm-mb-sm">오늘의 경기 결과</h3>
-                {dayResult.matchResults.map((mr) => {
-                  const home = teams.find((t) => t.id === mr.homeTeamId);
-                  const away = teams.find((t) => t.id === mr.awayTeamId);
-                  return (
-                    <div key={mr.matchId} className="fm-match-row fm-justify-center">
-                      <span className="dv-match-team">{home?.shortName ?? mr.homeTeamId}</span>
-                      <span className="dv-match-score">
-                        {mr.result.scoreHome} : {mr.result.scoreAway}
-                      </span>
-                      <span className="dv-match-team">{away?.shortName ?? mr.awayTeamId}</span>
+            <div className="dv-focus-grid fm-mb-md">
+              {getResultHighlights(dayResult, todayTraining).map((highlight) => (
+                <div key={highlight} className="dv-focus-card">
+                  <span className="dv-focus-card__title">Decision feedback</span>
+                  <span className="dv-focus-card__value">{highlight.split(':')[0]}</span>
+                  <p className="dv-focus-card__detail">
+                    {highlight.includes(':') ? highlight.split(':').slice(1).join(':').trim() : highlight}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            <div className="fm-panel fm-mb-md" style={{ background: 'rgba(255,255,255,0.02)' }}>
+              <div className="fm-panel__header">
+                <span className="fm-panel__title">Why this week should feel different</span>
+              </div>
+              <div className="fm-panel__body">
+                <div className="dv-focus-grid">
+                  {resultSummaryCards.map((item) => (
+                    <div key={`result-${item.title}-${item.detail}`} className="dv-focus-card">
+                      <span className="dv-focus-card__title">{item.title}</span>
+                      <span className={`dv-focus-card__value ${getToneClass(item.tone)}`}>{item.tone === 'risk' ? 'Risk' : item.tone === 'positive' ? 'Boost' : 'Read'}</span>
+                      <p className="dv-focus-card__detail">{item.detail}</p>
                     </div>
-                  );
-                })}
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {dayResult.events.length === 0 ? (
+              <p className="fm-text-muted">No special events were recorded today.</p>
+            ) : (
+              <div className="fm-flex-col fm-gap-sm">
+                {dayResult.events.map((event, index) => (
+                  <div key={`${event}-${index}`} className="fm-card">
+                    <span className="fm-text-secondary">{event}</span>
+                  </div>
+                ))}
               </div>
             )}
           </div>
         </div>
       )}
 
-      {/* 스킵 결과 요약 */}
-      {skipResults.length > 1 && (
-        <div className="fm-panel fm-animate-slide">
+      {skipResults.length > 0 && (
+        <div className="fm-panel">
           <div className="fm-panel__header">
-            <span className="fm-panel__title">{skipResults.length}일 스킵 완료</span>
+            <span className="fm-panel__title">Skipped days summary</span>
           </div>
-          <div className="fm-panel__body fm-panel__body--compact">
-            {skipResults.map((dr, i) => (
-              <div key={i} className="dv-skip-row">
-                <span className="fm-text-md fm-text-secondary" style={{ minWidth: '120px' }}>
-                  {dr.date} ({dr.dayName})
-                </span>
-                <span
-                  className="fm-text-sm fm-font-medium"
-                  style={{ color: DAY_TYPE_LABELS[dr.dayType].color }}
-                >
-                  {DAY_TYPE_LABELS[dr.dayType].label}
-                </span>
-                {dr.matchResults.length > 0 && (
-                  <span className="fm-text-base fm-text-muted" style={{ marginLeft: 'auto' }}>
-                    {dr.matchResults.length}경기
-                  </span>
-                )}
+          <div className="fm-panel__body fm-flex-col fm-gap-sm">
+            {skipResults.map((result) => (
+              <div key={`${result.date}-${result.nextDate}`} className="fm-card">
+                <div className="fm-flex fm-justify-between fm-items-center fm-mb-xs">
+                  <span className="fm-text-primary fm-font-semibold">{result.date}</span>
+                  <span className="fm-badge fm-badge--default">{DAY_TYPE_LABELS[result.dayType] ?? result.dayType}</span>
+                </div>
+                <p className="fm-text-muted" style={{ margin: 0 }}>
+                  {result.events[0] ?? 'No major update'}
+                </p>
               </div>
             ))}
           </div>

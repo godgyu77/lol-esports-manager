@@ -8,6 +8,10 @@ import {
   MANAGER_STAT_LABELS,
 } from '../../types/manager';
 import { useGameStore } from '../../stores/gameStore';
+import {
+  getDominantManagerTraits,
+  getInitialManagerPhilosophy,
+} from '../../engine/manager/managerIdentityEngine';
 
 const NATIONALITIES = [
   { value: 'KR', label: '한국' },
@@ -53,6 +57,8 @@ export function ManagerCreate() {
   });
 
   const baseData = MANAGER_BG_STATS[background];
+  const basePhilosophy = useMemo(() => getInitialManagerPhilosophy(background), [background]);
+  const baseTraits = useMemo(() => getDominantManagerTraits(basePhilosophy), [basePhilosophy]);
 
   const usedPoints = useMemo(
     () => Object.values(bonusPoints).reduce((sum, v) => sum + v, 0),
@@ -101,6 +107,7 @@ export function ManagerCreate() {
       background,
       stats: finalStats,
       reputation: baseData.reputation,
+      philosophy: basePhilosophy,
     });
     navigate('/team-select');
   };
@@ -191,6 +198,14 @@ export function ManagerCreate() {
                   </span>
                 </button>
               ))}
+            </div>
+            <div className="fm-card fm-mt-md">
+              <div className="fm-flex fm-justify-between fm-items-center fm-gap-md">
+                <span className="fm-text-sm fm-font-semibold fm-text-primary">초기 감독 성향</span>
+                <span className="fm-text-xs fm-text-muted">
+                  {baseTraits.length > 0 ? baseTraits.join(' / ') : '균형형'}
+                </span>
+              </div>
             </div>
           </div>
         </div>

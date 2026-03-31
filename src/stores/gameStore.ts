@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { GameMode, GameSave, Match, Position, Season } from '../types';
 import type { PlayerBackground } from '../types/player';
-import type { ManagerBackground, ManagerStats } from '../types/manager';
+import type { ManagerBackground, ManagerPhilosophy, ManagerStats } from '../types/manager';
 import type { Team } from '../types';
 import type { DayType } from '../engine/season/calendar';
 import type { DraftState } from '../engine/draft/draftEngine';
@@ -22,6 +22,7 @@ export interface PendingManager {
   background: ManagerBackground;
   stats: ManagerStats;
   reputation: number;
+  philosophy: ManagerPhilosophy;
 }
 
 /** 현재 진행 중인 날의 상태 */

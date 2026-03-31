@@ -379,6 +379,11 @@ export function TransferView() {
     }
   };
 
+  const handleCloseOfferModal = () => {
+    setOfferModal(null);
+    setOfferError(null);
+  };
+
   const handleCancelOffer = async (offerId: number) => {
     if (!season) return;
 
@@ -912,11 +917,11 @@ export function TransferView() {
 
       {/* 영입 제안 모달 */}
       {offerModal && (
-        <div className="fm-overlay" role="dialog" aria-modal="true" aria-label="영입 제안" onClick={() => setOfferModal(null)}>
+        <div className="fm-overlay" role="dialog" aria-modal="true" aria-label="영입 제안" onClick={handleCloseOfferModal}>
           <div className="fm-modal" onClick={e => e.stopPropagation()}>
             <div className="fm-modal__header">
               <h2 className="fm-modal__title">영입 제안</h2>
-              <button className="fm-modal__close" onClick={() => setOfferModal(null)}>&times;</button>
+              <button className="fm-modal__close" onClick={handleCloseOfferModal}>&times;</button>
             </div>
             <div className="fm-modal__body">
               <div className="fm-flex fm-items-center fm-gap-sm fm-p-sm fm-mb-md" style={{ background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)' }}>
@@ -963,7 +968,7 @@ export function TransferView() {
               </div>
             )}
             <div className="fm-modal__footer">
-              <button className="fm-btn" onClick={() => { setOfferModal(null); setOfferError(null); }}>취소</button>
+              <button className="fm-btn" onClick={handleCloseOfferModal}>취소</button>
               <button className="fm-btn fm-btn--primary" onClick={handleSubmitOffer}>제안하기</button>
             </div>
           </div>

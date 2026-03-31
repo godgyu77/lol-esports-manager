@@ -1,23 +1,42 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { generateDailyBriefing, type DailyBriefing } from '../../../ai/advancedAiService';
+import {
+  getExpiringContracts,
+  getMatchesByTeam,
+  getRecentDailyEvents,
+  getTeamConditions,
+  getTeamTotalSalary,
+} from '../../../db/queries';
+import { getBoardExpectations } from '../../../engine/board/boardEngine';
+import { getActiveComplaints } from '../../../engine/complaint/complaintEngine';
+import { getInjuredPlayerIds } from '../../../engine/injury/injuryEngine';
+import { getUnreadCount } from '../../../engine/news/newsEngine';
+import {
+  getManagerIdentity,
+  getManagerIdentitySummaryLine,
+  MANAGER_PHILOSOPHY_LABELS,
+  type ManagerIdentityProfile,
+} from '../../../engine/manager/managerIdentityEngine';
+import {
+  getPlayerManagementInsights,
+  getSatisfactionReport,
+  SATISFACTION_FACTOR_LABELS,
+  type PlayerManagementInsight,
+} from '../../../engine/satisfaction/playerSatisfactionEngine';
+import { generateStaffRecommendations, type StaffRecommendation } from '../../../engine/staff/staffEngine';
+import { useBgm } from '../../../hooks/useBgm';
 import { useGameStore } from '../../../stores/gameStore';
 import { useSettingsStore } from '../../../stores/settingsStore';
-import { useBgm } from '../../../hooks/useBgm';
-import { getMatchesByTeam, getTeamTotalSalary, getTeamConditions, getRecentDailyEvents, getExpiringContracts } from '../../../db/queries';
+import type { Match } from '../../../types/match';
+import { STAFF_ROLE_LABELS } from '../../../types/staff';
+import { formatAmount } from '../../../utils/formatUtils';
 import { TutorialOverlay } from '../../tutorial/TutorialOverlay';
 import { MeetingModal } from '../components/MeetingModal';
-import { getActiveComplaints } from '../../../engine/complaint/complaintEngine';
-import { getBoardExpectations } from '../../../engine/board/boardEngine';
-import { getCompletedReports } from '../../../engine/scouting/scoutingEngine';
-import { getUnreadCount } from '../../../engine/news/newsEngine';
-import { getInjuredPlayerIds } from '../../../engine/injury/injuryEngine';
-import { getSatisfactionReport } from '../../../engine/satisfaction/playerSatisfactionEngine';
-import { generateDailyBriefing, generateCoachMeeting, type DailyBriefing, type CoachMeetingResult } from '../../../ai/advancedAiService';
-import { formatAmount } from '../../../utils/formatUtils';
-import type { Match } from '../../../types/match';
 import './ManagerHome.css';
 
 const SALARY_CAP = 400000;
+const PRESS_COOLDOWN_DAYS = 7;
 
 interface DashboardAlert {
   type: 'warning' | 'info' | 'danger';
@@ -34,971 +53,708 @@ interface NewsEvent {
   description: string;
 }
 
-/** 이벤트 타입별 표시 색상 */
-const NEWS_EVENT_COLORS: Record<string, string> = {
-  match_day: '#c89b3c',
-  training: '#50c878',
-  scrim: '#50c878',
-  rest: '#6a6a7a',
-  transfer: '#a78bfa',
-  patch: '#60a5fa',
-  injury: '#dc3c3c',
-  recovery: '#50c878',
-  meeting: '#60a5fa',
-  event: '#60a5fa',
-};
-
-const positionLabel: Record<string, string> = {
-  top: '탑',
-  jungle: '정글',
-  mid: '미드',
-  adc: '원딜',
-  support: '서포터',
-};
-
-/** position -> fm-pos-badge class suffix */
-const positionBadgeClass: Record<string, string> = {
-  top: 'top',
-  jungle: 'jgl',
-  mid: 'mid',
-  adc: 'adc',
-  support: 'sup',
-};
-
-/** OVR 값에 따른 fm-ovr class suffix */
-function getOvrClass(ovr: number): string {
-  if (ovr >= 85) return 'fm-ovr--elite';
-  if (ovr >= 75) return 'fm-ovr--high';
-  if (ovr >= 60) return 'fm-ovr--mid';
-  return 'fm-ovr--low';
+interface FocusCard {
+  title: string;
+  body: string;
+  status: string;
+  route?: string;
 }
 
-/** 바 색상 class (value 기준) */
-function getBarColorClass(value: number): string {
-  if (value > 70) return 'fm-bar__fill--green';
-  if (value > 40) return 'fm-bar__fill--yellow';
-  return 'fm-bar__fill--red';
+const POSITION_LABELS: Record<string, string> = {
+  top: 'TOP',
+  jungle: 'JGL',
+  mid: 'MID',
+  adc: 'ADC',
+  support: 'SUP',
+};
+
+function getDaysDiff(from: string, to: string): number {
+  const start = new Date(from);
+  const end = new Date(to);
+  return Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+function getUrgencyLabel(level: 'high' | 'medium' | 'low'): string {
+  if (level === 'high') return 'Immediate';
+  if (level === 'medium') return 'Watch';
+  return 'Stable';
+}
+
+function getOpponentName(
+  teamId: string | undefined,
+  teams: Array<{ id: string; name: string }>,
+): string | undefined {
+  if (!teamId) return undefined;
+  return teams.find((team) => team.id === teamId)?.name ?? teamId;
 }
 
 export function ManagerHome() {
   useBgm('game');
+
   const save = useGameStore((s) => s.save);
   const season = useGameStore((s) => s.season);
   const teams = useGameStore((s) => s.teams);
   const tutorialComplete = useSettingsStore((s) => s.tutorialComplete);
   const navigate = useNavigate();
 
+  const userTeam = teams.find((team) => team.id === save?.userTeamId);
+
+  const [loading, setLoading] = useState(true);
   const [upcomingMatches, setUpcomingMatches] = useState<Match[]>([]);
   const [recentMatches, setRecentMatches] = useState<Match[]>([]);
-  const [totalSalary, setTotalSalary] = useState<number>(0);
+  const [totalSalary, setTotalSalary] = useState(0);
   const [conditions, setConditions] = useState<Map<string, { stamina: number; morale: number; form: number }>>(new Map());
   const [newsEvents, setNewsEvents] = useState<NewsEvent[]>([]);
   const [alerts, setAlerts] = useState<DashboardAlert[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [briefing, setBriefing] = useState<DailyBriefing | null>(null);
+  const [briefingLoading, setBriefingLoading] = useState(true);
   const [modalMode, setModalMode] = useState<'meeting' | 'press' | null>(null);
   const [playerMeetingDates, setPlayerMeetingDates] = useState<Record<string, string>>({});
   const [lastPressDate, setLastPressDate] = useState<string | null>(null);
-  const [briefing, setBriefing] = useState<DailyBriefing | null>(null);
-  const [briefingLoading, setBriefingLoading] = useState(true);
-
-  // 코치 미팅
-  const [coachMeetingResult, setCoachMeetingResult] = useState<CoachMeetingResult | null>(null);
-  const [coachMeetingLoading, setCoachMeetingLoading] = useState(false);
-  const [coachMeetingOpen, setCoachMeetingOpen] = useState(false);
-  const [lastCoachMeetingDate, setLastCoachMeetingDate] = useState<string | null>(null);
+  const [playerInsights, setPlayerInsights] = useState<PlayerManagementInsight[]>([]);
+  const [staffRecommendations, setStaffRecommendations] = useState<StaffRecommendation[]>([]);
+  const [managerIdentity, setManagerIdentity] = useState<ManagerIdentityProfile | null>(null);
   const briefingRequestRef = useRef<string | null>(null);
 
-  const userTeam = teams.find((t) => t.id === save?.userTeamId);
+  const pressCooldown = season && lastPressDate
+    ? Math.max(0, PRESS_COOLDOWN_DAYS - getDaysDiff(lastPressDate, season.currentDate))
+    : 0;
+
+  const buildFallbackBriefing = useCallback((context: {
+    teamName: string;
+    currentDate: string;
+    nextOpponentName?: string;
+    nextMatchDate?: string;
+    teamMorale: number;
+    injuredPlayers: string[];
+    recentForm: string;
+    lowSatisfactionPlayers: string[];
+    activeConflicts: number;
+    budgetStatus: string;
+  }): DailyBriefing => {
+    const alertsText: string[] = [];
+    const advice: string[] = [];
+
+    if (context.injuredPlayers.length > 0) {
+      alertsText.push(`부상 관리가 필요한 선수: ${context.injuredPlayers.join(', ')}`);
+    }
+    if (context.lowSatisfactionPlayers.length > 0) {
+      alertsText.push(`만족도가 낮은 선수: ${context.lowSatisfactionPlayers.slice(0, 2).join(', ')}`);
+    }
+    if (context.activeConflicts > 0) {
+      alertsText.push(`즉시 확인할 선수 이슈 ${context.activeConflicts}건이 남아 있습니다.`);
+    }
+
+    advice.push(
+      context.teamMorale < 55
+        ? '지금은 훈련 강도보다 회복, 면담, 분위기 수습을 우선하는 편이 안전합니다.'
+        : '팀 분위기는 버틸 만합니다. 다음 경기 준비와 전술 정리에 집중해도 됩니다.',
+    );
+
+    if (context.nextOpponentName) {
+      advice.push(`${context.nextOpponentName}전을 앞두고 너무 많은 날짜를 넘기기보다 준비 상태를 먼저 점검하세요.`);
+    }
+
+    return {
+      briefing: `${context.currentDate} 기준 ${context.teamName} 일일 브리핑입니다. 최근 흐름은 ${context.recentForm}이며, 현재 팀 사기는 ${context.teamMorale}입니다. 오늘은 단순히 날짜를 넘기기보다 다음 경기와 선수단 분위기에 어떤 변수와 기회가 남아 있는지 함께 점검할 필요가 있습니다.`,
+      alerts: alertsText,
+      advice,
+    };
+  }, []);
 
   useEffect(() => {
-    if (!userTeam || !season) return;
+    if (!season || !userTeam) return;
 
     let cancelled = false;
 
     const load = async () => {
       setLoading(true);
+
       try {
-        const [matches, salary, cond, news] = await Promise.all([
+        const [matches, salary, teamConditions, events, insights, recommendations, identity] = await Promise.all([
           getMatchesByTeam(season.id, userTeam.id),
           getTeamTotalSalary(userTeam.id),
           getTeamConditions(userTeam.id, season.currentDate),
-          getRecentDailyEvents(season.id, 3, 0),
+          getRecentDailyEvents(season.id, 6, 0),
+          getPlayerManagementInsights(userTeam.id, season.id, 4).catch(() => []),
+          generateStaffRecommendations(userTeam.id, season.id).catch(() => []),
+          save ? getManagerIdentity(save.id).catch(() => null) : Promise.resolve(null),
         ]);
 
         if (cancelled) return;
 
-        const played = matches.filter((m) => m.isPlayed);
-        const unplayed = matches.filter((m) => !m.isPlayed);
-
-        setRecentMatches(played.slice(-3).reverse());
-        setUpcomingMatches(unplayed.slice(0, 3));
+        setUpcomingMatches(matches.filter((match) => !match.isPlayed).slice(0, 3));
+        setRecentMatches(matches.filter((match) => match.isPlayed).slice(-3).reverse());
         setTotalSalary(salary);
-        setConditions(cond);
-        setNewsEvents(news);
+        setConditions(teamConditions);
+        setNewsEvents(events.filter((event) => event.eventType !== 'patch'));
+        setPlayerInsights(insights);
+        setStaffRecommendations(recommendations);
+        setManagerIdentity(identity);
 
-        // 알림 체크
-        const newAlerts: DashboardAlert[] = [];
+        const nextAlerts: DashboardAlert[] = [];
+        const [expiring, complaints, unreadCount, board] = await Promise.all([
+          getExpiringContracts(season.id),
+          getActiveComplaints(userTeam.id),
+          getUnreadCount(season.id),
+          getBoardExpectations(userTeam.id, season.id),
+        ]);
 
-        try {
-          // 계약 만료 임박 선수
-          const expiring = await getExpiringContracts(season.id);
-          const teamExpiring = expiring.filter(p => p.teamId === userTeam.id);
-          if (teamExpiring.length > 0) {
-            const firstName = teamExpiring[0].name;
-            const msg = teamExpiring.length > 1
-              ? `${firstName} 외 ${teamExpiring.length - 1}명의 계약이 이번 시즌 종료`
-              : `${firstName}의 계약이 이번 시즌 종료`;
-            newAlerts.push({ type: 'warning', message: msg, link: '/manager/roster' });
-          }
-
-          // 활성 불만 (severity 2 이상)
-          const complaints = await getActiveComplaints(userTeam.id);
-          const severeComplaints = complaints.filter(c => c.severity >= 2);
-          if (severeComplaints.length > 0) {
-            newAlerts.push({
-              type: 'danger',
-              message: `선수 불만 ${severeComplaints.length}건 미해결`,
-              link: '/manager/roster',
-            });
-          }
-
-          // 샐러리캡 경고 (90% 이상)
-          const salaryRatioVal = salary / SALARY_CAP;
-          if (salaryRatioVal >= 0.9) {
-            newAlerts.push({
-              type: 'danger',
-              message: `샐러리캡 ${(salaryRatioVal * 100).toFixed(1)}% 도달`,
-              link: '/manager/finance',
-            });
-          }
-
-          // 읽지 않은 뉴스
-          const unreadCount = await getUnreadCount(season.id);
-          if (unreadCount > 0) {
-            newAlerts.push({
-              type: 'info',
-              message: `미확인 뉴스 ${unreadCount}건`,
-              link: '/manager/news',
-            });
-          }
-
-          // 보드 만족도 위험 (30 이하)
-          const board = await getBoardExpectations(userTeam.id, season.id);
-          if (board && board.satisfaction <= 30) {
-            newAlerts.push({
-              type: 'danger',
-              message: '구단 만족도 위험!',
-              link: '/manager/board',
-            });
-          }
-
-          // 스카우팅 리포트 완료
-          const reports = await getCompletedReports(userTeam.id);
-          if (reports.length > 0) {
-            newAlerts.push({
-              type: 'info',
-              message: `스카우팅 리포트 ${reports.length}건 도착`,
-              link: '/manager/scouting',
-            });
-          }
-        } catch (e) {
-          console.warn('[ManagerHome] alert check failed:', e);
+        const expiringPlayers = expiring.filter((player) => player.teamId === userTeam.id);
+        if (expiringPlayers.length > 0) {
+          nextAlerts.push({
+            type: 'warning',
+            message: `${expiringPlayers[0].name} 포함 ${expiringPlayers.length}명의 계약 만료가 가까워졌습니다.`,
+            link: '/manager/roster',
+          });
         }
 
-        if (!cancelled) setAlerts(newAlerts);
+        if (complaints.length > 0) {
+          nextAlerts.push({
+            type: 'danger',
+            message: `선수 불만 ${complaints.length}건이 열려 있습니다.`,
+            link: '/manager/complaints',
+          });
+        }
+
+        if (salary / SALARY_CAP >= 0.9) {
+          nextAlerts.push({
+            type: 'warning',
+            message: `총 연봉이 샐러리캡의 ${((salary / SALARY_CAP) * 100).toFixed(1)}%입니다.`,
+            link: '/manager/finance',
+          });
+        }
+
+        if (unreadCount > 0) {
+          nextAlerts.push({
+            type: 'info',
+            message: `읽지 않은 뉴스 ${unreadCount}건이 있습니다.`,
+            link: '/manager/news',
+          });
+        }
+
+        if (board && board.satisfaction <= 30) {
+          nextAlerts.push({
+            type: 'danger',
+            message: '이사회 만족도가 낮습니다. 단기 성과 회복이 필요합니다.',
+            link: '/manager/board',
+          });
+        }
+
+        if (!cancelled) {
+          setAlerts(nextAlerts);
+        }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     };
 
-    load();
+    void load();
 
     return () => {
       cancelled = true;
     };
-  }, [userTeam, season]);
+  }, [save, season, userTeam]);
 
-  // 일간 브리핑 로딩
   useEffect(() => {
-    if (!userTeam || !season) return;
-    let cancelled = false;
-    const requestKey = `${userTeam.id}:${season.currentDate}`;
+    if (!season || !userTeam) return;
 
-    if (briefingRequestRef.current === requestKey) {
-      return;
-    }
+    const requestKey = `${userTeam.id}:${season.currentDate}`;
+    if (briefingRequestRef.current === requestKey) return;
     briefingRequestRef.current = requestKey;
+
+    let cancelled = false;
 
     const loadBriefing = async () => {
       setBriefingLoading(true);
+
       try {
-        // 부상자 이름 조회
         const injuredIds = await getInjuredPlayerIds(userTeam.id);
-        const injuredPlayers = userTeam.roster
-          .filter((p) => injuredIds.has(p.id))
-          .map((p) => p.name);
+        const injuredPlayers = userTeam.roster.filter((player) => injuredIds.has(player.id)).map((player) => player.name);
+        const lowSatisfactionEntries = await getSatisfactionReport(userTeam.id).catch(() => []);
+        const lowSatisfactionPlayers = lowSatisfactionEntries
+          .filter((entry) => entry.overallSatisfaction < 40)
+          .map((entry) => userTeam.roster.find((player) => player.id === entry.playerId)?.name ?? entry.playerId);
+        const complaints = await getActiveComplaints(userTeam.id).catch(() => []);
+        const nextMatch = upcomingMatches[0];
+        const nextOpponentId = nextMatch
+          ? (nextMatch.teamHomeId === userTeam.id ? nextMatch.teamAwayId : nextMatch.teamHomeId)
+          : undefined;
+        const avgMorale = userTeam.roster.length > 0
+          ? Math.round(userTeam.roster.reduce((sum, player) => sum + (conditions.get(player.id)?.morale ?? 50), 0) / userTeam.roster.length)
+          : 50;
+        const recentForm = recentMatches.length > 0 ? `최근 ${recentMatches.length}경기 소화` : '최근 경기 데이터가 충분하지 않습니다';
+        const budgetStatus = userTeam.budget >= 0
+          ? '재정은 당장 안정적이지만 장기 계약과 주급 관리까지 함께 볼 필요가 있습니다.'
+          : '재정 압박이 감지됩니다. 스폰서와 지출 관리 우선순위를 다시 잡아야 합니다.';
 
-        // 만족도 낮은 선수 조회
-        let lowSatisfactionPlayers: string[] = [];
-        try {
-          const satisfactions = await getSatisfactionReport(userTeam.id);
-          lowSatisfactionPlayers = satisfactions
-            .filter((s) => s.overallSatisfaction < 40)
-            .map((s) => {
-              const player = userTeam.roster.find((p) => p.id === s.playerId);
-              return player?.name ?? s.playerId;
-            });
-        } catch {
-          // 만족도 조회 실패 무시
-        }
-
-        // 갈등 수 조회
-        let activeConflicts = 0;
-        try {
-          const complaints = await getActiveComplaints(userTeam.id);
-          activeConflicts = complaints.filter((c) => c.severity >= 2).length;
-        } catch {
-          // 갈등 조회 실패 무시
-        }
-
-        // 다음 경기 조회
-        const matches = await getMatchesByTeam(season.id, userTeam.id);
-        const unplayed = matches.filter((m) => !m.isPlayed);
-        const nextMatch = unplayed[0];
-        let nextOpponentName: string | undefined;
-        let nextMatchDate: string | undefined;
-        if (nextMatch) {
-          const opponentId = nextMatch.teamHomeId === userTeam.id ? nextMatch.teamAwayId : nextMatch.teamHomeId;
-          nextOpponentName = teams.find((t) => t.id === opponentId)?.name ?? opponentId;
-          nextMatchDate = nextMatch.matchDate ?? undefined;
-        }
-
-        // 최근 전적
-        const played = matches.filter((m) => m.isPlayed).slice(-5);
-        const wins = played.filter((m) => {
-          const isHome = m.teamHomeId === userTeam.id;
-          return isHome ? m.scoreHome > m.scoreAway : m.scoreAway > m.scoreHome;
-        }).length;
-        const losses = played.length - wins;
-        const recentForm = played.length > 0 ? `${wins}승 ${losses}패` : '경기 기록 없음';
-
-        // 팀 사기 평균
-        const cond = await getTeamConditions(userTeam.id, season.currentDate);
-        let totalMorale = 0;
-        let moraleCount = 0;
-        cond.forEach((c) => { totalMorale += c.morale; moraleCount++; });
-        const teamMorale = moraleCount > 0 ? Math.round(totalMorale / moraleCount) : 70;
-
-        // 예산 상태
-        const budgetStatus = userTeam.budget > 10000 ? '여유' : userTeam.budget > 3000 ? '보통' : '부족';
-
-        if (cancelled) return;
-
-        const result = await generateDailyBriefing({
+        const context = {
           teamName: userTeam.name,
           currentDate: season.currentDate,
-          nextOpponentName,
-          nextMatchDate,
-          teamMorale,
+          nextOpponentName: getOpponentName(nextOpponentId, teams),
+          nextMatchDate: nextMatch?.matchDate,
+          teamMorale: avgMorale,
           injuredPlayers,
           recentForm,
           lowSatisfactionPlayers,
-          activeConflicts,
+          activeConflicts: complaints.length,
           budgetStatus,
+        };
+
+        const briefingPromise = generateDailyBriefing(context);
+        const timeoutPromise = new Promise<DailyBriefing>((resolve) => {
+          window.setTimeout(() => resolve(buildFallbackBriefing(context)), 3500);
         });
 
-        if (!cancelled) setBriefing(result);
-      } catch (err) {
-        console.warn('[ManagerHome] briefing load failed:', err);
+        const nextBriefing = await Promise.race([briefingPromise, timeoutPromise]);
+        if (!cancelled) {
+          setBriefing(nextBriefing);
+        }
+      } catch (error) {
+        console.warn('[ManagerHome] briefing fallback:', error);
+        if (!cancelled) {
+          setBriefing(
+            buildFallbackBriefing({
+              teamName: userTeam.name,
+              currentDate: season.currentDate,
+              teamMorale: 50,
+              injuredPlayers: [],
+              recentForm: '최근 경기 데이터가 충분하지 않습니다',
+              lowSatisfactionPlayers: [],
+              activeConflicts: 0,
+              budgetStatus: userTeam.budget >= 0
+                ? '재정은 안정적이지만 장기 플랜 점검은 필요합니다.'
+                : '재정이 흔들리고 있어 지출 통제가 필요합니다.',
+            }),
+          );
+        }
       } finally {
-        if (!cancelled) setBriefingLoading(false);
+        if (!cancelled) {
+          setBriefingLoading(false);
+        }
       }
     };
 
-    loadBriefing();
-    return () => { cancelled = true; };
-  }, [userTeam, season, teams]);
+    void loadBriefing();
 
-  /** 날짜 간 일수 차이 계산 (YYYY-MM-DD 형식) */
-  const getDaysDiff = useCallback((from: string, to: string): number => {
-    const d1 = new Date(from);
-    const d2 = new Date(to);
-    return Math.floor((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24));
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [briefingRequestRef, buildFallbackBriefing, conditions, recentMatches, season, upcomingMatches, userTeam]);
 
-  if (!userTeam || !season) {
-    return <p className="fm-text-md fm-text-muted">데이터를 불러오는 중...</p>;
+  if (!season || !save || !userTeam) {
+    return <p className="fm-text-muted fm-text-md">Loading dashboard...</p>;
   }
 
-  // 1군 로스터 (division이 있으면 main 기준, 없으면 처음 5명)
-  const mainRoster = userTeam.roster.filter(
-    (p) => (p as { division?: string }).division === 'main',
-  );
-  const displayRoster = mainRoster.length > 0 ? mainRoster.slice(0, 5) : userTeam.roster.slice(0, 5);
+  const focusCards: FocusCard[] = [
+    {
+      title: 'Training',
+      body: 'Weekly schedule now auto-applies during season progression. Adjust focus and intensity before advancing.',
+      status: 'Auto-applied',
+      route: '/manager/training',
+    },
+    {
+      title: 'Player management',
+      body: alerts.some((alert) => alert.type === 'danger')
+        ? 'Open complaints or morale issues need attention before they snowball into form loss.'
+        : 'No major player fire is active right now, but monitor morale and trust before the next match.',
+      status: alerts.some((alert) => alert.type === 'danger') ? 'Needs action' : 'Stable',
+      route: '/manager/complaints',
+    },
+    {
+      title: 'Match prep',
+      body: upcomingMatches[0]
+        ? 'Review the next opponent, draft direction, and tactical priorities before matchday arrives.'
+        : 'No urgent official match is queued, so you can invest in growth and recovery.',
+      status: upcomingMatches[0] ? `Next match ${upcomingMatches[0].matchDate}` : 'No urgent match',
+      route: '/manager/tactics',
+    },
+  ];
 
-  const getTeamName = (teamId: string): string => {
-    const team = teams.find((t) => t.id === teamId);
-    return team?.name ?? teamId;
-  };
-
-  const getMatchResult = (match: Match): 'win' | 'lose' => {
-    const isHome = match.teamHomeId === userTeam.id;
-    if (isHome) return match.scoreHome > match.scoreAway ? 'win' : 'lose';
-    return match.scoreAway > match.scoreHome ? 'win' : 'lose';
-  };
-
-  const getOpponentId = (match: Match): string => {
-    return match.teamHomeId === userTeam.id ? match.teamAwayId : match.teamHomeId;
-  };
-
-  const COOLDOWN_DAYS = 7;
-
-  const pressCooldown = lastPressDate && season
-    ? Math.max(0, COOLDOWN_DAYS - getDaysDiff(lastPressDate, season.currentDate))
-    : 0;
-
-  const coachMeetingCooldown = lastCoachMeetingDate && season
-    ? Math.max(0, COOLDOWN_DAYS - getDaysDiff(lastCoachMeetingDate, season.currentDate))
-    : 0;
-
-  /** 코치 미팅 실행 */
-  const handleCoachMeeting = async () => {
-    if (!userTeam || !season || coachMeetingCooldown > 0) return;
-
-    setCoachMeetingOpen(true);
-    setCoachMeetingLoading(true);
-    setCoachMeetingResult(null);
-
-    try {
-      // 부상자 이름
-      const injuredIds = await getInjuredPlayerIds(userTeam.id);
-      const injuredPlayers = userTeam.roster
-        .filter((p) => injuredIds.has(p.id))
-        .map((p) => p.name);
-
-      // 사기 낮은 선수
-      let lowMoralePlayers: string[] = [];
-      try {
-        const satisfactions = await getSatisfactionReport(userTeam.id);
-        lowMoralePlayers = satisfactions
-          .filter((s) => s.overallSatisfaction < 40)
-          .map((s) => {
-            const player = userTeam.roster.find((p) => p.id === s.playerId);
-            return player?.name ?? s.playerId;
-          });
-      } catch { /* 무시 */ }
-
-      // 다음 상대
-      const matches = await getMatchesByTeam(season.id, userTeam.id);
-      const unplayed = matches.filter((m) => !m.isPlayed);
-      const nextMatch = unplayed[0];
-      let nextOpponent: string | undefined;
-      if (nextMatch) {
-        const opponentId = nextMatch.teamHomeId === userTeam.id ? nextMatch.teamAwayId : nextMatch.teamHomeId;
-        nextOpponent = teams.find((t) => t.id === opponentId)?.name ?? opponentId;
+  const urgentIssue = alerts[0]
+    ? {
+        title: alerts[0].type === 'danger' ? '오늘 가장 시급한 이슈' : '오늘 우선 점검할 항목',
+        body: alerts[0].message,
+        route: alerts[0].link,
       }
+    : upcomingMatches[0]
+      ? {
+          title: '다음 경기 준비',
+          body: `${upcomingMatches[0].matchDate} 일정이 가까워지고 있습니다. 날짜를 넘기기 전에 훈련 방향, 전술, 선수 컨디션을 먼저 잠가두는 편이 안전합니다.`,
+          route: '/manager/pre-match',
+        }
+      : {
+          title: '안정 구간',
+          body: '즉시 폭발할 위기는 없습니다. 지금은 다음 주 흐름을 설계하기 좋은 정비 구간입니다.',
+          route: '/manager/day',
+        };
 
-      // 최근 전적
-      const played = matches.filter((m) => m.isPlayed).slice(-5);
-      const wins = played.filter((m) => {
-        const isHome = m.teamHomeId === userTeam.id;
-        return isHome ? m.scoreHome > m.scoreAway : m.scoreAway > m.scoreHome;
-      }).length;
-      const losses = played.length - wins;
-      const form = played.length > 0 ? `${wins}승 ${losses}패` : '경기 기록 없음';
+  const briefingOpportunities = [
+    upcomingMatches[0]
+      ? `${upcomingMatches[0].matchDate} 공식전 전까지 준비를 더 날카롭게 다듬을 시간이 남아 있습니다.`
+      : '당장 급한 공식전 압박이 없어 성장과 회복에 집중할 수 있는 구간입니다.',
+    staffRecommendations[0] ? `${staffRecommendations[0].title}: ${staffRecommendations[0].summary}` : null,
+    managerIdentity ? getManagerIdentitySummaryLine(managerIdentity) : null,
+  ].filter(Boolean) as string[];
 
-      // 코치 이름 (스태프에서 조회 또는 기본값)
-      const coachName = '김코치'; // 기본 코치 이름
-
-      const result = await generateCoachMeeting({
-        teamName: userTeam.name,
-        coachName,
-        recentForm: form,
-        nextOpponent,
-        injuredPlayers,
-        lowMoralePlayers,
-        teamStrength: '라인전 강점',
-        teamWeakness: '후반 운영',
-      });
-
-      setCoachMeetingResult(result);
-      setLastCoachMeetingDate(season.currentDate);
-    } catch (err) {
-      console.warn('[ManagerHome] coach meeting failed:', err);
-    } finally {
-      setCoachMeetingLoading(false);
-    }
-  };
-
-  const handleCloseModal = (didComplete: boolean) => {
-    if (didComplete && season) {
-      if (modalMode === 'press') {
-        setLastPressDate(season.currentDate);
-      }
-    }
-    setModalMode(null);
-  };
-
-  const handleMeetingComplete = (playerId: string) => {
-    if (season) {
-      setPlayerMeetingDates(prev => ({ ...prev, [playerId]: season.currentDate }));
-    }
-  };
-
-  /** 최근 경기 결과 요약 텍스트 */
-  const recentResultsText = recentMatches.length > 0
-    ? (() => {
-        const wins = recentMatches.filter((m) => getMatchResult(m) === 'win').length;
-        const losses = recentMatches.length - wins;
-        return `최근 ${recentMatches.length}경기: ${wins}승 ${losses}패`;
-      })()
-    : '경기 기록 없음';
-
-  const salaryRatio = totalSalary / SALARY_CAP;
+  const briefingActions = [
+    ...(briefing?.advice ?? []),
+    ...focusCards.map((card) => card.body),
+  ].slice(0, 3);
 
   return (
-    <div>
+    <div className="fm-animate-in">
       {!tutorialComplete && <TutorialOverlay />}
 
-      {/* Page Header */}
       <div className="fm-page-header">
-        <h1 className="fm-page-title">팀 대시보드</h1>
+        <h1 className="fm-page-title">Manager Dashboard</h1>
       </div>
 
-      {/* 알림 배너 섹션 */}
+      {loading && (
+        <div className="fm-alert fm-alert--info fm-mb-md">
+          <span className="fm-alert__text">Refreshing the latest team state.</span>
+        </div>
+      )}
+
       {alerts.length > 0 && (
-        <div className="fm-flex-col fm-gap-sm fm-mb-md">
-          {alerts.map((alert, idx) => (
-            <div
-              key={idx}
-              className={`fm-alert fm-alert--${alert.type}`}
-              style={{ cursor: alert.link ? 'pointer' : 'default' }}
+        <div className="fm-flex-col fm-gap-sm fm-mb-lg">
+          {alerts.map((alert, index) => (
+            <button
+              key={`${alert.message}-${index}`}
+              className={`fm-alert ${
+                alert.type === 'danger' ? 'fm-alert--danger' : alert.type === 'warning' ? 'fm-alert--warning' : 'fm-alert--info'
+              }`}
               onClick={() => alert.link && navigate(alert.link)}
-              role={alert.link ? 'button' : undefined}
-              tabIndex={alert.link ? 0 : undefined}
-              aria-label={alert.message}
-              onKeyDown={(e) => {
-                if (alert.link && (e.key === 'Enter' || e.key === ' ')) {
-                  navigate(alert.link);
-                }
-              }}
+              type="button"
             >
-              <span className="fm-alert__icon">
-                {alert.type === 'danger' ? '!' : alert.type === 'warning' ? '!' : 'i'}
-              </span>
               <span className="fm-alert__text">{alert.message}</span>
-              {alert.link && <span className="fm-alert__action">&rarr;</span>}
-            </div>
+            </button>
           ))}
         </div>
       )}
 
-      {/* 일간 브리핑 */}
-      <div className="fm-panel fm-mb-md">
-        <div className="fm-panel__header">
-          <span className="fm-panel__title">일간 브리핑</span>
+      <div className="fm-grid fm-grid--4 fm-mb-lg">
+        <div className="fm-card">
+          <div className="fm-stat">
+            <span className="fm-stat__label">Budget</span>
+            <span className="fm-stat__value fm-stat__value--accent">{formatAmount(userTeam.budget)}</span>
+          </div>
         </div>
-        <div className="fm-panel__body">
-          {briefingLoading ? (
-            <div className="fm-flex-col fm-gap-sm">
-              <div className="mh-skeleton-line" />
-              <div className="mh-skeleton-line" style={{ width: '70%' }} />
-              <div className="mh-skeleton-line" style={{ width: '50%' }} />
-            </div>
-          ) : briefing ? (
-            <div className="fm-flex-col fm-gap-md">
-              <p className="fm-text-lg fm-font-medium fm-text-primary" style={{ lineHeight: '1.5', margin: 0 }}>
-                {briefing.briefing}
-              </p>
-              {briefing.alerts.length > 0 && (
-                <div className="fm-flex-col fm-gap-xs">
-                  <span className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper">주의 사항</span>
-                  {briefing.alerts.map((alert, i) => (
-                    <div key={i} className="mh-briefing-alert-item">
-                      <span className="mh-briefing-alert-dot" />
-                      <span className="mh-briefing-alert-text">{alert}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {briefing.advice.length > 0 && (
-                <div className="fm-flex-col fm-gap-xs">
-                  <span className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper">오늘의 조언</span>
-                  {briefing.advice.map((adv, i) => (
-                    <div key={i} className="mh-briefing-advice-item">
-                      <span className="mh-briefing-advice-dot" />
-                      <span className="mh-briefing-advice-text">{adv}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          ) : (
-            <p className="fm-text-base fm-text-muted">브리핑을 생성할 수 없습니다</p>
-          )}
+        <div className="fm-card">
+          <div className="fm-stat">
+            <span className="fm-stat__label">Total salary</span>
+            <span className="fm-stat__value">{formatAmount(totalSalary)}</span>
+          </div>
         </div>
-      </div>
-
-      {/* 팀 정보 카드 */}
-      <div className="fm-panel fm-mb-md">
-        <div className="fm-panel__header">
-          <span className="fm-panel__title">{userTeam.name}</span>
+        <div className="fm-card">
+          <div className="fm-stat">
+            <span className="fm-stat__label">Reputation</span>
+            <span className="fm-stat__value">{userTeam.reputation}</span>
+          </div>
         </div>
-        <div className="fm-panel__body">
-          <div className="fm-grid fm-grid--3">
-            <div className="fm-stat">
-              <span className="fm-stat__label">리전</span>
-              <span className="fm-stat__value fm-stat__value--sm">{userTeam.region}</span>
-            </div>
-            <div className="fm-stat">
-              <span className="fm-stat__label">예산</span>
-              <span className="fm-stat__value fm-stat__value--sm">{formatAmount(userTeam.budget)}</span>
-            </div>
-            <div className="fm-stat">
-              <span className="fm-stat__label">명성</span>
-              <span className="fm-stat__value fm-stat__value--sm">{userTeam.reputation}</span>
-            </div>
-            <div className="fm-stat">
-              <span className="fm-stat__label">시즌</span>
-              <span className="fm-stat__value fm-stat__value--sm">
-                {season.year} {season.split === 'spring' ? '스프링' : '서머'}
-              </span>
-            </div>
-            <div className="fm-stat">
-              <span className="fm-stat__label">주차</span>
-              <span className="fm-stat__value fm-stat__value--sm">{season.currentWeek}주차</span>
-            </div>
+        <div className="fm-card">
+          <div className="fm-stat">
+            <span className="fm-stat__label">Next match</span>
+            <span className="fm-stat__value">{upcomingMatches[0]?.matchDate ?? 'None'}</span>
           </div>
         </div>
       </div>
 
-      {/* 1군 로스터 요약 */}
-      <div className="fm-panel fm-mb-md">
+      <div className="fm-panel fm-mb-lg">
         <div className="fm-panel__header">
-          <span className="fm-panel__title">1군 로스터</span>
+          <span className="fm-panel__title">오늘 가장 시급한 이슈</span>
         </div>
-        <div className="fm-panel__body--flush">
-          <table className="fm-table fm-table--striped">
-            <thead>
-              <tr>
-                <th>포지션</th>
-                <th>이름</th>
-                <th className="text-center">나이</th>
-                <th className="text-right">OVR</th>
-              </tr>
-            </thead>
-            <tbody>
-              {displayRoster.map((player) => {
-                const avgStat = Math.round(
-                  (player.stats.mechanical +
-                    player.stats.gameSense +
-                    player.stats.teamwork +
-                    player.stats.consistency +
-                    player.stats.laning +
-                    player.stats.aggression) /
-                    6,
-                );
-                const posBadge = positionBadgeClass[player.position] ?? 'mid';
-                return (
-                  <tr key={player.id}>
-                    <td>
-                      <span className={`fm-pos-badge fm-pos-badge--${posBadge}`}>
-                        {positionLabel[player.position] ?? player.position}
-                      </span>
-                    </td>
-                    <td className="fm-cell--name">{player.name}</td>
-                    <td className="text-center">{player.age}세</td>
-                    <td className="text-right">
-                      <span className={`fm-ovr ${getOvrClass(avgStat)}`}>{avgStat}</span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div className="fm-panel__body">
+          <button
+            type="button"
+            className="fm-card fm-text-left"
+            style={{ width: '100%' }}
+            onClick={() => urgentIssue.route && navigate(urgentIssue.route)}
+          >
+            <div className="fm-text-primary fm-font-semibold fm-mb-xs">{urgentIssue.title}</div>
+            <div className="fm-text-secondary">{urgentIssue.body}</div>
+          </button>
         </div>
       </div>
 
-      {/* 빠른 메뉴 */}
-      <div className="fm-grid fm-grid--3 fm-mb-md">
-        <button
-          className="mh-action-card"
-          onClick={() => navigate('analysis')}
-          aria-label="상대 분석 페이지로 이동"
-        >
-          <span className="mh-action-icon">🔍</span>
-          <span className="mh-action-label">상대 분석</span>
-        </button>
-        <button
-          className="mh-action-card"
-          onClick={() => navigate('patch-meta')}
-          aria-label="패치 메타 페이지로 이동"
-        >
-          <span className="mh-action-icon">📊</span>
-          <span className="mh-action-label">패치 메타</span>
-        </button>
-        <button
-          className="mh-action-card"
-          onClick={() => navigate('career')}
-          aria-label="커리어 페이지로 이동"
-        >
-          <span className="mh-action-icon">🏆</span>
-          <span className="mh-action-label">커리어</span>
-        </button>
-      </div>
-
-      {/* 업적 / 팀 히스토리 */}
-      <div className="fm-grid fm-grid--2 fm-mb-md">
-        <button
-          className="mh-action-card"
-          onClick={() => navigate('achievements')}
-          aria-label="업적 페이지로 이동"
-        >
-          <span className="mh-action-icon">🎖️</span>
-          <span className="mh-action-label">업적</span>
-        </button>
-        <button
-          className="mh-action-card"
-          onClick={() => navigate('team-history')}
-          aria-label="팀 히스토리 페이지로 이동"
-        >
-          <span className="mh-action-icon">📜</span>
-          <span className="mh-action-label">팀 히스토리</span>
-        </button>
-      </div>
-
-      {/* 면담 / 기자회견 / 코치 미팅 버튼 */}
-      <div className="fm-grid fm-grid--3 fm-mb-md">
-        <button
-          className="mh-action-card"
-          onClick={() => setModalMode('meeting')}
-        >
-          <span className="mh-action-icon">🗣️</span>
-          <span className="mh-action-label">선수 면담</span>
-        </button>
-        <button
-          className="mh-action-card"
-          style={{ opacity: pressCooldown > 0 ? 0.5 : 1 }}
-          onClick={() => setModalMode('press')}
-        >
-          <span className="mh-action-icon">🎤</span>
-          <span className="mh-action-label">기자회견</span>
-          {pressCooldown > 0 && (
-            <span className="mh-action-cooldown">{pressCooldown}일 후 가능</span>
-          )}
-        </button>
-        <button
-          className="mh-action-card"
-          style={{ opacity: coachMeetingCooldown > 0 ? 0.5 : 1 }}
-          onClick={handleCoachMeeting}
-          disabled={coachMeetingCooldown > 0}
-        >
-          <span className="mh-action-icon">📋</span>
-          <span className="mh-action-label">코치 미팅</span>
-          {coachMeetingCooldown > 0 && (
-            <span className="mh-action-cooldown">{coachMeetingCooldown}일 후 가능</span>
-          )}
-        </button>
-      </div>
-
-      {/* 코치 미팅 모달 */}
-      {coachMeetingOpen && (
-        <div
-          className="fm-overlay"
-          role="dialog"
-          aria-modal="true"
-          aria-label="코치 미팅"
-          onClick={() => !coachMeetingLoading && setCoachMeetingOpen(false)}
-        >
-          <div className="fm-modal" onClick={e => e.stopPropagation()}>
-            <div className="fm-modal__header">
-              <span className="fm-modal__title">코칭스태프 미팅</span>
-              {!coachMeetingLoading && (
-                <button
-                  className="fm-modal__close"
-                  onClick={() => setCoachMeetingOpen(false)}
-                  aria-label="닫기"
-                >
-                  &times;
-                </button>
-              )}
-            </div>
-
-            <div className="fm-modal__body">
-              {coachMeetingLoading ? (
-                <div className="fm-text-center fm-p-lg">
-                  <p className="fm-text-lg fm-text-muted">코치가 회의를 준비하고 있습니다...</p>
-                </div>
-              ) : coachMeetingResult ? (
-                <div className="fm-flex-col fm-gap-md">
-                  {/* 코치 이름 */}
-                  <div className="fm-info-row">
-                    <span className="fm-info-row__label">코치</span>
-                    <span className="fm-info-row__value">{coachMeetingResult.coachName}</span>
+      <div className="fm-grid fm-grid--2 fm-mb-lg">
+        <div className="fm-panel">
+          <div className="fm-panel__header">
+            <span className="fm-panel__title">일간 브리핑</span>
+          </div>
+          <div className="fm-panel__body fm-flex-col fm-gap-sm">
+            {briefingLoading && !briefing ? (
+              <p className="fm-text-muted">브리핑을 정리하는 중입니다...</p>
+            ) : (
+              <>
+                <p className="fm-text-secondary">{briefing?.briefing ?? '브리핑을 불러오지 못했습니다.'}</p>
+                <div className="fm-card">
+                  <div className="fm-text-xs fm-text-muted fm-mb-xs">위험</div>
+                  <div className="fm-flex-col fm-gap-xs">
+                    {(briefing?.alerts ?? []).length > 0 ? (
+                      (briefing?.alerts ?? []).map((item, index) => (
+                        <div key={`briefing-alert-${index}`} className="fm-alert fm-alert--warning">
+                          <span className="fm-alert__text">{item}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <span className="fm-text-secondary">당장 폭발하는 리스크는 없습니다.</span>
+                    )}
                   </div>
-
-                  {/* 회의 안건 */}
-                  <div className="fm-flex-col fm-gap-sm">
-                    <span className="mh-coach-section-title">회의 안건</span>
-                    {coachMeetingResult.agenda.map((item, i) => (
-                      <div key={i} className="fm-flex fm-items-center fm-gap-sm" style={{ padding: '6px 10px', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)' }}>
-                        <span className="mh-coach-agenda-num">{i + 1}</span>
-                        <span className="fm-text-base fm-text-secondary">{item}</span>
-                      </div>
+                </div>
+                <div className="fm-card">
+                  <div className="fm-text-xs fm-text-muted fm-mb-xs">기회</div>
+                  <div className="fm-flex-col fm-gap-xs">
+                    {briefingOpportunities.slice(0, 3).map((item, index) => (
+                      <span key={`briefing-opportunity-${index}`} className="fm-text-secondary">{item}</span>
                     ))}
                   </div>
-
-                  {/* 핵심 추천 */}
-                  <div className="mh-coach-box--success">
-                    <span className="mh-coach-box-label fm-text-success">핵심 추천</span>
-                    <p className="mh-coach-box-text fm-text-success">{coachMeetingResult.recommendation}</p>
-                  </div>
-
-                  {/* 전술 조언 */}
-                  <div className="mh-coach-box--info">
-                    <span className="mh-coach-box-label fm-text-info">전술 조언</span>
-                    <p className="mh-coach-box-text fm-text-info">{coachMeetingResult.tacticalAdvice}</p>
-                  </div>
-
-                  {/* 선수 우려 */}
-                  {coachMeetingResult.playerConcern && (
-                    <div className="mh-coach-box--danger">
-                      <span className="mh-coach-box-label fm-text-danger">선수 관련 우려</span>
-                      <p className="mh-coach-box-text fm-text-danger">{coachMeetingResult.playerConcern}</p>
-                    </div>
-                  )}
                 </div>
-              ) : (
-                <p className="fm-text-base fm-text-muted">미팅을 진행할 수 없습니다.</p>
-              )}
-            </div>
-
-            {coachMeetingResult && (
-              <div className="fm-modal__footer">
-                <button
-                  className="fm-btn fm-btn--primary"
-                  onClick={() => setCoachMeetingOpen(false)}
-                >
-                  확인
-                </button>
-              </div>
+                <div className="fm-card">
+                  <div className="fm-text-xs fm-text-muted fm-mb-xs">추천 행동</div>
+                  <div className="fm-flex-col fm-gap-xs">
+                    {briefingActions.map((item, index) => (
+                      <span key={`briefing-action-${index}`} className="fm-text-secondary">{item}</span>
+                    ))}
+                  </div>
+                </div>
+              </>
             )}
           </div>
         </div>
-      )}
 
-      {/* 모달 */}
-      {modalMode && (
-        <MeetingModal
-          mode={modalMode}
-          teamName={userTeam.name}
-          players={displayRoster}
-          currentDate={season.currentDate}
-          recentResults={recentResultsText}
-          cooldownDays={modalMode === 'press' ? pressCooldown : 0}
-          playerMeetingDates={playerMeetingDates}
-          onMeetingComplete={handleMeetingComplete}
-          onClose={handleCloseModal}
-        />
-      )}
-
-      {/* 위젯 그리드 */}
-      <div className="fm-grid fm-grid--2">
-        {/* 다가오는 경기 */}
         <div className="fm-panel">
           <div className="fm-panel__header">
-            <span className="fm-panel__title">다가오는 경기</span>
+            <span className="fm-panel__title">핵심 결정 축</span>
           </div>
-          <div className="fm-panel__body--flush">
-            {loading ? (
-              <div className="fm-p-md">
-                <p className="fm-text-base fm-text-muted">불러오는 중...</p>
-              </div>
-            ) : upcomingMatches.length === 0 ? (
-              <div className="fm-p-md">
-                <p className="fm-text-base fm-text-muted">예정된 경기가 없습니다</p>
-              </div>
-            ) : (
-              upcomingMatches.map((match) => (
-                <div key={match.id} className="fm-match-row">
-                  <span className="fm-badge fm-badge--default">{match.week}주차</span>
-                  <span className="fm-text-sm fm-text-muted" style={{ minWidth: '72px' }}>
-                    {match.matchDate ?? '-'}
-                  </span>
-                  <span className="fm-flex-1 fm-text-base fm-font-medium fm-text-primary">
-                    vs {getTeamName(getOpponentId(match))}
-                  </span>
-                  <span className="fm-badge fm-badge--accent">
-                    {match.teamHomeId === userTeam.id ? '홈' : '원정'}
-                  </span>
+          <div className="fm-panel__body fm-flex-col fm-gap-sm">
+            {focusCards.map((card) => (
+              <button
+                key={card.title}
+                type="button"
+                className="fm-card fm-text-left"
+                onClick={() => card.route && navigate(card.route)}
+              >
+                <div className="fm-text-primary fm-font-semibold fm-mb-xs">{card.title}</div>
+                <div className="fm-text-xs fm-text-accent fm-mb-xs">{card.status}</div>
+                <div className="fm-text-secondary">{card.body}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {managerIdentity && (
+        <div className="fm-panel fm-mb-lg">
+          <div className="fm-panel__header">
+            <span className="fm-panel__title">Manager philosophy</span>
+          </div>
+          <div className="fm-panel__body">
+            <div className="fm-flex fm-justify-between fm-items-center fm-mb-sm">
+              <span className="fm-text-secondary">Current team read</span>
+              <span className="fm-text-xs fm-text-accent">
+                {managerIdentity.dominantTraits.length > 0 ? managerIdentity.dominantTraits.join(' / ') : 'Balanced'}
+              </span>
+            </div>
+            <p className="fm-text-secondary fm-mb-md">{getManagerIdentitySummaryLine(managerIdentity)}</p>
+            <div className="fm-grid fm-grid--4">
+              {Object.entries(managerIdentity.philosophy).map(([axis, score]) => (
+                <div key={axis} className="fm-card">
+                  <div className="fm-text-xs fm-text-muted fm-mb-xs">
+                    {MANAGER_PHILOSOPHY_LABELS[axis as keyof typeof managerIdentity.philosophy]}
+                  </div>
+                  <div className="fm-text-lg fm-font-semibold fm-text-primary">{score}</div>
                 </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="fm-grid fm-grid--2 fm-mb-lg">
+        <div className="fm-panel">
+          <div className="fm-panel__header">
+            <span className="fm-panel__title">Staff recommendations</span>
+          </div>
+          <div className="fm-panel__body fm-flex-col fm-gap-sm">
+            {staffRecommendations.length === 0 ? (
+              <p className="fm-text-muted">No staff recommendation is active right now.</p>
+            ) : (
+              staffRecommendations.map((recommendation) => (
+                <button
+                  key={`${recommendation.role}-${recommendation.title}`}
+                  type="button"
+                  className="fm-card fm-text-left"
+                  onClick={() => navigate(recommendation.route)}
+                >
+                  <div className="fm-flex fm-justify-between fm-items-center fm-mb-xs">
+                    <span className="fm-text-primary fm-font-semibold">{recommendation.title}</span>
+                    <span className="fm-text-xs fm-text-accent">{getUrgencyLabel(recommendation.urgency)}</span>
+                  </div>
+                  <div className="fm-text-xs fm-text-muted fm-mb-xs">
+                    {STAFF_ROLE_LABELS[recommendation.role] ?? recommendation.role}
+                  </div>
+                  <div className="fm-text-secondary">{recommendation.summary}</div>
+                </button>
               ))
             )}
           </div>
         </div>
 
-        {/* 최근 결과 */}
         <div className="fm-panel">
           <div className="fm-panel__header">
-            <span className="fm-panel__title">최근 결과</span>
+            <span className="fm-panel__title">Player management points</span>
           </div>
-          <div className="fm-panel__body--flush">
-            {loading ? (
-              <div className="fm-p-md">
-                <p className="fm-text-base fm-text-muted">불러오는 중...</p>
-              </div>
-            ) : recentMatches.length === 0 ? (
-              <div className="fm-p-md">
-                <p className="fm-text-base fm-text-muted">경기 기록이 없습니다</p>
-              </div>
+          <div className="fm-panel__body fm-flex-col fm-gap-sm">
+            {playerInsights.length === 0 ? (
+              <p className="fm-text-muted">No high-risk player issue is currently detected.</p>
             ) : (
-              recentMatches.map((match) => {
-                const result = getMatchResult(match);
-                const isHome = match.teamHomeId === userTeam.id;
-                const myScore = isHome ? match.scoreHome : match.scoreAway;
-                const opScore = isHome ? match.scoreAway : match.scoreHome;
+              playerInsights.map((insight) => {
+                const playerName = userTeam.roster.find((player) => player.id === insight.playerId)?.name ?? insight.playerId;
                 return (
-                  <div key={match.id} className="fm-match-row">
-                    <span className={`fm-result-badge fm-result-badge--${result === 'win' ? 'win' : 'loss'}`}>
-                      {result === 'win' ? '승' : '패'}
-                    </span>
-                    <span className="fm-flex-1 fm-text-base fm-font-medium fm-text-primary">
-                      vs {getTeamName(getOpponentId(match))}
-                    </span>
-                    <span className="fm-text-lg fm-font-bold fm-text-primary" style={{ minWidth: '40px', textAlign: 'right' }}>
-                      {myScore} : {opScore}
-                    </span>
-                  </div>
+                  <button
+                    key={insight.playerId}
+                    type="button"
+                    className="fm-card fm-text-left"
+                    onClick={() => navigate('/manager/complaints')}
+                  >
+                    <div className="fm-flex fm-justify-between fm-items-center fm-mb-xs">
+                      <span className="fm-text-primary fm-font-semibold">{playerName}</span>
+                      <span className="fm-text-xs fm-text-accent">{insight.overallSatisfaction}</span>
+                    </div>
+                    <div className="fm-text-xs fm-text-muted fm-mb-xs">
+                      Weakest factor: {SATISFACTION_FACTOR_LABELS[insight.weakestFactor]} ({insight.weakestScore})
+                    </div>
+                    <div className="fm-text-secondary">{insight.recommendation}</div>
+                  </button>
                 );
               })
             )}
           </div>
         </div>
+      </div>
 
-        {/* 재정 요약 */}
+      <div className="fm-flex fm-gap-sm fm-mb-lg">
+        <button className="fm-btn fm-btn--primary" onClick={() => setModalMode('meeting')}>
+          Player meeting
+        </button>
+        <button
+          className="fm-btn fm-btn--info"
+          onClick={() => pressCooldown === 0 && setModalMode('press')}
+          disabled={pressCooldown > 0}
+        >
+          Press conference {pressCooldown > 0 ? `(${pressCooldown}d)` : ''}
+        </button>
+        <button className="fm-btn" onClick={() => navigate('/manager/day')}>
+          Advance season
+        </button>
+      </div>
+
+      <div className="fm-grid fm-grid--2 fm-mb-lg">
         <div className="fm-panel">
           <div className="fm-panel__header">
-            <span className="fm-panel__title">재정 요약</span>
+            <span className="fm-panel__title">Player condition</span>
           </div>
-          <div className="fm-panel__body">
-            {loading ? (
-              <p className="fm-text-base fm-text-muted">불러오는 중...</p>
-            ) : (
-              <div className="fm-flex-col fm-gap-sm">
-                <div className="fm-info-row">
-                  <span className="fm-info-row__label">예산</span>
-                  <span className="fm-info-row__value">{formatAmount(userTeam.budget)}</span>
-                </div>
-                <div className="fm-info-row">
-                  <span className="fm-info-row__label">총 연봉</span>
-                  <span className="fm-info-row__value">{formatAmount(totalSalary)}</span>
-                </div>
-                <div className="fm-info-row">
-                  <span className="fm-info-row__label">샐러리캡</span>
-                  <span className="fm-info-row__value">{formatAmount(SALARY_CAP)}</span>
-                </div>
-                <div className="fm-bar fm-mt-sm">
-                  <div className="fm-bar__track">
-                    <div
-                      className={`fm-bar__fill ${salaryRatio > 0.9 ? 'fm-bar__fill--red' : salaryRatio > 0.7 ? 'fm-bar__fill--yellow' : 'fm-bar__fill--green'}`}
-                      style={{ width: `${Math.min(salaryRatio * 100, 100)}%` }}
-                    />
-                  </div>
-                  <span className="fm-bar__value">{(salaryRatio * 100).toFixed(1)}%</span>
-                </div>
-              </div>
-            )}
+          <div className="fm-panel__body--flush">
+            <div className="fm-table-wrap">
+              <table className="fm-table fm-table--striped">
+                <thead>
+                  <tr>
+                    <th>Player</th>
+                    <th>Pos</th>
+                    <th>Stamina</th>
+                    <th>Morale</th>
+                    <th>Form</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {userTeam.roster.map((player) => {
+                    const condition = conditions.get(player.id);
+                    return (
+                      <tr key={player.id}>
+                        <td className="fm-cell--name">{player.name}</td>
+                        <td>{POSITION_LABELS[player.position] ?? player.position}</td>
+                        <td>{condition?.stamina ?? 70}</td>
+                        <td>{condition?.morale ?? 50}</td>
+                        <td>{condition?.form ?? 50}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
 
-        {/* 최근 뉴스 */}
         <div className="fm-panel">
           <div className="fm-panel__header">
-            <span className="fm-panel__title">최근 뉴스</span>
-            <Link to="/manager/news" className="fm-btn fm-btn--ghost fm-btn--sm">
-              더보기 &rarr;
-            </Link>
+            <span className="fm-panel__title">Schedule and recent news</span>
           </div>
-          <div className="fm-panel__body">
-            {loading ? (
-              <p className="fm-text-base fm-text-muted">불러오는 중...</p>
-            ) : newsEvents.length === 0 ? (
-              <p className="fm-text-base fm-text-muted">아직 기록된 이벤트가 없습니다</p>
-            ) : (
-              <div className="fm-flex-col fm-gap-sm">
-                {newsEvents.filter(e => e.eventType !== 'patch').map((event) => {
-                  const color = NEWS_EVENT_COLORS[event.eventType] ?? '#6a6a7a';
-                  return (
-                    <div key={event.id} className="fm-flex fm-gap-sm" style={{ alignItems: 'flex-start' }}>
-                      <div
-                        className="mh-news-dot"
-                        style={{ background: color }}
-                      />
-                      <div className="fm-flex-col fm-flex-1" style={{ minWidth: 0, gap: '2px' }}>
-                        <span className="fm-text-sm fm-text-muted">{event.gameDate}</span>
-                        <span className="mh-news-desc">
-                          {event.description || event.eventType}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
+          <div className="fm-panel__body fm-flex-col fm-gap-sm">
+            {upcomingMatches.map((match) => (
+              <div key={match.id} className="fm-card">
+                <div className="fm-text-primary fm-font-semibold">{match.matchDate ?? '-'}</div>
+                <div className="fm-text-secondary">{match.teamHomeId} vs {match.teamAwayId}</div>
               </div>
-            )}
-          </div>
-        </div>
+            ))}
 
-        {/* 선수 컨디션 */}
-        <div className="fm-panel" style={{ gridColumn: '1 / -1' }}>
-          <div className="fm-panel__header">
-            <span className="fm-panel__title">선수 컨디션</span>
-          </div>
-          <div className="fm-panel__body">
-            {loading ? (
-              <p className="fm-text-base fm-text-muted">불러오는 중...</p>
-            ) : (
-              <div className="fm-flex-col fm-gap-xs">
-                {displayRoster.map((player) => {
-                  const cond = conditions.get(player.id);
-                  const stamina = cond?.stamina ?? 0;
-                  const morale = cond?.morale ?? 0;
-                  const posBadge = positionBadgeClass[player.position] ?? 'mid';
-                  return (
-                    <div key={player.id} className="fm-condition-row">
-                      <span className={`fm-pos-badge fm-pos-badge--${posBadge}`}>
-                        {positionLabel[player.position] ?? player.position}
-                      </span>
-                      <span className="fm-condition-name">{player.name}</span>
-                      <div className="fm-condition-bars">
-                        <div className="fm-bar fm-bar--sm">
-                          <span className="fm-text-xs fm-text-muted" style={{ minWidth: '24px' }}>체력</span>
-                          <div className="fm-bar__track">
-                            <div
-                              className={`fm-bar__fill ${getBarColorClass(stamina)}`}
-                              style={{ width: `${stamina}%` }}
-                            />
-                          </div>
-                          <span className="fm-bar__value">{stamina}</span>
-                        </div>
-                        <div className="fm-bar fm-bar--sm">
-                          <span className="fm-text-xs fm-text-muted" style={{ minWidth: '24px' }}>사기</span>
-                          <div className="fm-bar__track">
-                            <div
-                              className={`fm-bar__fill ${getBarColorClass(morale)}`}
-                              style={{ width: `${morale}%` }}
-                            />
-                          </div>
-                          <span className="fm-bar__value">{morale}</span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
+            {newsEvents.map((event) => (
+              <div key={event.id} className="fm-card">
+                <div className="fm-text-primary fm-font-semibold">{event.gameDate}</div>
+                <div className="fm-text-secondary">{event.description}</div>
               </div>
-            )}
+            ))}
           </div>
         </div>
       </div>
+
+      {recentMatches.length > 0 && (
+        <div className="fm-panel">
+          <div className="fm-panel__header">
+            <span className="fm-panel__title">Recent matches</span>
+          </div>
+          <div className="fm-panel__body fm-flex-col fm-gap-sm">
+            {recentMatches.map((match) => (
+              <div key={match.id} className="fm-card">
+                <div className="fm-text-primary fm-font-semibold">{match.matchDate ?? '-'}</div>
+                <div className="fm-text-secondary">{match.teamHomeId} vs {match.teamAwayId}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {modalMode && (
+        <MeetingModal
+          mode={modalMode}
+          teamName={userTeam.name}
+          teamId={userTeam.id}
+          saveId={save?.id}
+          players={userTeam.roster}
+          currentDate={season.currentDate}
+          recentResults={recentMatches.map((match) => `${match.teamHomeId} vs ${match.teamAwayId}`).join(', ')}
+          cooldownDays={modalMode === 'press' ? pressCooldown : undefined}
+          playerMeetingDates={playerMeetingDates}
+          onMeetingComplete={(playerId) => {
+            setPlayerMeetingDates((prev) => ({ ...prev, [playerId]: season.currentDate }));
+          }}
+          onClose={(didComplete) => {
+            if (modalMode === 'press' && didComplete) {
+              setLastPressDate(season.currentDate);
+            }
+            if (didComplete && save) {
+              void getManagerIdentity(save.id)
+                .then((identity) => {
+                  setManagerIdentity(identity);
+                })
+                .catch(() => undefined);
+            }
+            setModalMode(null);
+          }}
+        />
+      )}
     </div>
   );
 }

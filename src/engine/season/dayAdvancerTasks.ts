@@ -9,10 +9,10 @@ import { generateDailyEvent } from '../../ai/gameAiService';
 import type { DayType } from './calendar';
 import { simulateScrim } from './scrimEngine';
 import { processTrainingDay, processRestDay } from '../training/trainingEngine';
-import { generateDailyNews, generateScandalNews } from '../news/newsEngine';
+import { generateDailyNews, generatePatchNotesNews, generateScandalNews } from '../news/newsEngine';
 import { processWeeklyFinances } from '../economy/financeEngine';
 import { checkForComplaints } from '../complaint/complaintEngine';
-import { acceptSponsor, checkSponsorChanges } from '../economy/sponsorEngine';
+import { checkSponsorChanges } from '../economy/sponsorEngine';
 import { checkPromises } from '../promise/promiseEngine';
 import { processWeeklySatisfaction } from '../satisfaction/playerSatisfactionEngine';
 import { checkTeamConflicts } from '../personality/personalityEngine';
@@ -101,6 +101,7 @@ export async function processWeeklyTasks(
   seasonId: number,
   userTeamId: string,
   currentDate: string,
+  saveId?: number,
 ): Promise<{ events: string[] }> {
   const events: string[] = [];
   const db = await getDatabase();
@@ -110,7 +111,7 @@ export async function processWeeklyTasks(
   events.push('주간 재정 처리 완료');
 
   try {
-    const complaints = await checkForComplaints(userTeamId, seasonId, currentDate);
+    const complaints = await checkForComplaints(userTeamId, seasonId, currentDate, saveId);
     if (complaints.length > 0) events.push(`선수 불만 ${complaints.length}건`);
   } catch (e) {
     console.warn('[dayAdvancer] checkForComplaints failed:', e);
@@ -123,8 +124,8 @@ export async function processWeeklyTasks(
     }
     if (sponsorChanges.newOffers.length > 0) {
       for (const offer of sponsorChanges.newOffers) {
-        await acceptSponsor(userTeamId, seasonId, offer, currentDate);
-        events.push(`신규 스폰서 계약: ${offer.name} (${offer.tier})`);
+        await insertDailyEvent(seasonId, currentDate, 'event', userTeamId, `새 스폰서 제안 도착: ${offer.name} (${offer.tier})`);
+        events.push(`새 스폰서 제안: ${offer.name} (${offer.tier})`);
       }
     }
   } catch (e) {
@@ -215,6 +216,7 @@ export async function processWeeklyTasks(
     const patchResult = await generatePatch(seasonId, patchNumber, currentWeek);
     events.push(`패치 ${patchNumber} 적용 (${patchResult.entries.length}건 변경)`);
     await insertDailyEvent(seasonId, currentDate, 'patch', undefined, patchResult.patchNote);
+    await generatePatchNotesNews(seasonId, currentDate, patchNumber, patchResult.entries.length, patchResult.patchNote);
   }
 
   return { events };

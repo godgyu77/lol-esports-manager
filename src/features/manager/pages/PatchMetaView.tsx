@@ -426,9 +426,10 @@ export function PatchMetaView() {
                 </thead>
                 <tbody>
                   {latestPatch.map((p, idx) => {
-                    const isNum = p.oldValue !== '' && p.newValue !== ''
-                      && !isNaN(Number(p.oldValue)) && !isNaN(Number(p.newValue));
-                    const delta = isNum ? Number(p.newValue) - Number(p.oldValue) : 0;
+                    const oldNumeric = Number.parseFloat(p.oldValue);
+                    const newNumeric = Number.parseFloat(p.newValue);
+                    const isNum = Number.isFinite(oldNumeric) && Number.isFinite(newNumeric);
+                    const delta = isNum ? newNumeric - oldNumeric : 0;
                     const changeClass = isNum
                       ? delta > 0 ? 'fm-cell--green' : delta < 0 ? 'fm-cell--red' : ''
                       : '';

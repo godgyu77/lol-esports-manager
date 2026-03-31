@@ -46,6 +46,9 @@ import { getDifficultyModifiers, type Difficulty } from '../difficulty/difficult
 import { generateDailyPlayerEvents, processPlayerEvent } from '../event/playerEventEngine';
 import { clamp } from '../../utils/mathUtils';
 import { initGlobalRng, getBaseSeed, randomInt } from '../../utils/random';
+import { getTrainingScheduleEntry } from '../training/trainingEngine';
+import { getActiveInterventionEffects } from '../manager/managerInterventionEngine';
+import { getManagerIdentity, getManagerIdentityEffects, type ManagerIdentityEffects } from '../manager/managerIdentityEngine';
 import * as dayAdvancerTasks from './dayAdvancerTasks';
 
 // ?饔낅떽????????? Promise ?饔낅떽?????????????advanceDay ???????댭????????? ????썹땟??貫沅?
@@ -118,6 +121,7 @@ async function updateAllTeamConditions(
   date: string,
   prevDate: string,
   dayType: DayType,
+  managerEffects?: ManagerIdentityEffects | null,
 ): Promise<void> {
   const effect =
     dayType === 'training' ? TRAINING_EFFECT
@@ -128,6 +132,7 @@ async function updateAllTeamConditions(
 
   // ?????諛몃마????-??????????????嚥??癲??嶺??獒뺛뀙??(1 ???????
   const playersByTeam = await getAllPlayersGroupedByTeam();
+  const interventionEffects = await getActiveInterventionEffects(date).catch(() => new Map());
   const allRecords: { playerId: string; gameDate: string; stamina: number; morale: number; form: number }[] = [];
 
   for (const [teamId, players] of playersByTeam) {
@@ -139,6 +144,7 @@ async function updateAllTeamConditions(
       const baseStamina = prev?.stamina ?? player.mental.stamina;
       const baseMorale = prev?.morale ?? player.mental.morale;
       const baseForm = prev?.form ?? 50;
+      const intervention = interventionEffects.get(player.id);
 
       const variance = randomInt(-3, 3);
 
@@ -146,8 +152,22 @@ async function updateAllTeamConditions(
         playerId: player.id,
         gameDate: date,
         stamina: clampCondition(baseStamina + effect.stamina + variance),
-        morale: clampCondition(baseMorale + effect.morale + Math.floor(variance / 2)),
-        form: clampCondition(baseForm + effect.form + Math.floor(variance / 2)),
+        morale: clampCondition(
+          baseMorale +
+          effect.morale +
+          Math.floor(variance / 2) +
+          (intervention?.moraleBonus ?? 0) +
+          (dayType === 'rest' || dayType === 'event' ? (managerEffects?.complaintReliefBonus ?? 0) : 0) -
+          (dayType === 'training' || dayType === 'match_day' ? Math.max(0, managerEffects?.moraleRiskModifier ?? 0) : 0),
+        ),
+        form: clampCondition(
+          baseForm +
+          effect.form +
+          Math.floor(variance / 2) +
+          (intervention?.formBonus ?? 0) +
+          (dayType === 'training' || dayType === 'scrim' ? (managerEffects?.trainingFocusBonus ?? 0) : 0) +
+          (dayType === 'match_day' ? (managerEffects?.formBoost ?? 0) : 0),
+        ),
       });
     }
   }
@@ -189,6 +209,16 @@ function determineDayType(dayOfWeek: number, hasMatches: boolean): DayType {
  * @param overrideDayType ???????ル늉?? ????影?력??????꿔꺂???影?뉖㎦?????????(??????ル꺄椰???룸챷??????????????????ㅻ쑋??
  * @returns ???轝?癰궽븐쉬???饔낅떽?????嶺뚮ㅎ?????棺堉?뤃????
  */
+async function resolveScheduledDayType(teamId: string, dayOfWeek: number): Promise<DayType | null> {
+  try {
+    const entry = await getTrainingScheduleEntry(teamId, dayOfWeek);
+    return entry?.activityType ?? null;
+  } catch (error) {
+    console.warn('[dayAdvancer] resolveScheduledDayType failed:', error);
+    return null;
+  }
+}
+
 export async function advanceDay(
   seasonId: number,
   currentDate: string,
@@ -215,6 +245,9 @@ export async function advanceDay(
   const dayName = getDayName(currentDate);
   const prevDate = addDays(currentDate, -1);
   const nextDate = addDays(currentDate, 1);
+  const managerEffects = saveId != null
+    ? await getManagerIdentity(saveId).then((identity) => identity ? getManagerIdentityEffects(identity.philosophy) : null).catch(() => null)
+    : null;
 
   // ??????????꿔꺂????㈔귟떋??饔낅떽?????????
   if (saveId != null) {
@@ -227,7 +260,10 @@ export async function advanceDay(
   // ???????????읐?????棺堉?뤃??????????怨쀫뮡????
   const todayMatches = await getMatchesByDate(seasonId, currentDate);
   const hasMatches = todayMatches.length > 0;
-  const dayType = hasMatches ? 'match_day' : (overrideDayType ?? determineDayType(dayOfWeek, hasMatches));
+  const scheduledDayType = hasMatches ? null : await resolveScheduledDayType(userTeamId, dayOfWeek);
+  const dayType = hasMatches
+    ? 'match_day'
+    : (overrideDayType ?? scheduledDayType ?? determineDayType(dayOfWeek, hasMatches));
 
   const events: string[] = [];
   const matchResults: DayMatchResult[] = [];
@@ -347,7 +383,7 @@ export async function advanceDay(
 
   // ?饔낅떽????ш낄?뉔뇡??????????????????嚥????????살숲??????밸븶???
   try {
-    await updateAllTeamConditions(currentDate, prevDate, dayType);
+    await updateAllTeamConditions(currentDate, prevDate, dayType, managerEffects);
   } catch (e) {
     console.warn('[dayAdvancer] updateAllTeamConditions failed:', e);
   }
@@ -361,7 +397,7 @@ export async function advanceDay(
 
   // ?????⑹름??雅?굛肄??????癲??(????嫄????????????
   if (dayOfWeek === 1) {
-    const weeklyResult = await dayAdvancerTasks.processWeeklyTasks(seasonId, userTeamId, currentDate);
+    const weeklyResult = await dayAdvancerTasks.processWeeklyTasks(seasonId, userTeamId, currentDate, saveId);
     events.push(...weeklyResult.events);
   }
 
@@ -629,6 +665,7 @@ export async function saveUserMatchResult(
   result: MatchResult,
   seasonId?: number,
   userTeamId?: string,
+  saveId?: number,
 ): Promise<void> {
   await updateMatchResult(match.id, result.scoreHome, result.scoreAway);
 
@@ -654,10 +691,10 @@ export async function saveUserMatchResult(
       const isWin =
         (result.winner === 'home' && match.teamHomeId === userTeamId) ||
         (result.winner === 'away' && match.teamAwayId === userTeamId);
-      await processBoardMatchResult(userTeamId, seasonId, isWin, true);
+      await processBoardMatchResult(userTeamId, seasonId, isWin, true, saveId);
 
       // ?????怨멸텛??????熬곻퐢夷????饔낅떽?????????(??棺堉?뤃?????????棺堉?뤃??????
-      const firingStatus = await checkFiringRisk(userTeamId, seasonId);
+      const firingStatus = await checkFiringRisk(userTeamId, seasonId, saveId);
       if (firingStatus === 'fired') {
         console.warn('[dayAdvancer] ????ル늉?????????怨멸텛??');
       }
@@ -911,7 +948,7 @@ async function advanceOffseasonDayHandler(
   }
 
   // ??????????????살숲??????밸븶???(??????깅즽癲???傭?끆???????떈)
-  await updateAllTeamConditions(currentDate, prevDate, 'rest');
+  await updateAllTeamConditions(currentDate, prevDate, 'rest', null);
 
   // ??????읐? ?????諛몃마??蹂㏓룾?
   await updateSeasonDate(seasonId, nextDate);

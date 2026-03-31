@@ -7,6 +7,7 @@
 
 import type { PlayerComplaint, ComplaintType, ComplaintStatus } from '../../types/complaint';
 import { getDatabase } from '../../db/database';
+import { getManagerIdentity, getManagerIdentityEffects } from '../manager/managerIdentityEngine';
 import { generateTransferRumorNews, generateSocialMediaReaction } from '../news/newsEngine';
 import { nextRandom, pickRandom } from '../../utils/random';
 
@@ -93,6 +94,28 @@ function getRandomMessage(type: ComplaintType): string {
   return pickRandom(messages);
 }
 
+async function getManagerComplaintContext(saveId?: number): Promise<{
+  playerCareBonus: number;
+  complaintRelief: number;
+  resultPressure: number;
+}> {
+  if (!saveId) {
+    return { playerCareBonus: 0, complaintRelief: 0, resultPressure: 0 };
+  }
+
+  const identity = await getManagerIdentity(saveId).catch(() => null);
+  if (!identity) {
+    return { playerCareBonus: 0, complaintRelief: 0, resultPressure: 0 };
+  }
+
+  const effects = getManagerIdentityEffects(identity.philosophy);
+  return {
+    playerCareBonus: effects.playerMeetingBonus,
+    complaintRelief: effects.complaintReliefBonus,
+    resultPressure: Math.max(0, effects.moraleRiskModifier),
+  };
+}
+
 // ─────────────────────────────────────────
 // 불만 자동 감지
 // ─────────────────────────────────────────
@@ -102,9 +125,11 @@ export async function checkForComplaints(
   teamId: string,
   seasonId: number,
   currentDate: string,
+  saveId?: number,
 ): Promise<PlayerComplaint[]> {
   const db = await getDatabase();
   const newComplaints: PlayerComplaint[] = [];
+  const managerContext = await getManagerComplaintContext(saveId);
 
   // 팀 로스터 조회
   const players = await db.select<{
@@ -148,7 +173,8 @@ export async function checkForComplaints(
       const played = playedGames[0]?.cnt ?? 0;
       const benchCount = totalGames - played;
 
-      if (benchCount >= 3 && nextRandom() < 0.3) {
+      const playtimeComplaintChance = Math.max(0.12, 0.3 - managerContext.complaintRelief * 0.04);
+      if (benchCount >= 3 && nextRandom() < playtimeComplaintChance) {
         const alreadyHasPlaytime = await db.select<{ cnt: number }[]>(
           `SELECT COUNT(*) as cnt FROM player_complaints
            WHERE player_id = $1 AND team_id = $2 AND complaint_type = 'playtime' AND status = 'active'`,
@@ -166,14 +192,15 @@ export async function checkForComplaints(
     }
 
     // 2) morale 30 이하 → 사기 저하 불만
-    if (player.morale <= 30) {
+    if (player.morale <= 30 - managerContext.complaintRelief) {
       const alreadyHasMorale = await db.select<{ cnt: number }[]>(
         `SELECT COUNT(*) as cnt FROM player_complaints
          WHERE player_id = $1 AND team_id = $2 AND complaint_type = 'morale' AND status = 'active'`,
         [player.id, teamId],
       );
       if ((alreadyHasMorale[0]?.cnt ?? 0) === 0) {
-        const severity = player.morale <= 15 ? 3 : player.morale <= 25 ? 2 : 1;
+        const severityBase = player.morale <= 15 ? 3 : player.morale <= 25 ? 2 : 1;
+        const severity = Math.min(3, severityBase + managerContext.resultPressure);
         const complaint = await createComplaint(
           player.id, teamId, seasonId, 'morale',
           severity, getRandomMessage('morale'), currentDate,
@@ -269,7 +296,8 @@ export async function checkForComplaints(
 
   if (consecutiveLosses >= 5) {
     for (const player of players) {
-      if (nextRandom() < 0.2) {
+      const transferComplaintChance = Math.min(0.45, 0.2 + managerContext.resultPressure * 0.05);
+      if (nextRandom() < transferComplaintChance) {
         const alreadyHasTransfer = await db.select<{ cnt: number }[]>(
           `SELECT COUNT(*) as cnt FROM player_complaints
            WHERE player_id = $1 AND team_id = $2 AND complaint_type = 'transfer' AND status = 'active'`,
@@ -353,6 +381,7 @@ export async function resolveComplaint(
   complaintId: number,
   resolution: string,
   resolvedDate: string,
+  saveId?: number,
 ): Promise<void> {
   const db = await getDatabase();
 
@@ -366,7 +395,8 @@ export async function resolveComplaint(
   const complaint = rows[0];
 
   // resolution에 따른 사기 회복량 결정 (기본 +10)
-  const moraleChange = RESOLUTION_MORALE_MAP[resolution] ?? 10;
+  const managerContext = await getManagerComplaintContext(saveId);
+  const moraleChange = (RESOLUTION_MORALE_MAP[resolution] ?? 10) + managerContext.playerCareBonus;
 
   // 상태 업데이트
   await db.execute(
@@ -420,7 +450,7 @@ export async function resolveComplaint(
 }
 
 /** 불만 무시 (morale -5, severity 상승 가능) */
-export async function ignoreComplaint(complaintId: number): Promise<void> {
+export async function ignoreComplaint(complaintId: number, saveId?: number): Promise<void> {
   const db = await getDatabase();
 
   const rows = await db.select<ComplaintRow[]>(
@@ -431,18 +461,20 @@ export async function ignoreComplaint(complaintId: number): Promise<void> {
 
   const complaint = rows[0];
   const newSeverity = Math.min(3, complaint.severity + 1);
+  const managerContext = await getManagerComplaintContext(saveId);
+  const moralePenalty = Math.max(3, 5 + managerContext.resultPressure - managerContext.complaintRelief);
 
   await db.execute(
     `UPDATE player_complaints
-     SET status = 'ignored', morale_impact = -5, severity = $1
-     WHERE id = $2`,
-    [newSeverity, complaintId],
+      SET status = 'ignored', morale_impact = $1, severity = $2
+      WHERE id = $3`,
+    [-moralePenalty, newSeverity, complaintId],
   );
 
   // 선수 morale 감소
   await db.execute(
-    `UPDATE players SET morale = MAX(0, morale - 5) WHERE id = $1`,
-    [complaint.player_id],
+    `UPDATE players SET morale = MAX(0, morale - $1) WHERE id = $2`,
+    [moralePenalty, complaint.player_id],
   );
 }
 
@@ -544,6 +576,7 @@ export async function getComplaintHistory(
 export async function allowTransfer(
   complaintId: number,
   resolvedDate: string,
+  saveId?: number,
 ): Promise<void> {
   const db = await getDatabase();
   const rows = await db.select<ComplaintRow[]>(
@@ -555,7 +588,7 @@ export async function allowTransfer(
   const complaint = rows[0];
 
   // 불만 해결
-  await resolveComplaint(complaintId, 'allow_transfer', resolvedDate);
+  await resolveComplaint(complaintId, 'allow_transfer', resolvedDate, saveId);
 
   // 선수를 FA로 전환
   await db.execute(
@@ -608,12 +641,15 @@ export async function denyTransfer(
 export async function persuadeTransfer(
   complaintId: number,
   resolvedDate: string,
+  saveId?: number,
 ): Promise<boolean> {
-  const success = nextRandom() < 0.5;
+  const managerContext = await getManagerComplaintContext(saveId);
+  const persuasionChance = Math.min(0.8, Math.max(0.25, 0.5 + managerContext.playerCareBonus * 0.06 - managerContext.resultPressure * 0.03));
+  const success = nextRandom() < persuasionChance;
 
   if (success) {
     // 설득 성공 → 불만 해결, morale +15
-    await resolveComplaint(complaintId, 'persuade_success', resolvedDate);
+    await resolveComplaint(complaintId, 'persuade_success', resolvedDate, saveId);
     return true;
   }
 

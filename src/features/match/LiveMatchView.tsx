@@ -411,7 +411,7 @@ export function LiveMatchView() {
         substitutions: [],
         sideSelections: [],
       };
-      await saveUserMatchResult(pendingMatch, matchResult, pendingMatch.seasonId, save?.userTeamId);
+      await saveUserMatchResult(pendingMatch, matchResult, pendingMatch.seasonId, save?.userTeamId, save?.id);
 
       // 경기 후 AI 코멘트 생성
       const isUserWin =

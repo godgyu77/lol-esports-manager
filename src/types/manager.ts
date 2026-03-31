@@ -9,6 +9,7 @@ export interface ManagerProfile {
   background: ManagerBackground;
   stats: ManagerStats;
   reputation: number;
+  philosophy: ManagerPhilosophy;
 }
 
 export interface ManagerStats {
@@ -18,6 +19,13 @@ export interface ManagerStats {
   adaptability: number;        // 적응력 (1-20)
   scoutingEye: number;         // 선구안 (1-20)
   mediaHandling: number;       // 미디어 대응 (1-20)
+}
+
+export interface ManagerPhilosophy {
+  playerCare: number;
+  tacticalFocus: number;
+  resultDriven: number;
+  mediaFriendly: number;
 }
 
 export const MANAGER_BG_LABELS: Record<ManagerBackground, string> = {

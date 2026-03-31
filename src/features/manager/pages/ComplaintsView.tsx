@@ -18,6 +18,11 @@ import {
   persuadeTransfer,
 } from '../../../engine/complaint/complaintEngine';
 import { resolveConflict } from '../../../engine/personality/personalityEngine';
+import {
+  getPlayerManagementInsights,
+  SATISFACTION_FACTOR_LABELS,
+  type PlayerManagementInsight,
+} from '../../../engine/satisfaction/playerSatisfactionEngine';
 import { getPlayerById } from '../../../db/queries';
 import type { PlayerComplaint } from '../../../types/complaint';
 import { COMPLAINT_TYPE_LABELS, COMPLAINT_SEVERITY_LABELS } from '../../../types/complaint';
@@ -59,6 +64,7 @@ export function ComplaintsView() {
   const [activeComplaints, setActiveComplaints] = useState<PlayerComplaint[]>([]);
   const [historyComplaints, setHistoryComplaints] = useState<PlayerComplaint[]>([]);
   const [playerNames, setPlayerNames] = useState<Record<string, string>>({});
+  const [playerInsights, setPlayerInsights] = useState<Record<string, PlayerManagementInsight>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -70,13 +76,17 @@ export function ComplaintsView() {
     setError(null);
 
     try {
-      const [active, history] = await Promise.all([
+      const [active, history, insights] = await Promise.all([
         getActiveComplaints(userTeamId),
         getComplaintHistory(userTeamId, season.id),
+        getPlayerManagementInsights(userTeamId, season.id, 20).catch(() => []),
       ]);
 
       setActiveComplaints(active);
       setHistoryComplaints(history);
+      setPlayerInsights(
+        Object.fromEntries(insights.map((insight) => [insight.playerId, insight])),
+      );
 
       // 선수 이름 로딩
       const allComplaints = [...active, ...history];
@@ -110,6 +120,7 @@ export function ComplaintsView() {
         complaint.id,
         'talk',
         currentDate ?? new Date().toISOString().slice(0, 10),
+        save?.id,
       );
       await loadData();
     } catch (err) {
@@ -119,7 +130,7 @@ export function ComplaintsView() {
 
   const handleIgnore = async (complaint: PlayerComplaint) => {
     try {
-      await ignoreComplaint(complaint.id);
+      await ignoreComplaint(complaint.id, save?.id);
       await loadData();
     } catch (err) {
       console.error('불만 무시 실패:', err);
@@ -131,6 +142,7 @@ export function ComplaintsView() {
       await allowTransfer(
         complaint.id,
         currentDate ?? new Date().toISOString().slice(0, 10),
+        save?.id,
       );
       await loadData();
     } catch (err) {
@@ -152,6 +164,7 @@ export function ComplaintsView() {
       const success = await persuadeTransfer(
         complaint.id,
         currentDate ?? new Date().toISOString().slice(0, 10),
+        save?.id,
       );
       setPersuadeResult({ complaintId: complaint.id, success });
       await loadData();
@@ -228,6 +241,7 @@ export function ComplaintsView() {
               key={complaint.id}
               complaint={complaint}
               playerName={playerNames[complaint.playerId] ?? '알 수 없음'}
+              insight={playerInsights[complaint.playerId]}
               onResolve={tab === 'active' ? () => handleResolve(complaint) : undefined}
               onIgnore={tab === 'active' ? () => handleIgnore(complaint) : undefined}
               onAllowTransfer={tab === 'active' && complaint.complaintType === 'transfer' ? () => handleAllowTransfer(complaint) : undefined}
@@ -255,6 +269,7 @@ export function ComplaintsView() {
 function ComplaintCard({
   complaint,
   playerName,
+  insight,
   onResolve,
   onIgnore,
   onAllowTransfer,
@@ -270,6 +285,7 @@ function ComplaintCard({
 }: {
   complaint: PlayerComplaint;
   playerName: string;
+  insight?: PlayerManagementInsight;
   onResolve?: () => void;
   onIgnore?: () => void;
   onAllowTransfer?: () => void;
@@ -316,6 +332,29 @@ function ComplaintCard({
       <p className="fm-text-lg fm-text-secondary fm-mb-md" style={{ lineHeight: '1.5', margin: '0 0 12px 0' }}>
         {complaint.message}
       </p>
+
+      {insight && (
+        <div
+          className="fm-card fm-mb-sm"
+          style={{
+            background: 'rgba(73, 199, 241, 0.08)',
+            borderColor: 'rgba(73, 199, 241, 0.25)',
+          }}
+        >
+          <div className="fm-flex fm-justify-between fm-items-center fm-mb-xs">
+            <span className="fm-text-sm fm-font-semibold fm-text-primary">관리 포인트</span>
+            <span className={`fm-badge ${insight.urgency === 'high' ? 'fm-badge--danger' : insight.urgency === 'medium' ? 'fm-badge--warning' : 'fm-badge--info'}`}>
+              {insight.urgency === 'high' ? '즉시 대응' : insight.urgency === 'medium' ? '주의 필요' : '점검 권장'}
+            </span>
+          </div>
+          <p className="fm-text-sm fm-text-secondary" style={{ margin: '0 0 6px 0', lineHeight: 1.5 }}>
+            취약 요인: <span className="fm-font-semibold">{SATISFACTION_FACTOR_LABELS[insight.weakestFactor]}</span> ({insight.weakestScore})
+          </p>
+          <p className="fm-text-sm fm-text-muted" style={{ margin: 0, lineHeight: 1.5 }}>
+            {insight.recommendation}
+          </p>
+        </div>
+      )}
 
       {/* 설득 결과 메시지 */}
       {persuadeResult && (

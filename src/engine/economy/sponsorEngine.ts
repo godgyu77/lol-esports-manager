@@ -33,6 +33,8 @@ export interface SponsorOffer {
   description: string;         // 스폰서 설명
 }
 
+export type SponsorOfferStyle = 'fixed' | 'performance' | 'promotion';
+
 // ─────────────────────────────────────────
 // 스폰서 풀 (사전 정의)
 // ─────────────────────────────────────────
@@ -92,7 +94,7 @@ function getOfferCount(reputation: number): number {
 export function generateSponsorOffers(
   reputation: number,
   activeNames: string[] = [],
-): SponsorOffer[] {
+): ConditionalSponsorOffer[] {
   // 명성 조건 충족 + 현재 활성 스폰서와 중복 제외
   const eligible = SPONSOR_POOL.filter(
     (s) => reputation >= s.requiredMinReputation && !activeNames.includes(s.name),
@@ -101,7 +103,9 @@ export function generateSponsorOffers(
   if (eligible.length === 0) return [];
 
   const count = getOfferCount(reputation);
-  return pickRandomN(eligible, Math.min(count, eligible.length));
+  return pickRandomN(eligible, Math.min(count, eligible.length))
+    .map((offer) => generateConditionalSponsorOffer(offer, reputation))
+    .sort((a, b) => b.maxWeeklyPayout - a.maxWeeklyPayout);
 }
 
 /**
@@ -336,6 +340,9 @@ export interface ConditionalSponsorOffer extends SponsorOffer {
   maxWeeklyPayout: number;
   /** 선수 출연 의무 (해당 시) */
   requiredPlayerAppearances?: number;
+  offerStyle: SponsorOfferStyle;
+  pitch: string;
+  riskNote: string;
 }
 
 /** 조건 유형별 라벨 */
@@ -349,6 +356,49 @@ export const SPONSOR_CONDITION_LABELS: Record<SponsorConditionType, string> = {
   win_streak_3: '3연승 달성',
   viewership_target: '시청률 목표',
 };
+
+export const SPONSOR_STYLE_LABELS: Record<SponsorOfferStyle, string> = {
+  fixed: '안정형',
+  performance: '성과형',
+  promotion: '홍보형',
+};
+
+function resolveOfferStyle(conditions: SponsorCondition[]): SponsorOfferStyle {
+  if (conditions.some((condition) => condition.type === 'player_appearance' || condition.type === 'social_media_post' || condition.type === 'viewership_target')) {
+    return 'promotion';
+  }
+  if (conditions.length > 0) {
+    return 'performance';
+  }
+  return 'fixed';
+}
+
+function buildOfferPitch(style: SponsorOfferStyle, offer: SponsorOffer, conditions: SponsorCondition[]): string {
+  if (style === 'fixed') {
+    return `${offer.name}은 안정적인 주간 수익을 원하는 팀을 위한 계약입니다. 변수는 적지만 수익 폭발력도 크지 않습니다.`;
+  }
+  if (style === 'promotion') {
+    const promoCondition = conditions.find((condition) => condition.type === 'player_appearance' || condition.type === 'social_media_post' || condition.type === 'viewership_target');
+    return `${offer.name}은 팀 노출과 화제성을 기대하는 계약입니다. ${promoCondition?.description ?? '홍보 일정'}을 챙기면 추가 수익을 노릴 수 있습니다.`;
+  }
+  const keyCondition = conditions[0];
+  return `${offer.name}은 성적 연동형 제안입니다. ${keyCondition?.description ?? '시즌 성과'}를 달성하면 시즌 전체 수익이 크게 뛰어오릅니다.`;
+}
+
+function buildOfferRiskNote(style: SponsorOfferStyle, conditions: SponsorCondition[]): string {
+  const totalPenalty = conditions.reduce((sum, condition) => sum + condition.penaltyAmount, 0);
+  if (style === 'fixed') {
+    return '추가 조건이 거의 없어 예측 가능한 현금 흐름을 만들기 좋습니다.';
+  }
+  if (style === 'promotion') {
+    return totalPenalty > 0
+      ? `홍보 조건을 놓치면 최대 ${totalPenalty}의 패널티가 생길 수 있습니다.`
+      : '홍보 일정 부담이 있지만 직접적인 페널티는 크지 않습니다.';
+  }
+  return totalPenalty > 0
+    ? `성적 목표 미달 시 최대 ${totalPenalty}의 손실이 발생할 수 있습니다.`
+    : '성적을 낼수록 기대 수익이 커지는 대신 기본 보장은 보수적입니다.';
+}
 
 /**
  * 조건부 스폰서 제안 생성
@@ -425,12 +475,16 @@ export function generateConditionalSponsorOffer(
   const totalBonus = conditions.reduce((s, c) => s + c.bonusAmount, 0);
   const bonusPerWeek = baseOffer.durationWeeks > 0 ? totalBonus / baseOffer.durationWeeks : 0;
   const maxWeeklyPayout = baseOffer.weeklyPayout + Math.round(bonusPerWeek);
+  const offerStyle = resolveOfferStyle(conditions);
 
   return {
     ...baseOffer,
     conditions,
     baseWeeklyPayout: baseOffer.weeklyPayout,
     maxWeeklyPayout,
+    offerStyle,
+    pitch: buildOfferPitch(offerStyle, baseOffer, conditions),
+    riskNote: buildOfferRiskNote(offerStyle, conditions),
   };
 }
 

@@ -64,8 +64,8 @@ export function buildPostMatchInsightReport(
   const enemySoulCount = gameResult.dragonSoul.dragonTypes.filter((dragon) => dragon.side !== perspectiveSide).length;
   const ownBarons = gameResult.events.filter((event) => event.type === 'baron' && event.side === perspectiveSide).length;
   const enemyBarons = gameResult.events.filter((event) => event.type === 'baron' && event.side !== perspectiveSide).length;
-  const ownHeralds = gameResult.events.filter((event) => event.type === 'herald' && event.side === perspectiveSide).length;
-  const enemyHeralds = gameResult.events.filter((event) => event.type === 'herald' && event.side !== perspectiveSide).length;
+  const ownHeralds = gameResult.events.filter((event) => event.type === 'rift_herald' && event.side === perspectiveSide).length;
+  const enemyHeralds = gameResult.events.filter((event) => event.type === 'rift_herald' && event.side !== perspectiveSide).length;
   const ownTeam = sumTeamKda(ownStats);
   const enemyTeam = sumTeamKda(enemyStats);
   const reasons: MatchInsightReason[] = [];

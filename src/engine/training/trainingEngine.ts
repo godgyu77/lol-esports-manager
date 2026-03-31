@@ -8,6 +8,7 @@
 
 import { getDatabase } from '../../db/database';
 import type {
+  TrainingActivity,
   TrainingType,
   TrainingIntensity,
   TrainableStat,
@@ -52,47 +53,61 @@ const CHAMPION_PROFICIENCY_GAIN = 2;
 export async function getTrainingSchedule(teamId: string): Promise<TrainingScheduleEntry[]> {
   const db = await getDatabase();
   const rows = await db.select<{
-    team_id: string; day_of_week: number; training_type: string; intensity: string;
+    team_id: string; day_of_week: number; activity_type: string | null; training_type: string; intensity: string;
   }[]>(
-    'SELECT * FROM training_schedule WHERE team_id = $1 ORDER BY day_of_week',
+    `SELECT team_id, day_of_week, activity_type, training_type, intensity
+     FROM training_schedule
+     WHERE team_id = $1
+     ORDER BY day_of_week`,
     [teamId],
   );
   return rows.map(r => ({
     teamId: r.team_id,
     dayOfWeek: r.day_of_week,
+    activityType: (r.activity_type ?? 'training') as TrainingActivity,
     trainingType: r.training_type as TrainingType,
     intensity: r.intensity as TrainingIntensity,
   }));
 }
 
+export async function getTrainingScheduleEntry(teamId: string, dayOfWeek: number): Promise<TrainingScheduleEntry | null> {
+  const schedule = await getTrainingSchedule(teamId);
+  return schedule.find((entry) => entry.dayOfWeek === dayOfWeek) ?? null;
+}
+
 export async function setTrainingSchedule(
   teamId: string,
   dayOfWeek: number,
+  activityType: TrainingActivity,
   trainingType: TrainingType,
   intensity: TrainingIntensity,
 ): Promise<void> {
   const db = await getDatabase();
   await db.execute(
-    `INSERT INTO training_schedule (team_id, day_of_week, training_type, intensity)
-     VALUES ($1, $2, $3, $4)
-     ON CONFLICT(team_id, day_of_week) DO UPDATE SET training_type = $3, intensity = $4`,
-    [teamId, dayOfWeek, trainingType, intensity],
+    `INSERT INTO training_schedule (team_id, day_of_week, activity_type, training_type, intensity)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT(team_id, day_of_week) DO UPDATE SET
+       activity_type = $3,
+       training_type = $4,
+       intensity = $5`,
+    [teamId, dayOfWeek, activityType, trainingType, intensity],
   );
 }
 
 /** 기본 훈련 스케줄 초기화 */
 export async function initDefaultSchedule(teamId: string): Promise<void> {
-  const defaults: { day: number; type: TrainingType; intensity: TrainingIntensity }[] = [
-    { day: 1, type: 'laning', intensity: 'normal' },      // 월
-    { day: 2, type: 'teamfight', intensity: 'normal' },   // 화
-    { day: 3, type: 'general', intensity: 'normal' },     // 수
-    { day: 4, type: 'macro', intensity: 'normal' },       // 목
-    { day: 5, type: 'general', intensity: 'normal' },     // 금
-    { day: 6, type: 'champion_pool', intensity: 'light' }, // 토
+  const defaults: { day: number; activity: TrainingActivity; type: TrainingType; intensity: TrainingIntensity }[] = [
+    { day: 0, activity: 'rest', type: 'mental', intensity: 'light' },
+    { day: 1, activity: 'scrim', type: 'laning', intensity: 'normal' },
+    { day: 2, activity: 'scrim', type: 'teamfight', intensity: 'normal' },
+    { day: 3, activity: 'training', type: 'general', intensity: 'normal' },
+    { day: 4, activity: 'training', type: 'macro', intensity: 'normal' },
+    { day: 5, activity: 'training', type: 'general', intensity: 'normal' },
+    { day: 6, activity: 'training', type: 'champion_pool', intensity: 'light' },
   ];
 
-  for (const d of defaults) {
-    await setTrainingSchedule(teamId, d.day, d.type, d.intensity);
+  for (const entry of defaults) {
+    await setTrainingSchedule(teamId, entry.day, entry.activity, entry.type, entry.intensity);
   }
 }
 

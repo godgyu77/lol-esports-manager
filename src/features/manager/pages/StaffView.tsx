@@ -22,7 +22,7 @@ import { generateStaffReaction } from '../../../engine/social/socialEngine';
 import type { Staff, StaffRole } from '../../../types/staff';
 import { STAFF_ROLE_LABELS, STAFF_SPECIALTY_LABELS, STAFF_ROLE_EFFECTS } from '../../../types/staff';
 
-const ROLES: StaffRole[] = ['coach', 'analyst', 'scout_manager', 'sports_psychologist', 'nutritionist', 'physiotherapist', 'data_analyst'];
+const ROLES: StaffRole[] = ['analyst', 'scout_manager', 'sports_psychologist', 'nutritionist', 'physiotherapist', 'data_analyst'];
 
 export function StaffView() {
   const season = useGameStore((s) => s.season);
@@ -202,7 +202,11 @@ export function StaffView() {
 
       {/* 스태프 목록 */}
       {staffList.length === 0 ? (
-        <p className="fm-text-muted fm-text-md">고용된 스태프가 없습니다.</p>
+        <div className="fm-alert fm-alert--info">
+          <span className="fm-alert__text">
+            별도 고용 스태프는 아직 없지만 감독 모드에서는 사용자가 감독 겸 단장 역할을 수행합니다.
+          </span>
+        </div>
       ) : (
         <div className="fm-grid fm-grid--auto">
           {staffList.map(staff => (

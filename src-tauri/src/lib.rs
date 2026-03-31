@@ -103,6 +103,9 @@ pub fn run() {
         Migration { version: 51, description: "add rng seed to save metadata", sql: include_str!("../migrations/051_rng_seed.sql"), kind: MigrationKind::Up },
         Migration { version: 52, description: "add secondary position to players", sql: include_str!("../migrations/052_secondary_position.sql"), kind: MigrationKind::Up },
         Migration { version: 53, description: "add philosophy and nationality to staff", sql: include_str!("../migrations/053_staff_philosophy_nationality.sql"), kind: MigrationKind::Up },
+        Migration { version: 54, description: "add training activity column", sql: include_str!("../migrations/054_training_activity.sql"), kind: MigrationKind::Up },
+        Migration { version: 55, description: "add manager interventions", sql: include_str!("../migrations/055_manager_interventions.sql"), kind: MigrationKind::Up },
+        Migration { version: 56, description: "add manager philosophy columns", sql: include_str!("../migrations/056_manager_philosophy.sql"), kind: MigrationKind::Up },
     ];
 
     tauri::Builder::default()

@@ -1,17 +1,7 @@
-/**
- * 뉴스/미디어 시스템 엔진
- * - 경기 결과, 이적 루머, 팀 분석, SNS 등 자동 뉴스 생성
- * - 날짜별/카테고리별 조회, 읽음 처리
- */
-
 import type { NewsArticle, NewsCategory } from '../../types/news';
 import { getDatabase } from '../../db/database';
 import { generateNewsArticle } from '../../ai/advancedAiService';
 import { nextRandom, pickRandom, randomInt } from '../../utils/random';
-
-// ─────────────────────────────────────────
-// Row 타입
-// ─────────────────────────────────────────
 
 interface NewsArticleRow {
   id: number;
@@ -25,10 +15,6 @@ interface NewsArticleRow {
   importance: number;
   is_read: number;
 }
-
-// ─────────────────────────────────────────
-// 매핑 유틸
-// ─────────────────────────────────────────
 
 function mapRowToNewsArticle(row: NewsArticleRow): NewsArticle {
   return {
@@ -44,10 +30,6 @@ function mapRowToNewsArticle(row: NewsArticleRow): NewsArticle {
     isRead: Boolean(row.is_read),
   };
 }
-
-// ─────────────────────────────────────────
-// 뉴스 삽입 공통
-// ─────────────────────────────────────────
 
 async function insertNews(
   seasonId: number,
@@ -67,9 +49,51 @@ async function insertNews(
   );
 }
 
-// ─────────────────────────────────────────
-// 뉴스 생성 함수
-// ─────────────────────────────────────────
+function enrichNewsContent(content: string, fallback: string): string {
+  const trimmed = content.trim();
+  if (trimmed.length >= 140) {
+    return trimmed;
+  }
+  return [trimmed, fallback].filter(Boolean).join('\n\n').trim();
+}
+
+function buildNarrativeAftermath(options: string[]): string {
+  return pickRandom(options);
+}
+
+function buildNewsParagraphs(...paragraphs: Array<string | null | undefined>): string {
+  return paragraphs
+    .map((paragraph) => paragraph?.trim())
+    .filter((paragraph): paragraph is string => Boolean(paragraph))
+    .join('\n\n');
+}
+
+function buildQuoteParagraph(speaker: string, quote: string): string {
+  return `${speaker}는 "${quote}"라고 전했다.`;
+}
+
+function buildArticle(
+  lead: string,
+  analysis: string,
+  reaction: string,
+  outlook: string,
+): string {
+  return buildNewsParagraphs(lead, analysis, reaction, outlook);
+}
+
+function buildAiFallbackArticle(
+  lead: string,
+  analysisOptions: string[],
+  reactionOptions: string[],
+  outlookOptions: string[],
+): string {
+  return buildArticle(
+    lead,
+    buildNarrativeAftermath(analysisOptions),
+    buildNarrativeAftermath(reactionOptions),
+    buildNarrativeAftermath(outlookOptions),
+  );
+}
 
 /** 경기 결과 뉴스 */
 export async function generateMatchResultNews(
@@ -85,8 +109,26 @@ export async function generateMatchResultNews(
   const winScore = Math.max(scoreHome, scoreAway);
   const loseScore = Math.min(scoreHome, scoreAway);
   const importance = winScore === loseScore + 1 ? 2 : 1;
+  const lead = `${date} 열린 ${homeTeam}와 ${awayTeam}의 경기에서는 ${winner}가 ${loser}를 ${winScore}:${loseScore}로 꺾었다. 경기는 초반부터 팽팽했지만, 승부처마다 더 날카로운 선택을 보여준 쪽은 결국 ${winner}였다.`;
+  const fallback = buildAiFallbackArticle(
+    lead,
+    [
+      `${winner}는 유리한 장면을 놓치지 않는 마무리 능력과 안정적인 오브젝트 설계로 경기의 중심을 잡았다는 평가를 받는다. ${loser}는 추격 기회를 만들긴 했지만 중요한 순간마다 한 박자씩 늦었다.`,
+      `${winner}는 라인전에서 만든 작은 우위를 중반 운영으로 연결하며 흐름을 놓치지 않았다. 반면 ${loser}는 교전 설계와 밴픽 후속 대응에서 아쉬움을 남겼다는 분석이 뒤따랐다.`,
+      `${winner}는 흔들릴 법한 구간에서도 전체 템포를 유지했고, ${loser}는 세트 후반으로 갈수록 선택이 무거워졌다. 결국 집중력 차이가 최종 스코어로 이어졌다.`,
+    ],
+    [
+      buildQuoteParagraph('현장 해설', `${winner}는 준비한 구도를 끝까지 유지했고 ${loser}는 반격 타이밍을 살리지 못했다`),
+      buildQuoteParagraph('중계진', `${winner}는 우세할 때 더 냉정했고 ${loser}는 급해질수록 판단이 흔들렸다`),
+      buildQuoteParagraph('리그 관계자', `${winner}는 좋은 흐름을 이어가고 있고 ${loser}는 빠른 정비가 필요해 보인다`),
+    ],
+    [
+      `이번 결과로 ${winner}는 다음 일정까지 분위기를 끌어올릴 발판을 마련했고, ${loser}는 로스터 운용과 경기 준비 과정 전반을 다시 점검해야 하는 과제를 안게 됐다.`,
+      `${winner}의 상승세가 어디까지 이어질지 관심이 쏠리는 가운데, ${loser}는 다음 경기에서 반등 신호를 보여줘야 한다는 압박을 받게 됐다.`,
+      `순위 경쟁이 치열한 시점인 만큼 이 경기의 여파는 당분간 이어질 가능성이 크다. ${winner}는 흐름 유지, ${loser}는 반전 마련이라는 분명한 숙제를 안고 다음 일정을 맞는다.`,
+    ],
+  );
 
-  // AI 뉴스 생성 시도
   try {
     const aiNews = await generateNewsArticle({
       eventType: 'match_result',
@@ -94,38 +136,19 @@ export async function generateMatchResultNews(
       teamNames: [homeTeam, awayTeam],
       playerNames: [],
     });
-    await insertNews(seasonId, date, 'match_result', aiNews.title, aiNews.content, importance);
+    await insertNews(seasonId, date, 'match_result', aiNews.title, enrichNewsContent(aiNews.content, fallback), importance);
     return;
-  } catch { /* AI 실패 시 기존 템플릿 사용 */ }
+  } catch {
+    // Fall back to templated copy when AI generation is unavailable.
+  }
 
-  const templates = [
-    `${winner}, ${loser}에 ${winScore}:${loseScore} 승리`,
-    `${winner}, ${loser} 상대로 ${winScore}:${loseScore} 완승`,
-    `${loser}, ${winner}에 ${loseScore}:${winScore}로 패배`,
-    `${winner}, ${loser} 완파! ${winScore}:${loseScore}의 압도적 승리`,
-    `클러치 매치! ${winner}, ${loser}와 접전 끝에 ${winScore}:${loseScore} 신승`,
-    `${loser}, ${winner}에게 무릎... ${loseScore}:${winScore}로 고배`,
-    `'${winner}' 연승 질주! ${loser}마저 ${winScore}:${loseScore}로 제압`,
-    `${homeTeam} vs ${awayTeam}, ${winner}의 ${winScore}:${loseScore} 승리로 마무리`,
-    `${winner}, 완벽한 경기 운영으로 ${loser} 격파 (${winScore}:${loseScore})`,
-    `${loser} 팬들 한숨... ${winner}에 ${loseScore}:${winScore} 완패`,
-  ];
-
-  const contentTemplates = [
-    `${date} 진행된 ${homeTeam} vs ${awayTeam} 경기에서 ${winner}가 ${winScore}:${loseScore}로 승리를 거뒀다. ${loser}는 아쉬운 패배를 당했다.`,
-    `오늘 열린 ${homeTeam}과 ${awayTeam}의 맞대결에서 ${winner}가 ${winScore}:${loseScore}로 승리했다. ${winner}는 최근 좋은 폼을 유지하고 있다.`,
-    `${winner}가 ${loser}를 ${winScore}:${loseScore}로 꺾으며 기세를 이어갔다. ${loser} 팬들은 경기 내용에 아쉬움을 표했다.`,
-    `${winner}가 ${loser}를 ${winScore}:${loseScore}로 완파했다. 경기 내내 ${winner}의 우세가 뚜렷했으며, 전문가들은 ${winner}의 팀워크를 높이 평가했다.`,
-    `숨 막히는 접전! ${winner}가 ${loser}를 ${winScore}:${loseScore}로 가까스로 꺾었다. 양 팀 모두 높은 경기력을 보여줬다는 평가다.`,
-    `${loser}가 ${winner}에게 ${loseScore}:${winScore}로 무릎을 꿇었다. ${loser}는 드래프트 단계에서부터 밀리는 모습이었다.`,
-    `${winner}가 ${loser}마저 ${winScore}:${loseScore}로 제압하며 연승 행진을 이어갔다. ${winner}의 기세가 무섭다.`,
-    `${homeTeam}과 ${awayTeam}의 경기에서 ${winner}가 ${winScore}:${loseScore}로 승리했다. ${winner}의 중반 운영이 돋보인 경기였다.`,
-    `${winner}의 완벽한 경기! ${loser}를 ${winScore}:${loseScore}로 격파하며 순위 상승에 청신호를 켰다.`,
-    `${loser}가 ${winner}에게 ${loseScore}:${winScore}로 완패했다. ${loser} 팬들 사이에서는 로스터 변경을 요구하는 목소리가 커지고 있다.`,
-  ];
-
-  const idx = randomInt(0, templates.length - 1);
-  await insertNews(seasonId, date, 'match_result', templates[idx], contentTemplates[idx], importance);
+  const title = pickRandom([
+    `${winner}, ${loser} 상대로 ${winScore}:${loseScore} 승리`,
+    `${winner} 승전보... ${loser} 제압 (${winScore}:${loseScore})`,
+    `${loser} 울린 ${winner}, ${winScore}:${loseScore}로 경기 마감`,
+    `${winner}, 접전 끝 ${loser} 꺾고 기세 유지`,
+  ]);
+  await insertNews(seasonId, date, 'match_result', title, fallback, importance);
 }
 
 /** 이적 루머 뉴스 */
@@ -137,38 +160,31 @@ export async function generateTransferRumorNews(
   teamId: string | null = null,
   playerId: string | null = null,
 ): Promise<void> {
-  const templates = [
-    { title: `${teamName}, '${playerName}' 영입 검토 중... 소식통`, importance: 2 },
-    { title: `'${playerName}', ${teamName} 이적설 솔솔... 진위 여부는?`, importance: 1 },
-    { title: `${teamName}, ${playerName} 영입 협상 중인 것으로 알려져`, importance: 2 },
-    { title: `이적시장 급보! '${playerName}', ${teamName} 행 임박`, importance: 2 },
-    { title: `${teamName}, '${playerName}' 영입 카드 만지작... 이적료 협상 중`, importance: 2 },
-    { title: `'${playerName}' 측 관계자 '${teamName}과 대화 중인 건 사실'`, importance: 2 },
-    { title: `소식통: ${teamName}, '${playerName}'에게 파격 조건 제시`, importance: 2 },
-    { title: `'${playerName}' FA 시장의 최대어... ${teamName} 외 2~3개 팀 관심`, importance: 1 },
-    { title: `'${playerName}' ${teamName} 이적? 커뮤니티 반응 뜨거워`, importance: 1 },
-    { title: `${teamName}, '${playerName}' 영입으로 로스터 완성 임박`, importance: 2 },
-  ];
-
-  const contents = [
-    `소식통에 따르면 ${teamName}이 ${playerName}의 영입을 적극 검토하고 있는 것으로 전해졌다. 아직 구체적인 계약 조건은 알려지지 않았다.`,
-    `${playerName}의 ${teamName} 이적설이 팬들 사이에서 화제다. 양측 모두 공식 입장을 밝히지 않고 있어 귀추가 주목된다.`,
-    `업계 관계자에 의하면 ${teamName}과 ${playerName} 측이 이적 조건을 논의 중인 것으로 알려졌다.`,
-    `${teamName}이 ${playerName} 영입을 위해 파격적인 조건을 제시한 것으로 알려졌다. 양측의 협상이 마무리 단계에 접어든 것으로 전해진다.`,
-    `${playerName} 측 관계자가 "${teamName}과 대화 중인 건 사실"이라고 밝혀 이적설에 힘이 실리고 있다.`,
-    `${playerName}이 FA 시장의 최대어로 떠오른 가운데, ${teamName} 외에도 2~3개 팀이 관심을 보이고 있는 것으로 알려졌다.`,
-    `커뮤니티에서 ${playerName}의 ${teamName} 이적 가능성에 대한 반응이 뜨겁다. 팬들 사이에서 기대와 우려가 교차하고 있다.`,
-    `${teamName}이 ${playerName} 영입으로 로스터 완성을 앞두고 있다는 소식이다. 최종 발표가 임박한 것으로 보인다.`,
-    `이적시장 소식통에 따르면 ${teamName}과 ${playerName}의 계약 협상이 급물살을 타고 있다. 이르면 이번 주 내 오피셜이 나올 수 있다.`,
-    `${playerName}의 ${teamName} 합류 가능성이 높아지고 있다. 전문가들은 이 영입이 성사될 경우 ${teamName}의 전력이 크게 상승할 것으로 분석했다.`,
-  ];
-
-  const idx = randomInt(0, templates.length - 1);
-  await insertNews(
-    seasonId, date, 'transfer_rumor',
-    templates[idx].title, contents[idx], templates[idx].importance,
-    teamId, playerId,
+  const title = pickRandom([
+    `${teamName}, '${playerName}' 영입 검토설 확산`,
+    `'${playerName}'와 ${teamName} 연결 고리 재부상`,
+    `${teamName}, ${playerName} 영입 가능성 주목`,
+    `${playerName} 이적설 재점화... ${teamName} 행 거론`,
+  ]);
+  const content = buildArticle(
+    `${teamName}와 ${playerName}를 연결하는 이적설이 시장 안팎에서 다시 힘을 얻고 있다. 아직 공식 발표나 세부 조건 공개는 없지만, 복수의 관계자들은 ${teamName}가 전력 보강 후보군 가운데 ${playerName}를 유심히 살피고 있다고 전했다.`,
+    buildNarrativeAftermath([
+      `${playerName}의 경험과 현재 시장 상황을 감안하면 단순 탐색 수준을 넘어 실제 협상 가능성까지 열려 있다는 해석이 나온다. 다만 경쟁 구단의 개입 여부와 선수 측 요구 조건에 따라 속도는 크게 달라질 수 있다.`,
+      `${teamName} 입장에서는 단기 전력 보강과 시즌 중반 흐름 반전을 동시에 노릴 수 있는 카드다. 반면 ${playerName} 측은 출전 보장과 팀 방향성을 함께 살펴야 하는 만큼 협상이 짧게 끝나지는 않을 전망이다.`,
+      `시장에서는 이번 루머를 두고 실제 협상 초기 단계라는 시각과, 여론 반응을 떠보기 위한 탐색전이라는 시각이 엇갈린다. 다만 소문이 반복적으로 등장하고 있다는 점 자체가 관심의 온도를 보여준다는 분석도 있다.`,
+    ]),
+    buildNarrativeAftermath([
+      buildQuoteParagraph('이적시장 관계자', `${teamName}가 필요한 포지션 보강을 진지하게 검토하는 것은 맞지만 아직 결론이 난 단계는 아니다`),
+      buildQuoteParagraph('구단 사정에 밝은 인사', `${playerName}의 이름이 실제 후보군에 올라 있는 것은 사실이지만 세부 조건은 더 봐야 한다`),
+      buildQuoteParagraph('업계 관계자', `이번 건은 단순 팬심 루머라기보다 시장 반응을 확인하는 움직임이 섞여 있다고 볼 수 있다`),
+    ]),
+    buildNarrativeAftermath([
+      `루머가 길어질수록 선수 본인의 심리적 부담과 시장 가격 변동 가능성도 커진다. 업계는 이번 건이 단발성 소문으로 끝날지, 실제 계약 협상으로 번질지 예의주시하고 있다.`,
+      `${teamName}가 실제 제안 단계까지 나아간다면 이번 루머는 곧 시즌 중 가장 큰 이적 이슈 가운데 하나로 커질 수 있다. 반대로 움직임이 멈출 경우 시장의 관심은 곧 다른 이름으로 넘어갈 가능성이 있다.`,
+      `지금 단계에서는 확인되지 않은 정보가 많지만, 이적시장에서 중요한 것은 늘 속도보다 방향이다. ${teamName}의 다음 행보가 루머의 무게를 결정할 전망이다.`,
+    ]),
   );
+  await insertNews(seasonId, date, 'transfer_rumor', title, content, 2, teamId, playerId);
 }
 
 /** 팀 분석 기사 */
@@ -184,35 +200,44 @@ export async function generateTeamAnalysisNews(
   const winRate = wins + losses > 0 ? Math.round((wins / (wins + losses)) * 100) : 0;
   const isStrong = winRate >= 60;
   const isWeak = winRate < 40;
+  const title = isStrong
+    ? pickRandom([
+        `[팀 분석] ${teamName}, ${standing}위 질주... 승률 ${winRate}%`,
+        `[팀 분석] ${teamName}, 상위권 흐름 굳히는 중`,
+        `${teamName}, ${wins}승 ${losses}패로 강세 지속`,
+      ])
+    : isWeak
+      ? pickRandom([
+          `[팀 분석] ${teamName}, ${standing}위 부진... 반등 가능할까`,
+          `${teamName}, 승률 ${winRate}%에 머문 이유`,
+          `[팀 분석] ${teamName}, 순위표 아래쪽에서 커지는 고민`,
+        ])
+      : pickRandom([
+          `[팀 분석] ${teamName}, ${standing}위에서 흔들리는 균형`,
+          `${teamName}, 중위권에서 기회와 불안 공존`,
+          `[팀 분석] ${teamName}, 승률 ${winRate}%가 말해주는 현재`,
+        ]);
 
-  const strongTemplates = [
-    { title: `[팀 분석] ${teamName}, 현재 ${standing}위... ${wins}승 ${losses}패 강세 행진`, content: `${teamName}이 ${wins}승 ${losses}패(승률 ${winRate}%)로 현재 ${standing}위를 기록하며 강한 모습을 보이고 있다. 전문가들은 ${teamName}의 팀 운영이 안정적이라고 평가했다.` },
-    { title: `[팀 분석] ${teamName}, ${wins}승 ${losses}패로 상위권 질주 중`, content: `${teamName}이 승률 ${winRate}%로 리그 상위권을 달리고 있다. 탄탄한 라인전과 팀워크가 돋보인다는 평가다.` },
-    { title: `[팀 분석] ${teamName}, 최근 ${wins}승 ${losses}패... 상승세 뚜렷`, content: `${teamName}이 최근 경기에서 눈에 띄는 상승세를 보이고 있다. ${wins}승 ${losses}패(승률 ${winRate}%)로 ${standing}위를 기록하며 플레이오프 진출이 유력하다.` },
-    { title: `전문가 '${teamName}, 플레이오프 우승 후보' — ${standing}위 기록 중`, content: `${teamName}이 ${wins}승 ${losses}패(승률 ${winRate}%)로 ${standing}위를 달리며 우승 후보로 꼽히고 있다. 전문가들은 ${teamName}의 중반 운영이 리그 최상위라고 분석했다.` },
-    { title: `[팀 분석] 데이터로 본 ${teamName}: 승률 ${winRate}%, 리그 ${standing}위`, content: `데이터 분석 결과 ${teamName}은 ${wins}승 ${losses}패로 리그 ${standing}위를 기록 중이다. 팀파이트 승률과 오브젝트 컨트롤이 리그 상위권이다.` },
-  ];
+  const content = buildArticle(
+    `${teamName}는 현재 ${wins}승 ${losses}패, 승률 ${winRate}%로 ${standing}위에 올라 있다. 단순한 순위표 한 줄로 보일 수 있지만, 최근 경기 내용과 일정 흐름을 함께 놓고 보면 ${teamName}의 현재 위치는 훨씬 더 복합적으로 읽힌다.`,
+    isStrong
+      ? `${teamName}는 경기마다 흔들림 없는 운영과 안정적인 마무리 능력을 보여주며 상위권 흐름을 굳히고 있다. 특히 유리한 장면을 손실 없이 마무리하는 경기 운영은 현재 리그에서도 높은 평가를 받고 있다.`
+      : isWeak
+        ? `${teamName}의 고민은 단순한 패배 숫자보다 경기 흐름을 끊지 못하는 패턴에 있다는 분석이 나온다. 초반 구도는 나쁘지 않아도 중반 이후 선택의 일관성이 떨어지면서 스스로 주도권을 내주는 장면이 반복된다는 지적이다.`
+        : `${teamName}는 상위권 도약과 중위권 정체 가능성이 동시에 열려 있는 구간에 놓여 있다. 잘 풀릴 때는 응집력이 돋보이지만, 압박이 강해질수록 세부 선택에서 기복이 드러난다는 평가가 따라붙는다.`,
+    buildNarrativeAftermath([
+      buildQuoteParagraph('해설진', `${teamName}는 지금 순위보다 경기 내용이 더 중요해지는 분기점에 서 있다`),
+      buildQuoteParagraph('데이터 분석가', `${teamName}의 다음 두세 경기 결과가 이번 시즌 평가를 크게 갈라놓을 수 있다`),
+      buildQuoteParagraph('리그 관계자', `${teamName}는 보완할 지점이 분명하지만 흐름을 타기 시작하면 무서운 팀이 될 수 있다`),
+    ]),
+    buildNarrativeAftermath([
+      `남은 일정에서 ${teamName}가 지금의 강점을 유지하거나 약점을 얼마나 빠르게 정리하느냐에 따라 시즌의 톤이 달라질 전망이다. 순위 경쟁이 촘촘한 구간인 만큼 작은 반등과 작은 흔들림 모두 크게 확대될 수 있다.`,
+      `결국 핵심은 다음 경기에서 무엇을 보여주느냐다. ${teamName}가 현재 수치를 추세로 바꿀 수 있다면 평가도 달라지겠지만, 같은 문제를 반복한다면 외부 시선은 더 빠르게 냉각될 가능성이 있다.`,
+      `현재 성적은 출발점일 뿐이다. ${teamName}가 경기 내용까지 동반한 상승세를 증명할지, 아니면 순위표의 불안 요소를 지우지 못할지는 당분간 가장 흥미로운 관전 포인트 가운데 하나다.`,
+    ]),
+  );
 
-  const weakTemplates = [
-    { title: `[팀 분석] ${teamName}, ${standing}위 부진... 반등 가능할까`, content: `${teamName}이 ${wins}승 ${losses}패(승률 ${winRate}%)로 ${standing}위에 머무르며 부진을 면치 못하고 있다. 팬들의 우려가 커지고 있으며, 로스터 변경 가능성이 제기되고 있다.` },
-    { title: `[팀 분석] ${teamName}, 위기의 ${standing}위... 팬들 '로스터 변경 필요'`, content: `${teamName}이 ${wins}승 ${losses}패(승률 ${winRate}%)로 ${standing}위에 머물며 위기를 맞고 있다. 팬들 사이에서는 로스터 변경을 요구하는 목소리가 높아지고 있다.` },
-    { title: `[팀 분석] ${teamName}, 하위권 탈출 가능할까? 현재 ${standing}위`, content: `${teamName}이 부진을 면치 못하며 ${standing}위에 머무르고 있다. ${wins}승 ${losses}패(승률 ${winRate}%)로 하위권 탈출이 절실한 상황이다.` },
-    { title: `전문가 '${teamName}, 근본적 변화 없이는 반등 어려워'`, content: `전문가들은 ${teamName}의 ${wins}승 ${losses}패(승률 ${winRate}%) 성적에 대해 "근본적인 변화 없이는 반등이 어렵다"고 분석했다. 특히 라인전 능력과 드래프트 전략의 개선이 필요하다는 지적이다.` },
-    { title: `[팀 분석] ${teamName}, ${losses}패째... 팀 분위기 심상치 않아`, content: `${teamName}이 ${losses}패를 기록하며 ${standing}위로 추락했다. 팀 내부 분위기도 좋지 않은 것으로 알려져 향후 행보에 관심이 집중된다.` },
-  ];
-
-  const midTemplates = [
-    { title: `[팀 분석] ${teamName}, ${standing}위로 중위권 유지... 승률 ${winRate}%`, content: `${teamName}이 ${wins}승 ${losses}패(승률 ${winRate}%)로 ${standing}위를 기록 중이다. 안정적인 성적을 유지하고 있으나 상위권 도약을 위해서는 추가적인 전력 보강이 필요하다는 분석이다.` },
-    { title: `[팀 분석] ${teamName}, 중위권에서 기회 노린다 — ${standing}위`, content: `${teamName}이 ${wins}승 ${losses}패(승률 ${winRate}%)로 중위권을 유지하며 상위권 도약의 기회를 노리고 있다. 남은 경기에서의 성적이 플레이오프 진출 여부를 가를 전망이다.` },
-    { title: `[팀 분석] ${teamName}, 로스터 변경 후 승률 변화 주목`, content: `${teamName}이 ${wins}승 ${losses}패(승률 ${winRate}%)로 ${standing}위를 기록 중이다. 최근 로스터 변경 이후 팀의 경기력 변화에 관심이 쏠리고 있다.` },
-    { title: `분석: ${teamName}의 약점은 라인전, 중반 운영은 리그 상위`, content: `${teamName}(${wins}승 ${losses}패, 승률 ${winRate}%)의 경기 데이터를 분석한 결과, 라인전에서 다소 약한 모습을 보이지만 중반 운영 능력은 리그 상위권으로 평가됐다.` },
-    { title: `[팀 분석] ${teamName}, 플레이오프 다크호스로 급부상`, content: `${teamName}이 ${wins}승 ${losses}패(승률 ${winRate}%)로 ${standing}위를 기록하며 플레이오프 다크호스로 떠오르고 있다. 전문가들은 ${teamName}의 성장세에 주목하고 있다.` },
-  ];
-
-  const pool = isStrong ? strongTemplates : isWeak ? weakTemplates : midTemplates;
-  const chosen = pickRandom(pool);
-
-  await insertNews(seasonId, date, 'team_analysis', chosen.title, chosen.content, 1, teamId);
+  await insertNews(seasonId, date, 'team_analysis', title, content, 1, teamId);
 }
 
 /** SNS 반응 뉴스 */
@@ -222,27 +247,32 @@ export async function generateSocialMediaReaction(
   content: string,
   teamId: string | null = null,
 ): Promise<void> {
-  const titles = [
-    `[SNS] ${content}`,
-    `[SNS] '${content}' 관련 게시물 실시간 트렌드 1위`,
-    `[SNS 화제] ${content}... 팬들 반응 폭발`,
-    `[커뮤니티] '${content}' 뜨거운 논쟁 중`,
-    `[SNS] ${content} — 실시간 댓글 수천 건 돌파`,
-    `[화제] '${content}' 밈 확산... 커뮤니티 축제`,
-  ];
+  const title = pickRandom([
+    `[SNS 이슈] ${content}`,
+    `[커뮤니티 화제] '${content}' 반응 확산`,
+    `[온라인 화제] ${content}`,
+    `[팬 반응] '${content}' 뜨거운 토론`,
+  ]);
+  const body = buildArticle(
+    `'${content}'를 둘러싼 온라인 반응이 빠르게 커지고 있다. SNS와 커뮤니티를 중심으로 관련 게시물이 연이어 올라오고 있으며, 단순한 화제 수준을 넘어 다음 경기와 팀 분위기까지 연결해 해석하는 시선도 늘고 있다.`,
+    buildNarrativeAftermath([
+      `초기에는 가벼운 밈과 짧은 의견이 주를 이뤘지만, 시간이 지나며 경기력 분석과 구단 운영 방향에 대한 토론으로 확장되는 흐름이다. 팬층의 기대감과 불안이 동시에 섞여 있다는 점이 이번 반응의 특징으로 꼽힌다.`,
+      `관심이 커질수록 메시지의 무게도 달라진다. 단순한 인기 게시물 하나가 선수 개인의 이미지, 팀 브랜드, 경기 전 분위기까지 흔들 수 있다는 점에서 구단도 민감하게 반응할 수밖에 없다.`,
+      `비슷한 이슈가 반복될 경우에는 팬 반응이 더 선명하게 양분되는 경향도 나타난다. 현재로서는 관심과 피로도가 동시에 올라가는 구간으로 해석할 수 있다는 분석이 나온다.`,
+    ]),
+    buildNarrativeAftermath([
+      buildQuoteParagraph('커뮤니티 이용자', `재미로 시작된 이야기지만 지금은 팀 분위기까지 건드리는 주제로 커졌다`),
+      buildQuoteParagraph('업계 관계자', `온라인 반응은 가볍게 보이지만 실제 구단 이미지와 스폰서 노출에도 영향을 준다`),
+      buildQuoteParagraph('콘텐츠 담당자', `관심이 뜨거운 만큼 공식 대응 타이밍을 잘 잡는 것이 중요하다`),
+    ]),
+    buildNarrativeAftermath([
+      `이번 이슈가 짧은 유행으로 끝날지, 아니면 구단과 선수단이 직접 관리해야 하는 현안으로 커질지는 며칠 내 반응 추이에 따라 갈릴 전망이다.`,
+      `결국 중요한 것은 경기 결과와 후속 대응이다. 성적이 받쳐주면 화제는 호재로 남겠지만, 반대의 경우에는 피로감과 비판 여론이 더 강하게 증폭될 수 있다.`,
+      `온라인 여론은 한 번 방향을 타면 생각보다 오래 남는다. 구단 입장에서는 지금의 반응을 마케팅 기회로 살릴지, 조기 진화가 필요한 리스크로 볼지 판단해야 하는 시점이다.`,
+    ]),
+  );
 
-  const bodies = [
-    `팬들 사이에서 '${content}' 관련 게시물이 화제가 되고 있다. 다양한 의견이 오가며 커뮤니티가 뜨겁게 달아오르고 있다.`,
-    `'${content}' 관련 SNS 게시물이 폭발적인 반응을 얻고 있다. 공유 수가 빠르게 증가하며 실시간 트렌드에 올랐다.`,
-    `커뮤니티에서 '${content}'에 대한 토론이 과열되고 있다. 찬반 의견이 팽팽히 맞서며 댓글이 수백 개를 넘어섰다.`,
-    `'${content}' 관련 밈이 SNS에서 빠르게 퍼지고 있다. 팬들의 창의적인 2차 창작물이 쏟아지며 분위기가 뜨겁다.`,
-    `LCK 팬 커뮤니티에서 '${content}' 이슈가 최대 화제다. 전문가들의 분석 글도 올라오며 깊이 있는 토론이 이어지고 있다.`,
-    `'${content}' 관련 게시물의 좋아요가 1만 건을 돌파했다. 해외 팬들까지 가세하며 글로벌 화제로 번지고 있다.`,
-  ];
-
-  const idx = randomInt(0, titles.length - 1);
-  const cIdx = randomInt(0, bodies.length - 1);
-  await insertNews(seasonId, date, 'social_media', titles[idx], bodies[cIdx], 1, teamId);
+  await insertNews(seasonId, date, 'social_media', title, body, 1, teamId);
 }
 
 /** 인터뷰 뉴스 */
@@ -255,34 +285,34 @@ export async function generateInterviewNews(
   teamId: string | null = null,
   playerId: string | null = null,
 ): Promise<void> {
-  const titles = [
+  const title = pickRandom([
     `[인터뷰] ${teamName} ${playerName}, "${topic}"`,
-    `${playerName} 단독 인터뷰: "${topic}"`,
-    `[독점] ${teamName} ${playerName} '${topic}'... 진솔한 속마음 공개`,
-    `${playerName}, 인터뷰서 밝힌 각오 '${topic}'`,
-    `[인터뷰] '${topic}' — ${teamName} ${playerName}의 솔직한 이야기`,
-    `${teamName} ${playerName} '${topic}'... 팬들 뜨거운 반응`,
-  ];
-
-  const contents = [
-    `${teamName} 소속 ${playerName}이 인터뷰에서 "${topic}"이라고 밝혔다. 팬들의 관심이 집중되고 있다.`,
-    `${playerName}은 "${topic}"이라며 이번 시즌에 대한 강한 의지를 드러냈다. ${teamName} 팬들은 큰 기대를 보이고 있다.`,
-    `${teamName}의 ${playerName}이 인터뷰에서 "${topic}"이라고 말해 화제다. 관계자는 "팀 전체가 같은 마음"이라고 전했다.`,
-    `"${topic}" — ${playerName}의 이 한마디에 팬들의 반응이 폭발했다. SNS에서 관련 글이 빠르게 공유되고 있다.`,
-    `${playerName}은 인터뷰에서 "${topic}"이라며 자신감을 보였다. 전문가들은 ${playerName}의 최근 경기력이 이를 뒷받침한다고 분석했다.`,
-    `${teamName} ${playerName}이 팬들에게 전한 메시지: "${topic}". 진정성 있는 발언에 응원 댓글이 쏟아지고 있다.`,
-  ];
-
-  const idx = randomInt(0, titles.length - 1);
-  const cIdx = randomInt(0, contents.length - 1);
-  await insertNews(seasonId, date, 'interview', titles[idx], contents[cIdx], 1, teamId, playerId);
+    `${playerName} 단독 인터뷰... "${topic}"`,
+    `[직격 인터뷰] ${teamName} ${playerName}의 메시지`,
+    `${playerName}, 공개 발언으로 팀 분위기 조명`,
+  ]);
+  const content = buildArticle(
+    `${teamName} 소속 ${playerName}는 최근 인터뷰에서 "${topic}"라는 메시지를 남겼다. 짧은 한 문장이었지만, 팀 안팎에서는 이 발언이 현재 분위기와 향후 일정에 대한 인식을 드러낸 신호로 받아들여지고 있다.`,
+    buildNarrativeAftermath([
+      `${playerName}의 발언은 자신감의 표현이자 동시에 팀이 처한 상황을 의식한 메시지로 읽힌다. 인터뷰 직후 팬 커뮤니티에서는 발언의 진정성과 타이밍을 두고 다양한 해석이 이어졌다.`,
+      `선수 인터뷰는 늘 경기력 이상의 의미를 가진다. 특히 시즌 중반처럼 분위기 관리가 중요한 시기에는 한 문장만으로도 팀의 긴장감과 방향성이 동시에 드러나기 마련이다.`,
+      `이번 발언은 단순한 각오 표명처럼 보이지만, 팀 내부 결속과 외부 기대치를 조율하는 역할도 함께 하고 있다는 평가가 나온다.`,
+    ]),
+    buildNarrativeAftermath([
+      buildQuoteParagraph('현장 관계자', `${playerName}의 말에는 요즘 팀이 느끼는 분위기가 꽤 솔직하게 묻어났다`),
+      buildQuoteParagraph('해설위원', `이런 인터뷰는 잘 풀리면 결속의 상징이 되지만 결과가 따라주지 않으면 더 큰 부담으로 돌아오기도 한다`),
+      buildQuoteParagraph('팬 반응', `말보다 경기로 증명해주길 바란다는 기대와 응원이 함께 나온다`),
+    ]),
+    buildNarrativeAftermath([
+      `결국 이번 인터뷰의 진짜 의미는 다음 경기 결과와 함께 평가될 가능성이 크다. 메시지가 팀의 자신감으로 남을지, 아니면 부담의 시작으로 기록될지는 멀지 않은 일정 속에서 드러날 전망이다.`,
+      `발언 자체는 강하지 않았지만 시점은 분명했다. 구단과 선수단 모두 이 메시지가 긍정적인 동력으로 이어지길 바라고 있다는 해석이 설득력을 얻고 있다.`,
+      `인터뷰는 끝났지만 여운은 남아 있다. ${playerName}가 다음 무대에서 어떤 경기력을 보여주느냐가 이번 발언의 온도를 결정할 가능성이 크다.`,
+    ]),
+  );
+  await insertNews(seasonId, date, 'interview', title, content, 1, teamId, playerId);
 }
 
-// ─────────────────────────────────────────
-// 일간 뉴스 자동 생성
-// ─────────────────────────────────────────
-
-/** 일간 자동 뉴스 생성 (랜덤 1~3건) */
+/** 일간 자동 뉴스 생성 (최대 1~3건) */
 export async function generateDailyNews(
   seasonId: number,
   date: string,
@@ -296,79 +326,55 @@ export async function generateDailyNews(
     const team = pickRandom(teams);
 
     if (type < 0.3) {
-      // SNS 반응
       const snsTopics = [
-        `${team.shortName} 드래프트 논란`,
-        `${team.shortName} 팬미팅 후기`,
-        `${team.shortName} 신규 유니폼 공개`,
-        `${team.shortName} 선수 스트리밍 화제`,
-        `이번 주 MVP 논란`,
-        `LCK 순위 예측 토론`,
-        `${team.shortName} 게임단 시설 공개 영상 화제`,
-        `${team.shortName} 선수 듀오 랭크 명장면`,
-        `LCK 역대 최고 경기 투표 결과`,
-        `${team.shortName} 코치진 전략 분석 유튜브 화제`,
-        `${team.shortName} 팬아트 대회 개최 소식`,
-        `프로 선수 솔로랭크 티어 비교 논쟁`,
-        `${team.shortName} 선수 브이로그 인기`,
-        `LCK 올스타전 팬 투표 시작`,
+        `${team.shortName} 최근 스크림 분위기`,
+        `${team.shortName} 신입 선수 적응기`,
+        `${team.shortName} 선수 브이로그 공개`,
+        `${team.shortName} 코치진 메타 분석 영상`,
+        `이번 주 MVP 후보 토론`,
+        `리그 순위 경쟁 구도`,
+        `${team.shortName} 훈련장 비하인드`,
       ];
-      const topic = pickRandom(snsTopics);
-      await generateSocialMediaReaction(seasonId, date, topic, team.id);
+      await generateSocialMediaReaction(seasonId, date, pickRandom(snsTopics), team.id);
     } else if (type < 0.5) {
-      // 이적 루머 (20% 확률) — 다른 팀 소속 실제 선수명 사용
       const rumorRows = await db.select<{ id: string; name: string }[]>(
         'SELECT id, name FROM players WHERE team_id != $1 AND team_id IS NOT NULL ORDER BY RANDOM() LIMIT 1',
         [team.id],
       );
-      const rumorName = rumorRows.length > 0 ? rumorRows[0].name : pickRandom(['유망주 A', '베테랑 미드', '신인 정글러', '외국인 원딜']);
-      const rumorPlayerId = rumorRows.length > 0 ? rumorRows[0].id : null;
+      const rumorName = rumorRows[0]?.name ?? pickRandom(['에이스 탑', '베테랑 미드', '주목받는 원딜', '유망주 정글']);
+      const rumorPlayerId = rumorRows[0]?.id ?? null;
       await generateTransferRumorNews(seasonId, date, rumorName, team.name, team.id, rumorPlayerId);
     } else if (type < 0.7) {
-      // 인터뷰 — 해당 팀 소속 실제 선수명 사용
       const interviewRows = await db.select<{ id: string; name: string }[]>(
         'SELECT id, name FROM players WHERE team_id = $1 ORDER BY RANDOM() LIMIT 1',
         [team.id],
       );
-      const playerName = interviewRows.length > 0 ? interviewRows[0].name : '선수';
-      const playerId = interviewRows.length > 0 ? interviewRows[0].id : null;
+      const playerName = interviewRows[0]?.name ?? '선수';
+      const playerId = interviewRows[0]?.id ?? null;
       const topics = [
-        '이번 시즌 목표는 우승',
-        '팀 분위기가 정말 좋다',
+        '이번 시즌 목표는 결국 우승',
+        '팀 분위기가 더 단단해지고 있다',
         '매 경기 최선을 다하겠다',
         '팬들의 응원이 큰 힘이 된다',
-        '개인 기량을 더 끌어올리겠다',
-        '솔로랭크도 열심히 돌리고 있다',
-        '스크림에서 손 맞추기가 좋아지고 있다',
-        '코치님이 많이 도와주신다',
-        '상대 팀 분석을 철저히 하고 있다',
-        '새 패치에 적응 중인데 자신 있다',
-        '올해는 국제대회 무대에 서고 싶다',
-        '팬들에게 좋은 경기 보여드리겠다',
-        '젊은 선수들의 성장이 눈에 띈다',
-        '팀 내 경쟁이 치열해서 긴장감이 좋다',
+        '개인 기량도 더 끌어올리고 싶다',
+        '스크림에서 맞춰가는 속도가 빨라졌다',
       ];
-      const topic = pickRandom(topics);
-      await generateInterviewNews(seasonId, date, playerName, team.name, topic, team.id, playerId);
+      await generateInterviewNews(seasonId, date, playerName, team.name, pickRandom(topics), team.id, playerId);
     } else {
-      // 팀 분석 기사 (간략 버전 — 실제 순위 없이)
-      const analysisPool = [
-        { title: `[분석] ${team.name}, 최근 경기력 어떨까?`, content: `전문가들이 ${team.name}의 최근 경기력을 분석했다. 팀의 전략적 깊이와 개인기 조합이 주목받고 있으며, 앞으로의 행보가 기대된다.` },
-        { title: `[분석] ${team.name}의 드래프트 트렌드 변화`, content: `${team.name}이 최근 경기에서 새로운 드래프트 전략을 시도하고 있다. 전문가들은 메타 변화에 대한 빠른 적응력을 높이 평가했다.` },
-        { title: `[칼럼] ${team.name}, 올 시즌 진짜 실력은?`, content: `${team.name}의 올 시즌 경기력에 대해 전문가들의 의견이 분분하다. 라인전 능력과 매크로 운영 모두에서 개선점이 보인다는 분석이다.` },
-        { title: `[분석] ${team.name} 팀파이트 능력 집중 분석`, content: `${team.name}의 팀파이트 데이터를 분석한 결과, 오브젝트 컨트롤과 이니시에이팅 타이밍이 핵심 강점으로 꼽혔다.` },
-        { title: `전문가 칼럼: ${team.name}의 성장 포인트는?`, content: `전문가들이 ${team.name}의 성장 가능성을 진단했다. 선수 개인 역량과 팀 시너지가 시즌 중반을 향해 맞물려가는 양상이다.` },
-        { title: `[분석] ${team.name}, 미드-정글 시너지 돋보여`, content: `${team.name}의 미드-정글 라인이 최근 좋은 시너지를 보여주고 있다. 전문가들은 이 조합이 팀 승률의 핵심이라고 분석했다.` },
-      ];
-      const chosen = pickRandom(analysisPool);
-      await insertNews(seasonId, date, 'team_analysis', chosen.title, chosen.content, 1, team.id);
+      const standingRows = await db.select<{ wins: number; losses: number; standing: number }[]>(
+        `SELECT wins, losses, standing
+         FROM team_standings
+         WHERE season_id = $1 AND team_id = $2
+         LIMIT 1`,
+        [seasonId, team.id],
+      );
+      const standing = standingRows[0]?.standing ?? randomInt(1, 10);
+      const wins = standingRows[0]?.wins ?? randomInt(1, 10);
+      const losses = standingRows[0]?.losses ?? randomInt(1, 10);
+      await generateTeamAnalysisNews(seasonId, date, team.name, standing, wins, losses, team.id);
     }
   }
 }
-
-// ─────────────────────────────────────────
-// 부상 뉴스
-// ─────────────────────────────────────────
 
 /** 부상 보도 뉴스 */
 export async function generateInjuryNews(
@@ -382,65 +388,48 @@ export async function generateInjuryNews(
   teamId: string | null = null,
   playerId: string | null = null,
 ): Promise<void> {
-  // AI 뉴스 생성 시도
+  const fallback = buildArticle(
+    `${teamName}는 ${playerName}가 ${injuryType} 증세로 인해 최소 ${daysRemaining}일가량 실전에 나서기 어렵다고 밝혔다. 이번 부상은 선수 개인의 컨디션 문제를 넘어 팀 운영 전체에 변수로 작용할 가능성이 크다.`,
+    buildNarrativeAftermath([
+      `${playerName}의 이탈은 단순한 한 자리 공백이 아니라 역할 분담과 경기 준비 루틴 전체를 흔들 수 있다. 특히 비중이 큰 선수라면 대체 자원 가동과 전략 수정이 동시에 요구된다.`,
+      `${teamName}는 당장 다음 경기부터 로테이션 조정 여부를 고민해야 한다. 회복 자체보다 무리한 조기 복귀를 피하는 것이 더 중요하다는 점에서 보수적인 대응이 예상된다.`,
+      `부상이 길어질 경우 팀 전술의 축이 바뀔 가능성도 있다. 단기적으로는 대체 자원 준비, 중기적으로는 훈련 강도와 경기 운영 방식까지 손봐야 할 수 있다.`,
+    ]),
+    buildNarrativeAftermath([
+      buildQuoteParagraph('메디컬 스태프', `복귀 시점보다 회복 과정이 더 중요하며 재발 방지에 초점을 맞추고 있다`),
+      buildQuoteParagraph('구단 관계자', `선수 보호를 우선하되 팀 차원의 준비도 동시에 진행하고 있다`),
+      buildQuoteParagraph('해설위원', `${playerName}의 공백은 경기력뿐 아니라 팀 안정감에도 영향을 줄 수 있다`),
+    ]),
+    buildNarrativeAftermath([
+      `${teamName}가 이 공백을 얼마나 빠르게 정리하느냐에 따라 향후 일정의 난이도는 크게 달라질 수 있다. 팬들의 시선도 자연스럽게 대체 카드와 복귀 시점에 쏠릴 전망이다.`,
+      `부상 관리가 길어질수록 외부 평가는 더 냉정해질 수 있다. 반대로 위기 구간을 버텨낸다면 오히려 팀 전체 응집력을 끌어올리는 계기가 될 가능성도 있다.`,
+      `현재로서는 회복 경과를 지켜봐야 하지만, 최소한 당분간 ${teamName}는 기존 계획을 그대로 유지하기 어려운 상황이 됐다.`,
+    ]),
+  );
+
   try {
     const aiNews = await generateNewsArticle({
       eventType: 'injury',
-      details: `${playerName}, ${injuryType} 부상으로 ${daysRemaining}일 결장 (심각도: ${severity}/3)`,
+      details: `${playerName}, ${injuryType} 부상으로 ${daysRemaining}일 결장 (심각도 ${severity}/3)`,
       teamNames: [teamName],
       playerNames: [playerName],
     });
-    await insertNews(seasonId, date, 'injury_report', aiNews.title, aiNews.content, severity + 1, teamId, playerId);
+    await insertNews(seasonId, date, 'injury_report', aiNews.title, enrichNewsContent(aiNews.content, fallback), severity + 1, teamId, playerId);
     return;
-  } catch { /* AI 실패 시 기존 템플릿 사용 */ }
+  } catch {
+    // Fall back to templated copy when AI generation is unavailable.
+  }
 
-  const severityTemplates: Record<number, { title: string[]; content: string[] }> = {
-    1: {
-      title: [
-        `${teamName} ${playerName}, 경미한 부상으로 며칠 결장`,
-        `${playerName}, ${injuryType} 증상으로 단기 이탈`,
-        `${teamName}, ${playerName} 경미한 부상... ${daysRemaining}일 결장 예상`,
-      ],
-      content: [
-        `${teamName} 소속 ${playerName}이 경미한 ${injuryType} 증상으로 약 ${daysRemaining}일간 결장할 예정이다. 팀 관계자는 "큰 문제는 아니다"라고 밝혔다.`,
-        `${playerName}이 ${injuryType}으로 인해 잠시 팀 훈련에서 이탈했다. ${daysRemaining}일 후 복귀가 예상된다.`,
-      ],
-    },
-    2: {
-      title: [
-        `${teamName} ${playerName}, ${injuryType}으로 2~3주 결장`,
-        `${playerName}, 부상으로 장기간 이탈... ${teamName} 비상`,
-        `${teamName}, ${playerName} 부상 소식에 로스터 조정 불가피`,
-      ],
-      content: [
-        `${teamName}의 ${playerName}이 ${injuryType}으로 약 ${daysRemaining}일간 결장할 전망이다. 팀은 대체 선수 기용을 준비 중이다.`,
-        `${playerName}의 부상 소식에 ${teamName} 팬들의 우려가 커지고 있다. 의료진은 약 ${daysRemaining}일 후 복귀를 목표로 재활에 들어갔다고 밝혔다.`,
-      ],
-    },
-    3: {
-      title: [
-        `[속보] ${teamName} ${playerName}, 심각한 부상으로 장기 결장`,
-        `${playerName}, ${injuryType} 심각... ${daysRemaining}일 이상 결장 불가피`,
-        `${teamName} 최대 위기! ${playerName} 장기 부상`,
-      ],
-      content: [
-        `${teamName}의 핵심 선수 ${playerName}이 심각한 ${injuryType}으로 최소 ${daysRemaining}일간 결장한다. 시즌에 큰 타격이 예상된다.`,
-        `${playerName}의 장기 부상 소식이 전해지며 ${teamName}의 시즌 전망에 먹구름이 드리워졌다. 의료진은 완전 회복까지 상당한 시간이 필요하다고 밝혔다.`,
-      ],
-    },
-  };
-
-  const templates = severityTemplates[severity] ?? severityTemplates[1];
-  const titleIdx = randomInt(0, templates.title.length - 1);
-  const contentIdx = randomInt(0, templates.content.length - 1);
-
-  await insertNews(seasonId, date, 'injury_report', templates.title[titleIdx], templates.content[contentIdx], severity + 1, teamId, playerId);
+  const title = pickRandom([
+    `[부상 속보] ${teamName} ${playerName}, ${injuryType}로 이탈`,
+    `${playerName}, ${injuryType} 증세... ${teamName} 전력 운용 변수`,
+    `${teamName}, ${playerName} 부상 확인... 예상 결장 ${daysRemaining}일`,
+    `${playerName} 이탈한 ${teamName}, 로스터 재정비 불가피`,
+  ]);
+  await insertNews(seasonId, date, 'injury_report', title, fallback, severity + 1, teamId, playerId);
 }
 
-// ─────────────────────────────────────────
-// 이적 확정 뉴스
-// ─────────────────────────────────────────
-
+/** 이적 확정 뉴스 */
 export async function generateTransferCompleteNews(
   seasonId: number,
   date: string,
@@ -451,55 +440,48 @@ export async function generateTransferCompleteNews(
   teamId: string | null = null,
   playerId: string | null = null,
 ): Promise<void> {
-  // AI 뉴스 생성 시도
+  const isBigTransfer = fee > 10000;
+  const feeLabel = fee.toLocaleString();
+  const fallback = buildArticle(
+    `${toTeam}는 ${fromTeam}에서 뛰던 ${playerName} 영입을 공식 발표했다. 알려진 이적료는 ${feeLabel}만이며, 이번 계약은 ${isBigTransfer ? '시장 기준으로도 무게감이 큰 선택' : '즉시 전력감을 노린 실속형 보강'}으로 평가받고 있다.`,
+    buildNarrativeAftermath([
+      `${toTeam}는 이번 영입으로 약점 보완과 경기 플랜 다변화를 동시에 노리고 있다. ${playerName}가 빠르게 적응한다면 팀 전술의 선택지도 한층 넓어질 수 있다는 전망이 나온다.`,
+      `${fromTeam} 입장에서는 공백을 메워야 하는 숙제가 생겼지만, 자원 재배치나 추가 영입 여지를 확보했다는 해석도 가능하다. 결국 이번 거래는 두 팀 모두에게 다음 선택을 강하게 요구하는 계약이 됐다.`,
+      `이적 자체보다 중요한 것은 적응 속도와 역할 정리다. ${playerName}가 기대치에 맞는 퍼포먼스를 곧바로 보여줄 수 있느냐에 따라 이번 계약의 평가는 크게 달라질 전망이다.`,
+    ]),
+    buildNarrativeAftermath([
+      buildQuoteParagraph('구단 관계자', `${playerName}의 합류로 팀 전력의 결을 조금 더 선명하게 만들 수 있을 것으로 본다`),
+      buildQuoteParagraph('해설위원', `계약 규모보다 더 중요한 건 ${playerName}가 어떤 역할을 맡느냐`),
+      buildQuoteParagraph('이적시장 관계자', `이번 영입은 ${toTeam}가 시즌 목표를 분명히 설정했다는 신호로 읽힌다`),
+    ]),
+    buildNarrativeAftermath([
+      `팬들의 기대는 이미 커지고 있다. 다만 영입 발표의 열기와 실제 경기장 성과 사이에는 늘 시간차가 존재하는 만큼, 초반 적응 과정이 무엇보다 중요해졌다.`,
+      `이번 계약이 성공 사례로 남기 위해서는 빠른 합류 효과가 필요하다. 반대로 적응이 지연될 경우, 큰 기대만큼 압박도 빠르게 커질 수 있다.`,
+      `${toTeam}의 시즌 후반 운영은 이번 계약의 성공 여부와 밀접하게 연결될 가능성이 크다. ${fromTeam} 역시 남은 기간 로스터 재정비 성과를 보여줘야 한다.`,
+    ]),
+  );
+
   try {
     const aiNews = await generateNewsArticle({
       eventType: 'transfer',
-      details: `${playerName}, ${fromTeam}에서 ${toTeam}로 이적 (이적료: ${fee.toLocaleString()}만)`,
+      details: `${playerName}, ${fromTeam}에서 ${toTeam}로 이적 (이적료 ${feeLabel}만)`,
       teamNames: [toTeam, fromTeam],
       playerNames: [playerName],
     });
-    const isBigTransfer = fee > 10000;
-    await insertNews(seasonId, date, 'transfer_complete', aiNews.title, aiNews.content, isBigTransfer ? 3 : 2, teamId, playerId);
+    await insertNews(seasonId, date, 'transfer_complete', aiNews.title, enrichNewsContent(aiNews.content, fallback), isBigTransfer ? 3 : 2, teamId, playerId);
     return;
-  } catch { /* AI 실패 시 기존 템플릿 사용 */ }
+  } catch {
+    // Fall back to templated copy when AI generation is unavailable.
+  }
 
-  const isBig = fee > 10000;
-  const feeStr = fee.toLocaleString();
-
-  const titles = isBig ? [
-    `[오피셜] ${toTeam}, ${playerName} 영입 확정! 이적료 ${feeStr}만`,
-    `대어 낚았다! ${toTeam}, ${playerName} ${feeStr}만에 영입`,
-    `${playerName}, ${fromTeam} 떠나 ${toTeam}로... 이적료 ${feeStr}만`,
-    `역대급 이적! ${toTeam}, ${playerName}에 ${feeStr}만 투자`,
-    `[속보] ${playerName} ${toTeam} 행 확정 — 이적료 ${feeStr}만으로 역대 TOP`,
-    `${toTeam}, 지갑 열었다! ${playerName} ${feeStr}만에 전격 영입`,
-  ] : [
-    `${toTeam}, ${playerName} 영입 발표`,
-    `${playerName}, ${fromTeam}에서 ${toTeam}로 이적`,
-    `${toTeam}, ${playerName} 합류 공식 발표`,
-    `[오피셜] ${playerName}, ${toTeam} 유니폼 입는다`,
-    `${fromTeam} 떠난 ${playerName}, ${toTeam}에서 새 출발`,
-    `${toTeam}, ${playerName} 영입으로 전력 보강 완료`,
-  ];
-
-  const contents = [
-    `${toTeam}이 ${fromTeam}에서 ${playerName}을 이적료 ${feeStr}만 원에 영입했다고 공식 발표했다.`,
-    `${playerName}이 ${fromTeam}을 떠나 ${toTeam}에 합류한다. 이적료는 ${feeStr}만 원으로 알려졌다.`,
-    `${toTeam}의 로스터 보강이 완료되었다. ${playerName}이 ${fromTeam}에서 합류하며 전력 상승이 기대된다.`,
-    `${playerName}이 ${toTeam}의 새 유니폼을 입고 팬들 앞에 섰다. "새로운 도전이 기대된다"며 소감을 밝혔다.`,
-    `${toTeam} 관계자는 "${playerName} 영입으로 팀의 약점을 보완할 수 있게 됐다"며 만족감을 드러냈다.`,
-    `${fromTeam}에서 핵심 역할을 했던 ${playerName}이 ${toTeam}으로 둥지를 옮겼다. 팬들의 기대가 크다.`,
-  ];
-
-  const idx = randomInt(0, titles.length - 1);
-  const cIdx = randomInt(0, contents.length - 1);
-  await insertNews(seasonId, date, 'transfer_complete', titles[idx], contents[cIdx], isBig ? 3 : 2, teamId, playerId);
+  const title = pickRandom([
+    `${toTeam}, ${playerName} 영입 공식 발표`,
+    `${playerName}, ${fromTeam} 떠나 ${toTeam} 합류`,
+    `[오피셜] ${toTeam}, ${playerName}와 계약 완료`,
+    `${toTeam} 전력 보강 완료... ${playerName} 영입 확정`,
+  ]);
+  await insertNews(seasonId, date, 'transfer_complete', title, fallback, isBigTransfer ? 3 : 2, teamId, playerId);
 }
-
-// ─────────────────────────────────────────
-// 스캔들/논란 뉴스
-// ─────────────────────────────────────────
 
 export type ScandalType = 'teammate_conflict' | 'social_media' | 'dating' | 'streaming_incident' | 'attitude';
 
@@ -508,21 +490,64 @@ export async function generateScandalNews(
   date: string,
   teams: Array<{ id: string; name: string; shortName: string }>,
 ): Promise<{ teamId: string; moralePenalty: number } | null> {
-  // 일일 10% 확률로 스캔들 발생
-  if (nextRandom() >= 0.10) return null;
+  if (nextRandom() >= 0.10) {
+    return null;
+  }
 
   const team = pickRandom(teams);
-  const scandalTypes: { type: ScandalType; title: string; content: string; penalty: number }[] = [
-    { type: 'teammate_conflict', title: `${team.shortName} 팀 내 불화설... 선수 간 갈등 심화`, content: `${team.name} 내부에서 선수 간 갈등이 심화되고 있다는 소식이 전해졌다. 팀 관계자는 "사실무근"이라고 부인했지만 커뮤니티에서는 관련 루머가 확산 중이다.`, penalty: 10 },
-    { type: 'social_media', title: `${team.shortName} 선수 SNS 논란... 커뮤니티 뜨겁게 달아올라`, content: `${team.name} 소속 선수의 SNS 게시물이 논란이 되고 있다. 해당 선수는 이후 게시물을 삭제했으나 이미 캡처본이 퍼진 상태다.`, penalty: 8 },
-    { type: 'dating', title: `${team.shortName} 선수 열애설... 팬들 반응 엇갈려`, content: `${team.name} 선수의 열애설이 화제다. 일부 팬들은 응원하는 반면, 경기에 집중해달라는 의견도 있다.`, penalty: 5 },
-    { type: 'streaming_incident', title: `${team.shortName} 선수 방송 사고... 게임 중 욕설 논란`, content: `${team.name} 소속 선수가 개인 방송 중 상대에게 욕설을 한 장면이 클립으로 퍼지면서 논란이 되고 있다. 팀은 공식 사과문을 발표할 예정이다.`, penalty: 12 },
-    { type: 'attitude', title: `${team.shortName} 선수 태도 논란... 연습 태만 의혹`, content: `${team.name} 내부에서 특정 선수의 연습 태도에 대한 불만이 제기되고 있다는 소식이다. 해당 선수는 최근 경기에서 부진한 모습을 보인 바 있다.`, penalty: 8 },
+  const scandalTypes: { type: ScandalType; title: string; lead: string; penalty: number }[] = [
+    {
+      type: 'teammate_conflict',
+      title: `${team.shortName} 내부 갈등설... 선수단 분위기 흔들리나`,
+      lead: `${team.name} 내부에서 선수단 갈등이 있었다는 소문이 돌면서 구단 분위기에 대한 우려가 커지고 있다.`,
+      penalty: 10,
+    },
+    {
+      type: 'social_media',
+      title: `${team.shortName} 선수 SNS 논란... 커뮤니티 시선 집중`,
+      lead: `${team.name} 소속 선수의 SNS 활동이 예상치 못한 논란으로 번지며 구단의 위기관리 능력이 시험대에 올랐다.`,
+      penalty: 8,
+    },
+    {
+      type: 'dating',
+      title: `${team.shortName} 선수 사생활 이슈... 여론 엇갈려`,
+      lead: `${team.name} 소속 선수의 사생활 이슈가 온라인에서 확산되며 팀 외부 분위기에도 미묘한 파장을 남기고 있다.`,
+      penalty: 5,
+    },
+    {
+      type: 'streaming_incident',
+      title: `${team.shortName} 방송 사고 여파... 선수 보호와 대응 주목`,
+      lead: `${team.name} 소속 선수가 개인 방송 도중 구설수에 오르며 구단 대응 방식에 관심이 쏠리고 있다.`,
+      penalty: 12,
+    },
+    {
+      type: 'attitude',
+      title: `${team.shortName} 태도 논란 재점화... 팀 기강 도마 위`,
+      lead: `${team.name} 내부에서 특정 선수의 태도 문제를 둘러싼 이야기가 번지며 팀 운영 전반에 대한 시선도 날카로워지고 있다.`,
+      penalty: 8,
+    },
   ];
 
   const scandal = pickRandom(scandalTypes);
+  const fallback = buildArticle(
+    scandal.lead,
+    buildNarrativeAftermath([
+      `이번 이슈는 단순한 해프닝으로 끝날 수도 있지만, 대응이 늦어질 경우 팀 분위기와 외부 평판 모두에 부담으로 남을 수 있다. 특히 시즌이 길어질수록 사소한 균열이 경기력 문제로 번지는 경우가 적지 않다.`,
+      `선수단 내부 문제는 사실 여부와 별개로 분위기에 영향을 준다. 현재 단계에서는 확인되지 않은 부분도 많지만, 구단이 얼마나 빠르게 정리된 메시지를 내놓느냐가 중요해졌다.`,
+      `논란이 커질수록 구단은 경기 준비 외에도 커뮤니케이션 관리에 더 많은 에너지를 써야 한다. 그 자체가 팀 운영에 적지 않은 비용으로 작용할 수 있다는 지적도 나온다.`,
+    ]),
+    buildNarrativeAftermath([
+      buildQuoteParagraph('업계 관계자', `이런 문제는 사실관계보다도 초반 대응이 분위기를 크게 좌우한다`),
+      buildQuoteParagraph('팬 반응', `경기장 밖 이슈가 경기력까지 흔들지 않기를 바란다`),
+      buildQuoteParagraph('해설진', `작은 균열도 시즌 중반에는 팀 전체에 크게 번질 수 있다`),
+    ]),
+    buildNarrativeAftermath([
+      `결국 핵심은 다음 경기까지 얼마나 빠르게 팀을 안정화하느냐다. 후속 대응이 매끄럽다면 사건의 온도는 빠르게 식을 수 있지만, 정리가 늦어질 경우 시즌 전반의 이미지 문제로 이어질 가능성도 있다.`,
+      `논란은 시간이 지나면 잊히기도 하지만, 같은 문제가 반복되면 팀 정체성에까지 상처를 남긴다. ${team.name}가 지금 어떤 방식으로 내부 분위기를 관리하느냐가 중요해졌다.`,
+      `외부 시선은 이미 날카로워졌다. 지금부터는 해명보다 실제 팀 분위기와 경기 결과가 더 큰 설득력을 갖게 될 전망이다.`,
+    ]),
+  );
 
-  // AI 뉴스 생성 시도
   try {
     const aiNews = await generateNewsArticle({
       eventType: 'scandal',
@@ -530,17 +555,13 @@ export async function generateScandalNews(
       teamNames: [team.name],
       playerNames: [],
     });
-    await insertNews(seasonId, date, 'scandal', aiNews.title, aiNews.content, 2, team.id);
+    await insertNews(seasonId, date, 'scandal', aiNews.title, enrichNewsContent(aiNews.content, fallback), 2, team.id);
   } catch {
-    await insertNews(seasonId, date, 'scandal', scandal.title, scandal.content, 2, team.id);
+    await insertNews(seasonId, date, 'scandal', scandal.title, fallback, 2, team.id);
   }
 
   return { teamId: team.id, moralePenalty: scandal.penalty };
 }
-
-// ─────────────────────────────────────────
-// 팬 반응 뉴스
-// ─────────────────────────────────────────
 
 export async function generateFanReactionNews(
   seasonId: number,
@@ -549,69 +570,50 @@ export async function generateFanReactionNews(
   event: 'win_streak' | 'lose_streak' | 'big_transfer' | 'scandal' | 'championship',
   sentiment: 'positive' | 'negative' | 'neutral',
   teamId: string | null = null,
+  contextNote?: string,
 ): Promise<void> {
   const templates: Record<string, Record<string, string[]>> = {
     positive: {
-      win_streak: [
-        `팬들 열광! ${teamName} 연승 질주에 커뮤니티 축제 분위기`,
-        `${teamName} 연승 행진에 팬들 '올해는 우승이다!'`,
-        `${teamName} 연승 기록 갱신! 팬들 '역대 최강 로스터'`,
-        `커뮤니티 폭발! ${teamName} 연승에 승부 예측 적중한 팬 화제`,
-        `${teamName} 연승에 팬 카페 가입자 급증... '우승 기운 느껴진다'`,
-      ],
-      big_transfer: [
-        `${teamName} 대형 영입에 팬들 환호! '역대급 로스터'`,
-        `팬들 반응 폭발! ${teamName} 로스터 완성에 기대감 MAX`,
-        `${teamName} 영입 소식에 팬들 '드림팀 완성!' 축제 분위기`,
-        `${teamName} 로스터 보강 소식에 유니폼 판매량 급증`,
-      ],
-      championship: [
-        `${teamName} 우승에 팬들 감동의 눈물... '기다린 보람이 있었다'`,
-        `${teamName} 우승! 팬들 거리 응원전에 수천 명 운집`,
-        `'드디어 해냈다!' ${teamName} 팬들 SNS 축제 분위기`,
-      ],
+      win_streak: [`${teamName} 연승 행진에 팬들 환호`, `${teamName} 상승세에 커뮤니티 축제 분위기`],
+      big_transfer: [`${teamName} 대형 영입에 기대감 폭발`, `${teamName} 보강 소식에 팬심 들썩`],
+      championship: [`${teamName} 우승에 팬들 감격`, `${teamName} 정상 등극에 온라인 환호`],
     },
     negative: {
-      lose_streak: [
-        `${teamName} 연패에 팬들 분노... '로스터 변경 시급'`,
-        `팬들 한숨... ${teamName} 연패 늪에서 빠져나올 수 있을까`,
-        `${teamName} 연패에 팬 카페 분위기 싸늘... '감독 경질 요구'`,
-        `'이게 프로야?' ${teamName} 연패에 팬들 격분`,
-        `${teamName} 연패 기록 갱신... 팬들 '전력 분석 다시 해야'`,
-      ],
-      scandal: [
-        `${teamName} 스캔들에 팬들 실망... '프로답지 못하다'`,
-        `${teamName} 논란에 팬들 탈퇴 잇따라... 팬카페 분위기 냉각`,
-        `'실망스럽다' ${teamName} 스캔들에 팬들 뿔났다`,
-      ],
+      lose_streak: [`${teamName} 연패에 팬심 흔들`, `${teamName} 부진에 비판 여론 확산`],
+      scandal: [`${teamName} 논란에 팬 여론 냉각`, `${teamName} 악재에 실망감 커져`],
     },
     neutral: {
-      big_transfer: [
-        `${teamName} 영입 소식에 팬들 반응 엇갈려... 기대와 우려 교차`,
-        `${teamName} 로스터 변경, 팬들 찬반 팽팽... '지켜봐야'`,
-      ],
+      big_transfer: [`${teamName} 영입 발표에 기대와 우려 교차`, `${teamName} 로스터 변화 놓고 반응 엇갈려`],
     },
   };
 
-  const pool = templates[sentiment]?.[event] ?? [`${teamName} 관련 팬 반응이 뜨겁다.`];
-  const title = pickRandom(pool);
+  const title = pickRandom(templates[sentiment]?.[event] ?? [`${teamName} 관련 팬 반응 확산`]);
+  const lead = `${teamName}를 둘러싼 팬 반응이 온라인 전반으로 빠르게 번지고 있다. 승리와 패배, 영입과 악재에 따라 반응의 결은 다르지만 공통적으로 팀의 다음 선택을 향한 관심이 커지고 있다는 점은 분명하다.`;
+  const analysis = sentiment === 'positive'
+    ? `${teamName}를 향한 호의적인 반응은 기대감의 재확인에 가깝다. 팬들은 상승 흐름이 이어질 수 있다는 믿음을 드러내고 있고, 일부에서는 시즌 목표를 더 높게 잡아야 한다는 목소리도 나온다.`
+    : sentiment === 'negative'
+      ? `${teamName}를 향한 부정적 반응은 단순한 실망을 넘어 변화 요구로 이어지고 있다. 로스터 운용, 경기 내용, 팀 메시지 관리까지 여러 층위에서 비판이 이어지며 압박 수위가 올라가는 분위기다.`
+      : `${teamName}를 향한 여론은 기대와 우려가 팽팽하게 맞서고 있다. 일부는 장기적 관점의 기다림을 말하지만, 다른 쪽에서는 지금 당장의 변화를 요구하며 의견이 갈리고 있다.`;
+  const reaction = contextNote
+    ? buildNewsParagraphs(
+        contextNote,
+        buildNarrativeAftermath([
+          buildQuoteParagraph('팬 커뮤니티 반응', `지금은 감정적으로 흔들리기보다 다음 경기에서 어떤 답을 보여줄지가 더 중요하다`),
+          buildQuoteParagraph('온라인 반응', `${teamName}의 현재 흐름은 단순한 결과 하나로 끝날 문제가 아니라는 인식이 퍼지고 있다`),
+        ]),
+      )
+    : buildNarrativeAftermath([
+        buildQuoteParagraph('팬 커뮤니티 반응', `${teamName}가 어떤 선택을 하느냐에 따라 여론은 금방 다시 움직일 수 있다`),
+        buildQuoteParagraph('SNS 반응', `응원도 비판도 결국 다음 경기에서 무엇을 보여주느냐에 달려 있다`),
+      ]);
+  const outlook = buildNarrativeAftermath([
+    `팬 여론은 결과가 이어질수록 더 큰 힘을 갖는다. ${teamName}가 다음 경기와 후속 대응에서 어떤 메시지를 내놓느냐에 따라 현재 분위기는 더 강한 지지로 바뀔 수도, 거센 압박으로 돌아설 수도 있다.`,
+    `지금의 반응은 감정의 순간이지만, 반복되면 팀 이미지를 규정하는 흐름이 된다. 구단 입장에서는 성적과 커뮤니케이션 두 축을 동시에 관리해야 하는 시점이다.`,
+    `결국 외부 반응을 바꾸는 가장 빠른 방법은 경기장 안에서 답을 내놓는 것이다. ${teamName}가 다음 일정에서 어떤 장면을 보여주느냐가 여론의 방향을 다시 정할 가능성이 크다.`,
+  ]);
 
-  const contentPool = [
-    `${teamName} 관련 소식에 팬들의 반응이 SNS와 커뮤니티를 뜨겁게 달구고 있다.`,
-    `${teamName} 관련 게시물이 실시간 트렌드에 오르며 팬들의 댓글 전쟁이 벌어지고 있다.`,
-    `온라인 커뮤니티에서 ${teamName} 관련 토론이 과열되고 있다. 팬들 사이에서 다양한 의견이 충돌 중이다.`,
-    `${teamName} 소식에 SNS 반응이 폭발적이다. 관련 해시태그가 트렌드 상위권에 올랐다.`,
-    `팬 카페에서 ${teamName} 관련 글이 쏟아지고 있다. 찬성과 반대 의견이 팽팽히 맞서고 있다.`,
-    `${teamName} 소식이 전해지자 커뮤니티가 들끓고 있다. 전문가 분석 글부터 감정적 반응까지 다양한 글이 올라오고 있다.`,
-  ];
-  const content = pickRandom(contentPool);
-
-  await insertNews(seasonId, date, 'fan_reaction', title, content, 1, teamId);
+  await insertNews(seasonId, date, 'fan_reaction', title, buildArticle(lead, analysis, reaction, outlook), 1, teamId);
 }
-
-// ─────────────────────────────────────────
-// 수상 뉴스
-// ─────────────────────────────────────────
 
 export async function generateAwardNews(
   seasonId: number,
@@ -623,29 +625,37 @@ export async function generateAwardNews(
   playerId: string | null = null,
 ): Promise<void> {
   const awardLabels: Record<string, string> = {
-    mvp: 'MVP', all_pro: 'All-Pro', rookie: '신인상', finals_mvp: '결승 MVP',
+    mvp: 'MVP',
+    all_pro: 'All-Pro',
+    rookie: '신인상',
+    finals_mvp: '결승 MVP',
   };
   const label = awardLabels[awardType] ?? awardType;
-
-  const titles = [
-    `${teamName} ${playerName}, ${label} 수상!`,
-    `[수상] ${playerName}, ${label} 선정... ${teamName}의 자랑`,
-    `${playerName}, ${label} 영예! ${teamName} 팬들 환호`,
-    `압도적 활약! ${playerName}, 만장일치로 ${label} 선정`,
-    `${playerName}, ${label} 수상 '팀 덕분에 가능했다'`,
-    `[시상식] ${teamName} ${playerName}, ${label} 트로피 품에 안아`,
-  ];
-  const contents = [
-    `${teamName} 소속 ${playerName}이 이번 시즌 ${label}로 선정되었다. 뛰어난 활약이 높은 평가를 받았다.`,
-    `${playerName}이 ${label}을 수상하며 최고의 시즌을 보내고 있음을 증명했다. ${teamName} 관계자는 "당연한 결과"라며 축하했다.`,
-    `${playerName}은 수상 소감에서 "팀원들과 코치진 덕분"이라며 겸손한 모습을 보였다. 팬들은 SNS에서 축하 인사를 보냈다.`,
-    `시상식에서 ${playerName}은 "${label}을 받게 되어 영광이다. 남은 시즌도 열심히 하겠다"고 소감을 밝혔다.`,
-    `${playerName}의 ${label} 수상에 대해 해설진은 "이번 시즌 가장 임팩트 있는 선수"라고 평가했다.`,
-  ];
-
-  const idx = randomInt(0, titles.length - 1);
-  const cIdx = randomInt(0, contents.length - 1);
-  await insertNews(seasonId, date, 'award_news', titles[idx], contents[cIdx], 3, teamId, playerId);
+  const title = pickRandom([
+    `${teamName} ${playerName}, ${label} 수상`,
+    `[수상] ${playerName}, ${label} 영예`,
+    `${playerName}, ${label} 선정으로 존재감 입증`,
+    `${teamName} ${playerName}, ${label}로 시즌 조명`,
+  ]);
+  const content = buildArticle(
+    `${teamName} 소속 ${playerName}가 ${label} 수상자로 이름을 올렸다. 이번 수상은 단순한 개인 타이틀을 넘어 시즌 내내 보여준 존재감과 영향력을 공식적으로 인정받았다는 의미를 갖는다.`,
+    buildNarrativeAftermath([
+      `${playerName}는 꾸준한 경기력과 결정적인 순간의 임팩트로 강한 인상을 남겼다. 팀 성적과 별개로 개인 퍼포먼스의 무게감이 충분히 평가받았다는 시선이 많다.`,
+      `${label} 수상은 기록만으로 설명되지 않는다. 시즌 전체 흐름 속에서 ${playerName}가 팀에 어떤 안정감과 폭발력을 동시에 제공했는지가 높게 평가됐다는 해석이 뒤따른다.`,
+      `${playerName}의 수상은 팀 내부에도 긍정적인 자극이 될 전망이다. 개인의 성과가 팀 경쟁력과 분리되지 않았다는 점에서 더 의미가 크다는 반응이 나온다.`,
+    ]),
+    buildNarrativeAftermath([
+      buildQuoteParagraph('시상식 관계자', `${playerName}는 이번 시즌 가장 꾸준하면서도 인상적인 퍼포먼스를 보여준 선수 중 한 명이었다`),
+      buildQuoteParagraph('팀 관계자', `개인의 영예이기도 하지만 결국 팀 전체가 함께 만든 결과라고 보고 있다`),
+      buildQuoteParagraph('팬 반응', `수상이 놀랍지 않을 정도로 올 시즌 존재감이 뚜렷했다`),
+    ]),
+    buildNarrativeAftermath([
+      `수상의 여운은 길게 남겠지만, 결국 선수와 팀 모두 다음 목표를 바라볼 수밖에 없다. ${playerName}가 이번 영광을 다음 경기력으로 연결할 수 있을지가 또 다른 관심사로 떠오른다.`,
+      `개인 타이틀은 끝이 아니라 기준점이 되곤 한다. 지금부터는 ${playerName}가 이 평가를 어떻게 지속 가능한 경기력으로 증명하느냐가 중요해졌다.`,
+      `${label} 수상은 시즌의 보상이자 동시에 더 큰 기대의 시작이기도 하다. ${playerName}를 향한 시선은 이제 자연스럽게 다음 무대로 향하게 됐다.`,
+    ]),
+  );
+  await insertNews(seasonId, date, 'award_news', title, content, 3, teamId, playerId);
 }
 
 /** 패치 노트 뉴스 */
@@ -656,22 +666,36 @@ export async function generatePatchNotesNews(
   changeCount: number,
   patchNote: string,
 ): Promise<void> {
-  const titles = [
-    `패치 ${patchNumber} 적용 — 챔피언 ${changeCount}건 밸런스 조정`,
-    `[패치 ${patchNumber}] 대규모 밸런스 패치! ${changeCount}개 챔피언 변경`,
-    `패치 ${patchNumber} 라이브 적용 — 메타 변동 예고, ${changeCount}건 조정`,
-    `[속보] 패치 ${patchNumber} 공개! 프로씬 메타 뒤집힐까? (${changeCount}건)`,
-    `패치 ${patchNumber} 핵심 요약: ${changeCount}개 챔피언 너프/버프`,
-  ];
-  const title = pickRandom(titles);
-  await insertNews(seasonId, date, 'patch_notes', title, patchNote, 2);
+  const title = pickRandom([
+    `패치 ${patchNumber} 적용... 총 ${changeCount}건 조정`,
+    `[패치 ${patchNumber}] 메타 흔드는 밸런스 변경`,
+    `패치 ${patchNumber} 공개, 프로씬 영향 주목`,
+    `패치 ${patchNumber} 라이브 적용... 다음 경기 변수 부상`,
+  ]);
+  const content = buildArticle(
+    `패치 ${patchNumber}가 라이브 서버에 적용됐다. 이번 업데이트에는 총 ${changeCount}건의 조정이 포함됐으며, 단순 수치 변경을 넘어 팀들의 준비 방향과 밴픽 우선순위에 적지 않은 영향을 줄 수 있다는 전망이 나온다.`,
+    buildNarrativeAftermath([
+      `패치 노트의 핵심은 메타 중심축을 얼마나 이동시키느냐다. 일부 조정은 바로 체감되는 수준일 수 있지만, 실제 프로씬에서는 스크림 데이터와 팀별 해석이 쌓인 뒤에야 진짜 영향력이 드러나는 경우가 많다.`,
+      `이번 패치는 특정 챔피언이나 전술의 우선순위를 재정렬할 가능성이 있다. 따라서 각 팀은 단순 적응을 넘어 자신들의 강점을 어떤 방식으로 다시 연결할지 빠르게 판단해야 한다.`,
+      `패치 자체보다 더 중요한 것은 해석 속도다. 변화 폭이 큰 시즌일수록 같은 패치를 받아도 어떤 팀은 기회로, 어떤 팀은 부담으로 받아들이는 차이가 분명하게 벌어진다.`,
+    ]),
+    buildNarrativeAftermath([
+      buildQuoteParagraph('해설진', `이번 패치는 숫자만 보면 과하지 않아 보여도 팀별 준비 차이를 더 크게 만들 수 있다`),
+      buildQuoteParagraph('분석가', `스크림에서 어떤 챔피언이 먼저 살아나는지가 초기 메타를 좌우할 가능성이 크다`),
+      buildQuoteParagraph('코치진 반응', `변화 폭보다도 해석 순서가 중요해졌고 적응 속도가 더 큰 경쟁력이 될 수 있다`),
+    ]),
+    buildNewsParagraphs(
+      patchNote,
+      buildNarrativeAftermath([
+        `결국 이번 패치의 첫 인상은 다음 경기들에서 확인될 전망이다. 빠르게 방향을 잡는 팀은 초반 메타 주도권을 쥘 수 있지만, 준비가 늦는 팀은 짧은 기간에도 큰 체감 차이를 겪을 수 있다.`,
+        `패치가 적용된 직후에는 혼선이 불가피하다. 그러나 이런 시기일수록 준비된 팀은 예상보다 빠르게 우위를 만든다는 점에서, 당분간 경기력 변화의 폭도 평소보다 크게 나타날 가능성이 있다.`,
+        `메타 변화는 늘 새로운 기회를 만들지만 동시에 기존 강점의 가치를 흔들기도 한다. 이번 패치 역시 같은 질문을 리그 전체에 던지고 있다.`,
+      ]),
+    ),
+  );
+  await insertNews(seasonId, date, 'patch_notes', title, content, 2);
 }
 
-// ─────────────────────────────────────────
-// 조회 함수
-// ─────────────────────────────────────────
-
-/** 날짜별 뉴스 조회 */
 export async function getNewsByDate(seasonId: number, date: string): Promise<NewsArticle[]> {
   const db = await getDatabase();
   const rows = await db.select<NewsArticleRow[]>(
@@ -685,7 +709,6 @@ export async function getNewsByDate(seasonId: number, date: string): Promise<New
   return rows.map(mapRowToNewsArticle);
 }
 
-/** 최근 뉴스 조회 */
 export async function getRecentNews(
   seasonId: number,
   limit: number = 30,
@@ -713,7 +736,6 @@ export async function getRecentNews(
   return rows.map(mapRowToNewsArticle);
 }
 
-/** 읽지 않은 뉴스 수 */
 export async function getUnreadCount(seasonId: number): Promise<number> {
   const db = await getDatabase();
   const rows = await db.select<{ cnt: number }[]>(
@@ -723,7 +745,6 @@ export async function getUnreadCount(seasonId: number): Promise<number> {
   return rows[0]?.cnt ?? 0;
 }
 
-/** 읽음 처리 */
 export async function markAsRead(newsId: number): Promise<void> {
   const db = await getDatabase();
   await db.execute(
@@ -732,7 +753,6 @@ export async function markAsRead(newsId: number): Promise<void> {
   );
 }
 
-/** 전체 읽음 처리 */
 export async function markAllAsRead(seasonId: number): Promise<void> {
   const db = await getDatabase();
   await db.execute(

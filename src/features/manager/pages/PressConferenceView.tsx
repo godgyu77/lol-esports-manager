@@ -1,20 +1,15 @@
-/**
- * 기자회견 뷰
- * - 질문 표시 → 답변 선택 → 결과 확인
- */
-
-import { useState, useCallback } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useGameStore } from '../../../stores/gameStore';
 import {
-  generateQuestions,
-  calculateConferenceResult,
   applyConferenceEffects,
+  calculateConferenceResult,
+  generateQuestions,
 } from '../../../engine/media/pressConferenceEngine';
 import type {
-  ConferenceType,
-  PressQuestion,
-  PressAnswer,
   ConferenceResult,
+  ConferenceType,
+  PressAnswer,
+  PressQuestion,
 } from '../../../engine/media/pressConferenceEngine';
 
 type Phase = 'select_type' | 'answering' | 'result';
@@ -23,8 +18,8 @@ const CONFERENCE_TYPE_LABELS: Record<ConferenceType, string> = {
   pre_match: '경기 전 기자회견',
   post_match: '경기 후 기자회견',
   weekly: '주간 기자회견',
-  transfer: '이적 시장 기자회견',
-  crisis: '위기 기자회견',
+  transfer: '이적시장 기자회견',
+  crisis: '위기 대응 기자회견',
 };
 
 const TONE_BORDER_COLORS: Record<PressAnswer['tone'], string> = {
@@ -42,8 +37,66 @@ const TONE_LABELS: Record<PressAnswer['tone'], string> = {
   deflect: '회피',
   aggressive: '공격적',
   honest: '솔직',
-  evasive: '애매하게',
+  evasive: '애매함',
 };
+
+function getConferenceNarrative(result: ConferenceResult, conferenceLabel: string): string {
+  const { teamMorale, publicOpinion, boardSatisfaction, rivalryIntensity } = result.totalEffects;
+
+  const opening = `${conferenceLabel}이 마무리된 뒤 팀 안팎의 반응은 비교적 선명하게 갈렸다. 이번 발언은 단순한 답변 정리를 넘어 선수단 분위기, 대외 여론, 구단 내부 시선까지 함께 건드리는 회견으로 받아들여졌다.`;
+
+  const moraleLine = teamMorale > 0
+    ? '선수단은 감독의 메시지를 비교적 긍정적으로 받아들인 분위기다. 내부 결속과 집중력을 끌어올리는 쪽으로 작용할 가능성이 크다.'
+    : teamMorale < 0
+      ? '선수단에는 적지 않은 부담이 남았다. 발언의 강도나 결이 일부 선수들에게는 압박으로 읽힐 여지가 있다.'
+      : '선수단 내부 분위기를 크게 흔들 정도의 메시지는 아니었다. 일단은 무난한 수준의 회견으로 정리됐다.';
+
+  const publicLine = publicOpinion > 0
+    ? '대외 여론은 비교적 우호적으로 움직일 가능성이 크다. 팬과 미디어 모두 메시지의 방향성에 일정 부분 설득된 모습이다.'
+    : publicOpinion < 0
+      ? '여론 반응은 다소 까다로울 수 있다. 표현의 강도나 회피성 답변이 일부 비판 기사로 번질 가능성도 배제할 수 없다.'
+      : '언론과 팬 반응은 당분간 관망세에 가까울 전망이다. 결국 다음 경기 결과가 이번 회견의 의미를 다시 규정하게 될 가능성이 크다.';
+
+  const boardLine = boardSatisfaction > 0
+    ? '구단 수뇌부 입장에서도 메시지 관리가 비교적 안정적이었다고 볼 수 있다. 적어도 당장 추가 압박을 키우는 회견은 아니었다.'
+    : boardSatisfaction < 0
+      ? '구단 내부에서는 메시지의 방향을 조금 더 정제할 필요가 있다는 시선이 생길 수 있다. 결과가 따라주지 않으면 부담이 빠르게 커질 여지도 있다.'
+      : '구단 내부 평가는 일단 보류에 가깝다. 발언 자체보다 이후 경기력과 분위기 관리가 더 중요해진 상황이다.';
+
+  const rivalryLine = rivalryIntensity > 0
+    ? '다만 경쟁 구도를 자극하는 메시지도 일부 포함돼 있어, 다음 맞대결이나 후속 기사에서 라이벌 구도가 더 강하게 부각될 여지가 있다.'
+    : '라이벌 구도를 과하게 자극하진 않았기 때문에, 이번 회견은 전체적으로 톤 조절에 초점을 둔 대응으로 볼 수 있다.';
+
+  return [opening, moraleLine, publicLine, boardLine, rivalryLine].join('\n\n');
+}
+
+function getConferenceFollowUp(result: ConferenceResult): string[] {
+  const notes: string[] = [];
+
+  if (result.totalEffects.teamMorale > 0) {
+    notes.push('선수단 반응: 회견 직후 내부 분위기는 다소 정돈되는 흐름입니다.');
+  } else if (result.totalEffects.teamMorale < 0) {
+    notes.push('선수단 반응: 몇몇 발언은 내부 압박으로 읽힐 수 있어 후속 관리가 필요합니다.');
+  }
+
+  if (result.totalEffects.publicOpinion > 0) {
+    notes.push('언론 반응: 기사 톤은 비교적 우호적으로 형성될 가능성이 높습니다.');
+  } else if (result.totalEffects.publicOpinion < 0) {
+    notes.push('언론 반응: 자극적 표현이나 회피성 답변이 비판 기사로 이어질 수 있습니다.');
+  }
+
+  if (result.totalEffects.boardSatisfaction > 0) {
+    notes.push('구단 시선: 외부 메시지 관리 측면에서 안정감을 준 회견으로 평가될 수 있습니다.');
+  } else if (result.totalEffects.boardSatisfaction < 0) {
+    notes.push('구단 시선: 메시지 톤 조절과 후속 결과가 더 중요해졌습니다.');
+  }
+
+  if (result.totalEffects.rivalryIntensity > 0) {
+    notes.push('후속 파장: 라이벌 구도가 더 뜨거워질 가능성이 있습니다.');
+  }
+
+  return notes.slice(0, 3);
+}
 
 export function PressConferenceView() {
   const save = useGameStore((s) => s.save);
@@ -59,10 +112,19 @@ export function PressConferenceView() {
   const userTeamId = save?.userTeamId;
   const seasonId = season?.id;
 
+  const conferenceSummary = useMemo(
+    () => (result ? getConferenceNarrative(result, CONFERENCE_TYPE_LABELS[conferenceType]) : ''),
+    [conferenceType, result],
+  );
+
+  const followUpNotes = useMemo(
+    () => (result ? getConferenceFollowUp(result) : []),
+    [result],
+  );
+
   const handleStartConference = useCallback((type: ConferenceType) => {
     setConferenceType(type);
-    const qs = generateQuestions(type, 2);
-    setQuestions(qs);
+    setQuestions(generateQuestions(type, 2));
     setCurrentQIdx(0);
     setSelectedAnswers([]);
     setResult(null);
@@ -78,18 +140,17 @@ export function PressConferenceView() {
 
     if (currentQIdx + 1 < questions.length) {
       setCurrentQIdx(currentQIdx + 1);
-    } else {
-      // 모든 질문 완료 → 결과 계산
-      const confResult = calculateConferenceResult(conferenceType, questions, newAnswers);
-      setResult(confResult);
-      setPhase('result');
-
-      // 효과 적용
-      if (userTeamId && seasonId) {
-        await applyConferenceEffects(userTeamId, seasonId, confResult);
-      }
+      return;
     }
-  }, [questions, currentQIdx, selectedAnswers, conferenceType, userTeamId, seasonId]);
+
+    const confResult = calculateConferenceResult(conferenceType, questions, newAnswers);
+    setResult(confResult);
+    setPhase('result');
+
+    if (userTeamId && seasonId) {
+      await applyConferenceEffects(userTeamId, seasonId, confResult);
+    }
+  }, [conferenceType, currentQIdx, questions, seasonId, selectedAnswers, userTeamId]);
 
   return (
     <div className="fm-animate-in" style={{ maxWidth: '720px', margin: '0 auto' }}>
@@ -99,7 +160,7 @@ export function PressConferenceView() {
 
       {phase === 'select_type' && (
         <div>
-          <p className="fm-text-sm fm-text-muted fm-mb-md">기자회견 유형을 선택하세요.</p>
+          <p className="fm-text-sm fm-text-muted fm-mb-md">진행할 기자회견 유형을 선택하세요.</p>
           <div className="fm-flex-col fm-gap-sm">
             {(Object.keys(CONFERENCE_TYPE_LABELS) as ConferenceType[]).map((type) => (
               <button
@@ -117,10 +178,9 @@ export function PressConferenceView() {
       {phase === 'answering' && questions[currentQIdx] && (
         <div>
           <div className="fm-text-sm fm-text-muted fm-mb-md">
-            {CONFERENCE_TYPE_LABELS[conferenceType]} -- 질문 {currentQIdx + 1}/{questions.length}
+            {CONFERENCE_TYPE_LABELS[conferenceType]} · 질문 {currentQIdx + 1}/{questions.length}
           </div>
 
-          {/* 질문 */}
           <div className="fm-panel fm-mb-md">
             <div className="fm-panel__body">
               <div className="fm-text-xs fm-text-muted fm-mb-sm">기자 질문</div>
@@ -128,7 +188,6 @@ export function PressConferenceView() {
             </div>
           </div>
 
-          {/* 답변 옵션 */}
           <div className="fm-flex-col fm-gap-sm">
             {questions[currentQIdx].answers.map((answer) => (
               <button
@@ -138,9 +197,7 @@ export function PressConferenceView() {
                 style={{ borderColor: TONE_BORDER_COLORS[answer.tone] }}
               >
                 <div className="fm-flex fm-items-center fm-gap-sm fm-mb-sm">
-                  <span className="fm-badge fm-badge--default">
-                    {TONE_LABELS[answer.tone]}
-                  </span>
+                  <span className="fm-badge fm-badge--default">{TONE_LABELS[answer.tone]}</span>
                 </div>
                 <p className="fm-text-md fm-text-secondary">{answer.text}</p>
               </button>
@@ -153,30 +210,52 @@ export function PressConferenceView() {
         <div>
           <div className="fm-text-sm fm-text-muted fm-mb-md">{CONFERENCE_TYPE_LABELS[conferenceType]} 결과</div>
 
-          {/* 효과 요약 */}
           <div className="fm-panel fm-mb-md">
             <div className="fm-panel__header">
-              <span className="fm-panel__title">효과</span>
+              <span className="fm-panel__title">영향 요약</span>
             </div>
             <div className="fm-panel__body">
               <EffectRow label="팀 사기" value={result.totalEffects.teamMorale} />
               <EffectRow label="여론" value={result.totalEffects.publicOpinion} />
               <EffectRow label="구단주 만족도" value={result.totalEffects.boardSatisfaction} />
               {result.totalEffects.rivalryIntensity > 0 && (
-                <EffectRow label="라이벌 관계" value={result.totalEffects.rivalryIntensity} />
+                <EffectRow label="라이벌 구도" value={result.totalEffects.rivalryIntensity} />
               )}
             </div>
           </div>
 
-          {/* 뉴스 헤드라인 */}
+          <div className="fm-panel fm-mb-md">
+            <div className="fm-panel__header">
+              <span className="fm-panel__title">기사형 총평</span>
+            </div>
+            <div className="fm-panel__body">
+              <p className="fm-text-secondary" style={{ whiteSpace: 'pre-line' }}>{conferenceSummary}</p>
+            </div>
+          </div>
+
+          {followUpNotes.length > 0 && (
+            <div className="fm-panel fm-mb-md">
+              <div className="fm-panel__header">
+                <span className="fm-panel__title">후속 반응</span>
+              </div>
+              <div className="fm-panel__body">
+                {followUpNotes.map((note, index) => (
+                  <p key={index} className="fm-text-sm fm-text-secondary" style={{ padding: '4px 0' }}>{note}</p>
+                ))}
+              </div>
+            </div>
+          )}
+
           {result.headlines.length > 0 && (
             <div className="fm-panel fm-mb-md">
               <div className="fm-panel__header">
-                <span className="fm-panel__title">뉴스 헤드라인</span>
+                <span className="fm-panel__title">예상 헤드라인</span>
               </div>
               <div className="fm-panel__body">
-                {result.headlines.map((h, i) => (
-                  <p key={i} className="fm-text-sm fm-text-secondary" style={{ padding: '4px 0' }}>"{h}"</p>
+                {result.headlines.map((headline, index) => (
+                  <p key={index} className="fm-text-sm fm-text-secondary" style={{ padding: '4px 0' }}>
+                    "{headline}"
+                  </p>
                 ))}
               </div>
             </div>
@@ -186,7 +265,7 @@ export function PressConferenceView() {
             onClick={() => setPhase('select_type')}
             className="fm-btn fm-btn--primary"
           >
-            돌아가기
+            다시 진행하기
           </button>
         </div>
       )}

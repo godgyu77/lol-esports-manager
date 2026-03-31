@@ -199,7 +199,8 @@ async function tryCloudFallback(
   const errors: string[] = [];
   for (const provider of cloudProviders) {
     try {
-      return await PROVIDER_FN_MAP[provider](userMessage, options);
+      const handler = PROVIDER_FN_MAP[provider as Exclude<AiProvider, 'template'>];
+      return await handler(userMessage, options);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       warnOnce(`cloud-${provider}`, `[AI 폴백] ${provider} 호출 실패: ${message}`);

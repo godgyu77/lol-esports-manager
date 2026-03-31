@@ -12,6 +12,8 @@ import { getDatabase } from '../../db/database';
 import type { Staff, StaffRole, StaffSpecialty, CoachingPhilosophy } from '../../types/staff';
 import type { Region } from '../../types/game';
 import { pickRandom, randomInt } from '../../utils/random';
+import { getPlayerManagementInsights, type PlayerManagementInsight } from '../satisfaction/playerSatisfactionEngine';
+import { getActiveComplaints } from '../complaint/complaintEngine';
 
 // ─────────────────────────────────────────
 // Row 매핑
@@ -324,6 +326,14 @@ export interface StaffBonuses {
   metaAdaptationBonus: number;    // 메타 적응 가속 일수 (0~-3)
 }
 
+export interface StaffRecommendation {
+  role: StaffRole;
+  title: string;
+  summary: string;
+  route: string;
+  urgency: 'high' | 'medium' | 'low';
+}
+
 /** 스태프 사기에 따른 효율 계수 (0.7 ~ 1.3) */
 function getMoraleFactor(morale: number): number {
   return 0.7 + (morale / 100) * 0.6;
@@ -526,4 +536,94 @@ export async function getChemistryTrainingBonus(
   const avgChemistry = totalChemistry / count;
   // 0~100 → 0~0.05 (최대 +5%)
   return (avgChemistry - 50) / 50 * 0.05;
+}
+
+function buildRecommendationFromInsight(insight: PlayerManagementInsight): StaffRecommendation {
+  switch (insight.weakestFactor) {
+    case 'teamChemistry':
+      return {
+        role: 'sports_psychologist',
+        title: '심리 담당 추천',
+        summary: `팀 케미 이슈가 큰 선수가 있습니다. ${insight.recommendation}`,
+        route: '/manager/complaints',
+        urgency: insight.urgency,
+      };
+    case 'roleClarity':
+    case 'playtime':
+      return {
+        role: 'head_coach',
+        title: '감독 추천',
+        summary: `선수 운영 설명이 필요합니다. ${insight.recommendation}`,
+        route: '/manager/complaints',
+        urgency: insight.urgency,
+      };
+    case 'personalPerformance':
+      return {
+        role: 'coach',
+        title: '코치 추천',
+        summary: `개인 퍼포먼스 회복이 우선입니다. ${insight.recommendation}`,
+        route: '/manager/training',
+        urgency: insight.urgency,
+      };
+    case 'teamPerformance':
+      return {
+        role: 'analyst',
+        title: '분석가 추천',
+        summary: `경기 준비 재정렬이 필요합니다. ${insight.recommendation}`,
+        route: '/manager/tactics',
+        urgency: insight.urgency,
+      };
+    case 'salary':
+    default:
+      return {
+        role: 'data_analyst',
+        title: '프런트 추천',
+        summary: `계약 기대치 관리가 필요합니다. ${insight.recommendation}`,
+        route: '/manager/roster',
+        urgency: insight.urgency,
+      };
+  }
+}
+
+export async function generateStaffRecommendations(
+  teamId: string,
+  seasonId: number,
+): Promise<StaffRecommendation[]> {
+  const [staffList, complaints, insights] = await Promise.all([
+    getTeamStaff(teamId),
+    getActiveComplaints(teamId).catch(() => []),
+    getPlayerManagementInsights(teamId, seasonId, 3).catch(() => []),
+  ]);
+
+  const availableRoles = new Set(staffList.map((staff) => staff.role));
+  const recommendations: StaffRecommendation[] = [];
+
+  if (complaints.length > 0) {
+    recommendations.push({
+      role: availableRoles.has('sports_psychologist') ? 'sports_psychologist' : 'head_coach',
+      title: availableRoles.has('sports_psychologist') ? '심리 담당 추천' : '감독 추천',
+      summary: `활성 불만이 ${complaints.length}건 있습니다. 선수 관리 창에서 우선 정리하는 편이 좋습니다.`,
+      route: '/manager/complaints',
+      urgency: complaints.some((complaint) => complaint.severity >= 3) ? 'high' : 'medium',
+    });
+  }
+
+  for (const insight of insights) {
+    const recommendation = buildRecommendationFromInsight(insight);
+    if (!recommendations.some((item) => item.title === recommendation.title && item.route === recommendation.route)) {
+      recommendations.push(recommendation);
+    }
+  }
+
+  if (!recommendations.some((item) => item.route === '/manager/tactics')) {
+    recommendations.push({
+      role: availableRoles.has('analyst') ? 'analyst' : 'head_coach',
+      title: availableRoles.has('analyst') ? '분석가 추천' : '감독 추천',
+      summary: '다음 경기 전 밴픽 우선순위와 상대 분석 메모를 다시 확인하는 편이 좋습니다.',
+      route: '/manager/tactics',
+      urgency: 'low',
+    });
+  }
+
+  return recommendations.slice(0, 3);
 }

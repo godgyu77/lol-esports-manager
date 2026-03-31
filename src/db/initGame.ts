@@ -250,8 +250,9 @@ export async function initializeNewGame(
         `INSERT INTO manager_profiles
           (save_id, name, nationality, age, background,
            tactical_knowledge, motivation, discipline,
-           adaptability, scouting_eye, media_handling, reputation)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+           adaptability, scouting_eye, media_handling, reputation,
+           player_care, tactical_focus, result_driven, media_friendly)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
         [
           saveId,
           pendingManager.name,
@@ -265,6 +266,10 @@ export async function initializeNewGame(
           pendingManager.stats.scoutingEye,
           pendingManager.stats.mediaHandling,
           pendingManager.reputation,
+          pendingManager.philosophy.playerCare,
+          pendingManager.philosophy.tacticalFocus,
+          pendingManager.philosophy.resultDriven,
+          pendingManager.philosophy.mediaFriendly,
         ],
       );
     }
