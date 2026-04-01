@@ -23,9 +23,9 @@ export interface ManagerIdentityEffects {
 
 export const MANAGER_PHILOSOPHY_LABELS: Record<ManagerIdentityAxis, string> = {
   playerCare: '선수 친화',
-  tacticalFocus: '전술 중심',
+  tacticalFocus: '전술 집중',
   resultDriven: '성과 우선',
-  mediaFriendly: '언론 친화',
+  mediaFriendly: '미디어 친화',
 };
 
 export const MANAGER_BG_PHILOSOPHY: Record<ManagerBackground, ManagerPhilosophy> = {
@@ -139,12 +139,12 @@ export function getManagerIdentitySummaryLine(profile: ManagerIdentityProfile): 
   const effects = getManagerIdentityEffects(profile.philosophy);
   const emphasis =
     effects.playerMeetingBonus > effects.pressEffectBonus && effects.playerMeetingBonus > 0
-      ? '선수 관리 쪽에서 효과가 더 잘 드러납니다.'
+      ? '선수 관리와 팀 분위기 쪽에서 좋은 효과를 기대할 수 있습니다.'
       : effects.pressEffectBonus > 0
-        ? '언론 대응과 외부 평판 관리에 강점이 있습니다.'
+        ? '언론 대응과 대외 이미지 관리에 강점이 보입니다.'
         : effects.trainingFocusBonus > 0
-          ? '훈련과 경기 준비에서 안정적인 보정이 들어갑니다.'
-          : '아직 특정 성향보다 균형 잡힌 운영 쪽에 가깝습니다.';
+          ? '훈련과 경기 준비 과정에서 안정적인 보정을 받을 수 있습니다.'
+          : '특정 성향보다 균형 있는 운영에 가까운 감독입니다.';
 
-  return `${dominant} 성향이 중심이며, ${emphasis}`;
+  return `${dominant} 성향의 리더십을 지녔고, ${emphasis}`;
 }

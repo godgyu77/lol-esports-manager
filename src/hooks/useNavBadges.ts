@@ -3,6 +3,7 @@ import { getUnreadCount } from '../engine/news/newsEngine';
 import { getActiveComplaints } from '../engine/complaint/complaintEngine';
 import { getPendingReports } from '../engine/scouting/scoutingEngine';
 import { getTeamTransferOffers } from '../engine/economy/transferEngine';
+import { NEWS_BADGES_INVALIDATED_EVENT } from '../engine/news/newsEvents';
 
 /**
  * 사이드바 네비게이션 뱃지 카운트를 비동기로 로드하는 훅
@@ -47,7 +48,13 @@ export function useNavBadges(userTeamId: string, seasonId: number): Record<strin
       }
     };
 
-    load();
+    void load();
+
+    const handleInvalidate = () => {
+      void load();
+    };
+
+    window.addEventListener(NEWS_BADGES_INVALIDATED_EVENT, handleInvalidate);
 
     // 30초마다 갱신
     const interval = setInterval(load, 30000);
@@ -55,6 +62,7 @@ export function useNavBadges(userTeamId: string, seasonId: number): Record<strin
     return () => {
       cancelled = true;
       clearInterval(interval);
+      window.removeEventListener(NEWS_BADGES_INVALIDATED_EVENT, handleInvalidate);
     };
   }, [userTeamId, seasonId]);
 

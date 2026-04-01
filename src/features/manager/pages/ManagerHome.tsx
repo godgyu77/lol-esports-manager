@@ -12,6 +12,7 @@ import { getBoardExpectations } from '../../../engine/board/boardEngine';
 import { getActiveComplaints } from '../../../engine/complaint/complaintEngine';
 import { getInjuredPlayerIds } from '../../../engine/injury/injuryEngine';
 import { getUnreadCount } from '../../../engine/news/newsEngine';
+import { NEWS_BADGES_INVALIDATED_EVENT } from '../../../engine/news/newsEvents';
 import {
   getManagerIdentity,
   getManagerIdentitySummaryLine,
@@ -75,9 +76,9 @@ function getDaysDiff(from: string, to: string): number {
 }
 
 function getUrgencyLabel(level: 'high' | 'medium' | 'low'): string {
-  if (level === 'high') return 'Immediate';
-  if (level === 'medium') return 'Watch';
-  return 'Stable';
+  if (level === 'high') return '즉시';
+  if (level === 'medium') return '주시';
+  return '안정';
 }
 
 function getOpponentName(
@@ -147,16 +148,16 @@ export function ManagerHome() {
 
     advice.push(
       context.teamMorale < 55
-        ? '지금은 훈련 강도보다 회복, 면담, 분위기 수습을 우선하는 편이 안전합니다.'
-        : '팀 분위기는 버틸 만합니다. 다음 경기 준비와 전술 정리에 집중해도 됩니다.',
+        ? '오늘은 훈련 강도보다 회복, 면담, 분위기 수습을 먼저 보는 편이 안전합니다.'
+        : '팀 분위기는 버틸 만합니다. 다음 경기를 위한 전술 정리에 집중해도 좋습니다.',
     );
 
     if (context.nextOpponentName) {
-      advice.push(`${context.nextOpponentName}전을 앞두고 너무 많은 날짜를 넘기기보다 준비 상태를 먼저 점검하세요.`);
+      advice.push(`${context.nextOpponentName}전을 앞두고 있으니 날짜를 넘기기 전에 준비 상태를 먼저 점검하세요.`);
     }
 
     return {
-      briefing: `${context.currentDate} 기준 ${context.teamName} 일일 브리핑입니다. 최근 흐름은 ${context.recentForm}이며, 현재 팀 사기는 ${context.teamMorale}입니다. 오늘은 단순히 날짜를 넘기기보다 다음 경기와 선수단 분위기에 어떤 변수와 기회가 남아 있는지 함께 점검할 필요가 있습니다.`,
+      briefing: `${context.currentDate} 기준 ${context.teamName} 일일 브리핑입니다. 최근 흐름은 ${context.recentForm}이고, 현재 팀 사기는 ${context.teamMorale}입니다. 오늘은 날짜를 넘기기보다 다음 경기와 선수 분위기에 어떤 변화가 생겼는지 먼저 확인할 가치가 있습니다.`,
       alerts: alertsText,
       advice,
     };
@@ -164,7 +165,6 @@ export function ManagerHome() {
 
   useEffect(() => {
     if (!season || !userTeam) return;
-
     let cancelled = false;
 
     const load = async () => {
@@ -212,7 +212,7 @@ export function ManagerHome() {
         if (complaints.length > 0) {
           nextAlerts.push({
             type: 'danger',
-            message: `선수 불만 ${complaints.length}건이 열려 있습니다.`,
+            message: `선수 불만 ${complaints.length}건이 쌓여 있습니다.`,
             link: '/manager/complaints',
           });
         }
@@ -236,7 +236,7 @@ export function ManagerHome() {
         if (board && board.satisfaction <= 30) {
           nextAlerts.push({
             type: 'danger',
-            message: '이사회 만족도가 낮습니다. 단기 성과 회복이 필요합니다.',
+            message: '이사회 만족도가 낮습니다. 단기 성과와 회복 플랜이 필요합니다.',
             link: '/manager/board',
           });
         }
@@ -252,11 +252,37 @@ export function ManagerHome() {
     };
 
     void load();
-
     return () => {
       cancelled = true;
     };
   }, [save, season, userTeam]);
+
+  useEffect(() => {
+    if (!season || !userTeam) return;
+
+    const refreshAlerts = async () => {
+      const unreadCount = await getUnreadCount(season.id).catch(() => 0);
+      setAlerts((prev) => {
+        const withoutNews = prev.filter((alert) => alert.link !== '/manager/news');
+        if (unreadCount <= 0) return withoutNews;
+        return [
+          ...withoutNews,
+          {
+            type: 'info',
+            message: `읽지 않은 뉴스 ${unreadCount}건이 있습니다.`,
+            link: '/manager/news',
+          },
+        ];
+      });
+    };
+
+    const handleInvalidate = () => {
+      void refreshAlerts();
+    };
+
+    window.addEventListener(NEWS_BADGES_INVALIDATED_EVENT, handleInvalidate);
+    return () => window.removeEventListener(NEWS_BADGES_INVALIDATED_EVENT, handleInvalidate);
+  }, [season, userTeam]);
 
   useEffect(() => {
     if (!season || !userTeam) return;
@@ -285,10 +311,10 @@ export function ManagerHome() {
         const avgMorale = userTeam.roster.length > 0
           ? Math.round(userTeam.roster.reduce((sum, player) => sum + (conditions.get(player.id)?.morale ?? 50), 0) / userTeam.roster.length)
           : 50;
-        const recentForm = recentMatches.length > 0 ? `최근 ${recentMatches.length}경기 소화` : '최근 경기 데이터가 충분하지 않습니다';
+        const recentForm = recentMatches.length > 0 ? `최근 ${recentMatches.length}경기 흐름` : '최근 경기 데이터가 충분하지 않습니다';
         const budgetStatus = userTeam.budget >= 0
-          ? '재정은 당장 안정적이지만 장기 계약과 주급 관리까지 함께 볼 필요가 있습니다.'
-          : '재정 압박이 감지됩니다. 스폰서와 지출 관리 우선순위를 다시 잡아야 합니다.';
+          ? '재정은 당장 안정적이지만 장기 계약과 주급 관리는 계속 점검해야 합니다.'
+          : '재정 압박이 큽니다. 스폰서와 지출 구조를 다시 확인할 필요가 있습니다.';
 
         const context = {
           teamName: userTeam.name,
@@ -325,7 +351,7 @@ export function ManagerHome() {
               lowSatisfactionPlayers: [],
               activeConflicts: 0,
               budgetStatus: userTeam.budget >= 0
-                ? '재정은 안정적이지만 장기 플랜 점검은 필요합니다.'
+                ? '재정은 안정적이지만 장기 운영 플랜 점검은 계속 필요합니다.'
                 : '재정이 흔들리고 있어 지출 통제가 필요합니다.',
             }),
           );
@@ -338,63 +364,62 @@ export function ManagerHome() {
     };
 
     void loadBriefing();
-
     return () => {
       cancelled = true;
     };
   }, [briefingRequestRef, buildFallbackBriefing, conditions, recentMatches, season, teams, upcomingMatches, userTeam]);
 
   if (!season || !save || !userTeam) {
-    return <p className="fm-text-muted fm-text-md">Loading dashboard...</p>;
+    return <p className="fm-text-muted fm-text-md">대시보드를 불러오는 중입니다...</p>;
   }
 
   const focusCards: FocusCard[] = [
     {
-      title: 'Training',
-      body: 'Weekly schedule now auto-applies during season progression. Adjust focus and intensity before advancing.',
-      status: 'Auto-applied',
+      title: '훈련',
+      body: '주간 훈련 스케줄은 시즌 진행 시 자동 반영됩니다. 날짜를 넘기기 전에 강도와 방향을 조정하세요.',
+      status: '자동 적용',
       route: '/manager/training',
     },
     {
-      title: 'Player management',
+      title: '선수 관리',
       body: alerts.some((alert) => alert.type === 'danger')
-        ? 'Open complaints or morale issues need attention before they snowball into form loss.'
-        : 'No major player fire is active right now, but monitor morale and trust before the next match.',
-      status: alerts.some((alert) => alert.type === 'danger') ? 'Needs action' : 'Stable',
+        ? '불만과 사기 저하는 방치하면 경기력 하락으로 바로 이어질 수 있습니다.'
+        : '큰 화재는 없지만 다음 경기 전까지 신뢰와 사기 추이를 계속 확인하는 편이 좋습니다.',
+      status: alerts.some((alert) => alert.type === 'danger') ? '즉시 확인' : '안정',
       route: '/manager/complaints',
     },
     {
-      title: 'Match prep',
+      title: '경기 준비',
       body: upcomingMatches[0]
-        ? 'Review the next opponent, draft direction, and tactical priorities before matchday arrives.'
-        : 'No urgent official match is queued, so you can invest in growth and recovery.',
-      status: upcomingMatches[0] ? `Next match ${upcomingMatches[0].matchDate}` : 'No urgent match',
-      route: '/manager/tactics',
+        ? '상대 분석, 드래프트 방향, 전술 우선순위를 미리 정리해두면 경기 당일 판단이 훨씬 빨라집니다.'
+        : '급한 공식전이 없으니 성장과 회복에 조금 더 투자할 수 있는 구간입니다.',
+      status: upcomingMatches[0] ? `다음 경기 ${upcomingMatches[0].matchDate}` : '긴급 경기 없음',
+      route: '/manager/pre-match',
     },
   ];
 
   const urgentIssue = alerts[0]
     ? {
-        title: alerts[0].type === 'danger' ? '오늘 가장 시급한 이슈' : '오늘 우선 점검할 항목',
+        title: alerts[0].type === 'danger' ? '지금 가장 급한 이슈' : '오늘 먼저 볼 항목',
         body: alerts[0].message,
         route: alerts[0].link,
       }
     : upcomingMatches[0]
       ? {
           title: '다음 경기 준비',
-          body: `${upcomingMatches[0].matchDate} 일정이 가까워지고 있습니다. 날짜를 넘기기 전에 훈련 방향, 전술, 선수 컨디션을 먼저 잠가두는 편이 안전합니다.`,
+          body: `${upcomingMatches[0].matchDate} 일정이 가까워졌습니다. 훈련 방향, 전술, 선수 컨디션을 먼저 점검하는 편이 안전합니다.`,
           route: '/manager/pre-match',
         }
       : {
-          title: '안정 구간',
-          body: '즉시 폭발할 위기는 없습니다. 지금은 다음 주 흐름을 설계하기 좋은 정비 구간입니다.',
+          title: '정리 구간',
+          body: '즉시 해결할 위기가 없으니 다음 주 플랜과 장기 운영 방향을 정리하기 좋은 시점입니다.',
           route: '/manager/day',
         };
 
   const briefingOpportunities = [
     upcomingMatches[0]
-      ? `${upcomingMatches[0].matchDate} 공식전 전까지 준비를 더 날카롭게 다듬을 시간이 남아 있습니다.`
-      : '당장 급한 공식전 압박이 없어 성장과 회복에 집중할 수 있는 구간입니다.',
+      ? `${upcomingMatches[0].matchDate} 공식전까지 준비를 더 밀어붙일 수 있는 시간이 남아 있습니다.`
+      : '당장 급한 공식전 압박이 없어 성장과 회복 쪽에 조금 더 투자할 수 있습니다.',
     staffRecommendations[0] ? `${staffRecommendations[0].title}: ${staffRecommendations[0].summary}` : null,
     managerIdentity ? getManagerIdentitySummaryLine(managerIdentity) : null,
   ].filter(Boolean) as string[];
@@ -404,17 +429,43 @@ export function ManagerHome() {
     ...focusCards.map((card) => card.body),
   ].slice(0, 3);
 
+  const nextMatchSummary = upcomingMatches[0]
+    ? `${upcomingMatches[0].matchDate} / ${upcomingMatches[0].teamHomeId === userTeam.id ? 'vs' : '@'} ${
+        getOpponentName(
+          upcomingMatches[0].teamHomeId === userTeam.id ? upcomingMatches[0].teamAwayId : upcomingMatches[0].teamHomeId,
+          teams,
+        ) ?? '-'
+      }`
+    : '예정 없음';
+
+  const upcomingMatchCards = upcomingMatches.map((match) => {
+    const isHome = match.teamHomeId === userTeam.id;
+    const opponentId = isHome ? match.teamAwayId : match.teamHomeId;
+    return {
+      id: match.id,
+      title: match.matchDate ?? '-',
+      description: `${isHome ? 'vs' : '@'} ${getOpponentName(opponentId, teams) ?? opponentId}`,
+      meta: `${match.matchType} / ${match.boFormat}`,
+    };
+  });
+
+  const recentMatchCards = recentMatches.map((match) => ({
+    id: match.id,
+    title: match.matchDate ?? '-',
+    description: `${getOpponentName(match.teamHomeId, teams) ?? match.teamHomeId} vs ${getOpponentName(match.teamAwayId, teams) ?? match.teamAwayId}`,
+  }));
+
   return (
     <div className="fm-animate-in">
       {!tutorialComplete && <TutorialOverlay />}
 
       <div className="fm-page-header">
-        <h1 className="fm-page-title">Manager Dashboard</h1>
+        <h1 className="fm-page-title">대시보드</h1>
       </div>
 
       {loading && (
         <div className="fm-alert fm-alert--info fm-mb-md">
-          <span className="fm-alert__text">Refreshing the latest team state.</span>
+          <span className="fm-alert__text">최신 팀 상태를 다시 불러오는 중입니다.</span>
         </div>
       )}
 
@@ -438,33 +489,33 @@ export function ManagerHome() {
       <div className="fm-grid fm-grid--4 fm-mb-lg">
         <div className="fm-card">
           <div className="fm-stat">
-            <span className="fm-stat__label">Budget</span>
+            <span className="fm-stat__label">예산</span>
             <span className="fm-stat__value fm-stat__value--accent">{formatAmount(userTeam.budget)}</span>
           </div>
         </div>
         <div className="fm-card">
           <div className="fm-stat">
-            <span className="fm-stat__label">Total salary</span>
+            <span className="fm-stat__label">총 연봉</span>
             <span className="fm-stat__value">{formatAmount(totalSalary)}</span>
           </div>
         </div>
         <div className="fm-card">
           <div className="fm-stat">
-            <span className="fm-stat__label">Reputation</span>
+            <span className="fm-stat__label">명성</span>
             <span className="fm-stat__value">{userTeam.reputation}</span>
           </div>
         </div>
         <div className="fm-card">
           <div className="fm-stat">
-            <span className="fm-stat__label">Next match</span>
-            <span className="fm-stat__value">{upcomingMatches[0]?.matchDate ?? 'None'}</span>
+            <span className="fm-stat__label">다음 경기</span>
+            <span className="fm-stat__value">{nextMatchSummary}</span>
           </div>
         </div>
       </div>
 
       <div className="fm-panel fm-mb-lg">
         <div className="fm-panel__header">
-          <span className="fm-panel__title">오늘 가장 시급한 이슈</span>
+          <span className="fm-panel__title">지금 가장 먼저 볼 것</span>
         </div>
         <div className="fm-panel__body">
           <button
@@ -482,7 +533,7 @@ export function ManagerHome() {
       <div className="fm-grid fm-grid--2 fm-mb-lg">
         <div className="fm-panel">
           <div className="fm-panel__header">
-            <span className="fm-panel__title">일간 브리핑</span>
+            <span className="fm-panel__title">오늘의 브리핑</span>
           </div>
           <div className="fm-panel__body fm-flex-col fm-gap-sm">
             {briefingLoading && !briefing ? (
@@ -500,7 +551,7 @@ export function ManagerHome() {
                         </div>
                       ))
                     ) : (
-                      <span className="fm-text-secondary">당장 폭발하는 리스크는 없습니다.</span>
+                      <span className="fm-text-secondary">당장 크게 터진 리스크는 없습니다.</span>
                     )}
                   </div>
                 </div>
@@ -527,7 +578,7 @@ export function ManagerHome() {
 
         <div className="fm-panel">
           <div className="fm-panel__header">
-            <span className="fm-panel__title">핵심 결정 축</span>
+            <span className="fm-panel__title">핵심 결정 포인트</span>
           </div>
           <div className="fm-panel__body fm-flex-col fm-gap-sm">
             {focusCards.map((card) => (
@@ -549,13 +600,13 @@ export function ManagerHome() {
       {managerIdentity && (
         <div className="fm-panel fm-mb-lg">
           <div className="fm-panel__header">
-            <span className="fm-panel__title">Manager philosophy</span>
+            <span className="fm-panel__title">감독 철학</span>
           </div>
           <div className="fm-panel__body">
             <div className="fm-flex fm-justify-between fm-items-center fm-mb-sm">
-              <span className="fm-text-secondary">Current team read</span>
+              <span className="fm-text-secondary">현재 팀 읽기</span>
               <span className="fm-text-xs fm-text-accent">
-                {managerIdentity.dominantTraits.length > 0 ? managerIdentity.dominantTraits.join(' / ') : 'Balanced'}
+                {managerIdentity.dominantTraits.length > 0 ? managerIdentity.dominantTraits.join(' / ') : '균형형'}
               </span>
             </div>
             <p className="fm-text-secondary fm-mb-md">{getManagerIdentitySummaryLine(managerIdentity)}</p>
@@ -576,11 +627,11 @@ export function ManagerHome() {
       <div className="fm-grid fm-grid--2 fm-mb-lg">
         <div className="fm-panel">
           <div className="fm-panel__header">
-            <span className="fm-panel__title">Staff recommendations</span>
+            <span className="fm-panel__title">스태프 추천</span>
           </div>
           <div className="fm-panel__body fm-flex-col fm-gap-sm">
             {staffRecommendations.length === 0 ? (
-              <p className="fm-text-muted">No staff recommendation is active right now.</p>
+              <p className="fm-text-muted">지금 당장 필요한 스태프 추천은 없습니다.</p>
             ) : (
               staffRecommendations.map((recommendation) => (
                 <button
@@ -605,11 +656,11 @@ export function ManagerHome() {
 
         <div className="fm-panel">
           <div className="fm-panel__header">
-            <span className="fm-panel__title">Player management points</span>
+            <span className="fm-panel__title">선수 관리 포인트</span>
           </div>
           <div className="fm-panel__body fm-flex-col fm-gap-sm">
             {playerInsights.length === 0 ? (
-              <p className="fm-text-muted">No high-risk player issue is currently detected.</p>
+              <p className="fm-text-muted">지금은 큰 위험 신호가 감지되지 않았습니다.</p>
             ) : (
               playerInsights.map((insight) => {
                 const playerName = userTeam.roster.find((player) => player.id === insight.playerId)?.name ?? insight.playerId;
@@ -625,7 +676,7 @@ export function ManagerHome() {
                       <span className="fm-text-xs fm-text-accent">{insight.overallSatisfaction}</span>
                     </div>
                     <div className="fm-text-xs fm-text-muted fm-mb-xs">
-                      Weakest factor: {SATISFACTION_FACTOR_LABELS[insight.weakestFactor]} ({insight.weakestScore})
+                      가장 약한 항목: {SATISFACTION_FACTOR_LABELS[insight.weakestFactor]} ({insight.weakestScore})
                     </div>
                     <div className="fm-text-secondary">{insight.recommendation}</div>
                   </button>
@@ -638,35 +689,35 @@ export function ManagerHome() {
 
       <div className="fm-flex fm-gap-sm fm-mb-lg">
         <button className="fm-btn fm-btn--primary" onClick={() => setModalMode('meeting')}>
-          Player meeting
+          선수 면담
         </button>
         <button
           className="fm-btn fm-btn--info"
           onClick={() => pressCooldown === 0 && setModalMode('press')}
           disabled={pressCooldown > 0}
         >
-          Press conference {pressCooldown > 0 ? `(${pressCooldown}d)` : ''}
+          기자회견 {pressCooldown > 0 ? `(${pressCooldown}일)` : ''}
         </button>
         <button className="fm-btn" onClick={() => navigate('/manager/day')}>
-          Advance season
+          시즌 진행
         </button>
       </div>
 
       <div className="fm-grid fm-grid--2 fm-mb-lg">
         <div className="fm-panel">
           <div className="fm-panel__header">
-            <span className="fm-panel__title">Player condition</span>
+            <span className="fm-panel__title">선수 컨디션</span>
           </div>
           <div className="fm-panel__body--flush">
             <div className="fm-table-wrap">
               <table className="fm-table fm-table--striped">
                 <thead>
                   <tr>
-                    <th>Player</th>
-                    <th>Pos</th>
-                    <th>Stamina</th>
-                    <th>Morale</th>
-                    <th>Form</th>
+                    <th>선수</th>
+                    <th>포지션</th>
+                    <th>체력</th>
+                    <th>사기</th>
+                    <th>폼</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -690,17 +741,24 @@ export function ManagerHome() {
 
         <div className="fm-panel">
           <div className="fm-panel__header">
-            <span className="fm-panel__title">Schedule and recent news</span>
+            <span className="fm-panel__title">다음 일정과 최근 이슈</span>
           </div>
           <div className="fm-panel__body fm-flex-col fm-gap-sm">
-            {upcomingMatches.map((match) => (
-              <div key={match.id} className="fm-card">
-                <div className="fm-text-primary fm-font-semibold">{match.matchDate ?? '-'}</div>
-                <div className="fm-text-secondary">{match.teamHomeId} vs {match.teamAwayId}</div>
+            {upcomingMatchCards.length > 0 ? (
+              upcomingMatchCards.map((match) => (
+                <div key={match.id} className="fm-card">
+                  <div className="fm-text-primary fm-font-semibold">{match.title}</div>
+                  <div className="fm-text-secondary">{match.description}</div>
+                  <div className="fm-text-xs fm-text-muted fm-mt-xs">{match.meta}</div>
+                </div>
+              ))
+            ) : (
+              <div className="fm-card">
+                <div className="fm-text-secondary">예정된 공식전이 없습니다.</div>
               </div>
-            ))}
+            )}
 
-            {newsEvents.map((event) => (
+            {newsEvents.slice(0, 3).map((event) => (
               <div key={event.id} className="fm-card">
                 <div className="fm-text-primary fm-font-semibold">{event.gameDate}</div>
                 <div className="fm-text-secondary">{event.description}</div>
@@ -710,16 +768,16 @@ export function ManagerHome() {
         </div>
       </div>
 
-      {recentMatches.length > 0 && (
+      {recentMatchCards.length > 0 && (
         <div className="fm-panel">
           <div className="fm-panel__header">
-            <span className="fm-panel__title">Recent matches</span>
+            <span className="fm-panel__title">최근 경기</span>
           </div>
           <div className="fm-panel__body fm-flex-col fm-gap-sm">
-            {recentMatches.map((match) => (
+            {recentMatchCards.map((match) => (
               <div key={match.id} className="fm-card">
-                <div className="fm-text-primary fm-font-semibold">{match.matchDate ?? '-'}</div>
-                <div className="fm-text-secondary">{match.teamHomeId} vs {match.teamAwayId}</div>
+                <div className="fm-text-primary fm-font-semibold">{match.title}</div>
+                <div className="fm-text-secondary">{match.description}</div>
               </div>
             ))}
           </div>

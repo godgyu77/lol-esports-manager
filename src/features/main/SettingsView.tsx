@@ -1,66 +1,97 @@
 import type React from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { useNavigate } from 'react-router-dom';
+import { checkOllamaStatus, testCloudConnection } from '../../ai/provider';
+import { AI_FEATURE_POLICIES, describeProviderExecution, getProviderRecommendation } from '../../ai/featurePolicy';
+import { AiSetupWizard } from '../../components/AiSetupWizard';
 import { useSettingsStore } from '../../stores/settingsStore';
 import type { AiProvider, Difficulty, Theme } from '../../stores/settingsStore';
-import { checkOllamaStatus, testCloudConnection } from '../../ai/provider';
-import { AiSetupWizard } from '../../components/AiSetupWizard';
+import './introFlow.css';
 
-const SPEED_OPTIONS = [1, 2, 4];
-const AUTO_SAVE_OPTIONS: { value: 'daily' | 'weekly' | 'manual'; label: string }[] = [
-  { value: 'daily', label: '매일' },
-  { value: 'weekly', label: '매주' },
-  { value: 'manual', label: '수동' },
+const SPEED_OPTIONS = [
+  { value: 0.75, label: '집중', desc: '천천히 보면서 경기 흐름을 읽기 좋은 속도입니다.' },
+  { value: 1, label: '표준', desc: '가장 무난한 기본 진행 속도입니다.' },
+  { value: 1.5, label: '빠르게', desc: '결과 중심으로 시즌을 빠르게 넘길 때 적합합니다.' },
 ];
+
+const AUTO_SAVE_OPTIONS = [
+  { value: 'daily' as const, label: '매일', desc: '하루 일정이 끝날 때마다 자동 저장합니다.' },
+  { value: 'weekly' as const, label: '매주', desc: '주간 흐름을 기준으로 저장합니다.' },
+  { value: 'manual' as const, label: '수동', desc: '직접 저장할 때만 데이터를 남깁니다.' },
+];
+
 const DIFFICULTY_OPTIONS: { value: Difficulty; label: string; desc: string; color: string }[] = [
-  { value: 'easy', label: '쉬움', desc: 'AI 이적 약화, 승률 보정, 예산 130%', color: '#4caf50' },
-  { value: 'normal', label: '보통', desc: '기본 밸런스', color: '#f59e0b' },
-  { value: 'hard', label: '어려움', desc: 'AI 이적 강화, 승률 불리, 예산 80%', color: '#ef4444' },
+  { value: 'easy', label: '쉬움', desc: '부담 없이 시즌 흐름을 익히기 좋습니다.', color: '#4caf50' },
+  { value: 'normal', label: '보통', desc: '균형 잡힌 관리 시뮬레이션 경험입니다.', color: '#f59e0b' },
+  { value: 'hard', label: '도전', desc: '강한 압박과 빡빡한 의사결정을 요구합니다.', color: '#ef4444' },
 ];
 
 const IS_MOBILE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
-const AI_PROVIDER_OPTIONS: { value: AiProvider; label: string; desc: string }[] = [
-  { value: 'template', label: '템플릿 모드 (오프라인)', desc: '사전 정의된 템플릿으로 동작' },
-  ...(!IS_MOBILE ? [{ value: 'ollama' as AiProvider, label: 'Ollama (로컬)', desc: '로컬 LLM 서버 사용' }] : []),
-  { value: 'openai', label: 'OpenAI API', desc: 'GPT-4o, GPT-4.1 등 사용' },
-  { value: 'claude', label: 'Claude API', desc: 'Anthropic Claude 사용' },
-  { value: 'gemini', label: 'Gemini API', desc: 'Google Gemini 사용' },
-  { value: 'grok', label: 'Grok API (xAI)', desc: 'xAI Grok 사용' },
+const AI_PROVIDER_OPTIONS: { value: AiProvider; label: string; desc: string; usage: string }[] = [
+  { value: 'template', label: '템플릿만 사용', desc: '설치나 네트워크 없이도 안정적으로 동작합니다.', usage: '가장 가볍고 안정적' },
+  ...(!IS_MOBILE ? [{
+    value: 'ollama' as AiProvider,
+    label: '로컬 Ollama',
+    desc: '내 PC에서 직접 실행하는 로컬 AI 방식입니다.',
+    usage: '비용 없이 몰입감 강화',
+  }] : []),
+  { value: 'openai', label: '클라우드 OpenAI', desc: '빠르고 품질 좋은 문장 생성에 강합니다.', usage: '균형형 고품질' },
+  { value: 'claude', label: '클라우드 Claude', desc: '자연스러운 설명과 긴 문장에 강점이 있습니다.', usage: '서술형 고품질' },
+  { value: 'gemini', label: '클라우드 Gemini', desc: '속도와 품질의 균형이 좋은 편입니다.', usage: '반응형 고품질' },
+  { value: 'grok', label: '클라우드 Grok', desc: '대체 클라우드 옵션으로 사용할 수 있습니다.', usage: '추가 클라우드 선택지' },
 ];
 
 const OPENAI_MODELS = ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'gpt-4.1-nano'];
 const CLAUDE_MODELS = ['claude-haiku-4-5-20251001', 'claude-sonnet-4-5-20250514'];
 const GEMINI_MODELS = ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-2.5-flash-preview-05-20', 'gemini-2.5-pro-preview-05-06'];
 const GROK_MODELS = ['grok-3-mini', 'grok-3'];
+const CLOUD_PROVIDERS: AiProvider[] = ['openai', 'claude', 'gemini', 'grok'];
+
+const PRESETS = [
+  ['권장 설정', '처음 플레이하는 경우 현재 기본값으로 시작하는 것이 가장 안정적입니다.'],
+  ['오프라인 추천', '로컬 AI가 없으면 템플릿만 사용해도 게임은 충분히 자연스럽게 진행됩니다.'],
+  ['고품질 AI 추천', 'Ollama나 클라우드 AI를 연결하면 뉴스, 중계, 브리핑 문장이 더 풍부해집니다.'],
+] as const;
+
+function getProviderEndpointPlaceholder(provider: AiProvider): string {
+  if (provider === 'openai') return 'https://api.openai.com/v1/chat/completions';
+  if (provider === 'claude') return 'https://api.anthropic.com/v1/messages';
+  if (provider === 'gemini') return 'https://generativelanguage.googleapis.com/v1beta';
+  return 'https://api.x.ai/v1/chat/completions';
+}
+
+function getPriorityLabel(priority: 'high' | 'medium' | 'low'): string {
+  if (priority === 'high') return '높음';
+  if (priority === 'medium') return '보통';
+  return '낮음';
+}
 
 export function SettingsView() {
   const navigate = useNavigate();
   const defaultSpeed = useSettingsStore((s) => s.defaultSpeed);
   const aiEnabled = useSettingsStore((s) => s.aiEnabled);
+  const aiModel = useSettingsStore((s) => s.aiModel);
   const autoSaveInterval = useSettingsStore((s) => s.autoSaveInterval);
   const difficulty = useSettingsStore((s) => s.difficulty);
   const soundEnabled = useSettingsStore((s) => s.soundEnabled);
   const soundVolume = useSettingsStore((s) => s.soundVolume);
   const theme = useSettingsStore((s) => s.theme);
+  const windowMode = useSettingsStore((s) => s.windowMode);
+  const aiProvider = useSettingsStore((s) => s.aiProvider);
+  const hasApiKey = useSettingsStore((s) => s.hasApiKey);
+  const apiEndpoint = useSettingsStore((s) => s.apiEndpoint);
+  const apiModel = useSettingsStore((s) => s.apiModel);
   const setDefaultSpeed = useSettingsStore((s) => s.setDefaultSpeed);
   const setAiEnabled = useSettingsStore((s) => s.setAiEnabled);
+  const setAiModel = useSettingsStore((s) => s.setAiModel);
   const setAutoSaveInterval = useSettingsStore((s) => s.setAutoSaveInterval);
   const setDifficulty = useSettingsStore((s) => s.setDifficulty);
   const setSoundEnabled = useSettingsStore((s) => s.setSoundEnabled);
   const setSoundVolume = useSettingsStore((s) => s.setSoundVolume);
   const setTheme = useSettingsStore((s) => s.setTheme);
-  const windowMode = useSettingsStore((s) => s.windowMode);
   const setWindowMode = useSettingsStore((s) => s.setWindowMode);
-
-  const aiModel = useSettingsStore((s) => s.aiModel);
-
-  // Cloud AI provider state
-  const aiProvider = useSettingsStore((s) => s.aiProvider);
-  const hasApiKey = useSettingsStore((s) => s.hasApiKey);
-  const apiEndpoint = useSettingsStore((s) => s.apiEndpoint);
-  const apiModel = useSettingsStore((s) => s.apiModel);
   const setAiProvider = useSettingsStore((s) => s.setAiProvider);
   const setApiKey = useSettingsStore((s) => s.setApiKey);
   const setApiEndpoint = useSettingsStore((s) => s.setApiEndpoint);
@@ -72,74 +103,56 @@ export function SettingsView() {
   const [showAiWizard, setShowAiWizard] = useState(false);
   const [deletingModel, setDeletingModel] = useState<string | null>(null);
   const [deleteMessage, setDeleteMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
-
-  // Cloud API UI state
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
-  const [connectionTestResult, setConnectionTestResult] = useState<{
-    ok: boolean;
-    message: string;
-  } | null>(null);
+  const [connectionTestResult, setConnectionTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [isTesting, setIsTesting] = useState(false);
   const [dbResetConfirm, setDbResetConfirm] = useState(false);
   const [dbResetting, setDbResetting] = useState(false);
+  const [providerKeyStatus, setProviderKeyStatus] = useState<Record<string, boolean>>({});
 
   const isCloudProvider = aiProvider === 'openai' || aiProvider === 'claude' || aiProvider === 'gemini' || aiProvider === 'grok';
+  const modelOptions = aiProvider === 'openai' ? OPENAI_MODELS : aiProvider === 'claude' ? CLAUDE_MODELS : aiProvider === 'gemini' ? GEMINI_MODELS : aiProvider === 'grok' ? GROK_MODELS : [];
 
-  // Initialize API key input from Stronghold
   useEffect(() => {
-    if (hasApiKey) {
-      getApiKey().then((key) => {
-        if (key) setApiKeyInput(key);
-      });
-    }
-  }, [hasApiKey, getApiKey]);
+    if (!hasApiKey) return void setApiKeyInput('');
+    getApiKey(aiProvider).then((key) => key && setApiKeyInput(key));
+  }, [aiProvider, getApiKey, hasApiKey]);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all(CLOUD_PROVIDERS.map(async (provider) => [provider, !!(await getApiKey(provider))] as const)).then((entries) => {
+      if (!cancelled) setProviderKeyStatus(Object.fromEntries(entries));
+    });
+    return () => { cancelled = true; };
+  }, [aiProvider, getApiKey, hasApiKey]);
 
   useEffect(() => {
     checkOllamaStatus().then((status) => {
       setOllamaStatus(status);
-      if (status && aiProvider === 'ollama') {
-        invoke<string[]>('list_models')
-          .then(setInstalledModels)
-          .catch(() => setInstalledModels([]));
-      }
+      if (status && aiProvider === 'ollama') invoke<string[]>('list_models').then(setInstalledModels).catch(() => setInstalledModels([]));
+      else setInstalledModels([]);
     });
-  }, [showAiWizard, aiProvider, deletingModel]);
+  }, [aiProvider, deletingModel, showAiWizard]);
 
-  // Reset connection test when provider changes
-  useEffect(() => {
-    setConnectionTestResult(null);
-  }, [aiProvider]);
+  useEffect(() => { setConnectionTestResult(null); }, [aiProvider]);
 
   const refreshModelList = () => {
-    if (ollamaStatus) {
-      invoke<string[]>('list_models')
-        .then(setInstalledModels)
-        .catch(() => setInstalledModels([]));
-    }
+    if (!ollamaStatus) return;
+    invoke<string[]>('list_models').then(setInstalledModels).catch(() => setInstalledModels([]));
   };
 
   const handleDeleteModel = async (modelName: string) => {
-    const confirmed = window.confirm(
-      `"${modelName}" 모델을 삭제하시겠습니까?\n\n삭제하면 다시 다운로드해야 합니다.`
-    );
-    if (!confirmed) return;
-
+    if (!window.confirm(`"${modelName}" 모델을 삭제하시겠습니까?\n다시 사용하려면 다시 다운로드해야 합니다.`)) return;
     setDeletingModel(modelName);
     setDeleteMessage(null);
     try {
       await invoke<string>('delete_model', { modelName });
-      setDeleteMessage({ text: `${modelName} 모델이 삭제되었습니다.`, type: 'success' });
-      // 현재 모델이 삭제된 경우 초기화
-      if (aiModel === modelName) {
-        useSettingsStore.getState().setAiModel('');
-      }
+      if (aiModel === modelName) setAiModel('');
+      setDeleteMessage({ text: `${modelName} 모델을 삭제했습니다.`, type: 'success' });
       refreshModelList();
-    } catch (err) {
-      setDeleteMessage({
-        text: `삭제 실패: ${err instanceof Error ? err.message : String(err)}`,
-        type: 'error',
-      });
+    } catch (error) {
+      setDeleteMessage({ text: `모델 삭제에 실패했습니다: ${error instanceof Error ? error.message : String(error)}`, type: 'error' });
     } finally {
       setDeletingModel(null);
     }
@@ -147,50 +160,35 @@ export function SettingsView() {
 
   const handleDeleteAllModels = async () => {
     if (installedModels.length === 0) return;
-    const confirmed = window.confirm(
-      `설치된 모든 AI 모델(${installedModels.length}개)을 삭제하시겠습니까?\n\n총 용량이 해제됩니다. 다시 사용하려면 재다운로드가 필요합니다.`
-    );
-    if (!confirmed) return;
-
-    setDeleteMessage(null);
+    if (!window.confirm(`설치된 모델 ${installedModels.length}개를 모두 삭제하시겠습니까?\n다시 사용하려면 다시 다운로드해야 합니다.`)) return;
     let deleted = 0;
+    setDeleteMessage(null);
     for (const model of installedModels) {
       try {
         setDeletingModel(model);
         await invoke<string>('delete_model', { modelName: model });
-        deleted++;
-      } catch { /* 개별 실패 무시 */ }
+        deleted += 1;
+      } catch {
+        // continue
+      }
     }
     setDeletingModel(null);
-    useSettingsStore.getState().setAiModel('');
-    setDeleteMessage({ text: `${deleted}개 모델이 삭제되었습니다.`, type: 'success' });
+    setAiModel('');
+    setDeleteMessage({ text: `${deleted}개 모델을 삭제했습니다.`, type: 'success' });
     refreshModelList();
   };
 
   const handleProviderChange = (provider: AiProvider) => {
     setAiProvider(provider);
-
-    // Set sensible default model when switching providers
-    if (provider === 'openai') {
-      setApiModel('gpt-4o-mini');
-    } else if (provider === 'claude') {
-      setApiModel('claude-haiku-4-5-20251001');
-    } else if (provider === 'gemini') {
-      setApiModel('gemini-2.0-flash');
-    } else if (provider === 'grok') {
-      setApiModel('grok-3-mini');
-    }
-
-    // Auto-enable/disable AI based on provider
-    if (provider === 'template') {
-      setAiEnabled(false);
-    } else {
-      setAiEnabled(true);
-    }
+    if (provider === 'openai') setApiModel('gpt-4o-mini');
+    if (provider === 'claude') setApiModel('claude-haiku-4-5-20251001');
+    if (provider === 'gemini') setApiModel('gemini-2.0-flash');
+    if (provider === 'grok') setApiModel('grok-3-mini');
+    setAiEnabled(provider !== 'template');
   };
 
   const handleSaveApiKey = async () => {
-    await setApiKey(apiKeyInput);
+    await setApiKey(apiKeyInput.trim());
     setConnectionTestResult(null);
   };
 
@@ -198,728 +196,373 @@ export function SettingsView() {
     setIsTesting(true);
     setConnectionTestResult(null);
     try {
-      const result = await testCloudConnection();
-      setConnectionTestResult(result);
+      setConnectionTestResult(await testCloudConnection());
     } catch (error) {
-      setConnectionTestResult({
-        ok: false,
-        message: error instanceof Error ? error.message : String(error),
-      });
+      setConnectionTestResult({ ok: false, message: error instanceof Error ? error.message : String(error) });
     } finally {
       setIsTesting(false);
     }
   };
 
-  const modelOptions =
-    aiProvider === 'openai' ? OPENAI_MODELS :
-    aiProvider === 'claude' ? CLAUDE_MODELS :
-    aiProvider === 'gemini' ? GEMINI_MODELS :
-    aiProvider === 'grok' ? GROK_MODELS :
-    [];
+  const handleResetDatabase = async () => {
+    setDbResetting(true);
+    try {
+      const { closeDatabase } = await import('../../db/database');
+      await closeDatabase();
+      const { appDataDir } = await import('@tauri-apps/api/path');
+      const { remove } = await import('@tauri-apps/plugin-fs');
+      const { exit } = await import('@tauri-apps/plugin-process');
+      const dir = await appDataDir();
+      await remove(`${dir}/lol_esports_manager.db`).catch(() => {});
+      await remove(`${dir}/lol_esports_manager.db-wal`).catch(() => {});
+      await remove(`${dir}/lol_esports_manager.db-shm`).catch(() => {});
+      await exit(0);
+    } catch (error) {
+      console.error('[SettingsView] DB reset failed:', error);
+      setDbResetting(false);
+      setDbResetConfirm(false);
+    }
+  };
 
   return (
-    <div style={{ maxWidth: 640, margin: '0 auto', padding: 20, overflowY: 'auto', height: '100vh' }}>
-      {/* Header */}
+    <div className="intro-page" style={{ maxWidth: 920, margin: '0 auto', overflowY: 'auto', height: '100vh' }}>
       <div className="fm-page-header">
         <div className="fm-flex fm-items-center fm-gap-md">
-          <button className="fm-btn fm-btn--ghost" onClick={() => navigate('/')}>
-            ← 메인 메뉴
-          </button>
-          <h1 className="fm-page-title fm-text-accent">설정</h1>
+          <button className="fm-btn fm-btn--ghost" onClick={() => navigate('/')}>메인 메뉴</button>
+          <h1 className="fm-page-title fm-text-accent">환경 설정</h1>
         </div>
       </div>
 
-      {/* 경기 속도 기본값 */}
       <div className="fm-panel fm-mb-md">
-        <div className="fm-panel__header">
-          <span className="fm-panel__title">경기 속도 기본값</span>
-        </div>
+        <div className="fm-panel__header"><span className="fm-panel__title">추천 프리셋</span></div>
         <div className="fm-panel__body">
-          <p className="fm-text-sm fm-text-muted fm-mb-md">
-            라이브 경기 시작 시 기본 재생 속도를 설정합니다.
-          </p>
-          <div className="fm-flex fm-gap-sm">
+          <div className="fm-grid fm-grid--3" style={{ gap: 14 }}>
+            {PRESETS.map(([title, description]) => (
+              <div key={title} className="fm-card">
+                <div className="fm-text-sm fm-font-semibold fm-text-primary">{title}</div>
+                <div className="fm-text-xs fm-text-muted fm-mt-sm" style={{ lineHeight: 1.6 }}>{description}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="fm-panel fm-mb-md">
+        <div className="fm-panel__header"><span className="fm-panel__title">경기 속도</span></div>
+        <div className="fm-panel__body">
+          <p className="fm-text-sm fm-text-muted fm-mb-md">라이브 경기의 기본 관전 템포를 선택합니다.</p>
+          <div className="fm-grid fm-grid--3" style={{ gap: 14 }}>
             {SPEED_OPTIONS.map((speed) => (
-              <button
-                key={speed}
-                className={`fm-btn ${defaultSpeed === speed ? 'fm-btn--primary' : ''}`}
-                onClick={() => setDefaultSpeed(speed)}
-              >
-                {speed}x
+              <button key={speed.value} className={`fm-card fm-card--clickable fm-flex-col fm-gap-xs ${defaultSpeed === speed.value ? 'fm-card--highlight' : ''}`} onClick={() => setDefaultSpeed(speed.value)}>
+                <span className="fm-text-base fm-font-semibold fm-text-primary">{speed.label}</span>
+                <span className="fm-text-xs fm-text-muted" style={{ textAlign: 'left' }}>{speed.desc}</span>
               </button>
             ))}
           </div>
         </div>
       </div>
 
-      {/* 난이도 설정 */}
       <div className="fm-panel fm-mb-md">
-        <div className="fm-panel__header">
-          <span className="fm-panel__title">난이도 설정</span>
-        </div>
+        <div className="fm-panel__header"><span className="fm-panel__title">난이도</span></div>
         <div className="fm-panel__body">
-          <p className="fm-text-sm fm-text-muted fm-mb-md">
-            게임 전반의 난이도를 설정합니다. 진행 중인 세이브에도 즉시 적용됩니다.
-          </p>
+          <p className="fm-text-sm fm-text-muted fm-mb-md">예산 압박과 운영 난도를 조정합니다.</p>
           <div className="fm-grid fm-grid--3">
-            {DIFFICULTY_OPTIONS.map((opt) => (
+            {DIFFICULTY_OPTIONS.map((option) => (
               <button
-                key={opt.value}
-                className={`fm-card fm-card--clickable fm-flex-col fm-items-center fm-gap-xs ${
-                  difficulty === opt.value ? 'fm-card--highlight' : ''
-                }`}
-                style={
-                  difficulty === opt.value
-                    ? { borderColor: opt.color, background: `${opt.color}12` }
-                    : undefined
-                }
-                onClick={() => setDifficulty(opt.value)}
+                key={option.value}
+                className={`fm-card fm-card--clickable fm-flex-col fm-items-center fm-gap-xs ${difficulty === option.value ? 'fm-card--highlight' : ''}`}
+                style={difficulty === option.value ? { borderColor: option.color, background: `${option.color}12` } : undefined}
+                onClick={() => setDifficulty(option.value)}
               >
-                <span
-                  className="fm-text-lg fm-font-bold"
-                  style={{ color: difficulty === opt.value ? opt.color : 'var(--text-primary)' }}
-                >
-                  {opt.label}
-                </span>
-                <span className="fm-text-xs fm-text-muted fm-text-center">{opt.desc}</span>
+                <span className="fm-text-lg fm-font-bold" style={{ color: difficulty === option.value ? option.color : 'var(--text-primary)' }}>{option.label}</span>
+                <span className="fm-text-xs fm-text-muted fm-text-center">{option.desc}</span>
               </button>
             ))}
           </div>
         </div>
       </div>
 
-      {/* AI 사용 설정 */}
       <div className="fm-panel fm-mb-md">
-        <div className="fm-panel__header">
-          <span className="fm-panel__title">AI 사용 설정</span>
-        </div>
+        <div className="fm-panel__header"><span className="fm-panel__title">AI</span></div>
         <div className="fm-panel__body">
-          {/* Ollama 연결 상태 */}
           <div className="fm-info-row">
-            <span className="fm-info-row__label">Ollama 연결 상태</span>
-            <span className="fm-flex fm-items-center fm-gap-xs">
-              <span
-                style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: '50%',
-                  display: 'inline-block',
-                  background: ollamaStatus ? 'var(--success)' : 'var(--danger)',
-                  boxShadow: ollamaStatus ? '0 0 6px var(--success)' : 'none',
-                }}
-              />
-              <span className="fm-text-sm fm-text-secondary">
-                {ollamaStatus === null
-                  ? '확인 중...'
-                  : ollamaStatus
-                    ? '연결됨'
-                    : '오프라인'}
-              </span>
-            </span>
-          </div>
-
-          {/* AI 기능 사용 토글 */}
-          <div className="fm-info-row">
-            <span className="fm-info-row__label">AI 기능 사용</span>
+            <span className="fm-info-row__label">AI 콘텐츠 사용</span>
             <button
-              className="fm-settings-toggle"
-              style={{
-                position: 'relative',
-                width: 44,
-                height: 24,
-                borderRadius: 12,
-                border: 'none',
-                cursor: 'pointer',
-                padding: 0,
-                transition: 'background 0.2s',
-                background: aiEnabled ? 'var(--accent)' : 'var(--bg-elevated)',
-              }}
+              style={{ position: 'relative', width: 44, height: 24, borderRadius: 12, border: 'none', cursor: 'pointer', padding: 0, background: aiEnabled ? 'var(--accent)' : 'var(--bg-elevated)' }}
               onClick={() => setAiEnabled(!aiEnabled)}
-              aria-label="AI 기능 토글"
+              aria-label="AI 콘텐츠 사용 전환"
             >
-              <span
-                style={{
-                  position: 'absolute',
-                  top: 2,
-                  left: 2,
-                  width: 20,
-                  height: 20,
-                  borderRadius: '50%',
-                  background: '#fff',
-                  transition: 'transform 0.2s',
-                  transform: aiEnabled ? 'translateX(20px)' : 'translateX(0)',
-                }}
-              />
+              <span style={{ position: 'absolute', top: 2, left: 2, width: 20, height: 20, borderRadius: '50%', background: '#fff', transform: aiEnabled ? 'translateX(20px)' : 'translateX(0)' }} />
             </button>
           </div>
 
-          {!aiEnabled && (
-            <div className="fm-alert fm-alert--warning fm-mt-sm">
-              <span className="fm-alert__icon">!</span>
-              <span className="fm-alert__text">AI가 비활성화되면 템플릿 기반 모드로 동작합니다.</span>
-            </div>
-          )}
-
-          {/* 현재 모델 정보 */}
-          <div className="fm-divider" />
-
-          <div className="fm-info-row">
-            <span className="fm-info-row__label">현재 모델</span>
-            <span className={`fm-text-sm fm-text-mono ${aiModel ? 'fm-text-accent' : 'fm-text-muted'}`}>
-              {aiModel || '설정되지 않음'}
-            </span>
-          </div>
-
-          {/* 설치된 모델 목록 + 개별 삭제 */}
-          {installedModels.length > 0 && (
-            <div className="fm-mt-md">
-              <span className="fm-text-sm fm-text-muted fm-mb-sm" style={{ display: 'block' }}>
-                설치된 모델 ({installedModels.length}개)
-              </span>
-              {installedModels.map((model) => (
-                <div
-                  key={model}
-                  className="fm-flex fm-items-center fm-justify-between fm-mb-xs"
-                  style={{
-                    padding: '8px 12px',
-                    borderRadius: 6,
-                    background: 'var(--bg-elevated)',
-                    border: model === aiModel ? '1px solid var(--accent)' : '1px solid var(--border)',
-                  }}
-                >
-                  <div className="fm-flex fm-items-center fm-gap-sm">
-                    <span className="fm-text-sm fm-text-mono fm-text-secondary">{model}</span>
-                    {model === aiModel && (
-                      <span className="fm-badge fm-badge--success" style={{ fontSize: 10, padding: '1px 6px' }}>사용 중</span>
-                    )}
-                  </div>
-                  <button
-                    className="fm-btn fm-btn--ghost"
-                    style={{ padding: '4px 8px', fontSize: 11, color: 'var(--danger)' }}
-                    onClick={() => handleDeleteModel(model)}
-                    disabled={deletingModel === model}
-                  >
-                    {deletingModel === model ? '삭제 중...' : '삭제'}
-                  </button>
-                </div>
+          <div className="fm-mt-md">
+            <span className="fm-text-sm fm-font-semibold fm-text-primary">AI 사용 방식</span>
+            <div className="fm-grid fm-grid--2 fm-mt-sm">
+              {AI_PROVIDER_OPTIONS.map((option) => (
+                <button key={option.value} className={`fm-card fm-card--clickable fm-flex-col fm-items-start fm-gap-xs ${aiProvider === option.value ? 'fm-card--highlight' : ''}`} onClick={() => handleProviderChange(option.value)}>
+                  <span className="fm-text-base fm-font-semibold fm-text-primary">{option.label}</span>
+                  <span className="fm-text-xs fm-text-accent">{option.usage}</span>
+                  <span className="fm-text-xs fm-text-muted">{option.desc}</span>
+                  <span className="fm-text-xs fm-text-muted">{getProviderRecommendation(option.value)}</span>
+                  {CLOUD_PROVIDERS.includes(option.value) && (
+                    <span className="fm-text-xs" style={{ color: providerKeyStatus[option.value] ? 'var(--success)' : 'var(--text-muted)' }}>
+                      {providerKeyStatus[option.value] ? 'API 키 저장됨' : 'API 키 없음'}
+                    </span>
+                  )}
+                </button>
               ))}
-
-              <button
-                className="fm-btn fm-mt-sm"
-                style={{ width: '100%', color: 'var(--danger)', borderColor: 'var(--danger)' }}
-                onClick={handleDeleteAllModels}
-                disabled={deletingModel !== null}
-              >
-                모든 모델 삭제
-              </button>
             </div>
-          )}
-
-          {deleteMessage && (
-            <div className={`fm-alert fm-mt-sm ${deleteMessage.type === 'success' ? 'fm-alert--success' : 'fm-alert--danger'}`}>
-              <span className="fm-alert__text">{deleteMessage.text}</span>
+            <div className="fm-card fm-mt-sm" style={{ padding: 12 }}>
+              <div className="fm-text-sm fm-font-semibold fm-text-primary">현재 실행 정책</div>
+              <div className="fm-text-xs fm-text-muted fm-mt-sm">{describeProviderExecution(aiProvider)}</div>
             </div>
-          )}
-
-          <button
-            className="fm-btn fm-btn--lg fm-mt-md"
-            style={{ width: '100%' }}
-            onClick={() => setShowAiWizard(true)}
-          >
-            모델 변경 / 다운로드
-          </button>
-
-          <p className="fm-text-xs fm-text-muted fm-mt-sm">
-            모델 저장 경로: C:\Users\{'{사용자}'}\.ollama\models\ — 앱 삭제 시 자동으로 제거되지 않습니다.
-          </p>
-        </div>
-      </div>
-
-      {/* AI 설정 마법사 모달 */}
-      {showAiWizard && (
-        <AiSetupWizard
-          onComplete={() => {
-            setShowAiWizard(false);
-          }}
-        />
-      )}
-
-      {/* AI 제공자 설정 */}
-      <div className="fm-panel fm-mb-md">
-        <div className="fm-panel__header">
-          <span className="fm-panel__title">AI 제공자</span>
-        </div>
-        <div className="fm-panel__body">
-          <p className="fm-text-sm fm-text-muted fm-mb-md">
-            AI 엔진을 선택합니다. 모바일 기기에서는 클라우드 API를 사용하세요.
-          </p>
-
-          {/* Provider selector */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(3, 1fr)',
-              gap: 8,
-              marginBottom: 16,
-            }}
-          >
-            {AI_PROVIDER_OPTIONS.map((opt) => (
-              <button
-                key={opt.value}
-                className={`fm-card fm-card--clickable fm-flex-col fm-items-center fm-gap-xs ${
-                  aiProvider === opt.value ? 'fm-card--highlight' : ''
-                }`}
-                style={
-                  aiProvider === opt.value
-                    ? {
-                        borderColor: 'var(--accent)',
-                        background: 'var(--accent-bg, rgba(59, 130, 246, 0.08))',
-                      }
-                    : { cursor: 'pointer' }
-                }
-                onClick={() => handleProviderChange(opt.value)}
-              >
-                <span
-                  className="fm-text-sm fm-font-bold"
-                  style={{
-                    color:
-                      aiProvider === opt.value ? 'var(--accent)' : 'var(--text-primary)',
-                  }}
-                >
-                  {opt.label}
-                </span>
-                <span className="fm-text-xs fm-text-muted fm-text-center">{opt.desc}</span>
-              </button>
-            ))}
           </div>
 
-          {/* Cloud provider settings */}
-          {isCloudProvider && (
-            <>
-              <div className="fm-divider" />
+          {aiProvider === 'ollama' && (
+            <div className="fm-mt-md">
+              <div className="fm-flex fm-justify-between fm-items-center fm-mb-sm">
+                <span className="fm-text-sm fm-font-semibold fm-text-primary">로컬 모델 관리</span>
+                <div className="fm-flex fm-gap-sm">
+                  <button className="fm-btn fm-btn--sm" onClick={() => setShowAiWizard(true)}>모델 설치</button>
+                  <button className="fm-btn fm-btn--sm" onClick={refreshModelList} disabled={!ollamaStatus}>새로고침</button>
+                </div>
+              </div>
+              <div className={`fm-alert ${ollamaStatus ? 'fm-alert--success' : 'fm-alert--warning'}`}>
+                <span className="fm-alert__text">{ollamaStatus ? 'Ollama 연결이 정상입니다.' : 'Ollama가 실행 중이 아니거나 연결할 수 없습니다.'}</span>
+              </div>
+              {deleteMessage && (
+                <div className={`fm-alert fm-mt-sm ${deleteMessage.type === 'success' ? 'fm-alert--success' : 'fm-alert--warning'}`}>
+                  <span className="fm-alert__text">{deleteMessage.text}</span>
+                </div>
+              )}
+              {ollamaStatus && (
+                <div className="fm-mt-md">
+                  <div className="fm-flex fm-justify-between fm-items-center fm-mb-sm">
+                    <span className="fm-text-sm fm-font-semibold fm-text-primary">설치된 모델</span>
+                    {installedModels.length > 0 && <button className="fm-btn fm-btn--sm" onClick={() => void handleDeleteAllModels()} disabled={!!deletingModel}>전체 삭제</button>}
+                  </div>
+                  {installedModels.length === 0 ? (
+                    <p className="fm-text-sm fm-text-muted">아직 설치된 로컬 모델이 없습니다.</p>
+                  ) : (
+                    <div className="fm-flex-col fm-gap-sm">
+                      {installedModels.map((model) => (
+                        <div key={model} className="fm-card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                          <div>
+                            <div className="fm-text-primary fm-font-semibold">{model}</div>
+                            <div className="fm-text-xs fm-text-muted">{aiModel === model ? '현재 기본 로컬 모델입니다.' : '설치된 로컬 모델입니다.'}</div>
+                          </div>
+                          <div className="fm-flex fm-gap-sm">
+                            <button className={`fm-btn fm-btn--sm ${aiModel === model ? 'fm-btn--primary' : ''}`} onClick={() => setAiModel(model)}>
+                              {aiModel === model ? '사용 중' : '기본값으로 선택'}
+                            </button>
+                            <button className="fm-btn fm-btn--sm" onClick={() => void handleDeleteModel(model)} disabled={deletingModel === model}>
+                              {deletingModel === model ? '삭제 중...' : '삭제'}
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
-              {/* API Key */}
-              <div style={{ marginBottom: 12 }}>
-                <label className="fm-text-sm fm-text-primary" style={{ display: 'block', marginBottom: 4 }}>
-                  API 키
-                </label>
-                <div className="fm-flex fm-gap-xs fm-items-center">
+          {isCloudProvider && (
+            <div className="fm-mt-md">
+              <div className="fm-mb-md">
+                <label className="fm-text-sm fm-font-semibold fm-text-primary" style={{ display: 'block', marginBottom: 6 }}>API 키</label>
+                <div className="fm-flex fm-gap-sm">
                   <input
                     type={showApiKey ? 'text' : 'password'}
                     value={apiKeyInput}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setApiKeyInput(e.target.value)}
-                    placeholder={
-                      aiProvider === 'openai' ? 'sk-...' :
-                      aiProvider === 'claude' ? 'sk-ant-...' :
-                      aiProvider === 'gemini' ? 'AIza...' :
-                      'xai-...'
-                    }
+                    onChange={(event: React.ChangeEvent<HTMLInputElement>) => setApiKeyInput(event.target.value)}
                     className="fm-input"
-                    style={{
-                      flex: 1,
-                      padding: '6px 10px',
-                      borderRadius: 6,
-                      border: '1px solid var(--border)',
-                      background: 'var(--bg-elevated)',
-                      color: 'var(--text-primary)',
-                      fontSize: 13,
-                      fontFamily: 'monospace',
-                    }}
-                    aria-label="API 키 입력"
+                    style={{ flex: 1 }}
+                    placeholder="클라우드 API 키를 입력해 주세요"
                   />
-                  <button
-                    className="fm-btn fm-btn--ghost"
-                    style={{ padding: '6px 8px', fontSize: 12, whiteSpace: 'nowrap' }}
-                    onClick={() => setShowApiKey(!showApiKey)}
-                    aria-label={showApiKey ? 'API 키 숨기기' : 'API 키 보기'}
-                  >
-                    {showApiKey ? '숨기기' : '보기'}
-                  </button>
-                  <button
-                    className="fm-btn fm-btn--primary"
-                    style={{ padding: '6px 12px', fontSize: 12, whiteSpace: 'nowrap' }}
-                    onClick={handleSaveApiKey}
-                    disabled={!apiKeyInput}
-                  >
-                    저장
-                  </button>
-                </div>
-                <p className="fm-text-xs fm-text-muted" style={{ marginTop: 4 }}>
-                  API 키는 로컬에 인코딩되어 저장됩니다. 서버로 전송되지 않습니다.
-                </p>
-              </div>
-
-              {/* API Model */}
-              <div style={{ marginBottom: 12 }}>
-                <label className="fm-text-sm fm-text-primary" style={{ display: 'block', marginBottom: 4 }}>
-                  API 모델
-                </label>
-                <div className="fm-flex fm-gap-xs fm-items-center">
-                  <select
-                    value={modelOptions.includes(apiModel) ? apiModel : ''}
-                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
-                      if (e.target.value) setApiModel(e.target.value);
-                    }}
-                    className="fm-select"
-                    style={{
-                      flex: 1,
-                      padding: '6px 10px',
-                      borderRadius: 6,
-                      border: '1px solid var(--border)',
-                      background: 'var(--bg-elevated)',
-                      color: 'var(--text-primary)',
-                      fontSize: 13,
-                    }}
-                    aria-label="모델 선택"
-                  >
-                    {modelOptions.map((m) => (
-                      <option key={m} value={m}>
-                        {m}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="fm-text-xs fm-text-muted" style={{ whiteSpace: 'nowrap' }}>
-                    또는
-                  </span>
-                  <input
-                    type="text"
-                    value={!modelOptions.includes(apiModel) ? apiModel : ''}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setApiModel(e.target.value)}
-                    placeholder="커스텀 모델명"
-                    className="fm-input"
-                    style={{
-                      flex: 1,
-                      padding: '6px 10px',
-                      borderRadius: 6,
-                      border: '1px solid var(--border)',
-                      background: 'var(--bg-elevated)',
-                      color: 'var(--text-primary)',
-                      fontSize: 13,
-                    }}
-                    aria-label="커스텀 모델 입력"
-                  />
+                  <button className="fm-btn" onClick={() => setShowApiKey((prev) => !prev)}>{showApiKey ? '숨기기' : '보기'}</button>
+                  <button className="fm-btn fm-btn--primary" onClick={() => void handleSaveApiKey()}>저장</button>
                 </div>
               </div>
-
-              {/* Custom Endpoint */}
-              <div style={{ marginBottom: 12 }}>
-                <label className="fm-text-sm fm-text-primary" style={{ display: 'block', marginBottom: 4 }}>
-                  커스텀 엔드포인트 (선택)
-                </label>
+              <div className="fm-mb-md">
+                <label className="fm-text-sm fm-font-semibold fm-text-primary" style={{ display: 'block', marginBottom: 6 }}>모델 선택</label>
+                <select className="fm-input" value={apiModel} onChange={(event: React.ChangeEvent<HTMLSelectElement>) => setApiModel(event.target.value)} style={{ width: '100%' }}>
+                  {modelOptions.map((model) => <option key={model} value={model}>{model}</option>)}
+                </select>
+              </div>
+              <div className="fm-mb-md">
+                <label className="fm-text-sm fm-font-semibold fm-text-primary" style={{ display: 'block', marginBottom: 6 }}>커스텀 엔드포인트</label>
                 <input
                   type="text"
                   value={apiEndpoint}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setApiEndpoint(e.target.value)}
-                  placeholder={
-                    aiProvider === 'openai' ? 'https://api.openai.com/v1/chat/completions' :
-                    aiProvider === 'claude' ? 'https://api.anthropic.com/v1/messages' :
-                    aiProvider === 'gemini' ? 'https://generativelanguage.googleapis.com/v1beta' :
-                    'https://api.x.ai/v1/chat/completions'
-                  }
+                  onChange={(event: React.ChangeEvent<HTMLInputElement>) => setApiEndpoint(event.target.value)}
+                  placeholder={getProviderEndpointPlaceholder(aiProvider)}
                   className="fm-input"
-                  style={{
-                    width: '100%',
-                    padding: '6px 10px',
-                    borderRadius: 6,
-                    border: '1px solid var(--border)',
-                    background: 'var(--bg-elevated)',
-                    color: 'var(--text-primary)',
-                    fontSize: 13,
-                    fontFamily: 'monospace',
-                  }}
-                  aria-label="커스텀 엔드포인트 입력"
+                  style={{ width: '100%', fontFamily: 'monospace' }}
                 />
-                <p className="fm-text-xs fm-text-muted" style={{ marginTop: 4 }}>
-                  비워두면 기본 엔드포인트를 사용합니다. OpenAI 호환 프록시 사용 시 입력하세요.
-                </p>
+                <p className="fm-text-xs fm-text-muted fm-mt-sm">비워두면 기본 엔드포인트를 사용합니다.</p>
               </div>
-
-              {/* Connection Test */}
-              <div className="fm-divider" />
-              <div className="fm-flex fm-gap-sm fm-items-center fm-mt-sm">
-                <button
-                  className="fm-btn fm-btn--lg"
-                  style={{ flex: 1 }}
-                  onClick={handleTestConnection}
-                  disabled={isTesting || !hasApiKey}
-                >
-                  {isTesting ? '테스트 중...' : '연결 테스트'}
-                </button>
-              </div>
-
+              <button className="fm-btn fm-btn--primary" onClick={() => void handleTestConnection()} disabled={isTesting || !hasApiKey}>
+                {isTesting ? '연결 확인 중...' : '연결 테스트'}
+              </button>
               {connectionTestResult && (
-                <div
-                  className={`fm-alert fm-mt-sm ${
-                    connectionTestResult.ok ? 'fm-alert--success' : 'fm-alert--warning'
-                  }`}
-                >
-                  <span className="fm-alert__icon">
-                    {connectionTestResult.ok ? '✓' : '!'}
-                  </span>
+                <div className={`fm-alert fm-mt-sm ${connectionTestResult.ok ? 'fm-alert--success' : 'fm-alert--warning'}`}>
                   <span className="fm-alert__text">{connectionTestResult.message}</span>
                 </div>
               )}
-            </>
+            </div>
           )}
 
-          {/* Template mode info */}
           {aiProvider === 'template' && (
-            <div className="fm-alert fm-alert--warning fm-mt-sm">
-              <span className="fm-alert__icon">!</span>
-              <span className="fm-alert__text">
-                템플릿 모드에서는 LLM 없이 사전 정의된 응답으로 동작합니다.
-                모바일 기기에서 오프라인 플레이 시 적합합니다.
-              </span>
+            <div className="fm-alert fm-alert--warning fm-mt-md">
+              <span className="fm-alert__text">템플릿 모드는 네트워크 연결 없이도 안정적으로 동작합니다.</span>
             </div>
           )}
 
-          {/* Ollama mode info */}
-          {aiProvider === 'ollama' && !ollamaStatus && (
-            <div className="fm-alert fm-alert--warning fm-mt-sm">
-              <span className="fm-alert__icon">!</span>
-              <span className="fm-alert__text">
-                Ollama가 연결되지 않았습니다. Ollama를 설치하고 실행해주세요.
-              </span>
+          <div className="fm-mt-md">
+            <span className="fm-text-sm fm-font-semibold fm-text-primary">기능별 AI 정책</span>
+            <div className="fm-flex-col fm-gap-sm fm-mt-sm">
+              {AI_FEATURE_POLICIES.map((policy) => (
+                <div key={policy.id} className="fm-card" style={{ padding: 12 }}>
+                  <div className="fm-flex fm-justify-between fm-items-center fm-gap-sm">
+                    <span className="fm-text-sm fm-font-semibold fm-text-primary">{policy.label}</span>
+                    <span className="fm-text-xs fm-text-muted">우선순위: {getPriorityLabel(policy.priority)}</span>
+                  </div>
+                  <div className="fm-text-xs fm-text-muted fm-mt-sm">{policy.note}</div>
+                  <div className="fm-flex fm-gap-sm fm-mt-sm" style={{ flexWrap: 'wrap' }}>
+                    <span className="fm-badge">로컬 우선: {policy.localFirst ? '예' : '아니오'}</span>
+                    <span className="fm-badge">클라우드 허용: {policy.cloudAllowed ? '예' : '아니오'}</span>
+                    <span className="fm-badge">템플릿 폴백: {policy.templateFallback ? '예' : '아니오'}</span>
+                  </div>
+                </div>
+              ))}
             </div>
-          )}
+          </div>
         </div>
       </div>
 
-      {/* 사운드 설정 */}
       <div className="fm-panel fm-mb-md">
-        <div className="fm-panel__header">
-          <span className="fm-panel__title">사운드 설정</span>
-        </div>
+        <div className="fm-panel__header"><span className="fm-panel__title">사운드</span></div>
         <div className="fm-panel__body">
-          <p className="fm-text-sm fm-text-muted fm-mb-md">
-            BGM 및 효과음 볼륨을 설정합니다. (public/audio/ 폴더에 음악 파일 배치)
-          </p>
-
+          <p className="fm-text-sm fm-text-muted fm-mb-md">배경음과 효과음 볼륨을 조절합니다.</p>
           <div className="fm-info-row">
-            <span className="fm-info-row__label">효과음</span>
+            <span className="fm-info-row__label">사운드 사용</span>
             <button
-              style={{
-                position: 'relative',
-                width: 44,
-                height: 24,
-                borderRadius: 12,
-                border: 'none',
-                cursor: 'pointer',
-                padding: 0,
-                transition: 'background 0.2s',
-                background: soundEnabled ? 'var(--accent)' : 'var(--bg-elevated)',
-              }}
+              style={{ position: 'relative', width: 44, height: 24, borderRadius: 12, border: 'none', cursor: 'pointer', padding: 0, background: soundEnabled ? 'var(--accent)' : 'var(--bg-elevated)' }}
               onClick={() => setSoundEnabled(!soundEnabled)}
-              aria-label="효과음 토글"
+              aria-label="사운드 사용 전환"
             >
-              <span
-                style={{
-                  position: 'absolute',
-                  top: 2,
-                  left: 2,
-                  width: 20,
-                  height: 20,
-                  borderRadius: '50%',
-                  background: '#fff',
-                  transition: 'transform 0.2s',
-                  transform: soundEnabled ? 'translateX(20px)' : 'translateX(0)',
-                }}
-              />
+              <span style={{ position: 'absolute', top: 2, left: 2, width: 20, height: 20, borderRadius: '50%', background: '#fff', transform: soundEnabled ? 'translateX(20px)' : 'translateX(0)' }} />
             </button>
           </div>
-
           <div className="fm-mt-md">
             <div className="fm-flex fm-justify-between fm-items-center fm-mb-sm">
               <span className="fm-text-base fm-text-primary">볼륨</span>
               <span className="fm-text-sm fm-text-secondary">{Math.round(soundVolume * 100)}%</span>
             </div>
-            <input
-              type="range"
-              min="0"
-              max="100"
-              value={Math.round(soundVolume * 100)}
-              onChange={(e) => setSoundVolume(Number(e.target.value) / 100)}
-              disabled={!soundEnabled}
-              style={{
-                width: '100%',
-                accentColor: 'var(--accent)',
-                opacity: soundEnabled ? 1 : 0.4,
-              }}
-              aria-label="볼륨 조절"
-            />
+            <input type="range" min="0" max="100" value={Math.round(soundVolume * 100)} onChange={(event) => setSoundVolume(Number(event.target.value) / 100)} disabled={!soundEnabled} style={{ width: '100%', accentColor: 'var(--accent)', opacity: soundEnabled ? 1 : 0.4 }} aria-label="볼륨 조절" />
           </div>
         </div>
       </div>
 
-      {/* 테마 설정 */}
       <div className="fm-panel fm-mb-md">
-        <div className="fm-panel__header">
-          <span className="fm-panel__title">테마 설정</span>
-        </div>
+        <div className="fm-panel__header"><span className="fm-panel__title">화면</span></div>
         <div className="fm-panel__body">
-          <p className="fm-text-sm fm-text-muted fm-mb-md">화면 테마를 변경합니다.</p>
-          <div className="fm-flex fm-gap-sm">
-            {([
-              { value: 'dark' as Theme, label: '다크' },
-              { value: 'light' as Theme, label: '라이트' },
-            ]).map((opt) => (
-              <button
-                key={opt.value}
-                className={`fm-btn ${theme === opt.value ? 'fm-btn--primary' : ''}`}
-                onClick={() => setTheme(opt.value)}
-              >
-                {opt.label}
+          <div className="fm-mb-md">
+            <span className="fm-text-sm fm-font-semibold fm-text-primary">테마</span>
+            <div className="fm-flex fm-gap-sm fm-mt-sm">
+              {([{ value: 'dark' as Theme, label: '다크' }, { value: 'light' as Theme, label: '라이트' }]).map((option) => (
+                <button key={option.value} className={`fm-btn ${theme === option.value ? 'fm-btn--primary' : ''}`} onClick={() => setTheme(option.value)}>
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <span className="fm-text-sm fm-font-semibold fm-text-primary">창 모드</span>
+            <div className="fm-flex fm-gap-sm fm-mt-sm">
+              {(['windowed', 'fullscreen', 'borderless'] as const).map((mode) => (
+                <button
+                  key={mode}
+                  className={`fm-btn ${windowMode === mode ? 'fm-btn--primary' : ''}`}
+                  onClick={async () => {
+                    setWindowMode(mode);
+                    const { applyWindowMode } = await import('../../utils/windowManager');
+                    await applyWindowMode(mode);
+                  }}
+                >
+                  {mode === 'windowed' ? '창 모드' : mode === 'fullscreen' ? '전체 화면' : '테두리 없음'}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="fm-panel fm-mb-md">
+        <div className="fm-panel__header"><span className="fm-panel__title">저장</span></div>
+        <div className="fm-panel__body">
+          <p className="fm-text-sm fm-text-muted fm-mb-md">진행 데이터를 저장하는 주기를 선택합니다.</p>
+          <div className="fm-grid fm-grid--3">
+            {AUTO_SAVE_OPTIONS.map((option) => (
+              <button key={option.value} className={`fm-card fm-card--clickable fm-flex-col fm-items-start fm-gap-xs ${autoSaveInterval === option.value ? 'fm-card--highlight' : ''}`} onClick={() => setAutoSaveInterval(option.value)}>
+                <span className="fm-text-base fm-font-semibold fm-text-primary">{option.label}</span>
+                <span className="fm-text-xs fm-text-muted" style={{ textAlign: 'left' }}>{option.desc}</span>
               </button>
             ))}
           </div>
         </div>
       </div>
 
-      {/* 자동 저장 간격 */}
       <div className="fm-panel fm-mb-md">
-        <div className="fm-panel__header">
-          <span className="fm-panel__title">자동 저장 간격</span>
-        </div>
+        <div className="fm-panel__header"><span className="fm-panel__title">데이터 관리</span></div>
         <div className="fm-panel__body">
-          <p className="fm-text-sm fm-text-muted fm-mb-md">게임 내 자동 저장 주기를 설정합니다.</p>
-          <div className="fm-flex fm-gap-sm">
-            {AUTO_SAVE_OPTIONS.map((opt) => (
-              <button
-                key={opt.value}
-                className={`fm-btn ${autoSaveInterval === opt.value ? 'fm-btn--primary' : ''}`}
-                onClick={() => setAutoSaveInterval(opt.value)}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* 화면 모드 */}
-      <div className="fm-panel fm-mb-md">
-        <div className="fm-panel__header">
-          <span className="fm-panel__title">화면 모드</span>
-        </div>
-        <div className="fm-panel__body">
-          <div className="fm-flex fm-gap-sm">
-            {(['windowed', 'fullscreen', 'borderless'] as const).map((mode) => (
-              <button
-                key={mode}
-                className={`fm-btn ${windowMode === mode ? 'fm-btn--primary' : ''}`}
-                onClick={async () => {
-                  setWindowMode(mode);
-                  const { applyWindowMode } = await import('../../utils/windowManager');
-                  await applyWindowMode(mode);
-                }}
-              >
-                {mode === 'windowed' ? '창 모드' : mode === 'fullscreen' ? '전체 화면' : '테두리 없는 창'}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* 데이터 관리 */}
-      <div className="fm-panel fm-mb-md">
-        <div className="fm-panel__header">
-          <span className="fm-panel__title">데이터 관리</span>
-        </div>
-        <div className="fm-panel__body">
-          <p className="fm-text-sm fm-text-muted fm-mb-md">
-            데이터베이스를 초기화하면 모든 게임 데이터(세이브, 선수, 팀 등)가 삭제됩니다.
-          </p>
+          <p className="fm-text-sm fm-text-muted fm-mb-md">데이터베이스를 초기화하면 저장된 선수, 팀, 경기 진행 상태가 모두 삭제됩니다.</p>
           {!dbResetConfirm ? (
-            <button
-              className="fm-btn"
-              style={{ color: '#ef4444', borderColor: '#ef4444' }}
-              onClick={() => setDbResetConfirm(true)}
-            >
+            <button className="fm-btn" style={{ color: '#ef4444', borderColor: '#ef4444' }} onClick={() => setDbResetConfirm(true)}>
               데이터베이스 초기화
             </button>
           ) : (
             <div className="fm-flex fm-gap-sm fm-items-center">
-              <span className="fm-text-sm" style={{ color: '#ef4444' }}>
-                정말 초기화하시겠습니까? 모든 데이터가 삭제됩니다.
-              </span>
-              <button
-                className="fm-btn"
-                style={{ background: '#ef4444', color: '#fff', borderColor: '#ef4444' }}
-                disabled={dbResetting}
-                onClick={async () => {
-                  setDbResetting(true);
-                  try {
-                    const { closeDatabase } = await import('../../db/database');
-                    await closeDatabase();
-                    const { appDataDir } = await import('@tauri-apps/api/path');
-                    const { remove } = await import('@tauri-apps/plugin-fs');
-                    const dir = await appDataDir();
-                    await remove(`${dir}/lol_esports_manager.db`).catch(() => {});
-                    await remove(`${dir}/lol_esports_manager.db-wal`).catch(() => {});
-                    await remove(`${dir}/lol_esports_manager.db-shm`).catch(() => {});
-                    const { exit } = await import('@tauri-apps/plugin-process');
-                    await exit(0);
-                  } catch (e) {
-                    console.error('[SettingsView] DB 초기화 실패:', e);
-                    setDbResetting(false);
-                    setDbResetConfirm(false);
-                  }
-                }}
-              >
+              <span className="fm-text-sm" style={{ color: '#ef4444' }}>정말 초기화하시겠습니까? 모든 데이터가 삭제됩니다.</span>
+              <button className="fm-btn" style={{ background: '#ef4444', color: '#fff', borderColor: '#ef4444' }} disabled={dbResetting} onClick={() => void handleResetDatabase()}>
                 {dbResetting ? '초기화 중...' : '확인'}
               </button>
-              <button
-                className="fm-btn"
-                onClick={() => setDbResetConfirm(false)}
-                disabled={dbResetting}
-              >
-                취소
-              </button>
+              <button className="fm-btn" onClick={() => setDbResetConfirm(false)} disabled={dbResetting}>취소</button>
             </div>
           )}
         </div>
       </div>
 
-      {/* 게임 정보 */}
       <div className="fm-panel fm-mb-lg">
-        <div className="fm-panel__header">
-          <span className="fm-panel__title">게임 정보</span>
-        </div>
+        <div className="fm-panel__header"><span className="fm-panel__title">게임 정보</span></div>
         <div className="fm-panel__body">
-          <div className="fm-info-row">
-            <span className="fm-info-row__label">버전</span>
-            <span className="fm-info-row__value">{__APP_VERSION__}</span>
-          </div>
-          <div className="fm-info-row">
-            <span className="fm-info-row__label">프론트엔드</span>
-            <span className="fm-info-row__value">React 19 + TypeScript 5.9 + Vite 8</span>
-          </div>
-          <div className="fm-info-row">
-            <span className="fm-info-row__label">백엔드</span>
-            <span className="fm-info-row__value">Tauri 2 (Rust)</span>
-          </div>
+          <div className="fm-info-row"><span className="fm-info-row__label">버전</span><span className="fm-info-row__value">{__APP_VERSION__}</span></div>
+          <div className="fm-info-row"><span className="fm-info-row__label">프런트엔드</span><span className="fm-info-row__value">React 19 + TypeScript 5.9 + Vite 8</span></div>
+          <div className="fm-info-row"><span className="fm-info-row__label">백엔드</span><span className="fm-info-row__value">Tauri 2 (Rust)</span></div>
           <div className="fm-info-row">
             <span className="fm-info-row__label">AI 엔진</span>
             <span className="fm-info-row__value">
               {aiProvider === 'ollama'
-                ? 'Ollama (로컬 LLM)'
+                ? `Ollama (${aiModel || '모델 미선택'})`
                 : aiProvider === 'openai'
                   ? `OpenAI (${apiModel})`
                   : aiProvider === 'claude'
                     ? `Claude (${apiModel})`
-                  : aiProvider === 'gemini'
+                    : aiProvider === 'gemini'
                       ? `Gemini (${apiModel})`
                       : aiProvider === 'grok'
                         ? `Grok (${apiModel})`
                         : '템플릿 모드'}
             </span>
           </div>
-          <div className="fm-info-row">
-            <span className="fm-info-row__label">DB</span>
-            <span className="fm-info-row__value">SQLite</span>
-          </div>
+          <div className="fm-info-row"><span className="fm-info-row__label">데이터베이스</span><span className="fm-info-row__value">SQLite</span></div>
         </div>
       </div>
+
+      {showAiWizard && <AiSetupWizard onComplete={() => { setShowAiWizard(false); refreshModelList(); }} />}
     </div>
   );
 }

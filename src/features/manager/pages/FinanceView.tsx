@@ -24,25 +24,43 @@ import { useGameStore } from '../../../stores/gameStore';
 import { formatAmount } from '../../../utils/formatUtils';
 
 const CATEGORY_LABELS: Record<string, string> = {
-  salary: 'Player salary',
-  prize: 'Prize money',
-  sponsorship: 'Sponsorship',
-  transfer: 'Transfer fee',
-  coaching: 'Coaching staff',
-  facility: 'Facility operations',
-  merchandise: 'Merchandise',
-  streaming: 'Streaming',
-  penalty: 'Penalty / breach',
+  salary: '선수 연봉',
+  prize: '상금',
+  sponsorship: '스폰서 수익',
+  transfer: '이적료',
+  coaching: '코칭 스태프',
+  facility: '시설 운영비',
+  merchandise: '굿즈 수익',
+  streaming: '방송 수익',
+  penalty: '벌금 / 위약금',
 };
+
+const STRATEGY_CARDS = [
+  {
+    title: '안정형 계약',
+    badge: SPONSOR_STYLE_LABELS.fixed,
+    detail: '주간 현금 흐름이 일정해서 시즌 운영 계획을 세우기 편합니다.',
+  },
+  {
+    title: '성과형 계약',
+    badge: SPONSOR_STYLE_LABELS.performance,
+    detail: '성적이 좋으면 수익이 크게 늘지만 목표 달성 압박도 커집니다.',
+  },
+  {
+    title: '홍보형 계약',
+    badge: SPONSOR_STYLE_LABELS.promotion,
+    detail: '노출 효과와 화제성이 커지지만 추가 일정과 미디어 요구가 생길 수 있습니다.',
+  },
+];
 
 function getCategoryLabel(category: string): string {
   return CATEGORY_LABELS[category] ?? category;
 }
 
 function getOfferMeaning(style: ConditionalSponsorOffer['offerStyle']): string {
-  if (style === 'promotion') return 'Higher visibility, but it can create media and schedule pressure.';
-  if (style === 'performance') return 'High upside if you hit targets, but failure hurts.';
-  return 'Lower variance and safer planning for the season.';
+  if (style === 'promotion') return '브랜드 노출을 크게 늘릴 수 있지만 운영 부담도 함께 올라갑니다.';
+  if (style === 'performance') return '목표를 달성하면 가장 많이 벌 수 있는 대신 실패 리스크가 큽니다.';
+  return '변동성이 낮고 안정적으로 예산을 쌓기 좋은 계약입니다.';
 }
 
 export function FinanceView() {
@@ -76,11 +94,7 @@ export function FinanceView() {
     setTeams(
       teams.map((team) =>
         team.id === save.userTeamId
-          ? {
-              ...team,
-              budget: nextBudget,
-              reputation: nextReputation ?? team.reputation,
-            }
+          ? { ...team, budget: nextBudget, reputation: nextReputation ?? team.reputation }
           : team,
       ),
     );
@@ -112,7 +126,8 @@ export function FinanceView() {
       syncStoreTeam(nextBudget, nextReputation);
     } catch (err) {
       console.error('finance load failed:', err);
-      setError('Failed to load finance data.');
+      setSummary(null);
+      setError('재정 데이터를 불러오지 못했습니다.');
     } finally {
       setIsLoading(false);
     }
@@ -170,7 +185,7 @@ export function FinanceView() {
       await loadData();
     } catch (err) {
       console.error('accept sponsor failed:', err);
-      setError('Failed to accept sponsor offer.');
+      setError('스폰서 제안을 수락하지 못했습니다.');
     }
   };
 
@@ -178,60 +193,64 @@ export function FinanceView() {
     setOffers((prev) => prev.filter((existing) => existing.name !== offer.name));
   };
 
-  const sponsorStrategyCards = useMemo(() => ([
-    {
-      title: 'Stable deal',
-      badge: SPONSOR_STYLE_LABELS.fixed,
-      detail: 'Reliable weekly cashflow with the lowest volatility.',
-    },
-    {
-      title: 'Performance deal',
-      badge: SPONSOR_STYLE_LABELS.performance,
-      detail: 'Best upside when results are strong, but pressure rises with it.',
-    },
-    {
-      title: 'Promotion deal',
-      badge: SPONSOR_STYLE_LABELS.promotion,
-      detail: 'Brand growth and visibility matter more, which can create extra demands.',
-    },
-  ]), []);
+  const negotiationSummary = useMemo(() => {
+    const bonusLabel = sponsorBonus > 0 ? ` / 대외 이미지 보정 +${sponsorBonus}` : '';
+    return `기본 명성 ${reputation}${bonusLabel}. 스폰서 제안 등급은 이 수치를 기준으로 계산됩니다.`;
+  }, [reputation, sponsorBonus]);
 
   if (!season || !save) {
-    return <p className="fm-text-muted">Loading data...</p>;
+    return <p className="fm-text-muted">재정 데이터를 준비 중입니다...</p>;
   }
 
-  if (isLoading || !summary) {
-    return <p className="fm-text-muted">Loading finance summary...</p>;
+  if (isLoading) {
+    return <p className="fm-text-muted">재정 요약을 불러오는 중입니다...</p>;
+  }
+
+  if (error && !summary) {
+    return (
+      <div className="fm-panel">
+        <div className="fm-panel__body">
+          <p className="fm-text-danger fm-mb-md">{error}</p>
+          <button className="fm-btn fm-btn--primary" onClick={() => void loadData()}>
+            다시 불러오기
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!summary) {
+    return <p className="fm-text-muted">표시할 재정 데이터가 아직 없습니다.</p>;
   }
 
   return (
     <div>
       <div className="fm-page-header">
-        <h1 className="fm-page-title">Finance</h1>
+        <h1 className="fm-page-title">재정</h1>
       </div>
 
       <div className="fm-grid fm-grid--4 fm-mb-lg">
         <div className="fm-card">
           <div className="fm-stat">
-            <span className="fm-stat__label">Budget</span>
+            <span className="fm-stat__label">현재 예산</span>
             <span className="fm-stat__value fm-stat__value--accent">{formatAmount(budget)}</span>
           </div>
         </div>
         <div className="fm-card">
           <div className="fm-stat">
-            <span className="fm-stat__label">Total income</span>
+            <span className="fm-stat__label">총수입</span>
             <span className="fm-stat__value fm-text-success">{formatAmount(summary.totalIncome)}</span>
           </div>
         </div>
         <div className="fm-card">
           <div className="fm-stat">
-            <span className="fm-stat__label">Total expense</span>
+            <span className="fm-stat__label">총지출</span>
             <span className="fm-stat__value fm-text-danger">{formatAmount(summary.totalExpense)}</span>
           </div>
         </div>
         <div className="fm-card">
           <div className="fm-stat">
-            <span className="fm-stat__label">Season balance</span>
+            <span className="fm-stat__label">시즌 손익</span>
             <span className={`fm-stat__value ${summary.balance >= 0 ? 'fm-text-success' : 'fm-text-danger'}`}>
               {summary.balance >= 0 ? '+' : ''}
               {formatAmount(summary.balance)}
@@ -249,11 +268,11 @@ export function FinanceView() {
 
       <div className="fm-panel fm-mb-lg">
         <div className="fm-panel__header">
-          <span className="fm-panel__title">Sponsor posture</span>
+          <span className="fm-panel__title">스폰서 전략</span>
         </div>
         <div className="fm-panel__body">
           <div className="fm-grid fm-grid--3 fm-mb-md">
-            {sponsorStrategyCards.map((card) => (
+            {STRATEGY_CARDS.map((card) => (
               <div key={card.title} className="fm-card fm-flex-col fm-gap-sm">
                 <div className="fm-flex fm-justify-between fm-items-center fm-gap-sm">
                   <span className="fm-text-primary fm-font-semibold">{card.title}</span>
@@ -263,34 +282,31 @@ export function FinanceView() {
               </div>
             ))}
           </div>
+
           <div className="fm-card">
             <div className="fm-flex fm-justify-between fm-items-center fm-gap-sm">
-              <span className="fm-text-primary fm-font-semibold">Negotiation quality</span>
+              <span className="fm-text-primary fm-font-semibold">협상 지수</span>
               <span className="fm-badge fm-badge--default">{effectiveReputation}</span>
             </div>
-            <p className="fm-text-secondary fm-mt-sm" style={{ marginBottom: 0 }}>
-              Base reputation {reputation}
-              {sponsorBonus > 0 ? ` / media-friendly bonus +${sponsorBonus}` : ''}.
-              Offers are generated from this effective reputation.
-            </p>
+            <p className="fm-text-secondary fm-mt-sm" style={{ marginBottom: 0 }}>{negotiationSummary}</p>
           </div>
         </div>
       </div>
 
       <div className="fm-panel fm-mb-lg">
         <div className="fm-panel__header">
-          <span className="fm-panel__title">Sponsor management</span>
+          <span className="fm-panel__title">스폰서 관리</span>
         </div>
         <div className="fm-panel__body">
           <div className="fm-flex fm-justify-between fm-items-center fm-mb-sm">
-            <h3 className="fm-text-lg fm-font-semibold fm-text-primary">Active deals</h3>
+            <h3 className="fm-text-lg fm-font-semibold fm-text-primary">활성 계약</h3>
             <span className="fm-badge fm-badge--default">
               {activeSponsors.length} / {MAX_ACTIVE_SPONSORS}
             </span>
           </div>
 
           {activeSponsors.length === 0 ? (
-            <p className="fm-text-muted fm-text-md fm-mb-md">No active sponsor is currently signed.</p>
+            <p className="fm-text-muted fm-text-md fm-mb-md">진행 중인 스폰서 계약이 없습니다.</p>
           ) : (
             <div className="fm-grid fm-grid--auto fm-mb-md">
               {activeSponsors.map((sponsor) => (
@@ -309,11 +325,11 @@ export function FinanceView() {
                     <span className="fm-text-lg fm-font-semibold fm-text-primary">{sponsor.name}</span>
                   </div>
                   <div className="fm-info-row">
-                    <span className="fm-info-row__label">Weekly payout</span>
+                    <span className="fm-info-row__label">주간 지급액</span>
                     <span className="fm-info-row__value fm-text-success">+{formatAmount(sponsor.weeklyPayout)}</span>
                   </div>
                   <div className="fm-info-row">
-                    <span className="fm-info-row__label">Contract window</span>
+                    <span className="fm-info-row__label">계약 기간</span>
                     <span className="fm-info-row__value">{sponsor.startDate} ~ {sponsor.endDate}</span>
                   </div>
                 </div>
@@ -324,25 +340,25 @@ export function FinanceView() {
           <div className="fm-divider" />
 
           <div className="fm-flex fm-justify-between fm-items-center fm-mb-sm fm-mt-md">
-            <h3 className="fm-text-lg fm-font-semibold fm-text-primary">Offer board</h3>
+            <h3 className="fm-text-lg fm-font-semibold fm-text-primary">제안 보드</h3>
             <button
               className="fm-btn fm-btn--info fm-btn--sm"
               onClick={handleGenerateOffers}
               disabled={isGeneratingOffers || rerollsRemaining <= 0 || isMaxSponsors}
               title={
                 isMaxSponsors
-                  ? `Only ${MAX_ACTIVE_SPONSORS} active sponsors can be held at once`
+                  ? `동시에 유지할 수 있는 스폰서는 최대 ${MAX_ACTIVE_SPONSORS}개입니다`
                   : rerollsRemaining <= 0
-                    ? 'All rerolls have been used this season'
+                    ? '이번 시즌 재추첨을 모두 사용했습니다'
                     : undefined
               }
             >
-              {offers.length > 0 ? 'Refresh board' : 'Check sponsor offers'} ({rerollsRemaining}/{MAX_REROLLS_PER_SEASON})
+              {offers.length > 0 ? '보드 새로고침' : '스폰서 제안 확인'} ({rerollsRemaining}/{MAX_REROLLS_PER_SEASON})
             </button>
           </div>
 
           {offers.length === 0 ? (
-            <p className="fm-text-muted fm-text-md">Open the board to compare sponsor philosophies, upside, and risk.</p>
+            <p className="fm-text-muted fm-text-md">보드를 열어 계약 성향, 기대 수익, 리스크를 비교해보세요.</p>
           ) : (
             <div className="fm-grid fm-grid--auto">
               {offers.map((offer) => (
@@ -366,30 +382,30 @@ export function FinanceView() {
                   <p className="fm-text-sm fm-text-muted" style={{ margin: 0, lineHeight: 1.5 }}>{offer.pitch}</p>
 
                   <div className="fm-card" style={{ background: 'rgba(255,255,255,0.02)' }}>
-                    <div className="fm-text-xs fm-text-muted fm-mb-xs">What this deal means</div>
+                    <div className="fm-text-xs fm-text-muted fm-mb-xs">이 계약의 성격</div>
                     <div className="fm-text-secondary">{getOfferMeaning(offer.offerStyle)}</div>
                   </div>
 
                   <div className="fm-info-row">
-                    <span className="fm-info-row__label">Base payout</span>
+                    <span className="fm-info-row__label">기본 지급액</span>
                     <span className="fm-info-row__value fm-text-success">+{formatAmount(offer.baseWeeklyPayout)}</span>
                   </div>
                   <div className="fm-info-row">
-                    <span className="fm-info-row__label">Max upside</span>
+                    <span className="fm-info-row__label">최대 기대 수익</span>
                     <span className="fm-info-row__value fm-text-accent">+{formatAmount(offer.maxWeeklyPayout)}</span>
                   </div>
                   <div className="fm-info-row">
-                    <span className="fm-info-row__label">Duration</span>
-                    <span className="fm-info-row__value">{offer.durationWeeks} weeks</span>
+                    <span className="fm-info-row__label">계약 길이</span>
+                    <span className="fm-info-row__value">{offer.durationWeeks}주</span>
                   </div>
                   <div className="fm-info-row">
-                    <span className="fm-info-row__label">Required reputation</span>
+                    <span className="fm-info-row__label">필요 명성</span>
                     <span className="fm-info-row__value">{offer.requiredMinReputation}</span>
                   </div>
 
                   {offer.conditions.length > 0 ? (
                     <div className="fm-flex-col fm-gap-xs">
-                      <span className="fm-text-sm fm-font-semibold fm-text-primary">Core conditions</span>
+                      <span className="fm-text-sm fm-font-semibold fm-text-primary">핵심 조건</span>
                       {offer.conditions.map((condition) => (
                         <div key={`${offer.name}-${condition.type}`} className="fm-card" style={{ background: 'rgba(255,255,255,0.02)' }}>
                           <div className="fm-flex fm-justify-between fm-items-center fm-gap-sm">
@@ -407,21 +423,21 @@ export function FinanceView() {
                     </div>
                   ) : (
                     <div className="fm-card" style={{ background: 'rgba(255,255,255,0.02)' }}>
-                      <span className="fm-text-sm fm-text-secondary">No extra trigger is attached. This is a straightforward weekly revenue deal.</span>
+                      <span className="fm-text-sm fm-text-secondary">추가 조건이 없는 순수 주간 수익형 계약입니다.</span>
                     </div>
                   )}
 
                   <div className="fm-card" style={{ background: 'rgba(255,255,255,0.02)' }}>
-                    <div className="fm-text-xs fm-text-muted fm-mb-xs">Failure risk</div>
+                    <div className="fm-text-xs fm-text-muted fm-mb-xs">실패 리스크</div>
                     <div className="fm-text-secondary">{offer.riskNote}</div>
                   </div>
 
                   <div className="fm-flex fm-gap-sm fm-mt-sm">
                     <button className="fm-btn fm-btn--success fm-flex-1" onClick={() => handleAcceptOffer(offer)} disabled={isMaxSponsors}>
-                      {isMaxSponsors ? 'No slot' : 'Accept'}
+                      {isMaxSponsors ? '슬롯 없음' : '수락'}
                     </button>
                     <button className="fm-btn fm-btn--danger fm-flex-1" onClick={() => handleRejectOffer(offer)}>
-                      Reject
+                      거절
                     </button>
                   </div>
                 </div>
@@ -433,21 +449,21 @@ export function FinanceView() {
 
       <div className="fm-panel">
         <div className="fm-panel__header">
-          <span className="fm-panel__title">Finance log</span>
+          <span className="fm-panel__title">재정 로그</span>
         </div>
         <div className="fm-panel__body--flush">
           {summary.logs.length === 0 ? (
-            <p className="fm-text-muted fm-text-md fm-p-md">No finance log exists yet.</p>
+            <p className="fm-text-muted fm-text-md fm-p-md">아직 기록된 재정 로그가 없습니다.</p>
           ) : (
             <div className="fm-table-wrap">
               <table className="fm-table fm-table--striped">
                 <thead>
                   <tr>
-                    <th>Date</th>
-                    <th>Type</th>
-                    <th>Category</th>
-                    <th>Amount</th>
-                    <th>Description</th>
+                    <th>날짜</th>
+                    <th>구분</th>
+                    <th>항목</th>
+                    <th>금액</th>
+                    <th>설명</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -455,7 +471,7 @@ export function FinanceView() {
                     <tr key={log.id}>
                       <td>{log.gameDate}</td>
                       <td className={log.type === 'income' ? 'fm-cell--green' : 'fm-cell--red'}>
-                        {log.type === 'income' ? 'Income' : 'Expense'}
+                        {log.type === 'income' ? '수입' : '지출'}
                       </td>
                       <td>{getCategoryLabel(log.category)}</td>
                       <td className={log.type === 'income' ? 'fm-cell--green' : 'fm-cell--red'}>

@@ -24,14 +24,14 @@ interface ImpactSummaryItem {
   tone: ImpactTone;
 }
 
-const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const DAY_NAMES = ['일', '월', '화', '수', '목', '금', '토'];
 
 const DAY_TYPE_LABELS: Record<DayType, string> = {
-  match_day: 'Match day',
-  training: 'Training',
-  scrim: 'Scrim',
-  rest: 'Rest',
-  event: 'Event',
+  match_day: '경기일',
+  training: '훈련일',
+  scrim: '스크림',
+  rest: '휴식일',
+  event: '이벤트',
 };
 
 function getAutoActivity(entry: TrainingScheduleEntry | null): 'training' | 'scrim' | 'rest' {
@@ -39,35 +39,35 @@ function getAutoActivity(entry: TrainingScheduleEntry | null): 'training' | 'scr
 }
 
 function getDecisionImpact(activity: DayType, training: TrainingScheduleEntry | null): string {
-  if (activity === 'rest') return 'Recovery-focused day. Stamina and morale should stabilize before the next match.';
+  if (activity === 'rest') return '회복에 집중하는 날입니다. 다음 경기 전까지 체력과 사기가 안정될 가능성이 높습니다.';
   if (activity === 'scrim') {
     return training
-      ? `${TRAINING_TYPE_LABELS[training.trainingType]} focus will carry into today’s scrim feedback.`
-      : 'Scrim reps will sharpen execution and expose weak points before matchday.';
+      ? `${TRAINING_TYPE_LABELS[training.trainingType]} 중심 준비가 오늘 스크림 피드백에 그대로 반영될 가능성이 큽니다.`
+      : '스크림은 실전 감각을 끌어올리고 약점을 드러내는 데 가장 빠른 구간입니다.';
   }
-  if (activity === 'match_day') return 'Your recent preparation is about to show up in a real result.';
+  if (activity === 'match_day') return '최근 준비 결과가 실제 경기 성과로 드러나는 날입니다.';
   return training
-    ? `${TRAINING_TYPE_LABELS[training.trainingType]} training is the main growth lever for today.`
-    : 'A standard training block will keep player condition and form moving.';
+    ? `오늘 성장의 중심은 ${TRAINING_TYPE_LABELS[training.trainingType]} 훈련입니다.`
+    : '기본 훈련 루틴으로도 컨디션과 폼을 안정적으로 유지할 수 있습니다.';
 }
 
 function getResultHighlights(result: DayResult, training: TrainingScheduleEntry | null): string[] {
   const highlights: string[] = [];
 
   if (result.dayType !== 'match_day') {
-    highlights.push(`Applied schedule: ${DAY_TYPE_LABELS[result.dayType]}`);
+    highlights.push(`적용 일정: ${DAY_TYPE_LABELS[result.dayType]}`);
   }
 
   if (training && result.dayType !== 'rest' && result.dayType !== 'match_day') {
-    highlights.push(`Training focus: ${TRAINING_TYPE_LABELS[training.trainingType]} / ${training.intensity}`);
+    highlights.push(`훈련 포커스: ${TRAINING_TYPE_LABELS[training.trainingType]} / 강도 ${training.intensity}`);
   }
 
   if (result.events.length > 0) {
-    highlights.push(`Main update: ${result.events[0]}`);
+    highlights.push(`핵심 변화: ${result.events[0]}`);
   }
 
   if (highlights.length === 0) {
-    highlights.push('No major surprises today. The schedule advanced as planned.');
+    highlights.push('큰 변수 없이 계획한 일정대로 하루가 진행됐습니다.');
   }
 
   return highlights;
@@ -90,6 +90,9 @@ export function DayView() {
   const setCurrentDate = useGameStore((s) => s.setCurrentDate);
   const setDayType = useGameStore((s) => s.setDayType);
   const setFearlessPool = useGameStore((s) => s.setFearlessPool);
+  const setHardFearlessSeries = useMatchStore((s) => s.setHardFearlessSeries);
+  const setCurrentGameDraftRequired = useMatchStore((s) => s.setCurrentGameDraftRequired);
+  const setSeriesFearlessPool = useMatchStore((s) => s.setSeriesFearlessPool);
   const resetSeries = useMatchStore((s) => s.resetSeries);
 
   const [dayResult, setDayResult] = useState<DayResult | null>(null);
@@ -137,10 +140,10 @@ export function DayView() {
         const items: ImpactSummaryItem[] = [];
 
         items.push({
-          title: 'Weekly training',
+          title: '이번 주 운영 기조',
           detail: todayTraining
             ? `${TRAINING_ACTIVITY_LABELS[autoActivity]} / ${TRAINING_TYPE_LABELS[todayTraining.trainingType]} / ${todayTraining.intensity}`
-            : `${TRAINING_ACTIVITY_LABELS[autoActivity]} block is set to auto-apply today.`,
+            : `${TRAINING_ACTIVITY_LABELS[autoActivity]} 일정이 오늘 자동 적용됩니다.`,
           tone: autoActivity === 'rest' ? 'neutral' : 'positive',
         });
 
@@ -151,15 +154,15 @@ export function DayView() {
           const strongest = affectedPlayers
             .sort((a, b) => ((b.effect?.moraleBonus ?? 0) + (b.effect?.formBonus ?? 0)) - ((a.effect?.moraleBonus ?? 0) + (a.effect?.formBonus ?? 0)))[0];
           items.push({
-            title: 'Player meeting',
-            detail: `${strongest.player.name} is still benefiting from ${strongest.effect?.topic ?? 'recent management'} (${strongest.effect?.moraleBonus ?? 0} morale / ${strongest.effect?.formBonus ?? 0} form).`,
+            title: '선수 면담 효과',
+            detail: `${strongest.player.name} 선수가 ${strongest.effect?.topic ?? '최근 관리'} 영향으로 추가 효과를 받고 있습니다. 사기 ${strongest.effect?.moraleBonus ?? 0}, 폼 ${strongest.effect?.formBonus ?? 0}.`,
             tone: 'positive',
           });
         }
 
         if (recommendations.length > 0) {
           items.push({
-            title: 'Staff read',
+            title: '스태프 리포트',
             detail: recommendations[0].summary,
             tone: recommendations[0].urgency === 'high' ? 'risk' : 'neutral',
           });
@@ -167,7 +170,7 @@ export function DayView() {
 
         if (identity) {
           items.push({
-            title: 'Manager philosophy',
+            title: '감독 철학',
             detail: getManagerIdentitySummaryLine(identity),
             tone: 'neutral',
           });
@@ -231,6 +234,9 @@ export function DayView() {
       if (result.hasUserMatch && result.userMatch) {
         resetSeries();
         setFearlessPool({ blue: [], red: [] });
+        setSeriesFearlessPool({ blue: [], red: [] });
+        setHardFearlessSeries(result.userMatch.boFormat !== 'Bo1' || result.userMatch.hardFearlessSeries === true);
+        setCurrentGameDraftRequired(true);
         setPendingUserMatch(result.userMatch);
         const latestSeason = await getActiveSeason().catch(() => null);
         setSeason(latestSeason ?? { ...season, currentDate: result.nextDate });
@@ -257,7 +263,10 @@ export function DayView() {
     season,
     setDayPhase,
     setFearlessPool,
+    setHardFearlessSeries,
+    setCurrentGameDraftRequired,
     setPendingUserMatch,
+    setSeriesFearlessPool,
     setSeason,
     userTeamId,
   ]);
@@ -300,6 +309,9 @@ export function DayView() {
       if (lastResult.hasUserMatch && lastResult.userMatch) {
         resetSeries();
         setFearlessPool({ blue: [], red: [] });
+        setSeriesFearlessPool({ blue: [], red: [] });
+        setHardFearlessSeries(lastResult.userMatch.boFormat !== 'Bo1' || lastResult.userMatch.hardFearlessSeries === true);
+        setCurrentGameDraftRequired(true);
         setPendingUserMatch(lastResult.userMatch);
         setDayPhase('banpick');
         navigate('/manager/pre-match');
@@ -322,7 +334,10 @@ export function DayView() {
     season,
     setDayPhase,
     setFearlessPool,
+    setHardFearlessSeries,
+    setCurrentGameDraftRequired,
     setPendingUserMatch,
+    setSeriesFearlessPool,
     setSeason,
     userTeamId,
   ]);
@@ -343,7 +358,7 @@ export function DayView() {
   const resultSummaryCards = useMemo(() => impactSummary.slice(0, 4), [impactSummary]);
 
   if (!season || !save || !userTeam) {
-    return <p className="fm-text-muted fm-text-md">Loading season data...</p>;
+    return <p className="fm-text-muted fm-text-md">시즌 데이터를 불러오는 중입니다...</p>;
   }
 
   return (
@@ -352,24 +367,24 @@ export function DayView() {
         <div className="fm-overlay" style={{ zIndex: 50 }}>
           <div className="fm-modal" style={{ width: 360 }}>
             <div className="fm-modal__body fm-text-center">
-              <h2 className="fm-text-xl fm-mb-sm">Processing day</h2>
-              <p className="fm-text-muted">Applying schedule, events, and match consequences. Please wait a moment.</p>
+              <h2 className="fm-text-xl fm-mb-sm">하루를 처리하는 중입니다</h2>
+              <p className="fm-text-muted">일정, 이벤트, 경기 결과를 반영하고 있습니다. 잠시만 기다려 주세요.</p>
             </div>
           </div>
         </div>
       )}
 
       <div className="fm-page-header">
-        <h1 className="fm-page-title">Season progression</h1>
+        <h1 className="fm-page-title">시즌 진행</h1>
       </div>
 
       <div className="dv-date-card">
         <div className="dv-date-main">
           <span className="fm-text-lg fm-text-muted">{currentDate}</span>
-          <span className="dv-date-day">{DAY_NAMES[dayOfWeek]}</span>
+          <span className="dv-date-day">{DAY_NAMES[dayOfWeek]}요일</span>
         </div>
         <div className="dv-date-info">
-          <span className="fm-badge fm-badge--default">Week {season.currentWeek}</span>
+          <span className="fm-badge fm-badge--default">{season.currentWeek}주차</span>
           <span className="fm-text-lg fm-font-semibold fm-text-accent">{userTeam.shortName}</span>
         </div>
       </div>
@@ -377,44 +392,44 @@ export function DayView() {
       <div className="fm-grid fm-grid--2 fm-mb-lg">
         <div className="fm-panel">
           <div className="fm-panel__header">
-            <span className="fm-panel__title">Auto-applied schedule</span>
+            <span className="fm-panel__title">오늘 적용될 일정</span>
           </div>
           <div className="fm-panel__body fm-flex-col fm-gap-sm">
             <div className="dv-focus-grid">
               <div className="dv-focus-card">
-                <span className="dv-focus-card__title">Today’s activity</span>
+                <span className="dv-focus-card__title">오늘의 활동</span>
                 <span className="dv-focus-card__value">{TRAINING_ACTIVITY_LABELS[autoActivity]}</span>
-                <p className="dv-focus-card__detail">The season advance button only moves the date. Activity comes from your saved weekly plan.</p>
+                <p className="dv-focus-card__detail">하루 진행 버튼은 날짜만 넘깁니다. 실제 활동은 주간 훈련표에 저장된 계획이 자동으로 반영됩니다.</p>
               </div>
               <div className="dv-focus-card">
-                <span className="dv-focus-card__title">Training focus</span>
+                <span className="dv-focus-card__title">훈련 포커스</span>
                 <span className="dv-focus-card__value">
-                  {todayTraining ? TRAINING_TYPE_LABELS[todayTraining.trainingType] : 'Standard training'}
+                  {todayTraining ? TRAINING_TYPE_LABELS[todayTraining.trainingType] : '기본 훈련'}
                 </span>
                 <p className="dv-focus-card__detail">
-                  {todayTraining ? `Intensity ${todayTraining.intensity}` : 'Default intensity applies when no custom entry exists.'}
+                  {todayTraining ? `강도 ${todayTraining.intensity}` : '별도 설정이 없어서 기본 강도로 적용됩니다.'}
                 </p>
               </div>
               <div className="dv-focus-card">
-                <span className="dv-focus-card__title">Expected impact</span>
+                <span className="dv-focus-card__title">예상 변화</span>
                 <span className="dv-focus-card__value">{DAY_TYPE_LABELS[autoActivity]}</span>
                 <p className="dv-focus-card__detail">{getDecisionImpact(autoActivity, todayTraining)}</p>
               </div>
             </div>
 
             <p className="fm-text-muted">
-              Training, rest, and scrims are no longer chosen while progressing the season. Your weekly setup drives the day automatically.
+              이제 시즌 진행 중에 훈련, 휴식, 스크림을 매일 고르지 않습니다. 주간 계획이 하루 운영을 자동으로 결정합니다.
             </p>
 
             <div className="fm-flex fm-gap-sm">
               <button className="fm-btn fm-btn--primary" onClick={() => void handleAdvance()} disabled={isProcessing}>
-                Advance one day
+                하루 진행
               </button>
               <button className="fm-btn fm-btn--info" onClick={() => void handleSkip()} disabled={isProcessing}>
-                Skip to next match
+                다음 경기까지 건너뛰기
               </button>
               <button className="fm-btn" onClick={() => navigate('/manager/training')} disabled={isProcessing}>
-                Open training
+                훈련 화면 열기
               </button>
             </div>
           </div>
@@ -422,17 +437,17 @@ export function DayView() {
 
         <div className="fm-panel">
           <div className="fm-panel__header">
-            <span className="fm-panel__title">This week’s impact summary</span>
+            <span className="fm-panel__title">이번 주 영향 요약</span>
           </div>
           <div className="fm-panel__body fm-flex-col fm-gap-sm">
             {impactSummary.length === 0 ? (
-              <p className="fm-text-muted">We are building the latest manager impact summary.</p>
+              <p className="fm-text-muted">최신 운영 영향 요약을 계산하고 있습니다.</p>
             ) : (
               <div className="dv-focus-grid">
                 {impactSummary.map((item) => (
                   <div key={`${item.title}-${item.detail}`} className="dv-focus-card">
                     <span className="dv-focus-card__title">{item.title}</span>
-                    <span className={`dv-focus-card__value ${getToneClass(item.tone)}`}>{item.tone === 'risk' ? 'Risk' : item.tone === 'positive' ? 'Boost' : 'Read'}</span>
+                    <span className={`dv-focus-card__value ${getToneClass(item.tone)}`}>{item.tone === 'risk' ? '주의' : item.tone === 'positive' ? '상승' : '확인'}</span>
                     <p className="dv-focus-card__detail">{item.detail}</p>
                   </div>
                 ))}
@@ -445,16 +460,16 @@ export function DayView() {
       {dayResult && (
         <div className="fm-panel fm-mb-lg">
           <div className="fm-panel__header">
-            <span className="fm-panel__title">Today’s outcome</span>
+            <span className="fm-panel__title">오늘 진행 결과</span>
           </div>
           <div className="fm-panel__body">
             <div className="fm-flex fm-gap-lg fm-mb-md">
               <div className="fm-stat">
-                <span className="fm-stat__label">Next date</span>
+                <span className="fm-stat__label">다음 날짜</span>
                 <span className="fm-stat__value">{dayResult.nextDate}</span>
               </div>
               <div className="fm-stat">
-                <span className="fm-stat__label">Processed as</span>
+                <span className="fm-stat__label">처리 유형</span>
                 <span className="fm-stat__value">{DAY_TYPE_LABELS[dayResult.dayType] ?? dayResult.dayType}</span>
               </div>
             </div>
@@ -462,7 +477,7 @@ export function DayView() {
             <div className="dv-focus-grid fm-mb-md">
               {getResultHighlights(dayResult, todayTraining).map((highlight) => (
                 <div key={highlight} className="dv-focus-card">
-                  <span className="dv-focus-card__title">Decision feedback</span>
+                  <span className="dv-focus-card__title">운영 피드백</span>
                   <span className="dv-focus-card__value">{highlight.split(':')[0]}</span>
                   <p className="dv-focus-card__detail">
                     {highlight.includes(':') ? highlight.split(':').slice(1).join(':').trim() : highlight}
@@ -473,14 +488,14 @@ export function DayView() {
 
             <div className="fm-panel fm-mb-md" style={{ background: 'rgba(255,255,255,0.02)' }}>
               <div className="fm-panel__header">
-                <span className="fm-panel__title">Why this week should feel different</span>
+                <span className="fm-panel__title">이번 주 흐름이 달라지는 이유</span>
               </div>
               <div className="fm-panel__body">
                 <div className="dv-focus-grid">
                   {resultSummaryCards.map((item) => (
                     <div key={`result-${item.title}-${item.detail}`} className="dv-focus-card">
                       <span className="dv-focus-card__title">{item.title}</span>
-                      <span className={`dv-focus-card__value ${getToneClass(item.tone)}`}>{item.tone === 'risk' ? 'Risk' : item.tone === 'positive' ? 'Boost' : 'Read'}</span>
+                      <span className={`dv-focus-card__value ${getToneClass(item.tone)}`}>{item.tone === 'risk' ? '주의' : item.tone === 'positive' ? '상승' : '확인'}</span>
                       <p className="dv-focus-card__detail">{item.detail}</p>
                     </div>
                   ))}
@@ -489,7 +504,7 @@ export function DayView() {
             </div>
 
             {dayResult.events.length === 0 ? (
-              <p className="fm-text-muted">No special events were recorded today.</p>
+              <p className="fm-text-muted">오늘은 기록된 특이 이벤트가 없습니다.</p>
             ) : (
               <div className="fm-flex-col fm-gap-sm">
                 {dayResult.events.map((event, index) => (
@@ -506,7 +521,7 @@ export function DayView() {
       {skipResults.length > 0 && (
         <div className="fm-panel">
           <div className="fm-panel__header">
-            <span className="fm-panel__title">Skipped days summary</span>
+            <span className="fm-panel__title">건너뛴 날짜 요약</span>
           </div>
           <div className="fm-panel__body fm-flex-col fm-gap-sm">
             {skipResults.map((result) => (
@@ -516,7 +531,7 @@ export function DayView() {
                   <span className="fm-badge fm-badge--default">{DAY_TYPE_LABELS[result.dayType] ?? result.dayType}</span>
                 </div>
                 <p className="fm-text-muted" style={{ margin: 0 }}>
-                  {result.events[0] ?? 'No major update'}
+                  {result.events[0] ?? '큰 변화 없이 일정이 진행됐습니다.'}
                 </p>
               </div>
             ))}

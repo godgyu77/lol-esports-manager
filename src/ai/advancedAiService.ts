@@ -12,6 +12,7 @@ import { fillTemplate } from '../utils/stringUtils';
 import { COMMENTARY_TEMPLATE_ASSETS } from './templates/commentaryTemplates';
 import { FALLBACK_BAN_ADVICE_ASSETS, FALLBACK_PICK_ADVICE_ASSETS } from './templates/draftAdviceTemplates';
 import { GENERATED_NEWS_TEMPLATE_ASSETS } from './templates/generatedNewsTemplates';
+import { z } from 'zod';
 
 /** RAG 안전 래퍼 -- 실패 시 원본 프롬프트 반환 */
 async function safeAugment(prompt: string, query: string): Promise<string> {
@@ -31,6 +32,12 @@ export interface MatchCommentary {
   excitement: number;
   tone: 'neutral' | 'excited' | 'tense' | 'dramatic';
 }
+
+const matchCommentarySchema = z.object({
+  text: z.string().min(1).max(160),
+  excitement: z.number().min(1).max(10),
+  tone: z.enum(['neutral', 'excited', 'tense', 'dramatic']),
+});
 
 const COMMENTARY_TEMPLATES: Record<string, readonly { text: string; excitement: number; tone: MatchCommentary['tone'] }[]> = {
   firstBlood: [
@@ -217,7 +224,7 @@ export async function generateMatchCommentary(context: {
 JSON 형식: {"text": "중계 멘트 (80자 이내)", "excitement": 1-10, "tone": "neutral|excited|tense|dramatic"}`;
 
       const augmented = await safeAugment(prompt, `${context.event} ${phaseKr}`);
-      return await chatWithLlmJson<MatchCommentary>(augmented);
+      return await chatWithLlmJson<MatchCommentary>(augmented, { schema: matchCommentarySchema });
     } catch {
       // AI 실패 -> 폴백
     }
@@ -243,6 +250,12 @@ export interface DraftAdvice {
   reason: string;
   confidence: number;
 }
+
+const draftAdviceSchema = z.object({
+  suggestion: z.string().min(1).max(120),
+  reason: z.string().min(1).max(220),
+  confidence: z.number().min(0).max(100),
+});
 
 const FALLBACK_BAN_ADVICE: readonly DraftAdvice[] = [
   { suggestion: '상대 핵심 챔피언을 밴하세요', reason: '상대의 시그니처 챔피언을 차단하는 것이 안전합니다.', confidence: 60 },
@@ -314,7 +327,7 @@ ${context.recommendedBans ? `- 분석 기반 추천밴: [${context.recommendedBa
 JSON 형식: {"suggestion": "구체적 조언 (30자 이내)", "reason": "이유 (50자 이내)", "confidence": 0-100}`;
 
       const augmented = await safeAugment(prompt, '드래프트 밴픽');
-      return await chatWithLlmJson<DraftAdvice>(augmented);
+      return await chatWithLlmJson<DraftAdvice>(augmented, { schema: draftAdviceSchema });
     } catch {
       // AI 실패 -> 폴백
     }
@@ -345,6 +358,12 @@ export interface TacticalSuggestion {
   reason: string;
   expectedEffect: string;
 }
+
+const tacticalSuggestionSchema = z.object({
+  suggestion: z.string().min(1).max(120),
+  reason: z.string().min(1).max(220),
+  expectedEffect: z.string().min(1).max(120),
+});
 
 const FALLBACK_TACTICAL_BY_PHASE: Record<string, readonly TacticalSuggestion[]> = {
   early_game: [
@@ -412,7 +431,7 @@ ${context.recentScrimFeedback ? `- 스크림 피드백: 라인전 ${context.rece
 JSON 형식: {"suggestion": "전술 제안 (30자 이내)", "reason": "이유 (50자 이내)", "expectedEffect": "예상 효과 (20자 이내)"}`;
 
       const augmented = await safeAugment(prompt, `전략 전술 ${context.opponentName}`);
-      return await chatWithLlmJson<TacticalSuggestion>(augmented);
+      return await chatWithLlmJson<TacticalSuggestion>(augmented, { schema: tacticalSuggestionSchema });
     } catch {
       // AI 실패 -> 폴백
     }
@@ -468,6 +487,12 @@ export interface GeneratedNewsArticle {
   content: string;
   category: 'match' | 'transfer' | 'team' | 'scandal' | 'analysis';
 }
+
+const generatedNewsArticleSchema = z.object({
+  title: z.string().min(1).max(120),
+  content: z.string().min(1).max(600),
+  category: z.enum(['match', 'transfer', 'team', 'scandal', 'analysis']),
+});
 
 const FALLBACK_NEWS_TEMPLATES: Record<string, readonly { title: string; content: string; category: GeneratedNewsArticle['category'] }[]> = {
   match_result: [
@@ -545,7 +570,7 @@ export async function generateNewsArticle(context: {
 JSON 형식: {"title": "기사 제목 (25자 이내)", "content": "기사 본문 (200자 이내)", "category": "match|transfer|team|scandal|analysis"}`;
 
       const augmented = await safeAugment(prompt, `${context.eventType} ${context.details}`);
-      return await chatWithLlmJson<GeneratedNewsArticle>(augmented);
+      return await chatWithLlmJson<GeneratedNewsArticle>(augmented, { schema: generatedNewsArticleSchema });
     } catch {
       // AI 실패 -> 폴백
     }
@@ -577,6 +602,16 @@ export interface SocialReaction {
   sentiment: 'positive' | 'negative' | 'neutral';
   likes: number;
 }
+
+const socialReactionSchema = z.object({
+  platform: z.string().min(1).max(40),
+  username: z.string().min(1).max(40),
+  comment: z.string().min(1).max(160),
+  sentiment: z.enum(['positive', 'negative', 'neutral']),
+  likes: z.number().int().min(0).max(1000000),
+});
+
+const socialReactionsSchema = z.array(socialReactionSchema).min(1).max(20);
 
 const RANDOM_USERNAMES = [
   '페이커팬123', '롤갤러', 'T1화이팅', '겐지믿어', 'DK응원단',
@@ -694,7 +729,7 @@ export async function generateSocialReactions(context: {
 JSON 형식: [{"platform": "플랫폼명", "username": "닉네임", "comment": "댓글 (50자 이내)", "sentiment": "positive|negative|neutral", "likes": 숫자}]`;
 
       const augmented = await safeAugment(prompt, `${context.eventType} ${context.teamName}`);
-      return await chatWithLlmJson<SocialReaction[]>(augmented);
+      return await chatWithLlmJson<SocialReaction[]>(augmented, { schema: socialReactionsSchema });
     } catch {
       // AI 실패 -> 폴백
     }
@@ -724,6 +759,13 @@ export interface ScoutingReport {
   weaknesses: string[];
   recommendation: string;
 }
+
+const scoutingReportSchema = z.object({
+  summary: z.string().min(1).max(180),
+  strengths: z.array(z.string().min(1).max(80)).min(1).max(5),
+  weaknesses: z.array(z.string().min(1).max(80)).min(1).max(5),
+  recommendation: z.string().min(1).max(120),
+});
 
 const POSITION_KR: Record<string, string> = {
   top: '탑라이너',
@@ -843,7 +885,7 @@ ${context.soloRankTier ? `- 솔로랭크: ${context.soloRankTier}` : ''}
 JSON 형식: {"summary": "한 줄 요약 (40자 이내)", "strengths": ["강점1", "강점2", "강점3"], "weaknesses": ["약점1", "약점2"], "recommendation": "등급 및 추천 (30자 이내)"}`;
 
       const augmented = await safeAugment(prompt, `${context.position} 스카우팅`);
-      return await chatWithLlmJson<ScoutingReport>(augmented);
+      return await chatWithLlmJson<ScoutingReport>(augmented, { schema: scoutingReportSchema });
     } catch {
       // AI 실패 -> 폴백
     }
@@ -862,6 +904,12 @@ export interface DailyBriefing {
   alerts: string[];
   advice: string[];
 }
+
+const dailyBriefingSchema = z.object({
+  briefing: z.string().min(1).max(220),
+  alerts: z.array(z.string().min(1).max(160)).max(5),
+  advice: z.array(z.string().min(1).max(160)).min(1).max(5),
+});
 
 function generateFallbackDailyBriefing(context: {
   teamName: string;
@@ -995,7 +1043,7 @@ ${context.nextOpponentName ? `- 다음 상대: ${context.nextOpponentName} (${co
 JSON 형식: {"briefing": "일간 요약 (100자 이내)", "alerts": ["주의사항1", "주의사항2"], "advice": ["조언1", "조언2"]}`;
 
       const augmented = await safeAugment(prompt, `${context.teamName} 분석`);
-      return await chatWithLlmJson<DailyBriefing>(augmented);
+      return await chatWithLlmJson<DailyBriefing>(augmented, { schema: dailyBriefingSchema });
     } catch {
       // AI 실패 -> 폴백
     }
@@ -1014,6 +1062,13 @@ export interface SeasonSummary {
   keyMoments: string[];
   outlook: string;
 }
+
+const seasonSummarySchema = z.object({
+  narrative: z.string().min(1).max(400),
+  highlights: z.array(z.string().min(1).max(120)).min(1).max(5),
+  keyMoments: z.array(z.string().min(1).max(120)).min(1).max(5),
+  outlook: z.string().min(1).max(160),
+});
 
 function generateFallbackSeasonSummary(context: {
   teamName: string;
@@ -1112,7 +1167,7 @@ ${context.rookieBreakout ? `- 신인 활약: ${context.rookieBreakout}` : ''}
 JSON 형식: {"narrative": "시즌 이야기 (200자 이내)", "highlights": ["하이라이트1", "하이라이트2"], "keyMoments": ["핵심순간1", "핵심순간2"], "outlook": "다음 시즌 전망 (50자 이내)"}`;
 
       const augmented = await safeAugment(prompt, `시즌 리뷰 ${context.teamName}`);
-      return await chatWithLlmJson<SeasonSummary>(augmented);
+      return await chatWithLlmJson<SeasonSummary>(augmented, { schema: seasonSummarySchema });
     } catch {
       // AI 실패 -> 폴백
     }
@@ -1437,6 +1492,15 @@ export interface LiveChatMessage {
   timestamp: number;
 }
 
+const liveChatMessageSchema = z.object({
+  username: z.string().min(1).max(30),
+  message: z.string().min(1).max(120),
+  type: z.enum(['cheer', 'flame', 'meme', 'analysis', 'neutral']),
+  timestamp: z.number(),
+});
+
+const liveChatMessagesSchema = z.array(liveChatMessageSchema).min(1).max(12);
+
 const LIVE_CHAT_USERNAMES = [
   '롤잘알', '페이커팬', 'LoL중독자', '겐지사랑', '대리장인',
   'T1화이팅', '디시롤갤', '브실골', '챌린저꿈', '서폿주세요',
@@ -1588,7 +1652,7 @@ export async function generateLiveChatMessages(context: {
 JSON 형식: [{"username": "닉네임", "message": "메시지 (30자 이내)", "type": "cheer|flame|meme|analysis|neutral", "timestamp": ${context.gameTime}}]`;
 
       const augmented = await safeAugment(prompt, `${context.event} 채팅 반응`);
-      return await chatWithLlmJson<LiveChatMessage[]>(augmented);
+      return await chatWithLlmJson<LiveChatMessage[]>(augmented, { schema: liveChatMessagesSchema });
     } catch {
       // AI 실패 -> 폴백
     }
@@ -1608,6 +1672,17 @@ export interface PlayerConversation {
   loyaltyChange: number;
   revealedInfo?: string;
 }
+
+const playerConversationSchema = z.object({
+  playerResponse: z.string().min(1).max(220),
+  mood: z.enum(['happy', 'neutral', 'frustrated', 'angry', 'shy']),
+  moraleChange: z.number().min(-5).max(5),
+  loyaltyChange: z.number().min(-3).max(3),
+  revealedInfo: z.string().max(160).optional().nullable(),
+}).transform((value) => ({
+  ...value,
+  revealedInfo: value.revealedInfo ?? undefined,
+}));
 
 type ConversationTopic = 'general' | 'performance' | 'future' | 'team' | 'personal';
 
@@ -1711,7 +1786,7 @@ ${historyText}
 JSON 형식: {"playerResponse": "응답", "mood": "happy|neutral|frustrated|angry|shy", "moraleChange": -5~5, "loyaltyChange": -3~3, "revealedInfo": "공개 정보 또는 null"}`;
 
       const augmented = await safeAugment(prompt, `선수 면담 ${context.topic}`);
-      return await chatWithLlmJson<PlayerConversation>(augmented);
+      return await chatWithLlmJson<PlayerConversation>(augmented, { schema: playerConversationSchema });
     } catch {
       // AI 실패 -> 폴백
     }
@@ -1752,6 +1827,14 @@ export interface FanLetter {
   type: 'support' | 'criticism' | 'advice' | 'confession' | 'meme';
   replyOptions: string[];
 }
+
+const fanLetterSchema = z.object({
+  from: z.string().min(1).max(60),
+  subject: z.string().min(1).max(120),
+  content: z.string().min(1).max(300),
+  type: z.enum(['support', 'criticism', 'advice', 'confession', 'meme']),
+  replyOptions: z.array(z.string().min(1).max(120)).min(2).max(5),
+});
 
 const FAN_NICKNAMES = [
   '열혈팬01', '골드장인', '다이아지망생', 'e스포츠매니아', '새벽관전러',
@@ -1817,7 +1900,7 @@ ${context.recentEvent ? `최근 이벤트: ${context.recentEvent}` : ''}
 JSON 형식: {"from": "팬 닉네임", "subject": "제목 (15자 이내)", "content": "내용 (100자 이내)", "type": "support|criticism|advice|confession|meme", "replyOptions": ["답장1", "답장2", "답장3"]}`;
 
       const augmented = await safeAugment(prompt, `팬레터 ${context.teamName}`);
-      return await chatWithLlmJson<FanLetter>(augmented);
+      return await chatWithLlmJson<FanLetter>(augmented, { schema: fanLetterSchema });
     } catch {
       // AI 실패 -> 폴백
     }

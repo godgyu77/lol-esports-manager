@@ -13,12 +13,12 @@ export interface ManagerProfile {
 }
 
 export interface ManagerStats {
-  tacticalKnowledge: number;   // 전술 지식 (1-20)
-  motivation: number;          // 동기부여 (1-20)
-  discipline: number;          // 규율 (1-20)
-  adaptability: number;        // 적응력 (1-20)
-  scoutingEye: number;         // 선구안 (1-20)
-  mediaHandling: number;       // 미디어 대응 (1-20)
+  tacticalKnowledge: number;
+  motivation: number;
+  discipline: number;
+  adaptability: number;
+  scoutingEye: number;
+  mediaHandling: number;
 }
 
 export interface ManagerPhilosophy {
@@ -36,13 +36,12 @@ export const MANAGER_BG_LABELS: Record<ManagerBackground, string> = {
 };
 
 export const MANAGER_BG_DESC: Record<ManagerBackground, string> = {
-  ex_player: '높은 전술 지식과 명성. 규율은 낮은 편.',
-  analyst: '균형잡힌 능력치. 스카우팅과 적응력이 강점.',
-  rookie: '모든 능력치가 낮지만 성장 가능성이 높음.',
-  academy_coach: '동기부여와 규율이 높음. 명성이 낮음.',
+  ex_player: '높은 경기 감각과 초반 명성이 강점입니다. 선수단 장악력이 좋습니다.',
+  analyst: '전술 준비와 적응력, 스카우팅 시야가 두드러지는 유형입니다.',
+  rookie: '모든 능력치는 평범하지만 장기적인 성장 가능성이 높습니다.',
+  academy_coach: '동기부여와 규율 관리가 강점이며 어린 선수 육성에 잘 맞습니다.',
 };
 
-/** 배경별 초기 스탯 보정 */
 export const MANAGER_BG_STATS: Record<ManagerBackground, { stats: ManagerStats; reputation: number }> = {
   ex_player: {
     stats: { tacticalKnowledge: 15, motivation: 12, discipline: 8, adaptability: 11, scoutingEye: 10, mediaHandling: 14 },
@@ -67,6 +66,6 @@ export const MANAGER_STAT_LABELS: Record<keyof ManagerStats, string> = {
   motivation: '동기부여',
   discipline: '규율',
   adaptability: '적응력',
-  scoutingEye: '선구안',
+  scoutingEye: '스카우팅',
   mediaHandling: '미디어 대응',
 };

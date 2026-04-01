@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { CommandPalette } from '../../../components/CommandPalette';
 import { ErrorBoundary } from '../../../components/ErrorBoundary';
 import { useAutoSave } from '../../../hooks/useAutoSave';
 import { useKeyboardShortcuts } from '../../../hooks/useKeyboardShortcuts';
 import { useNavBadges } from '../../../hooks/useNavBadges';
 import { useGameStore } from '../../../stores/gameStore';
+import { useMatchStore } from '../../../stores/matchStore';
 import { formatAmount } from '../../../utils/formatUtils';
 
 interface NavItem {
@@ -25,7 +26,7 @@ interface NavGroup {
 const NAV_GROUPS: NavGroup[] = [
   {
     id: 'home',
-    title: '홈',
+    title: '기본',
     defaultExpanded: true,
     items: [
       { to: '/manager', label: '대시보드', icon: 'H', end: true },
@@ -72,6 +73,7 @@ const NAV_GROUPS: NavGroup[] = [
 
 export function ManagerDashboard() {
   const navigate = useNavigate();
+  const location = useLocation();
   const save = useGameStore((state) => state.save);
   const season = useGameStore((state) => state.season);
   const teams = useGameStore((state) => state.teams);
@@ -81,12 +83,26 @@ export function ManagerDashboard() {
     Object.fromEntries(NAV_GROUPS.map((group) => [group.id, group.defaultExpanded])),
   );
 
+  const matchActive = useMatchStore((state) => state.matchActive);
+  const requestNavigationPause = useMatchStore((state) => state.requestNavigationPause);
+
   useAutoSave();
   useKeyboardShortcuts({
     onSave: () => navigate('/save-load'),
   });
 
+  const isMatchRoute = location.pathname.startsWith('/manager/match');
+
   useEffect(() => {
+    if (matchActive && !isMatchRoute) {
+      requestNavigationPause();
+      navigate('/manager/match', { replace: true });
+    }
+  }, [isMatchRoute, matchActive, navigate, requestNavigationPause]);
+
+  useEffect(() => {
+    if (isMatchRoute) return;
+
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
@@ -96,7 +112,7 @@ export function ManagerDashboard() {
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
+  }, [isMatchRoute]);
 
   const toggleGroup = useCallback((groupId: string) => {
     setExpandedGroups((prev) => ({ ...prev, [groupId]: !prev[groupId] }));
@@ -104,27 +120,41 @@ export function ManagerDashboard() {
 
   const badges = useNavBadges(save?.userTeamId ?? '', season?.id ?? 0);
   const userTeam = teams.find((team) => team.id === save?.userTeamId);
-  const seasonLabel = season ? `${season.year} ${season.split === 'spring' ? 'Spring' : 'Summer'}` : '-';
+  const seasonLabel = season ? `${season.year} ${season.split === 'spring' ? '스프링' : '서머'}` : '-';
   const dateLabel = season?.currentDate ?? '-';
   const weekLabel = season ? `W${season.currentWeek}` : '-';
+
+  if (isMatchRoute) {
+    return (
+      <div className="fm-layout fm-layout--match-focus">
+        <div className="fm-main">
+          <div className="fm-content fm-content--match-focus">
+            <ErrorBoundary>
+              <Outlet />
+            </ErrorBoundary>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fm-layout">
       {sidebarOpen && <div className="fm-sidebar-backdrop" onClick={() => setSidebarOpen(false)} />}
 
-      <nav className={`fm-sidebar${sidebarOpen ? ' fm-sidebar--open' : ''}`} aria-label="Manager navigation">
+      <nav className={`fm-sidebar${sidebarOpen ? ' fm-sidebar--open' : ''}`} aria-label="매니저 내비게이션">
         <div className="fm-sidebar__header">
           <div className="fm-sidebar__team-logo">{userTeam?.shortName?.slice(0, 2) ?? 'LM'}</div>
           <div>
-            <div className="fm-sidebar__team-name">{userTeam?.name ?? 'My Team'}</div>
+            <div className="fm-sidebar__team-name">{userTeam?.name ?? '내 팀'}</div>
             <div className="fm-sidebar__team-sub">감독 겸 단장</div>
           </div>
         </div>
 
         <div className="fm-sidebar__focus">
-          <span className="fm-sidebar__focus-label">이번 주 포인트</span>
+          <span className="fm-sidebar__focus-label">이번 주 포커스</span>
           <p className="fm-sidebar__focus-text">
-            시즌 진행은 날짜만 넘기고, 훈련과 휴식은 주간 설정이 자동 적용됩니다.
+            시즌 진행, 뉴스 확인, 훈련 조정처럼 지금 바로 필요한 행동부터 정리해두는 편이 운영 리듬을 잡기 좋습니다.
           </p>
         </div>
 
@@ -181,7 +211,7 @@ export function ManagerDashboard() {
 
       <div className="fm-main">
         <div className="fm-topbar">
-          <button className="fm-sidebar-toggle" onClick={() => setSidebarOpen((prev) => !prev)} aria-label="Toggle sidebar">
+          <button className="fm-sidebar-toggle" onClick={() => setSidebarOpen((prev) => !prev)} aria-label="사이드바 열기">
             =
           </button>
           <div className="fm-topbar__section">

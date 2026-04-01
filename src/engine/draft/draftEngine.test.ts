@@ -173,10 +173,10 @@ describe('executeDraftAction', () => {
     for (let i = 0; i < 6; i++) {
       executeDraftAction(state, `ban_${i}`);
     }
-    // 포지션 없이 픽 시도
     const success = executeDraftAction(state, 'aatrox');
 
-    expect(success).toBe(false);
+    expect(success).toBe(true);
+    expect(state.blue.picks[0]).toEqual({ championId: 'aatrox', position: 'top' });
   });
 
   it('픽 시 포지션 있으면 성공', () => {

@@ -27,8 +27,15 @@ export function ChampionGrid({
   onFilterChange,
 }: ChampionGridProps) {
   return (
-    <div className="draft-champ-grid">
-      {/* 포지션 필터 */}
+    <div className="draft-champ-grid fm-card">
+      <div className="draft-champ-grid-header">
+        <div>
+          <span className="draft-grid-kicker">Champion Pool</span>
+          <h3 className="draft-grid-title">선픽 후보</h3>
+        </div>
+        <span className="draft-grid-count">{filteredChampions.length}명 선택 가능</span>
+      </div>
+
       <div className="draft-filter-row">
         <button
           className={`draft-filter-btn ${filterPosition === 'all' ? 'draft-filter-btn--active' : ''}`}
@@ -47,11 +54,14 @@ export function ChampionGrid({
         ))}
       </div>
 
+      <div className="draft-grid-note">
+        픽 단계에서는 포지션 상관없이 먼저 챔피언을 확보하고, 마지막 스왑에서 선수 자리에 재배치할 수 있습니다.
+      </div>
+
       <div className="draft-champ-list">
         {filteredChampions.map((champ) => {
           const isFearlessBlocked = fearlessDisabledIds?.has(champ.id) ?? false;
           const isSelected = selectedChampion === champ.id;
-
           const itemClass = [
             'draft-champ-item',
             isFearlessBlocked ? 'draft-champ-item--fearless' : '',
@@ -59,21 +69,20 @@ export function ChampionGrid({
           ].filter(Boolean).join(' ');
 
           return (
-            <div
+            <button
               key={champ.id}
+              type="button"
               className={itemClass}
               onClick={() => !isFearlessBlocked && onSelectChampion(champ.id)}
-              title={isFearlessBlocked ? '피어리스: 이전 세트에서 사용됨' : undefined}
+              title={isFearlessBlocked ? '하드 피어리스 규칙으로 이번 세트에서는 사용할 수 없습니다.' : undefined}
             >
               <span className="draft-champ-name">{champ.nameKo}</span>
               {isFearlessBlocked ? (
-                <span className="draft-fearless-tag">사용됨</span>
+                <span className="draft-fearless-tag">제한됨</span>
               ) : (
-                <span className={`draft-champ-tier ${getTierClass(champ.tier)}`}>
-                  {champ.tier}
-                </span>
+                <span className={`draft-champ-tier ${getTierClass(champ.tier)}`}>{champ.tier}</span>
               )}
-            </div>
+            </button>
           );
         })}
       </div>

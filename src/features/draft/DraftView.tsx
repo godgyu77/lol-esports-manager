@@ -1,149 +1,183 @@
-/**
- * 밴픽 UI
- * - 프로 리그 표준 밴픽 순서 시각화
- * - 감독 모드: 유저가 직접 밴/픽 + AI 추천
- * - 선수 모드: AI가 밴/픽, 유저는 관전
- * - 밴픽 완료 → 라이브 매치로 이동
- */
-
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useGameStore } from '../../stores/gameStore';
-import { useBgm } from '../../hooks/useBgm';
+import { soundManager } from '../../audio/soundManager';
+import { generateDraftAdvice, type DraftAdvice } from '../../ai/advancedAiService';
+import { PlayerIdentityCard } from '../../components/PlayerIdentityCard';
+import { CHAMPION_DB } from '../../data/championDb';
+import { getPlayersByTeamId } from '../../db/queries';
 import {
-  createDraftState,
-  executeDraftAction,
-  swapChampions,
-  finalizeDraft,
   aiSelectBan,
   aiSelectPick,
   buildDraftTeamInfo,
+  createDraftState,
+  executeDraftAction,
+  finalizeDraft,
   getRecommendedBans,
   getRecommendedPicks,
+  swapChampions,
   type DraftState,
   type DraftTeamInfo,
 } from '../../engine/draft/draftEngine';
-import { CHAMPION_DB } from '../../data/championDb';
-import { getPlayersByTeamId } from '../../db/queries';
-import type { Position } from '../../types/game';
+import { useBgm } from '../../hooks/useBgm';
+import { useGameStore } from '../../stores/gameStore';
+import { useMatchStore } from '../../stores/matchStore';
+import type { Player } from '../../types/player';
 import { BanSection } from './BanSection';
-import { PickSection } from './PickSection';
 import { ChampionGrid } from './ChampionGrid';
 import { DraftCenterPanel } from './DraftCenterPanel';
-import { soundManager } from '../../audio/soundManager';
-import { generateDraftAdvice, type DraftAdvice } from '../../ai/advancedAiService';
+import { PickSection } from './PickSection';
 import './draft.css';
+
+const POSITION_LABELS: Record<'top' | 'jungle' | 'mid' | 'adc' | 'support', string> = {
+  top: '탑',
+  jungle: '정글',
+  mid: '미드',
+  adc: '원딜',
+  support: '서포터',
+};
+
+function getPlayerSwapStatus(player: Player | undefined): { label: string; tone: 'good' | 'warning' | 'danger' | 'neutral' } {
+  if (!player) return { label: '정보 없음', tone: 'neutral' };
+  if (player.mental.morale >= 75) return { label: '컨디션 좋음', tone: 'good' };
+  if (player.mental.morale >= 55) return { label: '준비 완료', tone: 'neutral' };
+  if (player.mental.morale >= 40) return { label: '집중 필요', tone: 'warning' };
+  return { label: '폼 조정 필요', tone: 'danger' };
+}
+
+function buildSwapTags(player: Player | undefined, championId: string): string[] {
+  if (!player) return [];
+
+  const tags: string[] = [];
+  const topPool = [...player.championPool]
+    .sort((left, right) => right.proficiency - left.proficiency)
+    .slice(0, 3);
+
+  if (topPool.some((entry) => entry.championId === championId)) {
+    tags.push('주력픽');
+  } else {
+    tags.push('전략픽');
+  }
+
+  if (player.playstyle === 'aggressive') tags.push('교전형');
+  if (player.playstyle === 'supportive') tags.push('보조형');
+  if (player.playstyle === 'versatile') tags.push('유연함');
+
+  return tags;
+}
 
 export function DraftView() {
   useBgm('draft');
+
   const navigate = useNavigate();
-  const save = useGameStore((s) => s.save);
-  const pendingMatch = useGameStore((s) => s.pendingUserMatch);
-  const teams = useGameStore((s) => s.teams);
-  const setDayPhase = useGameStore((s) => s.setDayPhase);
-  const setDraftResult = useGameStore((s) => s.setDraftResult);
-  const fearlessPool = useGameStore((s) => s.fearlessPool);
-  const mode = useGameStore((s) => s.mode);
+  const save = useGameStore((state) => state.save);
+  const pendingMatch = useGameStore((state) => state.pendingUserMatch);
+  const teams = useGameStore((state) => state.teams);
+  const setDayPhase = useGameStore((state) => state.setDayPhase);
+  const setDraftResult = useGameStore((state) => state.setDraftResult);
+  const fearlessPool = useGameStore((state) => state.fearlessPool);
+  const mode = useGameStore((state) => state.mode);
+  const hardFearlessSeries = useMatchStore((state) => state.hardFearlessSeries);
+  const currentGameNum = useMatchStore((state) => state.currentGameNum);
+  const seriesFearlessPool = useMatchStore((state) => state.seriesFearlessPool);
+  const setCurrentGameDraftRequired = useMatchStore((state) => state.setCurrentGameDraftRequired);
   const basePath = mode === 'player' ? '/player' : '/manager';
 
   const [draft, setDraft] = useState<DraftState | null>(null);
   const [blueInfo, setBlueInfo] = useState<DraftTeamInfo | null>(null);
   const [redInfo, setRedInfo] = useState<DraftTeamInfo | null>(null);
+  const [homeRoster, setHomeRoster] = useState<Player[]>([]);
+  const [awayRoster, setAwayRoster] = useState<Player[]>([]);
   const [selectedChampion, setSelectedChampion] = useState<string | null>(null);
-  const [selectedPosition, setSelectedPosition] = useState<Position>('mid');
   const [isAiTurn, setIsAiTurn] = useState(false);
-  const [filterPosition, setFilterPosition] = useState<Position | 'all'>('all');
+  const [filterPosition, setFilterPosition] = useState<'top' | 'jungle' | 'mid' | 'adc' | 'support' | 'all'>('all');
   const [aiAdvice, setAiAdvice] = useState<DraftAdvice | null>(null);
   const [aiAdviceLoading, setAiAdviceLoading] = useState(false);
+  const [swapSelection, setSwapSelection] = useState<number | null>(null);
 
   const userTeamId = save?.userTeamId ?? '';
   const isUserBlue = pendingMatch?.teamHomeId === userTeamId;
   const userSide = isUserBlue ? 'blue' : 'red';
-  const homeTeam = teams.find((t) => t.id === pendingMatch?.teamHomeId);
-  const awayTeam = teams.find((t) => t.id === pendingMatch?.teamAwayId);
+  const homeTeam = teams.find((team) => team.id === pendingMatch?.teamHomeId);
+  const awayTeam = teams.find((team) => team.id === pendingMatch?.teamAwayId);
 
-  // 초기화
   useEffect(() => {
     if (!pendingMatch) return;
 
     const init = async () => {
-      const homePlayers = await getPlayersByTeamId(pendingMatch.teamHomeId);
-      const awayPlayers = await getPlayersByTeamId(pendingMatch.teamAwayId);
+      const [homePlayers, awayPlayers] = await Promise.all([
+        getPlayersByTeamId(pendingMatch.teamHomeId),
+        getPlayersByTeamId(pendingMatch.teamAwayId),
+      ]);
 
-      const blue = buildDraftTeamInfo(homePlayers);
-      const red = buildDraftTeamInfo(awayPlayers);
-      setBlueInfo(blue);
-      setRedInfo(red);
-      const isFearless = pendingMatch.fearlessDraft ?? false;
-      setDraft(createDraftState(isFearless, isFearless ? fearlessPool : undefined));
+      setHomeRoster(homePlayers);
+      setAwayRoster(awayPlayers);
+      setBlueInfo(buildDraftTeamInfo(homePlayers));
+      setRedInfo(buildDraftTeamInfo(awayPlayers));
+
+      const isSeriesDraft = pendingMatch.boFormat !== 'Bo1';
+      const isFearless =
+        hardFearlessSeries ||
+        pendingMatch.hardFearlessSeries === true ||
+        pendingMatch.fearlessDraft === true ||
+        isSeriesDraft;
+      const pool = currentGameNum > 1 ? seriesFearlessPool : fearlessPool;
+      setDraft(createDraftState(isFearless, isFearless ? pool : undefined));
+      setSelectedChampion(null);
+      setSwapSelection(null);
     };
 
-    init();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- fearlessPool은 초기화 시점에만 사용. 밴픽 중 변경되지 않으므로 deps 제외
-  }, [pendingMatch]);
+    void init();
+  }, [currentGameNum, fearlessPool, hardFearlessSeries, pendingMatch, seriesFearlessPool]);
 
-  // AI 턴 자동 처리
   useEffect(() => {
     if (!draft || !blueInfo || !redInfo || draft.isComplete) return;
 
-    // 선수 모드: AI가 양쪽 다 밴픽 (유저는 관전)
-    const currentIsUser = mode === 'manager' && draft.currentSide === userSide;
-    if (currentIsUser) {
+    const currentIsUserTurn = mode === 'manager' && draft.currentSide === userSide;
+    if (currentIsUserTurn) {
       setIsAiTurn(false);
       return;
     }
 
-    // AI 턴
     setIsAiTurn(true);
     const timer = setTimeout(async () => {
-      const newDraft = structuredClone(draft);
-
+      const nextDraft = structuredClone(draft);
       if (draft.currentActionType === 'ban') {
         const opponentInfo = draft.currentSide === 'blue' ? redInfo : blueInfo;
-        const champId = await aiSelectBan(newDraft, opponentInfo, CHAMPION_DB);
-        executeDraftAction(newDraft, champId);
+        const championId = await aiSelectBan(nextDraft, opponentInfo, CHAMPION_DB);
+        executeDraftAction(nextDraft, championId);
       } else {
         const teamInfo = draft.currentSide === 'blue' ? blueInfo : redInfo;
-        const { championId, position } = await aiSelectPick(
-          newDraft,
-          draft.currentSide,
-          teamInfo,
-          CHAMPION_DB,
-        );
-        executeDraftAction(newDraft, championId, position);
+        const { championId } = await aiSelectPick(nextDraft, draft.currentSide, teamInfo, CHAMPION_DB);
+        executeDraftAction(nextDraft, championId);
       }
-
-      setDraft(newDraft);
+      setDraft(nextDraft);
       setIsAiTurn(false);
-    }, 800); // AI 딜레이
+    }, 900);
 
     return () => clearTimeout(timer);
-  }, [draft, userSide, blueInfo, redInfo, mode]);
+  }, [blueInfo, draft, mode, redInfo, userSide]);
 
-  // 추천 목록
   const recommendations = useMemo(() => {
-    if (!draft || !blueInfo || !redInfo || draft.isComplete) return [];
-    if (draft.currentSide !== userSide) return [];
+    if (!draft || !blueInfo || !redInfo || draft.isComplete || draft.currentSide !== userSide) return [];
 
     if (draft.currentActionType === 'ban') {
       const opponentInfo = isUserBlue ? redInfo : blueInfo;
-      return getRecommendedBans(draft, opponentInfo, CHAMPION_DB).map((r) => ({
-        ...r,
-        position: undefined as Position | undefined,
-      }));
-    } else {
-      const teamInfo = isUserBlue ? blueInfo : redInfo;
-      return getRecommendedPicks(draft, userSide, teamInfo, CHAMPION_DB).map((r) => ({
-        championId: r.championId,
-        reason: r.reason,
-        position: r.position,
+      return getRecommendedBans(draft, opponentInfo, CHAMPION_DB).map((item) => ({
+        championId: item.championId,
+        reason: item.reason,
       }));
     }
-  }, [draft, userSide, blueInfo, redInfo, isUserBlue]);
 
-  // 유저 턴 시 AI 조언 생성
+    const teamInfo = isUserBlue ? blueInfo : redInfo;
+    return getRecommendedPicks(draft, userSide, teamInfo, CHAMPION_DB).map((item) => ({
+      championId: item.championId,
+      reason: item.reason,
+    }));
+  }, [blueInfo, draft, isUserBlue, redInfo, userSide]);
+
   useEffect(() => {
     if (!draft || draft.isComplete) return;
+
     const currentIsUserTurn = mode === 'manager' && draft.currentSide === userSide;
     if (!currentIsUserTurn) {
       setAiAdvice(null);
@@ -153,9 +187,10 @@ export function DraftView() {
     setAiAdviceLoading(true);
     setAiAdvice(null);
 
-    const recommendedBans = draft.currentActionType === 'ban' && recommendations.length > 0
-      ? recommendations.map(r => r.championId ?? '').filter(Boolean)
-      : undefined;
+    const recommendedBans =
+      draft.currentActionType === 'ban' && recommendations.length > 0
+        ? recommendations.map((item) => item.championId ?? '').filter(Boolean)
+        : undefined;
 
     generateDraftAdvice({
       phase: draft.currentActionType,
@@ -164,216 +199,249 @@ export function DraftView() {
       opponentTeam: isUserBlue ? (awayTeam?.shortName ?? '레드') : (homeTeam?.shortName ?? '블루'),
       myBans: isUserBlue ? draft.blue.bans : draft.red.bans,
       opponentBans: isUserBlue ? draft.red.bans : draft.blue.bans,
-      myPicks: (isUserBlue ? draft.blue.picks : draft.red.picks).map(p => p.championId),
-      opponentPicks: (isUserBlue ? draft.red.picks : draft.blue.picks).map(p => p.championId),
+      myPicks: (isUserBlue ? draft.blue.picks : draft.red.picks).map((pick) => pick.championId),
+      opponentPicks: (isUserBlue ? draft.red.picks : draft.blue.picks).map((pick) => pick.championId),
       recommendedBans,
-    }).then(advice => {
-      setAiAdvice(advice);
-    }).catch(() => {
-      // AI 실패 시 조언 표시하지 않음
-    }).finally(() => {
-      setAiAdviceLoading(false);
-    });
-  }, [draft, mode, userSide, isUserBlue, homeTeam?.shortName, awayTeam?.shortName, recommendations]);
+    })
+      .then(setAiAdvice)
+      .catch(() => {})
+      .finally(() => setAiAdviceLoading(false));
+  }, [awayTeam?.shortName, draft, homeTeam?.shortName, isUserBlue, mode, recommendations, userSide]);
 
-  // 스왑용 선택 상태
-  const [swapSelection, setSwapSelection] = useState<number | null>(null);
-
-  // 밴픽 완료 시 (스왑 완료 후)
   useEffect(() => {
-    if (draft?.isComplete) {
-      setDraftResult(draft);
-      const timer = setTimeout(() => {
-        setDayPhase('live_match');
-        navigate(`${basePath}/match`);
-      }, 1500);
-      return () => clearTimeout(timer);
-    }
-  }, [draft, navigate, setDayPhase, setDraftResult, basePath]);
+    if (!draft?.isComplete) return;
 
-  const handleSwap = useCallback((index: number) => {
+    setDraftResult(draft);
+    setCurrentGameDraftRequired(false);
+
+    const timer = setTimeout(() => {
+      setDayPhase('live_match');
+      navigate(`${basePath}/match`);
+    }, 1400);
+
+    return () => clearTimeout(timer);
+  }, [basePath, draft, navigate, setCurrentGameDraftRequired, setDayPhase, setDraftResult]);
+
+  const handleSwapCard = useCallback((index: number) => {
     if (!draft || draft.phase !== 'swap') return;
+
     if (swapSelection === null) {
       setSwapSelection(index);
-    } else {
-      if (swapSelection !== index) {
-        const newDraft = structuredClone(draft);
-        swapChampions(newDraft, userSide, swapSelection, index);
-        setDraft(newDraft);
-      }
-      setSwapSelection(null);
+      return;
     }
+
+    if (swapSelection !== index) {
+      const nextDraft = structuredClone(draft);
+      swapChampions(nextDraft, userSide, swapSelection, index);
+      setDraft(nextDraft);
+    }
+
+    setSwapSelection(null);
   }, [draft, swapSelection, userSide]);
 
   const handleFinalizeDraft = useCallback(() => {
     if (!draft) return;
-    const newDraft = structuredClone(draft);
-    finalizeDraft(newDraft);
-    setDraft(newDraft);
+    const nextDraft = structuredClone(draft);
+    finalizeDraft(nextDraft);
+    setDraft(nextDraft);
   }, [draft]);
 
   const handleConfirm = useCallback(() => {
     if (!draft || !selectedChampion) return;
-
-    const newDraft = structuredClone(draft);
-    const pos = draft.currentActionType === 'pick' ? selectedPosition : undefined;
-    const success = executeDraftAction(newDraft, selectedChampion, pos);
-
-    if (success) {
+    const nextDraft = structuredClone(draft);
+    if (executeDraftAction(nextDraft, selectedChampion)) {
       soundManager.play('draft_pick');
-      setDraft(newDraft);
+      setDraft(nextDraft);
       setSelectedChampion(null);
     }
-  }, [draft, selectedChampion, selectedPosition]);
+  }, [draft, selectedChampion]);
 
-  // 챔피언 목록 필터링 (피어리스 제한 챔피언은 비활성으로 표시)
   const { filteredChampions, fearlessDisabledIds } = useMemo(() => {
     if (!draft) return { filteredChampions: [], fearlessDisabledIds: new Set<string>() };
 
-    // 피어리스로 인해 사용 불가한 챔피언 ID 수집 (현재 턴 side만 제한)
     const disabled = new Set<string>();
     if (draft.fearlessMode && draft.currentSide) {
       const pool = draft.currentSide === 'blue' ? draft.fearlessPool.blue : draft.fearlessPool.red;
-      for (const id of pool) disabled.add(id);
+      pool.forEach((id) => disabled.add(id));
     }
 
-    const filtered = CHAMPION_DB.filter((c) => {
-      // 밴/픽된 챔피언은 제외 (피어리스 제한은 제외하지 않고 비활성 표시)
-      if (draft.bannedChampions.includes(c.id)) return false;
-      if (draft.pickedChampions.includes(c.id)) return false;
-      if (filterPosition !== 'all' && c.primaryRole !== filterPosition) return false;
-      return true;
-    });
-
-    return { filteredChampions: filtered, fearlessDisabledIds: disabled };
+    return {
+      filteredChampions: CHAMPION_DB.filter((champion) => {
+        if (draft.bannedChampions.includes(champion.id)) return false;
+        if (draft.pickedChampions.includes(champion.id)) return false;
+        if (filterPosition !== 'all' && champion.primaryRole !== filterPosition) return false;
+        return true;
+      }),
+      fearlessDisabledIds: disabled,
+    };
   }, [draft, filterPosition]);
 
   if (!pendingMatch || !draft) {
-    return <p className="fm-text-muted fm-text-md">밴픽 데이터 로딩 중...</p>;
+    return <p className="fm-text-muted fm-text-md">밴픽 화면을 준비하는 중입니다...</p>;
   }
 
   const currentIsUser = mode === 'manager' && draft.currentSide === userSide;
+  const userTeamPicks = userSide === 'blue' ? draft.blue.picks : draft.red.picks;
+  const userRoster = userSide === 'blue' ? homeRoster : awayRoster;
 
   return (
-    <div className="draft-container">
-      {/* 피어리스 드래프트 표시 */}
-      {draft.fearlessMode && (
-        <div className="draft-fearless-banner">
-          FEARLESS DRAFT — 이전 세트에서 사용한 챔피언 재사용 불가
-          {(fearlessPool.blue.length > 0 || fearlessPool.red.length > 0) && (
-            <span className="draft-fearless-count">
-              (블루 {fearlessPool.blue.length}챔 / 레드 {fearlessPool.red.length}챔 제한)
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* 상단: 팀 표시 */}
-      <div className="draft-header">
-        <div className="draft-team-header draft-team-header--blue">
-          <span className="draft-team-side">블루</span>
-          <span className="draft-team-name">{homeTeam?.shortName ?? '블루팀'}</span>
-          {isUserBlue && <span className="draft-user-badge">YOU</span>}
-        </div>
-        <div className="draft-vs-text">VS</div>
-        <div className="draft-team-header draft-team-header--red">
-          <span className="draft-team-side">레드</span>
-          <span className="draft-team-name">{awayTeam?.shortName ?? '레드팀'}</span>
-          {!isUserBlue && <span className="draft-user-badge">YOU</span>}
-        </div>
-      </div>
-
-      {/* 밴 목록 */}
-      <BanSection
-        blueBans={draft.blue.bans}
-        redBans={draft.red.bans}
-        championDb={CHAMPION_DB}
-      />
-
-      {/* 픽 목록 */}
-      <div className="draft-pick-section">
-        <PickSection
-          picks={draft.blue.picks}
-          color="#3498db"
-          championDb={CHAMPION_DB}
-        />
-
-        {/* 중앙: 현재 상태 */}
-        <DraftCenterPanel
-          draft={draft}
-          isAiTurn={isAiTurn}
-          currentIsUser={currentIsUser}
-          selectedChampion={selectedChampion}
-          selectedPosition={selectedPosition}
-          recommendations={recommendations}
-          championDb={CHAMPION_DB}
-          onSelectChampion={setSelectedChampion}
-          onSelectPosition={setSelectedPosition}
-          onConfirm={handleConfirm}
-        />
-
-        <PickSection
-          picks={draft.red.picks}
-          color="#e74c3c"
-          championDb={CHAMPION_DB}
-        />
-      </div>
-
-      {/* 챔피언 목록 (유저 턴에만 표시) */}
-      {currentIsUser && !draft.isComplete && (
-        <ChampionGrid
-          filteredChampions={filteredChampions}
-          selectedChampion={selectedChampion}
-          filterPosition={filterPosition}
-          fearlessDisabledIds={fearlessDisabledIds}
-          onSelectChampion={setSelectedChampion}
-          onFilterChange={setFilterPosition}
-        />
-      )}
-
-      {/* AI 코치 조언 (유저 턴에만 표시) */}
-      {currentIsUser && !draft.isComplete && draft.phase !== 'swap' && (
-        <div className="draft-ai-advice">
-          <span className="draft-ai-advice-label">AI 코치 조언</span>
-          {aiAdviceLoading ? (
-            <span className="draft-ai-advice-loading">분석 중...</span>
-          ) : aiAdvice ? (
-            <div className="draft-ai-advice-content">
-              <span className="draft-ai-advice-suggestion">{aiAdvice.suggestion}</span>
-              <span className="draft-ai-advice-reason">{aiAdvice.reason}</span>
-              <span className="draft-ai-advice-confidence">신뢰도: {aiAdvice.confidence}%</span>
-            </div>
-          ) : (
-            <span className="draft-ai-advice-loading">조언을 불러올 수 없습니다.</span>
-          )}
-        </div>
-      )}
-
-      {/* 챔피언 스왑 단계 */}
-      {draft.phase === 'swap' && mode === 'manager' && (
-        <div className="draft-swap-phase">
-          <h3 className="draft-swap-title">챔피언 스왑</h3>
-          <p className="draft-swap-desc">두 챔피언을 클릭하여 교환하세요. 완료 후 경기 시작 버튼을 누르세요.</p>
-          <div className="draft-swap-picks">
-            {(userSide === 'blue' ? draft.blue : draft.red).picks.map((pick, idx) => {
-              const champ = CHAMPION_DB.find(c => c.id === pick.championId);
-              return (
-                <button
-                  key={idx}
-                  className={`draft-swap-card ${swapSelection === idx ? 'draft-swap-card--selected' : ''}`}
-                  onClick={() => handleSwap(idx)}
-                >
-                  <span className="draft-swap-pos">{pick.position.toUpperCase()}</span>
-                  <span className="draft-swap-champ">{champ?.name ?? pick.championId}</span>
-                </button>
-              );
-            })}
+    <div className="draft-stage">
+      <div className="draft-stage-backdrop" />
+      <div className="draft-stage-shell">
+        <header className="draft-stage-hero fm-card">
+          <div>
+            <span className="draft-stage-kicker">Draft Room</span>
+            <h1 className="draft-stage-title">세트 {currentGameNum} 밴픽</h1>
+            <p className="draft-stage-copy">
+              포지션에 먼저 묶이지 않고 좋은 챔피언부터 선점한 뒤, 마지막 스왑에서 우리 선수에게 가장 어울리는 구도로 정리합니다.
+            </p>
           </div>
-          <button className="fm-btn fm-btn--primary fm-btn--lg" onClick={handleFinalizeDraft}>
-            경기 시작
-          </button>
+          <div className="draft-stage-status">
+            <div className="draft-stage-pill">
+              <span>현재 단계</span>
+              <strong>{draft.phase === 'swap' ? '최종 스왑' : draft.currentActionType === 'ban' ? '밴' : '픽'}</strong>
+            </div>
+            <div className="draft-stage-pill">
+              <span>진행도</span>
+              <strong>{Math.min(draft.currentStep + 1, 20)} / 20</strong>
+            </div>
+            <div className="draft-stage-pill">
+              <span>입력 방식</span>
+              <strong>{draft.phase === 'swap' ? '직접 재배치' : '자유 선픽'}</strong>
+            </div>
+          </div>
+        </header>
+
+        {draft.fearlessMode ? (
+          <div className="draft-fearless-banner">
+            하드 피어리스 드래프트: 이전 세트에 사용한 챔피언은 다음 세트에서 다시 쓸 수 없습니다.
+            {(draft.fearlessPool.blue.length > 0 || draft.fearlessPool.red.length > 0) ? (
+              <span className="draft-fearless-count">
+                블루 {draft.fearlessPool.blue.length}명 제한 / 레드 {draft.fearlessPool.red.length}명 제한
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+
+        <div className="draft-header">
+          <div className="draft-team-header draft-team-header--blue">
+            <span className="draft-team-side">BLUE</span>
+            <span className="draft-team-name">{homeTeam?.shortName ?? '블루 팀'}</span>
+            {isUserBlue ? <span className="draft-user-badge">내 팀</span> : null}
+          </div>
+          <div className="draft-vs-text">VS</div>
+          <div className="draft-team-header draft-team-header--red">
+            <span className="draft-team-side">RED</span>
+            <span className="draft-team-name">{awayTeam?.shortName ?? '레드 팀'}</span>
+            {!isUserBlue ? <span className="draft-user-badge">내 팀</span> : null}
+          </div>
         </div>
-      )}
+
+        <div className="draft-main-grid">
+          <section className="draft-board fm-card">
+            <BanSection blueBans={draft.blue.bans} redBans={draft.red.bans} championDb={CHAMPION_DB} />
+            <div className="draft-pick-section">
+              <PickSection
+                sideLabel="블루 라인업"
+                picks={draft.blue.picks}
+                color="#3b82f6"
+                championDb={CHAMPION_DB}
+                rosterPlayers={homeRoster}
+              />
+              <DraftCenterPanel
+                draft={draft}
+                isAiTurn={isAiTurn}
+                currentIsUser={currentIsUser}
+                selectedChampion={selectedChampion}
+                recommendations={recommendations}
+                championDb={CHAMPION_DB}
+                onSelectChampion={setSelectedChampion}
+                onConfirm={handleConfirm}
+              />
+              <PickSection
+                sideLabel="레드 라인업"
+                picks={draft.red.picks}
+                color="#ef4444"
+                championDb={CHAMPION_DB}
+                rosterPlayers={awayRoster}
+              />
+            </div>
+          </section>
+
+          <aside className="draft-sidebar">
+            {currentIsUser && !draft.isComplete && draft.phase !== 'swap' ? (
+              <div className="draft-ai-advice fm-card">
+                <span className="draft-ai-advice-label">AI 코치 브리핑</span>
+                {aiAdviceLoading ? (
+                  <span className="draft-ai-advice-loading">현재 밴픽 흐름을 분석하는 중입니다...</span>
+                ) : aiAdvice ? (
+                  <div className="draft-ai-advice-content">
+                    <span className="draft-ai-advice-suggestion">{aiAdvice.suggestion}</span>
+                    <span className="draft-ai-advice-reason">{aiAdvice.reason}</span>
+                    <span className="draft-ai-advice-confidence">신뢰도 {aiAdvice.confidence}%</span>
+                  </div>
+                ) : (
+                  <span className="draft-ai-advice-loading">아직 추천 내용을 불러오지 못했습니다.</span>
+                )}
+              </div>
+            ) : null}
+
+            {draft.phase === 'swap' && mode === 'manager' ? (
+              <div className="draft-swap-phase fm-card">
+                <div className="draft-swap-header">
+                  <span className="draft-swap-kicker">Final Setup</span>
+                  <h3 className="draft-swap-title">선수 배치 스왑</h3>
+                  <p className="draft-swap-desc">
+                    같은 팀 카드에서 챔피언을 하나 누르고, 바꿀 다른 카드를 누르면 챔피언만 서로 맞바뀝니다. 포지션 슬롯은 그대로 유지됩니다.
+                  </p>
+                </div>
+
+                <div className="draft-swap-picks">
+                  {userTeamPicks.map((pick, index) => {
+                    const champ = CHAMPION_DB.find((champion) => champion.id === pick.championId);
+                    const player = userRoster.find((entry) => entry.position === pick.position);
+                    const status = getPlayerSwapStatus(player);
+                    return (
+                      <button
+                        key={pick.position}
+                        className={`draft-swap-card ${swapSelection === index ? 'draft-swap-card--selected' : ''}`}
+                        onClick={() => handleSwapCard(index)}
+                      >
+                        <PlayerIdentityCard
+                          name={player?.name ?? '선수 미정'}
+                          position={pick.position}
+                          accentColor={userSide === 'blue' ? '#3b82f6' : '#ef4444'}
+                          subtitle={champ?.nameKo ?? champ?.name ?? pick.championId}
+                          tags={buildSwapTags(player, pick.championId)}
+                          meta={swapSelection === index ? '이제 바꿀 다른 카드를 선택하세요' : `${POSITION_LABELS[pick.position]} 슬롯`}
+                          statusLabel={swapSelection === index ? '선택됨' : status.label}
+                          statusTone={swapSelection === index ? 'warning' : status.tone}
+                          highlighted={swapSelection === index}
+                        />
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <button className="draft-primary-action" onClick={handleFinalizeDraft}>
+                  경기 시작 준비 완료
+                </button>
+              </div>
+            ) : null}
+
+            {currentIsUser && !draft.isComplete && draft.phase !== 'swap' ? (
+              <ChampionGrid
+                filteredChampions={filteredChampions}
+                selectedChampion={selectedChampion}
+                filterPosition={filterPosition}
+                fearlessDisabledIds={fearlessDisabledIds}
+                onSelectChampion={setSelectedChampion}
+                onFilterChange={setFilterPosition}
+              />
+            ) : null}
+          </aside>
+        </div>
+      </div>
     </div>
   );
 }

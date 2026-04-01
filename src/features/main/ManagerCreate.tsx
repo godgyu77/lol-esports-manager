@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { ManagerBackground, ManagerStats } from '../../types/manager';
 import {
@@ -11,7 +11,9 @@ import { useGameStore } from '../../stores/gameStore';
 import {
   getDominantManagerTraits,
   getInitialManagerPhilosophy,
+  getManagerIdentityEffects,
 } from '../../engine/manager/managerIdentityEngine';
+import './introFlow.css';
 
 const NATIONALITIES = [
   { value: 'KR', label: '한국' },
@@ -30,6 +32,25 @@ const BACKGROUNDS: ManagerBackground[] = ['ex_player', 'analyst', 'rookie', 'aca
 const MAX_BONUS_POINTS = 5;
 const STAT_MAX = 20;
 
+const BACKGROUND_HEADLINES: Record<ManagerBackground, { press: string; style: string }> = {
+  ex_player: {
+    press: '유명 선수 출신 감독, 시즌 운영에서도 현장 감각을 증명할 수 있을까.',
+    style: '선수 흐름을 빠르게 읽고 큰 경기에서 존재감을 만드는 운영에 잘 맞습니다.',
+  },
+  analyst: {
+    press: '준비된 전술가라는 평가, 밴픽과 분석에서 차이를 만들 수 있을까.',
+    style: '전술과 데이터 해석으로 경기 우위를 설계하는 플레이에 잘 맞습니다.',
+  },
+  rookie: {
+    press: '바닥에서 시작하는 신예 감독, 성장형 리더 프로젝트의 주인공.',
+    style: '긴 시즌 동안 정체성을 천천히 만들며 육성과 운영을 함께 끌고 가기 좋습니다.',
+  },
+  academy_coach: {
+    press: '유망주 육성 전문가, 팀 문화와 동기부여를 이끄는 감독.',
+    style: '선수 관리와 팀 분위기, 성장 곡선을 중시하는 플레이에 어울립니다.',
+  },
+};
+
 const STAT_KEYS: (keyof ManagerStats)[] = [
   'tacticalKnowledge',
   'motivation',
@@ -38,6 +59,26 @@ const STAT_KEYS: (keyof ManagerStats)[] = [
   'scoutingEye',
   'mediaHandling',
 ];
+
+function buildIdentitySummary(background: ManagerBackground) {
+  const philosophy = getInitialManagerPhilosophy(background);
+  const traits = getDominantManagerTraits(philosophy);
+  const effects = getManagerIdentityEffects(philosophy);
+  const focus =
+    effects.trainingFocusBonus > 0
+      ? '전술 준비와 경기 플랜'
+      : effects.playerMeetingBonus > 0
+        ? '선수 관리와 팀 결속'
+        : effects.pressEffectBonus > 0
+          ? '언론 대응과 대외 이미지'
+          : '균형 있는 운영';
+
+  return {
+    philosophy,
+    traits,
+    focus,
+  };
+}
 
 export function ManagerCreate() {
   const navigate = useNavigate();
@@ -57,11 +98,13 @@ export function ManagerCreate() {
   });
 
   const baseData = MANAGER_BG_STATS[background];
-  const basePhilosophy = useMemo(() => getInitialManagerPhilosophy(background), [background]);
-  const baseTraits = useMemo(() => getDominantManagerTraits(basePhilosophy), [basePhilosophy]);
+  const { philosophy: basePhilosophy, traits: baseTraits, focus } = useMemo(
+    () => buildIdentitySummary(background),
+    [background],
+  );
 
   const usedPoints = useMemo(
-    () => Object.values(bonusPoints).reduce((sum, v) => sum + v, 0),
+    () => Object.values(bonusPoints).reduce((sum, value) => sum + value, 0),
     [bonusPoints],
   );
   const remainingPoints = MAX_BONUS_POINTS - usedPoints;
@@ -74,8 +117,8 @@ export function ManagerCreate() {
     return result;
   }, [baseData, bonusPoints]);
 
-  const handleBackgroundChange = (bg: ManagerBackground) => {
-    setBackground(bg);
+  const handleBackgroundChange = (nextBackground: ManagerBackground) => {
+    setBackground(nextBackground);
     setBonusPoints({
       tacticalKnowledge: 0,
       motivation: 0,
@@ -88,8 +131,7 @@ export function ManagerCreate() {
 
   const handleAddPoint = (key: keyof ManagerStats) => {
     if (remainingPoints <= 0) return;
-    const newVal = baseData.stats[key] + bonusPoints[key] + 1;
-    if (newVal > STAT_MAX) return;
+    if (baseData.stats[key] + bonusPoints[key] >= STAT_MAX) return;
     setBonusPoints((prev) => ({ ...prev, [key]: prev[key] + 1 }));
   };
 
@@ -99,7 +141,7 @@ export function ManagerCreate() {
   };
 
   const handleCreate = () => {
-    if (!name.trim()) return;
+    if (!name.trim() || remainingPoints > 0) return;
     setPendingManager({
       name: name.trim(),
       nationality,
@@ -113,192 +155,217 @@ export function ManagerCreate() {
   };
 
   return (
-    <div className="fm-content fm-flex-col fm-items-center" style={{ minHeight: '100vh' }}>
-      <h1 className="fm-text-2xl fm-font-bold fm-text-accent fm-mb-lg">감독 프로필 생성</h1>
-
-      <div className="fm-flex-col fm-gap-lg" style={{ width: 520 }}>
-        {/* 이름 */}
-        <div className="fm-panel">
-          <div className="fm-panel__header">
-            <span className="fm-panel__title">기본 정보</span>
+    <div className="fm-content fm-flex-col fm-items-center intro-page">
+      <div className="intro-shell" style={{ maxWidth: 980 }}>
+        <header className="fm-panel intro-hero intro-panel-soft" style={{ overflow: 'hidden' }}>
+          <div className="fm-panel__body" style={{ padding: 28 }}>
+            <div className="fm-text-xs fm-font-semibold fm-text-accent fm-text-upper fm-mb-sm">Manager Identity</div>
+            <h1 className="fm-text-2xl fm-font-bold fm-text-primary" style={{ margin: 0 }}>감독 정체성을 설계하세요</h1>
+            <p className="fm-text-md fm-text-muted fm-mt-sm" style={{ lineHeight: 1.7 }}>
+              이름과 배경만 정하는 화면이 아닙니다. 앞으로 어떤 판단을 내리고, 어떤 방식으로 팀을 다루는 감독인지 정하는 단계입니다.
+              배경을 바꾸면 언론 평가와 추천 운영 스타일도 함께 달라집니다.
+            </p>
           </div>
-          <div className="fm-panel__body fm-flex-col fm-gap-md">
-            {/* 이름 필드 */}
-            <div className="fm-flex-col fm-gap-xs">
-              <label className="fm-text-sm fm-font-semibold fm-text-secondary">이름</label>
-              <input
-                className="fm-input"
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="감독 이름을 입력하세요"
-                style={{ padding: '10px 14px', fontSize: 14 }}
-              />
-            </div>
+        </header>
 
-            {/* 국적 필드 */}
-            <div className="fm-flex-col fm-gap-xs">
-              <label className="fm-text-sm fm-font-semibold fm-text-secondary">국적</label>
-              <select
-                className="fm-select"
-                value={nationality}
-                onChange={(e) => setNationality(e.target.value)}
-                style={{ padding: '10px 32px 10px 14px', fontSize: 14 }}
-              >
-                {NATIONALITIES.map((n) => (
-                  <option key={n.value} value={n.value}>
-                    {n.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* 나이 필드 */}
-            <div className="fm-flex-col fm-gap-xs">
-              <label className="fm-text-sm fm-font-semibold fm-text-secondary">나이</label>
-              <div className="fm-flex fm-items-center fm-gap-md">
-                <input
-                  type="range"
-                  min={30}
-                  max={60}
-                  value={age}
-                  onChange={(e) => setAge(Number(e.target.value))}
-                  style={{ flex: 1, accentColor: 'var(--accent)', cursor: 'pointer' }}
-                  aria-label="나이 선택"
-                />
-                <span className="fm-text-xl fm-font-semibold fm-text-accent" style={{ minWidth: 48, textAlign: 'right' }}>
-                  {age}세
-                </span>
+        <div className="intro-two-column intro-two-column--wide">
+          <div className="fm-flex-col fm-gap-lg">
+            <section className="fm-panel">
+              <div className="fm-panel__header">
+                <span className="fm-panel__title">기본 정보</span>
               </div>
-            </div>
-          </div>
-        </div>
+              <div className="fm-panel__body fm-flex-col fm-gap-md">
+                <div className="fm-flex-col fm-gap-xs">
+                  <label className="fm-text-sm fm-font-semibold fm-text-secondary">감독 이름</label>
+                  <input
+                    className="fm-input"
+                    type="text"
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                    placeholder="예: Kim Min-seok"
+                    style={{ padding: '10px 14px', fontSize: 14 }}
+                  />
+                </div>
 
-        {/* 배경 선택 */}
-        <div className="fm-panel">
-          <div className="fm-panel__header">
-            <span className="fm-panel__title">배경</span>
-          </div>
-          <div className="fm-panel__body">
-            <div className="fm-grid fm-grid--2">
-              {BACKGROUNDS.map((bg) => (
-                <button
-                  key={bg}
-                  className={`fm-card fm-card--clickable fm-flex-col fm-gap-xs ${
-                    background === bg ? 'fm-card--highlight' : ''
-                  }`}
-                  onClick={() => handleBackgroundChange(bg)}
-                >
-                  <strong className="fm-text-lg fm-text-primary">{MANAGER_BG_LABELS[bg]}</strong>
-                  <span className="fm-text-xs fm-text-muted" style={{ lineHeight: 1.4 }}>
-                    {MANAGER_BG_DESC[bg]}
-                  </span>
-                  <span className="fm-text-xs fm-text-accent fm-mt-sm">
-                    명성: {MANAGER_BG_STATS[bg].reputation}
-                  </span>
-                </button>
-              ))}
-            </div>
-            <div className="fm-card fm-mt-md">
-              <div className="fm-flex fm-justify-between fm-items-center fm-gap-md">
-                <span className="fm-text-sm fm-font-semibold fm-text-primary">초기 감독 성향</span>
-                <span className="fm-text-xs fm-text-muted">
-                  {baseTraits.length > 0 ? baseTraits.join(' / ') : '균형형'}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* 능력치 */}
-        <div className="fm-panel">
-          <div className="fm-panel__header">
-            <span className="fm-panel__title">능력치</span>
-            <span className="fm-badge fm-badge--accent">
-              남은 포인트: {remainingPoints}/{MAX_BONUS_POINTS}
-            </span>
-          </div>
-          <div className="fm-panel__body fm-flex-col fm-gap-sm">
-            {STAT_KEYS.map((key) => {
-              const base = baseData.stats[key];
-              const bonus = bonusPoints[key];
-              const total = finalStats[key];
-              return (
-                <div key={key} className="fm-flex fm-items-center fm-gap-md">
-                  <span className="fm-text-sm fm-text-secondary" style={{ width: 80, flexShrink: 0 }}>
-                    {MANAGER_STAT_LABELS[key]}
-                  </span>
-                  <div className="fm-flex fm-items-center fm-gap-sm fm-flex-1">
-                    <button
-                      className="fm-btn fm-btn--sm fm-text-accent"
-                      style={{ width: 28, height: 28, padding: 0 }}
-                      onClick={() => handleRemovePoint(key)}
-                      disabled={bonus <= 0}
-                      aria-label={`${MANAGER_STAT_LABELS[key]} 감소`}
+                <div className="intro-card-grid intro-card-grid--2" style={{ gap: 16 }}>
+                  <div className="fm-flex-col fm-gap-xs">
+                    <label className="fm-text-sm fm-font-semibold fm-text-secondary">국적</label>
+                    <select
+                      className="fm-select"
+                      value={nationality}
+                      onChange={(event) => setNationality(event.target.value)}
+                      style={{ padding: '10px 32px 10px 14px', fontSize: 14 }}
                     >
-                      -
-                    </button>
-                    <div className="fm-bar fm-flex-1">
-                      <div className="fm-bar__track" style={{ position: 'relative', height: 8 }}>
-                        <div
-                          className="fm-bar__fill fm-bar__fill--blue"
-                          style={{ width: `${(base / STAT_MAX) * 100}%`, position: 'absolute', top: 0, left: 0, height: '100%' }}
-                        />
-                        {bonus > 0 && (
-                          <div
-                            className="fm-bar__fill fm-bar__fill--accent"
-                            style={{
-                              position: 'absolute',
-                              top: 0,
-                              left: `${(base / STAT_MAX) * 100}%`,
-                              width: `${(bonus / STAT_MAX) * 100}%`,
-                              height: '100%',
-                              borderRadius: '0 3px 3px 0',
-                            }}
-                          />
-                        )}
-                      </div>
-                      <span className="fm-bar__value fm-text-lg" style={{ minWidth: 50, textAlign: 'right' }}>
-                        {total}
-                        {bonus > 0 && (
-                          <span className="fm-text-accent fm-text-xs"> (+{bonus})</span>
-                        )}
+                      {NATIONALITIES.map((nation) => (
+                        <option key={nation.value} value={nation.value}>
+                          {nation.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="fm-flex-col fm-gap-xs">
+                    <label className="fm-text-sm fm-font-semibold fm-text-secondary">나이</label>
+                    <div className="fm-flex fm-items-center fm-gap-md">
+                      <input
+                        type="range"
+                        min={30}
+                        max={60}
+                        value={age}
+                        onChange={(event) => setAge(Number(event.target.value))}
+                        style={{ flex: 1, accentColor: 'var(--accent)', cursor: 'pointer' }}
+                        aria-label="감독 나이 선택"
+                      />
+                      <span className="fm-text-xl fm-font-semibold fm-text-accent" style={{ minWidth: 52, textAlign: 'right' }}>
+                        {age}세
                       </span>
                     </div>
-                    <button
-                      className="fm-btn fm-btn--sm fm-text-accent"
-                      style={{ width: 28, height: 28, padding: 0 }}
-                      onClick={() => handleAddPoint(key)}
-                      disabled={remainingPoints <= 0 || total >= STAT_MAX}
-                      aria-label={`${MANAGER_STAT_LABELS[key]} 증가`}
-                    >
-                      +
-                    </button>
                   </div>
                 </div>
-              );
-            })}
-          </div>
-        </div>
+              </div>
+            </section>
 
-        {/* 다음 버튼 */}
-        {remainingPoints > 0 && (
-          <p className="fm-text-sm fm-text-warning fm-text-center">
-            보너스 포인트 {remainingPoints}점을 모두 배분해야 진행할 수 있습니다.
-          </p>
-        )}
-        <button
-          className="fm-btn fm-btn--primary fm-btn--lg"
-          style={{ width: '100%' }}
-          onClick={handleCreate}
-          disabled={!name.trim() || remainingPoints > 0}
-        >
-          다음 →
-        </button>
+            <section className="fm-panel">
+              <div className="fm-panel__header">
+                <span className="fm-panel__title">배경 선택</span>
+              </div>
+              <div className="fm-panel__body">
+                <div className="intro-card-grid intro-card-grid--2">
+                  {BACKGROUNDS.map((option) => (
+                    <button
+                      key={option}
+                      className={`fm-card fm-card--clickable fm-flex-col fm-gap-xs ${background === option ? 'fm-card--highlight' : ''}`}
+                      onClick={() => handleBackgroundChange(option)}
+                    >
+                      <strong className="fm-text-lg fm-text-primary">{MANAGER_BG_LABELS[option]}</strong>
+                      <span className="fm-text-xs fm-text-muted" style={{ lineHeight: 1.5 }}>
+                        {MANAGER_BG_DESC[option]}
+                      </span>
+                      <span className="fm-text-xs fm-text-accent">초기 명성 {MANAGER_BG_STATS[option].reputation}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </section>
+
+            <section className="fm-panel">
+              <div className="fm-panel__header">
+                <span className="fm-panel__title">능력치 배분</span>
+                <span className="fm-badge fm-badge--accent">남은 포인트 {remainingPoints}/{MAX_BONUS_POINTS}</span>
+              </div>
+              <div className="fm-panel__body fm-flex-col fm-gap-sm">
+                {STAT_KEYS.map((key) => {
+                  const base = baseData.stats[key];
+                  const bonus = bonusPoints[key];
+                  const total = finalStats[key];
+                  return (
+                    <div key={key} className="fm-flex fm-items-center fm-gap-md">
+                      <span className="fm-text-sm fm-text-secondary" style={{ width: 90, flexShrink: 0 }}>
+                        {MANAGER_STAT_LABELS[key]}
+                      </span>
+                      <div className="fm-flex fm-items-center fm-gap-sm fm-flex-1">
+                        <button
+                          className="fm-btn fm-btn--sm fm-text-accent"
+                          style={{ width: 28, height: 28, padding: 0 }}
+                          onClick={() => handleRemovePoint(key)}
+                          disabled={bonus <= 0}
+                          aria-label={`${MANAGER_STAT_LABELS[key]} 감소`}
+                        >
+                          -
+                        </button>
+                        <div className="fm-bar fm-flex-1">
+                          <div className="fm-bar__track" style={{ position: 'relative', height: 8 }}>
+                            <div
+                              className="fm-bar__fill fm-bar__fill--blue"
+                              style={{ width: `${(base / STAT_MAX) * 100}%`, position: 'absolute', inset: 0, height: '100%' }}
+                            />
+                            {bonus > 0 && (
+                              <div
+                                className="fm-bar__fill fm-bar__fill--accent"
+                                style={{
+                                  position: 'absolute',
+                                  top: 0,
+                                  left: `${(base / STAT_MAX) * 100}%`,
+                                  width: `${(bonus / STAT_MAX) * 100}%`,
+                                  height: '100%',
+                                  borderRadius: '0 3px 3px 0',
+                                }}
+                              />
+                            )}
+                          </div>
+                        </div>
+                        <span className="fm-text-lg fm-font-semibold" style={{ minWidth: 60, textAlign: 'right' }}>
+                          {total}
+                          {bonus > 0 && <span className="fm-text-accent fm-text-xs"> (+{bonus})</span>}
+                        </span>
+                        <button
+                          className="fm-btn fm-btn--sm fm-text-accent"
+                          style={{ width: 28, height: 28, padding: 0 }}
+                          onClick={() => handleAddPoint(key)}
+                          disabled={remainingPoints <= 0 || total >= STAT_MAX}
+                          aria-label={`${MANAGER_STAT_LABELS[key]} 증가`}
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          </div>
+
+          <aside className="fm-flex-col fm-gap-lg intro-sidebar">
+            <section className="fm-panel">
+              <div className="fm-panel__header">
+                <span className="fm-panel__title">현재 감독 이미지</span>
+              </div>
+              <div className="fm-panel__body fm-flex-col fm-gap-md">
+                <div className="fm-card">
+                  <div className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">언론 첫 평가</div>
+                  <div className="fm-text-md fm-text-primary" style={{ lineHeight: 1.7 }}>
+                    {BACKGROUND_HEADLINES[background].press}
+                  </div>
+                </div>
+                <div className="fm-card">
+                  <div className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">추천 플레이 스타일</div>
+                  <div className="fm-text-md fm-text-primary" style={{ lineHeight: 1.7 }}>
+                    {BACKGROUND_HEADLINES[background].style}
+                  </div>
+                </div>
+                <div className="fm-card">
+                  <div className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">주요 성향</div>
+                  <div className="fm-flex fm-gap-sm" style={{ flexWrap: 'wrap' }}>
+                    {(baseTraits.length > 0 ? baseTraits : ['균형 있는 운영']).map((trait) => (
+                      <span key={trait} className="fm-badge fm-badge--accent">{trait}</span>
+                    ))}
+                  </div>
+                  <div className="fm-text-sm fm-text-muted fm-mt-sm">현재 운영 초점: {focus}</div>
+                </div>
+              </div>
+            </section>
+
+            {remainingPoints > 0 && (
+              <div className="fm-alert fm-alert--warning">
+                <span className="fm-alert__text">
+                  남은 포인트를 모두 배분해야 다음 단계로 넘어갈 수 있습니다.
+                </span>
+              </div>
+            )}
+
+            <button
+              className="fm-btn fm-btn--primary fm-btn--lg intro-cta"
+              onClick={handleCreate}
+              disabled={!name.trim() || remainingPoints > 0}
+            >
+              팀 선택으로 이동
+            </button>
+          </aside>
+        </div>
       </div>
 
-      <button className="fm-btn fm-btn--ghost fm-mt-lg" onClick={() => navigate('/mode-select')}>
-        ← 돌아가기
+      <button className="fm-btn fm-btn--ghost intro-back" onClick={() => navigate('/mode-select')}>
+        모드 선택으로 돌아가기
       </button>
     </div>
   );

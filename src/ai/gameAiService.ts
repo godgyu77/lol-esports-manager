@@ -38,7 +38,7 @@ export async function isAiAvailable(): Promise<boolean> {
   if (aiProvider === 'template') return false;
 
   if (aiProvider !== 'ollama') {
-    const key = await settings.getApiKey();
+    const key = await settings.getApiKey(aiProvider);
     return Boolean(key);
   }
 

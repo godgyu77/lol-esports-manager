@@ -1,18 +1,18 @@
-import { useState, useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { PlayerAvatar } from '../../../../components/PlayerAvatar';
 import { updatePlayerDivision, updateTeamPlayStyle } from '../../../../db/queries';
 import type { Position } from '../../../../types/game';
-import type { PlayStyle } from '../../../../types/team';
 import type { Team } from '../../../../types/team';
-import { PlayerAvatar } from '../../../../components/PlayerAvatar';
+import type { PlayStyle } from '../../../../types/team';
 import { POSITION_LABELS_KR as POSITION_LABELS } from '../../../../utils/constants';
 import {
   type Division,
+  getOvr,
+  getOvrClass,
   PLAY_STYLE_INFO,
   POSITION_BADGE_MAP,
   sortByPosition,
-  getOvr,
-  getOvrClass,
 } from './rosterUtils';
 
 interface RosterTabProps {
@@ -26,10 +26,7 @@ export function RosterTab({ userTeam, teams, setTeams }: RosterTabProps) {
   const [isSwapping, setIsSwapping] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  const handleSwap = useCallback(async (
-    playerId: string,
-    currentDivision: Division,
-  ) => {
+  const handleSwap = useCallback(async (playerId: string, currentDivision: Division) => {
     if (!swapSource) {
       setSwapSource({ id: playerId, division: currentDivision });
       setMessage(null);
@@ -42,8 +39,8 @@ export function RosterTab({ userTeam, teams, setTeams }: RosterTabProps) {
       return;
     }
 
-    const sourcePlayer = userTeam.roster.find(p => p.id === swapSource.id);
-    const targetPlayer = userTeam.roster.find(p => p.id === playerId);
+    const sourcePlayer = userTeam.roster.find((player) => player.id === swapSource.id);
+    const targetPlayer = userTeam.roster.find((player) => player.id === playerId);
     if (!sourcePlayer || !targetPlayer) return;
 
     const sourceDivision = swapSource.division;
@@ -59,77 +56,67 @@ export function RosterTab({ userTeam, teams, setTeams }: RosterTabProps) {
       await updatePlayerDivision(swapSource.id, targetDivision);
       await updatePlayerDivision(playerId, sourceDivision);
 
-      const updatedTeams = teams.map(team => {
+      const updatedTeams = teams.map((team) => {
         if (team.id !== userTeam.id) return team;
         return {
           ...team,
-          roster: team.roster.map(p => {
-            if (p.id === swapSource.id) {
-              return { ...p, division: targetDivision } as typeof p;
+          roster: team.roster.map((player) => {
+            if (player.id === swapSource.id) {
+              return { ...player, division: targetDivision } as typeof player;
             }
-            if (p.id === playerId) {
-              return { ...p, division: sourceDivision } as typeof p;
+            if (player.id === playerId) {
+              return { ...player, division: sourceDivision } as typeof player;
             }
-            return p;
+            return player;
           }),
         };
       });
+
       setTeams(updatedTeams);
-      setMessage(`${sourcePlayer.name} \u2194 ${targetPlayer.name} 교체 완료`);
+      setMessage(`${sourcePlayer.name}와 ${targetPlayer.name}의 로테이션을 교체했습니다.`);
     } finally {
       setSwapSource(null);
       setIsSwapping(false);
     }
-  }, [swapSource, userTeam, teams, setTeams]);
+  }, [setTeams, swapSource, teams, userTeam]);
 
-  const handlePromoteDemote = useCallback(async (
-    playerId: string,
-    currentDivision: Division,
-  ) => {
+  const handlePromoteDemote = useCallback(async (playerId: string, currentDivision: Division) => {
     const newDivision: Division = currentDivision === 'main' ? 'sub' : 'main';
 
     setIsSwapping(true);
     try {
       await updatePlayerDivision(playerId, newDivision);
 
-      const updatedTeams = teams.map(team => {
+      const updatedTeams = teams.map((team) => {
         if (team.id !== userTeam.id) return team;
         return {
           ...team,
-          roster: team.roster.map(p => {
-            if (p.id === playerId) {
-              return { ...p, division: newDivision } as typeof p;
-            }
-            return p;
-          }),
+          roster: team.roster.map((player) => (
+            player.id === playerId ? { ...player, division: newDivision } as typeof player : player
+          )),
         };
       });
-      setTeams(updatedTeams);
 
-      const player = userTeam.roster.find(p => p.id === playerId);
-      setMessage(`${player?.name} ${newDivision === 'main' ? '1군 승격' : '2군 강등'}`);
+      setTeams(updatedTeams);
+      const player = userTeam.roster.find((entry) => entry.id === playerId);
+      setMessage(`${player?.name} 선수를 ${newDivision === 'main' ? '1군으로 승격' : '2군으로 이동'}했습니다.`);
     } finally {
       setSwapSource(null);
       setIsSwapping(false);
     }
-  }, [userTeam, teams, setTeams]);
+  }, [setTeams, teams, userTeam]);
 
   const handlePlayStyleChange = useCallback(async (style: PlayStyle) => {
     await updateTeamPlayStyle(userTeam.id, style);
-    const updatedTeams = teams.map(team => {
-      if (team.id !== userTeam.id) return team;
-      return { ...team, playStyle: style };
-    });
+    const updatedTeams = teams.map((team) => (
+      team.id === userTeam.id ? { ...team, playStyle: style } : team
+    ));
     setTeams(updatedTeams);
-    setMessage(`팀 전술이 "${PLAY_STYLE_INFO[style].name}"(으)로 변경되었습니다`);
-  }, [userTeam, teams, setTeams]);
+    setMessage(`팀 운영 스타일을 "${PLAY_STYLE_INFO[style].name}"으로 변경했습니다.`);
+  }, [setTeams, teams, userTeam.id]);
 
-  const mainRoster = userTeam.roster.filter(
-    (p) => (p as { division?: string }).division === 'main',
-  );
-  const subRoster = userTeam.roster.filter(
-    (p) => (p as { division?: string }).division === 'sub',
-  );
+  const mainRoster = userTeam.roster.filter((player) => (player as { division?: string }).division === 'main');
+  const subRoster = userTeam.roster.filter((player) => (player as { division?: string }).division === 'sub');
 
   const renderTable = (players: typeof userTeam.roster, title: string, division: Division) => (
     <div className="fm-panel fm-mb-md">
@@ -144,26 +131,24 @@ export function RosterTab({ userTeam, teams, setTeams }: RosterTabProps) {
               <th>이름</th>
               <th>나이</th>
               <th>OVR</th>
-              <th>기계</th>
-              <th>센스</th>
+              <th>메카닉</th>
+              <th>게임 센스</th>
               <th>팀워크</th>
-              <th>일관</th>
-              <th>라인</th>
-              <th>공격</th>
+              <th>안정감</th>
+              <th>라인전</th>
+              <th>공격성</th>
               <th>멘탈</th>
-              <th>계약</th>
-              <th></th>
+              <th>계약 종료</th>
+              <th>관리</th>
             </tr>
           </thead>
           <tbody>
             {sortByPosition(players).map((player) => {
               const avgOvr = getOvr(player);
               const isSelected = swapSource?.id === player.id;
+
               return (
-                <tr
-                  key={player.id}
-                  className={isSelected ? 'fm-table__row--selected' : ''}
-                >
+                <tr key={player.id} className={isSelected ? 'fm-table__row--selected' : ''}>
                   <td>
                     <span className={`fm-pos-badge fm-pos-badge--${POSITION_BADGE_MAP[player.position] ?? 'mid'}`}>
                       {POSITION_LABELS[player.position] ?? player.position}
@@ -177,7 +162,7 @@ export function RosterTab({ userTeam, teams, setTeams }: RosterTabProps) {
                         size={28}
                         name={player.name}
                       />
-                      <Link to={'/manager/player/' + player.id} className="fm-cell--name" style={{ textDecoration: 'none' }}>
+                      <Link to={`/manager/player/${player.id}`} className="fm-cell--name" style={{ textDecoration: 'none' }}>
                         {player.name}
                       </Link>
                     </div>
@@ -198,15 +183,15 @@ export function RosterTab({ userTeam, teams, setTeams }: RosterTabProps) {
                         className={`fm-btn fm-btn--sm ${isSelected ? 'fm-btn--primary' : ''}`}
                         onClick={() => handleSwap(player.id, division)}
                         disabled={isSwapping}
-                        title="교체할 선수 선택"
+                        title="교체 기준 선수로 선택"
                       >
-                        {isSelected ? '취소' : '교체'}
+                        {isSelected ? '취소' : '스왑'}
                       </button>
                       <button
                         className="fm-btn fm-btn--sm fm-btn--ghost"
                         onClick={() => handlePromoteDemote(player.id, division)}
                         disabled={isSwapping}
-                        title={division === 'main' ? '2군으로 강등' : '1군으로 승격'}
+                        title={division === 'main' ? '2군으로 내리기' : '1군으로 올리기'}
                       >
                         {division === 'main' ? '\u2193' : '\u2191'}
                       </button>
@@ -223,25 +208,27 @@ export function RosterTab({ userTeam, teams, setTeams }: RosterTabProps) {
 
   return (
     <>
-      {/* 팀 전술 선택 */}
       <div className="fm-panel fm-mb-md">
         <div className="fm-panel__header">
-          <span className="fm-panel__title">팀 전술</span>
+          <span className="fm-panel__title">팀 운영 스타일</span>
         </div>
         <div className="fm-panel__body">
           <div className="fm-grid fm-grid--3">
             {(Object.keys(PLAY_STYLE_INFO) as PlayStyle[]).map((style) => {
               const info = PLAY_STYLE_INFO[style];
-              const isActive = userTeam?.playStyle === style;
+              const isActive = userTeam.playStyle === style;
+
               return (
                 <button
                   key={style}
                   className={`fm-card fm-card--clickable fm-flex-col fm-items-center fm-gap-xs ${isActive ? 'fm-card--highlight' : ''}`}
-                  onClick={() => handlePlayStyleChange(style)}
+                  onClick={() => void handlePlayStyleChange(style)}
                 >
                   <span className="fm-text-2xl">{info.icon}</span>
                   <span className="fm-text-lg fm-font-bold fm-text-primary">{info.name}</span>
-                  <span className="fm-text-base fm-text-secondary fm-text-center" style={{ lineHeight: '1.4' }}>{info.description}</span>
+                  <span className="fm-text-base fm-text-secondary fm-text-center" style={{ lineHeight: '1.4' }}>
+                    {info.description}
+                  </span>
                   <span className="fm-text-sm fm-text-muted fm-text-center fm-mt-sm">{info.matchup}</span>
                 </button>
               );
@@ -250,10 +237,9 @@ export function RosterTab({ userTeam, teams, setTeams }: RosterTabProps) {
         </div>
       </div>
 
-      {/* 안내 메시지 */}
       {swapSource && (
         <div className="fm-alert fm-alert--warning fm-mb-md">
-          <span className="fm-alert__text">교체할 상대 선수를 선택하세요 (1군 \u2194 2군)</span>
+          <span className="fm-alert__text">교체할 상대 선수를 선택해주세요. 1군과 2군 사이에서 바로 스왑할 수 있습니다.</span>
         </div>
       )}
 
@@ -263,15 +249,16 @@ export function RosterTab({ userTeam, teams, setTeams }: RosterTabProps) {
         </div>
       )}
 
-      {renderTable(mainRoster, '1군', 'main')}
-      {subRoster.length > 0 && renderTable(subRoster, '2군', 'sub')}
+      {renderTable(mainRoster, '1군 로스터', 'main')}
+      {subRoster.length > 0 && renderTable(subRoster, '2군 로스터', 'sub')}
+
       {subRoster.length === 0 && (
         <div className="fm-panel fm-mb-md">
           <div className="fm-panel__header">
-            <span className="fm-panel__title">2군 (0명)</span>
+            <span className="fm-panel__title">2군 로스터 (0명)</span>
           </div>
           <div className="fm-panel__body">
-            <p className="fm-text-muted fm-text-md">2군 선수가 없습니다.</p>
+            <p className="fm-text-muted fm-text-md">현재 2군에 등록된 선수가 없습니다.</p>
           </div>
         </div>
       )}

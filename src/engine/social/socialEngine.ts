@@ -1,7 +1,7 @@
 /**
- * 커뮤니티 소셜 반응 엔진
- * - 이적/스태프/경기 이벤트 발생 시 커뮤니티별 뉴스 + 댓글 자동 생성
- * - 인벤/디시/에펨/레딧/트위터 5개 커뮤니티
+ * Community reaction generation engine.
+ * - Creates social reactions for transfers, rumors, staff changes, and match results.
+ * - Supports Inven, DCInside, FMKorea, Reddit, and Twitter-style community voices.
  */
 
 import { getDatabase } from '../../db/database';
@@ -82,25 +82,22 @@ function randInt(min: number, max: number): number {
 
 const COMMUNITIES: CommunitySource[] = ['inven', 'dcinside', 'fmkorea', 'reddit', 'twitter'];
 
-// ─────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // 유저네임 풀
-// ─────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 const USERNAMES: Record<CommunitySource, string[]> = {
   inven: [
-    'T1광팬', '롤갤주민', '젠지매니저', 'LCK올나잇', '인벤러', '탑솔장인',
-    '미드핵관종', '서폿충', 'KT화이팅', '칼바람장인', '페이커팬123', '정글차이',
-    'DK리빌딩', '자드장인', '실버탈출러',
+    'T1팬', 'LCK보는중', '밴픽메모장', '오더장인', '탑연구소', '미드차이봄',
+    '정글동선러', '메타읽는중', '한타클립저장', '플옵각보임', '솔랭휴식중', '경기다시보기',
   ],
   dcinside: [
-    'ㅇㅇ(223.38)', 'ㅇㅇ(121.15)', '갤주', '운영자', 'ㅇㅇ(118.235)',
-    '전직프로', 'ㅇㅇ(211.36)', '롤갤러', 'ㅇㅇ(49.142)', '개념글작성자',
-    'ㅇㅇ(175.223)', '고닉충', 'ㅇㅇ(58.29)', '유동닉',
+    'ㅇㅇ(223.38)', 'ㅇㅇ(121.15)', '갤주아님', '롤잘알', 'ㅇㅇ(118.235)', '고닉추',
+    'ㅇㅇ(211.36)', '로갤러', 'ㅇㅇ(49.142)', '개념글후보', 'ㅇㅇ(175.223)', '벤치평론가',
   ],
   fmkorea: [
-    '에펨충', '핫게가자', '롤잘알', '야구민이지만', '에펨코리안',
-    '일게이', '정보게이', '유머게이', '축갤러', '롤게이',
-    '이것저것', '댓글장인', '정의구현',
+    '에펨추', '포텐각', '로스터장인', '메타헌터', '스크림체크', '운영메모',
+    '라인업보는중', '코치노트', '밴픽팬', '샷콜체크', '후반캐리각', '폼추적기',
   ],
   reddit: [
     'LCK_enjoyer', 'T1_faithful', 'GenG_fan2026', 'LPLwatcher', 'DraftAnalyst',
@@ -114,10 +111,6 @@ const USERNAMES: Record<CommunitySource, string[]> = {
   ],
 };
 
-// ─────────────────────────────────────────
-// 댓글 템플릿
-// ─────────────────────────────────────────
-
 interface CommentTemplate {
   text: string;
   sentiment: CommentSentiment;
@@ -125,299 +118,147 @@ interface CommentTemplate {
 
 const TRANSFER_OFFICIAL_COMMENTS: Record<CommunitySource, CommentTemplate[]> = {
   inven: [
-    { text: '[속보] {player} 오피셜ㄷㄷ', sentiment: 'hype' },
-    { text: 'ㅋㅋ 이거 실화냐', sentiment: 'hype' },
-    { text: '역대급 영입이다', sentiment: 'positive' },
-    { text: '와 {team} 올해 진심이네', sentiment: 'positive' },
-    { text: '{player} 폼 되돌아오면 사기인데', sentiment: 'positive' },
-    { text: '이건 좀 아닌 것 같은데...', sentiment: 'negative' },
-    { text: '연봉이 궁금하다', sentiment: 'neutral' },
-    { text: '이 조합이면 우승 가능?', sentiment: 'neutral' },
-    { text: '{team} 팬인데 환영합니다!!', sentiment: 'positive' },
-    { text: '오 대박 이적이네', sentiment: 'hype' },
-    { text: '뜬금없다 왜 갑자기?', sentiment: 'neutral' },
-    { text: '{player} 진짜 잘하는데 기대된다', sentiment: 'positive' },
-    { text: 'ㄷㄷ 이건 좀 미쳤다 진짜', sentiment: 'hype' },
-    { text: '돈 쓸 때 확 쓰네 ㅋㅋㅋ', sentiment: 'neutral' },
-    { text: '이 영입은 진짜 물주 등장한듯', sentiment: 'positive' },
-    { text: '찐이면 우승각이다', sentiment: 'hype' },
-    { text: '반대로 생각하면 기존 선수 방출 가능성?', sentiment: 'neutral' },
-    { text: '이거 합류하면 라인업이 ㄹㅇ 사기', sentiment: 'hype' },
-    { text: 'ㅋㅋ 댓글 반응 보소', sentiment: 'neutral' },
-    { text: '시즌 살린다 이거 ㅋㅋ', sentiment: 'positive' },
-    { text: '{player} 솔직히 탑급인데 환영', sentiment: 'positive' },
-    { text: '오 이건 예상 못했다', sentiment: 'neutral' },
-    { text: '이적료가 궁금하네 ㄹㅇ', sentiment: 'neutral' },
-    { text: '{team} 이번에 제대로 가는구나', sentiment: 'positive' },
+    { text: '[오피셜] {player} 영입 떴다', sentiment: 'hype' },
+    { text: '{team} 프런트 이번엔 일했다', sentiment: 'positive' },
+    { text: '로스터 체급이 한 단계 올라갔다', sentiment: 'positive' },
+    { text: '이 정도면 상위권 각 본다', sentiment: 'hype' },
+    { text: '연봉 조건이 좀 궁금하긴 하네', sentiment: 'neutral' },
+    { text: '종이 전력은 확실히 세졌다', sentiment: 'neutral' },
   ],
   dcinside: [
-    { text: 'ㅇㅇ 이건 인정', sentiment: 'positive' },
-    { text: '반대의견) 별로인데', sentiment: 'negative' },
-    { text: '???:나도 갈래', sentiment: 'neutral' },
-    { text: 'ㄹㅇ 개꿀영입ㅋㅋ', sentiment: 'positive' },
-    { text: '근데 시너지가 될까?', sentiment: 'neutral' },
-    { text: '겨울 이적 끝났다 이제', sentiment: 'neutral' },
-    { text: 'ㄷㄷ {team} 미쳤냐', sentiment: 'hype' },
-    { text: '기자들 다 알고있었네', sentiment: 'neutral' },
-    { text: '난 차라리 다른 선수가 나았다고 봄', sentiment: 'negative' },
-    { text: '{player} 갤 난리나겠다ㅋㅋ', sentiment: 'neutral' },
-    { text: '이건 누가 봐도 답이지', sentiment: 'positive' },
-    { text: 'ㅇㅇ 인정 이건 좋은 영입', sentiment: 'positive' },
-    { text: '반대의견) 오버페이 아님?', sentiment: 'negative' },
-    { text: '이딴 영입으로 우승? ㅋㅋ', sentiment: 'negative' },
-    { text: '근데 케미 맞을까 궁금하네', sentiment: 'neutral' },
-    { text: '이전 팀에서는 캐리 못했는데', sentiment: 'negative' },
-    { text: '한 시즌 지켜봐야 알듯', sentiment: 'neutral' },
-    { text: '아 씁 우리도 저런 선수 영입해라', sentiment: 'neutral' },
-    { text: 'ㄹㅇ 스토브리그 우승팀 ㅋㅋ', sentiment: 'hype' },
-    { text: '진짜 안 올 줄 알았는데 오네', sentiment: 'hype' },
-    { text: '{team} 프론트 일 좀 하네', sentiment: 'positive' },
-    { text: '이건 인정할 수밖에', sentiment: 'positive' },
-    { text: '근데 포지션 겹치는 선수는?', sentiment: 'neutral' },
+    { text: '이건 인정이지', sentiment: 'positive' },
+    { text: '오피셜 뜨니까 실감 난다', sentiment: 'hype' },
+    { text: '근데 합은 좀 봐야 함', sentiment: 'neutral' },
+    { text: '이거면 우승 경쟁 간다', sentiment: 'hype' },
+    { text: '오버페이만 아니면 괜찮음', sentiment: 'neutral' },
+    { text: '이적시장 불타네', sentiment: 'positive' },
   ],
   fmkorea: [
-    { text: '와 이건 좀 미쳤다', sentiment: 'hype' },
-    { text: '근데 연봉은?', sentiment: 'neutral' },
-    { text: '이적시장 끝난다 이제', sentiment: 'neutral' },
-    { text: '{team} 존나 돈 쓰네', sentiment: 'neutral' },
-    { text: '우승 가즈아!!', sentiment: 'hype' },
-    { text: '이건 진짜 잘한 영입', sentiment: 'positive' },
-    { text: '혹시 트롤?ㅋㅋ', sentiment: 'negative' },
-    { text: '정보) {player} 꽤 잘함', sentiment: 'positive' },
-    { text: '대박 이거 찐이야?', sentiment: 'hype' },
-    { text: '실화냐 ㅋㅋㅋㅋ', sentiment: 'hype' },
-    { text: '와 이건 진짜 대박이다', sentiment: 'hype' },
-    { text: '연봉이 얼만지가 더 궁금함', sentiment: 'neutral' },
-    { text: '이적시장 대전 시작이구만', sentiment: 'neutral' },
-    { text: '이거 팩트 확인된 거임?', sentiment: 'neutral' },
-    { text: 'ㅋㅋ 커뮤 반응 실시간', sentiment: 'neutral' },
-    { text: '우리팀도 좀 이런 영입 해라', sentiment: 'neutral' },
-    { text: '아니 이 금액에 진짜 됨?', sentiment: 'neutral' },
-    { text: '이거 성사되면 리그 판도 바뀜', sentiment: 'hype' },
-    { text: '{team} 올해 진짜 가는구나', sentiment: 'positive' },
-    { text: '{player} 실력은 인정해야지', sentiment: 'positive' },
-    { text: '오 드디어 오피셜이다', sentiment: 'hype' },
+    { text: '와 이건 진짜 크다', sentiment: 'hype' },
+    { text: '{team} 보강 제대로 했네', sentiment: 'positive' },
+    { text: '폼만 올라오면 바로 주전감', sentiment: 'positive' },
+    { text: '첫 스크림은 보고 판단해야지', sentiment: 'neutral' },
+    { text: '오프시즌 승자 느낌인데?', sentiment: 'hype' },
+    { text: '라인업 완성도가 확 올라감', sentiment: 'positive' },
   ],
   reddit: [
-    { text: 'Huge signing for {team}!', sentiment: 'hype' },
-    { text: 'Interesting move', sentiment: 'neutral' },
-    { text: "Don't know about this one", sentiment: 'negative' },
-    { text: '{player} is a solid pickup, {team} looking strong', sentiment: 'positive' },
-    { text: 'This roster is going to be scary', sentiment: 'positive' },
-    { text: 'Wait what? This came out of nowhere', sentiment: 'neutral' },
-    { text: 'W signing if {player} returns to form', sentiment: 'positive' },
-    { text: 'Not sure how I feel about this tbh', sentiment: 'neutral' },
-    { text: "Let's see how this plays out in scrims first", sentiment: 'neutral' },
-    { text: 'GG {team} wins the offseason', sentiment: 'hype' },
-    { text: 'This is HUGE for the team', sentiment: 'hype' },
-    { text: "Can't believe they pulled this off", sentiment: 'hype' },
-    { text: 'Salary must be insane tho', sentiment: 'neutral' },
-    { text: 'Honestly, questionable move', sentiment: 'negative' },
-    { text: 'This roster is looking scary now', sentiment: 'positive' },
-    { text: "As a fan, I'm hyped but cautious", sentiment: 'neutral' },
-    { text: 'The other team must be furious', sentiment: 'neutral' },
-    { text: '{player} was a free agent gem', sentiment: 'positive' },
-    { text: 'Now THAT is how you build a roster', sentiment: 'positive' },
-    { text: 'Is this confirmed by multiple sources?', sentiment: 'neutral' },
-    { text: '{team} management cooking this offseason', sentiment: 'positive' },
+    { text: '{team} 입장에선 정말 큰 영입이다', sentiment: 'hype' },
+    { text: '꽤 흥미로운 선택이다', sentiment: 'neutral' },
+    { text: '이 선택은 아직 잘 모르겠다', sentiment: 'negative' },
+    { text: '{player}면 충분히 좋은 영입이다. {team} 전력이 좋아 보인다', sentiment: 'positive' },
+    { text: '이 로스터는 꽤 위협적일 수 있다', sentiment: 'positive' },
+    { text: '이 소식은 진짜 예상 못 했다', sentiment: 'neutral' },
   ],
   twitter: [
-    { text: 'LETS GOOO', sentiment: 'hype' },
-    { text: 'Welcome to {team}!', sentiment: 'positive' },
-    { text: "Unexpected but let's see", sentiment: 'neutral' },
-    { text: '{team} really went all in this offseason', sentiment: 'positive' },
-    { text: 'W MOVE', sentiment: 'hype' },
-    { text: '{player} deserves this', sentiment: 'positive' },
-    { text: "I'm not convinced yet", sentiment: 'negative' },
-    { text: 'OFFICIAL! {player} joins {team}!!', sentiment: 'hype' },
-    { text: 'This is going to be INSANE', sentiment: 'hype' },
-    { text: 'NO WAY', sentiment: 'hype' },
-    { text: 'Welcome to the family!', sentiment: 'positive' },
-    { text: 'This changes everything for the league', sentiment: 'hype' },
-    { text: 'Overrated move tbh', sentiment: 'negative' },
-    { text: 'W signing for sure', sentiment: 'positive' },
-    { text: 'League is doomed if this roster clicks', sentiment: 'hype' },
-    { text: 'Source: trust me bro... oh wait its official', sentiment: 'neutral' },
-    { text: '{team} fans eating GOOD today', sentiment: 'hype' },
-    { text: 'The rivalry just got spicier', sentiment: 'neutral' },
-    { text: 'Lets see how this plays out on stage', sentiment: 'neutral' },
-    { text: '{player} hype train departing NOW', sentiment: 'hype' },
+    { text: '오피셜 떴다 미쳤다', sentiment: 'hype' },
+    { text: '{team} 환영합니다!', sentiment: 'positive' },
+    { text: '의외긴 한데 기대된다', sentiment: 'neutral' },
+    { text: '{team} 이번 오프시즌 제대로 달린다', sentiment: 'positive' },
+    { text: '이건 W다', sentiment: 'hype' },
+    { text: '{player}라면 이 반응 받을 만하다', sentiment: 'positive' },
   ],
 };
 
 const TRANSFER_RUMOR_COMMENTS: Record<CommunitySource, CommentTemplate[]> = {
   inven: [
-    { text: '아직 루머 단계인데 흥분 자제', sentiment: 'neutral' },
-    { text: '이거 진짜면 대박인데', sentiment: 'hype' },
-    { text: '어 근데 소스가 어디야?', sentiment: 'neutral' },
-    { text: '루머는 루머일 뿐... 기대 안 한다', sentiment: 'neutral' },
-    { text: '{player}가 {team} 가면 시너지 좋을듯', sentiment: 'positive' },
-    { text: '이건 사실이면 미쳤다', sentiment: 'hype' },
-    { text: '근데 이거 소스 확실함?', sentiment: 'neutral' },
-    { text: '시즌 망한다 ㅋㅋ (혹은 살린다)', sentiment: 'neutral' },
-    { text: '기대하면 안 되는 거 알지만 기대됨 ㅋ', sentiment: 'positive' },
-    { text: '또 루머로 끝나는 거 아니지?', sentiment: 'neutral' },
-    { text: '{team}이 진짜 {player} 데려오면 인정', sentiment: 'positive' },
-    { text: '소식통이 누군지가 중요함', sentiment: 'neutral' },
-    { text: '이거 성사되면 롤판 뒤집힘', sentiment: 'hype' },
-    { text: '이미 기자들 사이에선 기정사실이래', sentiment: 'hype' },
-    { text: '오피셜만 기다린다', sentiment: 'neutral' },
-    { text: '루머 단계에서 흥분하면 안되는 거 배웠다', sentiment: 'neutral' },
-    { text: '진짜면 {team} 팬으로서 감사합니다', sentiment: 'positive' },
-    { text: '갈 이유가 있나? 왜 이적하려는 거임', sentiment: 'neutral' },
-    { text: '어차피 내일이면 까일 루머 ㅋㅋ', sentiment: 'negative' },
-    { text: '이번엔 진짜일 거 같은 느낌', sentiment: 'positive' },
+    { text: '아직 루머 단계지만 흥미롭다', sentiment: 'neutral' },
+    { text: '이거 진짜면 꽤 큰 건데', sentiment: 'hype' },
+    { text: '소스가 어디냐가 중요함', sentiment: 'neutral' },
+    { text: '{player}가 {team} 가면 그림은 좋다', sentiment: 'positive' },
+    { text: '오피셜 올라올 때까지 존버', sentiment: 'neutral' },
+    { text: '또 가짜 루머면 허무하지', sentiment: 'negative' },
   ],
   dcinside: [
-    { text: '또 찌라시냐', sentiment: 'negative' },
-    { text: '근거있는 루머인가', sentiment: 'neutral' },
-    { text: '이거 퍼오는 사람 누구냐 맨날 틀리던데', sentiment: 'negative' },
-    { text: '오 근데 이건 좀 현실성 있는데?', sentiment: 'neutral' },
-    { text: '찐이면 인정', sentiment: 'positive' },
-    { text: 'ㅋㅋ 매번 루머만 나오고 끝이지', sentiment: 'negative' },
-    { text: '이번엔 좀 다른 느낌인데', sentiment: 'neutral' },
-    { text: '이거 오피셜 나오면 갤 터진다', sentiment: 'hype' },
-    { text: '진짜 가면 기존 선수는 어떻게 되는거임', sentiment: 'neutral' },
-    { text: '찌라시 제조기 또 시작 ㅋ', sentiment: 'negative' },
-    { text: '돈이 있으면 되지 뭐', sentiment: 'neutral' },
-    { text: 'ㄹㅇ 이거 성사되면 축제임', sentiment: 'hype' },
-    { text: '소스 봐야 믿음', sentiment: 'neutral' },
-    { text: '{player} 가면 {team} 우승각', sentiment: 'hype' },
-    { text: '오 이건 좀 신빙성 있네', sentiment: 'neutral' },
-    { text: '근거 있는 루머는 다 진짜였음', sentiment: 'positive' },
-    { text: '솔직히 기대된다 ㅋ', sentiment: 'positive' },
-    { text: '또 루머충이냐', sentiment: 'angry' },
-    { text: '이번 오프시즌 루머 최고봉', sentiment: 'neutral' },
-    { text: '이건 진짜 올 수도 있겠다', sentiment: 'positive' },
+    { text: '이건 좀 가능성 있어 보이는데', sentiment: 'neutral' },
+    { text: '오피셜 뜨면 타임라인 난리남', sentiment: 'hype' },
+    { text: '소스 별로면 난 안 믿음', sentiment: 'negative' },
+    { text: '이거면 리그 판도 바뀐다', sentiment: 'hype' },
+    { text: '기존 주전 정리는 어떻게 하냐', sentiment: 'neutral' },
+    { text: '루머가 좀 오래 가네', sentiment: 'neutral' },
   ],
   fmkorea: [
-    { text: '루머) 이거 진짜?', sentiment: 'neutral' },
-    { text: '에이 또 어그로', sentiment: 'negative' },
-    { text: '이건 성사되면 역대급인데', sentiment: 'hype' },
-    { text: '근거 없으면 삭제 좀', sentiment: 'angry' },
-    { text: '오 기대된다', sentiment: 'positive' },
-    { text: '이거 팩트 확인된 거임?', sentiment: 'neutral' },
-    { text: '루머만 나오면 설레는 건 왜일까', sentiment: 'neutral' },
-    { text: '와 이건 성사되면 대박인데', sentiment: 'hype' },
-    { text: '아직 루머 단계라 참아야 한다', sentiment: 'neutral' },
-    { text: '솔직히 소스가 애매함', sentiment: 'negative' },
-    { text: '이적시장 대전 시작이구만', sentiment: 'neutral' },
-    { text: '우리팀도 좀 이런 루머 나와라', sentiment: 'neutral' },
-    { text: '이거 성사되면 리그 판도 바뀜', sentiment: 'hype' },
-    { text: '매년 루머 나오다 안 되는 거 보면...', sentiment: 'negative' },
-    { text: '오피셜 나올 때까지 기다려 봐야지', sentiment: 'neutral' },
-    { text: '{player} 실력은 인정 {team} 가면 좋지', sentiment: 'positive' },
-    { text: '와 드디어 움직이나', sentiment: 'positive' },
-    { text: '소문은 소문일 뿐이다', sentiment: 'neutral' },
-    { text: '이번엔 진짜 성사될 듯', sentiment: 'positive' },
-    { text: '커뮤 반응 핫하네 ㅋㅋ', sentiment: 'neutral' },
+    { text: '루머 치고는 좀 그럴듯한데', sentiment: 'hype' },
+    { text: '아직 반반이다', sentiment: 'neutral' },
+    { text: '오피셜 뜨기 전까진 보류', sentiment: 'neutral' },
+    { text: '{player}가 {team}이랑 잘 맞긴 함', sentiment: 'positive' },
+    { text: '오프시즌 떡밥 재밌네', sentiment: 'hype' },
+    { text: '이번엔 현실성 좀 있다', sentiment: 'positive' },
   ],
   reddit: [
-    { text: 'Take this with a grain of salt', sentiment: 'neutral' },
-    { text: 'If true, this is massive', sentiment: 'hype' },
-    { text: 'Source: trust me bro', sentiment: 'negative' },
-    { text: 'Rumor has been floating around for a while now', sentiment: 'neutral' },
-    { text: 'Would be a great fit for {team} tbh', sentiment: 'positive' },
-    { text: 'This would be insane if confirmed', sentiment: 'hype' },
-    { text: 'Multiple sources are reporting this now', sentiment: 'neutral' },
-    { text: 'Not buying it until I see an official statement', sentiment: 'neutral' },
-    { text: '{player} to {team} would actually make a lot of sense', sentiment: 'positive' },
-    { text: 'Off-season rumors are always wild', sentiment: 'neutral' },
-    { text: "I'll believe it when I see the jersey", sentiment: 'neutral' },
-    { text: 'This has been rumored for weeks, might actually happen', sentiment: 'neutral' },
-    { text: 'If the salary numbers are real, this is nuts', sentiment: 'hype' },
-    { text: 'Hope this is real, {team} needs this', sentiment: 'positive' },
-    { text: 'The leaker has been pretty reliable so far', sentiment: 'neutral' },
-    { text: 'Would love to see this happen ngl', sentiment: 'positive' },
-    { text: 'Already preparing my hype post for the official', sentiment: 'hype' },
-    { text: 'Reminder to temper expectations until confirmed', sentiment: 'neutral' },
-    { text: 'This roster on paper would be absolutely stacked', sentiment: 'hype' },
-    { text: 'My sources say negotiations are ongoing', sentiment: 'neutral' },
+    { text: '아직은 조심해서 봐야 할 루머다', sentiment: 'neutral' },
+    { text: '사실이면 꽤 큰 소식이다', sentiment: 'hype' },
+    { text: '출처가 약하면 못 믿겠다', sentiment: 'negative' },
+    { text: '이 루머는 한동안 계속 돌고 있었다', sentiment: 'neutral' },
+    { text: '{team} 입장에선 꽤 잘 맞는 카드 같다', sentiment: 'positive' },
+    { text: '확정되면 진짜 파장이 크겠다', sentiment: 'hype' },
   ],
   twitter: [
-    { text: 'NO WAY this is real', sentiment: 'hype' },
-    { text: 'RUMOR ALERT', sentiment: 'neutral' },
-    { text: 'Need official confirmation before I believe this', sentiment: 'neutral' },
-    { text: 'If this happens I will lose my mind', sentiment: 'hype' },
-    { text: 'Where is this rumor coming from??', sentiment: 'neutral' },
-    { text: 'PLEASE let this be true', sentiment: 'hype' },
-    { text: 'Not getting my hopes up...', sentiment: 'neutral' },
-    { text: 'If {player} goes to {team} its OVER for the league', sentiment: 'hype' },
-    { text: 'Hearing the same from my sources', sentiment: 'neutral' },
-    { text: 'This would be the signing of the year', sentiment: 'hype' },
-    { text: 'Taking this with a huge grain of salt', sentiment: 'neutral' },
-    { text: 'The timeline is about to explode if this is real', sentiment: 'hype' },
-    { text: 'Manifesting this transfer', sentiment: 'positive' },
-    { text: 'Rumors flying everywhere today', sentiment: 'neutral' },
-    { text: 'This better not be cap', sentiment: 'neutral' },
-    { text: '{team} fans hold your breath...', sentiment: 'neutral' },
-    { text: 'Someone confirm this ASAP', sentiment: 'hype' },
-    { text: 'Off-season content is unmatched', sentiment: 'neutral' },
-    { text: 'My TL is going crazy over this rumor', sentiment: 'hype' },
-    { text: 'Inject this rumor into my veins', sentiment: 'hype' },
+    { text: '이거 실화냐', sentiment: 'hype' },
+    { text: '루머 알림', sentiment: 'neutral' },
+    { text: '오피셜 전에는 못 믿지', sentiment: 'neutral' },
+    { text: '이거 뜨면 진짜 난리난다', sentiment: 'hype' },
+    { text: '이 얘기 어디서 시작된 거지?', sentiment: 'neutral' },
+    { text: '제발 사실이었으면', sentiment: 'hype' },
   ],
 };
 
 const STAFF_COMMENTS: Record<CommunitySource, { hire: CommentTemplate[]; fire: CommentTemplate[] }> = {
   inven: {
     hire: [
-      { text: '{staff} 영입이면 코칭스태프 업그레이드', sentiment: 'positive' },
-      { text: '오 이 사람 괜찮은데', sentiment: 'positive' },
-      { text: '코칭스태프가 중요하긴 하지', sentiment: 'neutral' },
-      { text: '{team} 이번에 진심이구만', sentiment: 'positive' },
+      { text: '{staff} 합류면 스태프진 업그레이드다', sentiment: 'positive' },
+      { text: '보강 포인트를 잘 짚었네', sentiment: 'positive' },
+      { text: '스태프 변화가 은근 중요하지', sentiment: 'neutral' },
     ],
     fire: [
-      { text: '왜 자르는 거야? 아까운데', sentiment: 'negative' },
-      { text: '리빌딩인가...', sentiment: 'neutral' },
-      { text: '코칭스태프 교체가 답인가', sentiment: 'neutral' },
-      { text: '흠 이건 좀 의외다', sentiment: 'neutral' },
-      { text: '그래도 수고하셨습니다', sentiment: 'positive' },
+      { text: '결과가 안 좋았으니 변화는 왔네', sentiment: 'neutral' },
+      { text: '조금 가혹하긴 하다', sentiment: 'negative' },
+      { text: '다음 인선이 더 중요하겠네', sentiment: 'neutral' },
     ],
   },
   dcinside: {
     hire: [
-      { text: 'ㅇㅇ 누군데?', sentiment: 'neutral' },
-      { text: '코칭스태프 보강 ㄱㄱ', sentiment: 'positive' },
-      { text: '이 사람 이력이 어떻게 되냐', sentiment: 'neutral' },
+      { text: '스태프 보강 괜찮다', sentiment: 'positive' },
+      { text: '티는 늦게 나도 중요함', sentiment: 'neutral' },
+      { text: '은근 실속 있는 영입 같음', sentiment: 'positive' },
     ],
     fire: [
-      { text: '칼이 무섭다 ㄷㄷ', sentiment: 'neutral' },
-      { text: '결과가 안 나오니까...', sentiment: 'neutral' },
-      { text: '이건 좀 아니지 않나', sentiment: 'angry' },
+      { text: '결국 스태프가 먼저 책임지네', sentiment: 'neutral' },
+      { text: '이건 좀 세긴 하다', sentiment: 'negative' },
+      { text: '리셋 버튼 누르는 느낌', sentiment: 'neutral' },
     ],
   },
   fmkorea: {
     hire: [
-      { text: '코칭스태프 이적시장도 뜨겁네', sentiment: 'neutral' },
-      { text: '좋은 영입이다 ㅊㅊ', sentiment: 'positive' },
-      { text: '{team} 코칭 라인업 좋아지겠다', sentiment: 'positive' },
+      { text: '코치진까지 챙기네 좋다', sentiment: 'positive' },
+      { text: '{team} 스태프 라인 탄탄해지겠다', sentiment: 'positive' },
+      { text: '이런 움직임이 시즌 길게 보면 큼', sentiment: 'neutral' },
     ],
     fire: [
-      { text: '에휴 결국 잘렸구나', sentiment: 'neutral' },
-      { text: '흠 아쉬운데', sentiment: 'negative' },
-      { text: '리빌딩 시작인가 ㄷ', sentiment: 'neutral' },
+      { text: '변화는 필요했을 수도 있지', sentiment: 'neutral' },
+      { text: '조금 아쉽긴 하다', sentiment: 'negative' },
+      { text: '결국 다음 영입이 핵심이네', sentiment: 'neutral' },
     ],
   },
   reddit: {
     hire: [
-      { text: 'Good coaching staff addition for {team}', sentiment: 'positive' },
-      { text: 'Interesting hire, curious to see the impact', sentiment: 'neutral' },
-      { text: 'Coaching staff upgrades are underrated', sentiment: 'positive' },
+      { text: '{team} 입장에선 좋은 스태프 보강이다', sentiment: 'positive' },
+      { text: '흥미로운 영입이다. 실제 영향이 궁금하다', sentiment: 'neutral' },
+      { text: '스태프 업그레이드는 생각보다 중요하다', sentiment: 'positive' },
     ],
     fire: [
-      { text: 'Harsh but sometimes changes are needed', sentiment: 'neutral' },
-      { text: "Feel bad for {staff}, didn't seem like the problem", sentiment: 'negative' },
-      { text: 'Rebuilding the coaching staff too', sentiment: 'neutral' },
+      { text: '조금 냉정하지만 변화가 필요했을 수도 있다', sentiment: 'neutral' },
+      { text: '{staff}만의 문제는 아니었던 것 같아서 아쉽다', sentiment: 'negative' },
+      { text: '코칭스태프 재정비도 같이 들어가는 분위기다', sentiment: 'neutral' },
     ],
   },
   twitter: {
     hire: [
-      { text: 'Welcome {staff} to {team}!', sentiment: 'positive' },
-      { text: 'Coaching upgrade alert', sentiment: 'hype' },
+      { text: '{staff} 합류', sentiment: 'positive' },
+      { text: '코칭스태프 업그레이드 경보', sentiment: 'hype' },
     ],
     fire: [
-      { text: 'Thank you {staff} for everything', sentiment: 'positive' },
-      { text: "Surprised to see this change, wasn't expecting it", sentiment: 'neutral' },
+      { text: '{staff} 고생 많았습니다', sentiment: 'positive' },
+      { text: '이건 좀 예상 못 했다', sentiment: 'neutral' },
     ],
   },
 };
@@ -425,152 +266,92 @@ const STAFF_COMMENTS: Record<CommunitySource, { hire: CommentTemplate[]; fire: C
 const MATCH_COMMENTS: Record<CommunitySource, { win: CommentTemplate[]; lose: CommentTemplate[] }> = {
   inven: {
     win: [
-      { text: '{team} 압도적이었다 ㄷㄷ', sentiment: 'hype' },
-      { text: '이 팀 진짜 강하다', sentiment: 'positive' },
-      { text: '오늘 경기 완벽했음', sentiment: 'positive' },
-      { text: '우승 가능하겠는데?', sentiment: 'hype' },
-      { text: '오늘 한타 운영 ㄹㅇ 미쳤다', sentiment: 'hype' },
-      { text: '{team} 이번 시즌 진심이구나', sentiment: 'positive' },
-      { text: '상대팀 멘탈 나갔을듯 ㅋㅋ', sentiment: 'neutral' },
-      { text: '드래프트부터 이겼다', sentiment: 'positive' },
-      { text: '오늘 MVP 누구냐 다 잘했는데', sentiment: 'positive' },
-      { text: '연승 이어가자!', sentiment: 'positive' },
-      { text: '이 정도면 리그 탑3은 확정', sentiment: 'hype' },
-      { text: '경기 내용도 좋고 결과도 좋고', sentiment: 'positive' },
+      { text: '{team} 경기력이 날카로웠다', sentiment: 'hype' },
+      { text: '한타 구도가 진짜 깔끔했다', sentiment: 'positive' },
+      { text: '이 정도면 강팀 느낌 난다', sentiment: 'hype' },
+      { text: '드래프트랑 운영 둘 다 먹혔다', sentiment: 'positive' },
+      { text: '오늘 MVP는 바로 보이네', sentiment: 'positive' },
+      { text: '이 흐름이면 연승 간다', sentiment: 'hype' },
     ],
     lose: [
-      { text: '오늘 뭐했냐 진짜...', sentiment: 'angry' },
-      { text: '{team} 좀 심했다 오늘', sentiment: 'negative' },
-      { text: '드래프트부터 망했어', sentiment: 'negative' },
-      { text: '다음 경기는 이겨라 제발', sentiment: 'neutral' },
-      { text: '밴픽 누가 한거냐 진심', sentiment: 'angry' },
-      { text: '멘탈이 나간 건가... 경기 내용이', sentiment: 'negative' },
-      { text: '이러면 플옵 못 간다', sentiment: 'negative' },
-      { text: '라인전부터 밀리니까 답이 없지', sentiment: 'negative' },
-      { text: '팬들한테 미안하지도 않냐', sentiment: 'angry' },
-      { text: '인터뷰에서 뭐라고 할지 궁금하다', sentiment: 'neutral' },
-      { text: '하... 희망이 안 보인다', sentiment: 'negative' },
-      { text: '로스터 좀 바꿔봐라', sentiment: 'angry' },
+      { text: '오늘 경기는 많이 아쉽다', sentiment: 'negative' },
+      { text: '드래프트부터 좀 꼬인 느낌', sentiment: 'negative' },
+      { text: '다음 경기 반등이 중요하다', sentiment: 'neutral' },
+      { text: '한타 합이 끝까지 안 맞았다', sentiment: 'negative' },
+      { text: '팬들 입장에선 답답한 경기', sentiment: 'angry' },
+      { text: '라인전 손해가 너무 컸다', sentiment: 'negative' },
     ],
   },
   dcinside: {
     win: [
-      { text: 'ㅋㅋ 상대 털었네', sentiment: 'hype' },
-      { text: 'GG 깔끔', sentiment: 'positive' },
-      { text: '오늘 폼 미쳤다', sentiment: 'hype' },
-      { text: 'ㄹㅇ 일방적이었음', sentiment: 'hype' },
-      { text: '오늘 경기 보는 맛이 있었다', sentiment: 'positive' },
-      { text: '{team} 이기니까 기분 좋다', sentiment: 'positive' },
-      { text: '근데 상대가 너무 못한 것도 있음', sentiment: 'neutral' },
-      { text: '한타 운영 깔끔 그 자체', sentiment: 'positive' },
-      { text: '오늘 에이스 터졌네 ㅋㅋ', sentiment: 'hype' },
-      { text: '이 폼이면 상위권 가능', sentiment: 'positive' },
-      { text: 'ㅋㅋ 상대 갤 난리나겠다', sentiment: 'neutral' },
-      { text: '오늘의 승리에 건배', sentiment: 'positive' },
+      { text: '이건 인정이다', sentiment: 'hype' },
+      { text: '오늘 경기 보는 맛 있었다', sentiment: 'positive' },
+      { text: '운영 차이 제대로 났네', sentiment: 'positive' },
+      { text: '상대 멘탈 나갔겠다', sentiment: 'neutral' },
+      { text: '플옵각 진짜 보인다', sentiment: 'hype' },
+      { text: '걍 깔끔했다', sentiment: 'positive' },
     ],
     lose: [
-      { text: '답이 없다 진짜', sentiment: 'angry' },
-      { text: '감독 경질 언제함?', sentiment: 'angry' },
-      { text: 'ㅋㅋ 또 졌네', sentiment: 'negative' },
-      { text: '이 수준이 프로냐', sentiment: 'angry' },
-      { text: '갤 분위기 장례식장이다', sentiment: 'negative' },
-      { text: '이긴 적이 있긴 하냐', sentiment: 'angry' },
-      { text: '솔직히 실력 차이가 너무 남', sentiment: 'negative' },
-      { text: '뭘 해도 안 되는 시즌', sentiment: 'negative' },
-      { text: '하 진짜 열받네', sentiment: 'angry' },
-      { text: '이러면 시즌 끝이다', sentiment: 'negative' },
-      { text: '중반까지는 괜찮았는데...', sentiment: 'neutral' },
-      { text: '한타 타이밍 왜 저렇게 잡냐', sentiment: 'angry' },
+      { text: '오늘은 답이 없었다', sentiment: 'angry' },
+      { text: '전체적으로 너무 별로였음', sentiment: 'negative' },
+      { text: '라인전부터 밀리면 어렵지', sentiment: 'negative' },
+      { text: '감독 인터뷰 좀 궁금하네', sentiment: 'neutral' },
+      { text: '준비를 더 잘했어야 했다', sentiment: 'neutral' },
+      { text: '팬들은 스트레스만 받음', sentiment: 'angry' },
     ],
   },
   fmkorea: {
     win: [
-      { text: '오늘 경기 재밌었다', sentiment: 'positive' },
-      { text: '{team} 팬인데 기분 좋다 ㅋ', sentiment: 'positive' },
-      { text: '이기니까 기분이 좋네', sentiment: 'positive' },
-      { text: '오늘 경기 하이라이트 짤 좀', sentiment: 'neutral' },
-      { text: '이기니까 다 잘한 거 같음 ㅋ', sentiment: 'positive' },
-      { text: '깔끔한 승리 ㅊㅊ', sentiment: 'positive' },
-      { text: '{team} 연승 가즈아', sentiment: 'hype' },
-      { text: '오늘은 마음 편하게 봤다', sentiment: 'positive' },
-      { text: '경기 내용도 좋았음 인정', sentiment: 'positive' },
-      { text: '상대팀 팬들 고생했다 ㅋ', sentiment: 'neutral' },
-      { text: '이 정도 경기력이면 기대해도 되겠다', sentiment: 'positive' },
-      { text: '와 오늘 진짜 잘했다', sentiment: 'hype' },
+      { text: '오늘 경기 진짜 맛있었다', sentiment: 'positive' },
+      { text: '{team} 폼 올라오는 중', sentiment: 'positive' },
+      { text: '이 정도면 기대해도 되겠는데', sentiment: 'hype' },
+      { text: '교전 설계가 좋았다', sentiment: 'positive' },
+      { text: '분위기 제대로 탄다', sentiment: 'hype' },
+      { text: '스크림 성과가 보이는 느낌', sentiment: 'neutral' },
     ],
     lose: [
-      { text: '이건 좀...', sentiment: 'negative' },
-      { text: '왜 진거야 대체', sentiment: 'angry' },
-      { text: '하... 다음엔 이겨라', sentiment: 'neutral' },
-      { text: '경기 보면서 한숨만 나왔다', sentiment: 'negative' },
-      { text: '이번 시즌 전망이 어둡다', sentiment: 'negative' },
-      { text: '솔직히 오늘은 상대가 더 잘했음', sentiment: 'neutral' },
-      { text: '로스터 변경이 답인가', sentiment: 'neutral' },
-      { text: '팬심이 식어간다...', sentiment: 'negative' },
-      { text: '이거 연패면 분위기 최악이겠다', sentiment: 'negative' },
-      { text: '경기 내용이 너무 아쉽다', sentiment: 'negative' },
-      { text: '다음 경기에서 보여주자', sentiment: 'neutral' },
-      { text: '이러다 시즌 망한다 ㅋㅋ', sentiment: 'negative' },
+      { text: '조금 많이 아쉽다', sentiment: 'negative' },
+      { text: '다음 경기까지는 봐야지', sentiment: 'neutral' },
+      { text: '팀 합이 아직 덜 맞는다', sentiment: 'negative' },
+      { text: '로스터 조정 고민할 만함', sentiment: 'neutral' },
+      { text: '보는 입장에서 답답했다', sentiment: 'negative' },
+      { text: '반등 여지는 아직 있다', sentiment: 'neutral' },
     ],
   },
   reddit: {
     win: [
-      { text: '{team} looked really clean today', sentiment: 'positive' },
-      { text: 'What a dominant performance!', sentiment: 'hype' },
-      { text: 'GG, {team} played really well', sentiment: 'positive' },
-      { text: 'That macro was insane', sentiment: 'hype' },
-      { text: '{team} is on another level right now', sentiment: 'hype' },
-      { text: 'MVP performance from the mid laner', sentiment: 'positive' },
-      { text: 'This team is peaking at the right time', sentiment: 'positive' },
-      { text: 'Draft diff was massive this game', sentiment: 'positive' },
-      { text: 'Shoutout to {team} for the clean execution', sentiment: 'positive' },
-      { text: 'If they keep playing like this, playoffs are theirs', sentiment: 'hype' },
-      { text: 'The teamfighting was beautiful to watch', sentiment: 'positive' },
-      { text: '{team} speedrunning the league', sentiment: 'hype' },
+      { text: '{team} 경기력이 정말 깔끔했다', sentiment: 'positive' },
+      { text: '압도적인 퍼포먼스였다', sentiment: 'hype' },
+      { text: '{team}이 정말 잘 준비한 경기였다', sentiment: 'positive' },
+      { text: '운영 차이가 크게 느껴졌다', sentiment: 'hype' },
+      { text: '{team}이 지금 한 단계 위에 있는 느낌이다', sentiment: 'hype' },
+      { text: '미드 라이너가 MVP급 활약을 했다', sentiment: 'positive' },
     ],
     lose: [
-      { text: 'Rough game for {team}', sentiment: 'negative' },
-      { text: 'That draft was questionable at best', sentiment: 'negative' },
-      { text: 'They need to figure things out fast', sentiment: 'neutral' },
-      { text: 'Honestly painful to watch as a {team} fan', sentiment: 'negative' },
-      { text: 'The macro decisions were terrible this game', sentiment: 'angry' },
-      { text: "What happened to {team}'s early game?", sentiment: 'negative' },
-      { text: '{team} is in trouble if they keep losing like this', sentiment: 'negative' },
-      { text: 'Coaching staff needs to step up', sentiment: 'neutral' },
-      { text: 'That baron throw was painful', sentiment: 'angry' },
-      { text: 'Please bench someone, this is not working', sentiment: 'angry' },
-      { text: 'Disappointing performance all around', sentiment: 'negative' },
-      { text: '{team} fans deserve better than this', sentiment: 'negative' },
+      { text: '{team} 입장에선 많이 힘든 경기였다', sentiment: 'negative' },
+      { text: '드래프트 판단이 꽤 아쉬웠다', sentiment: 'negative' },
+      { text: '빠르게 정리하고 방향을 잡아야 한다', sentiment: 'neutral' },
+      { text: '{team} 팬이라면 보기 힘든 경기였다', sentiment: 'negative' },
+      { text: '오늘은 운영 판단이 너무 좋지 않았다', sentiment: 'angry' },
+      { text: '{team}의 초반 설계가 왜 무너졌는지 봐야 한다', sentiment: 'negative' },
     ],
   },
   twitter: {
     win: [
-      { text: '{team} WINS!! What a game!', sentiment: 'hype' },
-      { text: 'Clean victory for {team}', sentiment: 'positive' },
-      { text: 'LETS GOOOO {team}!!!', sentiment: 'hype' },
-      { text: 'Absolutely dominant from {team} today', sentiment: 'hype' },
-      { text: '{team} is the real deal', sentiment: 'positive' },
-      { text: 'That was a masterclass', sentiment: 'positive' },
-      { text: '{team} haters in shambles', sentiment: 'hype' },
-      { text: 'Another W for {team}!!', sentiment: 'positive' },
-      { text: 'Championship caliber performance', sentiment: 'hype' },
-      { text: 'GG go next (for the other team)', sentiment: 'neutral' },
-      { text: 'What a time to be a {team} fan', sentiment: 'positive' },
-      { text: '{team} proving the doubters wrong', sentiment: 'positive' },
+      { text: '{team} 승리! 경기 너무 좋았다', sentiment: 'hype' },
+      { text: '완벽한 승리였다', sentiment: 'positive' },
+      { text: '오늘 진짜 미쳤다', sentiment: 'hype' },
+      { text: '{team} 오늘 경기력 장난 아니다', sentiment: 'hype' },
+      { text: '이 팀 진짜다', sentiment: 'positive' },
+      { text: '마스터클래스였다', sentiment: 'positive' },
     ],
     lose: [
-      { text: 'Pain...', sentiment: 'negative' },
-      { text: '{team} needs to bounce back', sentiment: 'neutral' },
-      { text: 'Not our day...', sentiment: 'negative' },
-      { text: 'This loss hurts', sentiment: 'negative' },
-      { text: 'Sadge...', sentiment: 'negative' },
-      { text: '{team} will come back stronger', sentiment: 'neutral' },
-      { text: 'Draft kingdom strikes again (negatively)', sentiment: 'angry' },
-      { text: 'We go next. Keep your heads up', sentiment: 'neutral' },
-      { text: 'Tough schedule but no excuses', sentiment: 'neutral' },
-      { text: 'Someone make the bad games stop', sentiment: 'negative' },
-      { text: 'Rebuild when?', sentiment: 'angry' },
-      { text: 'This is so frustrating to watch', sentiment: 'angry' },
+      { text: '아프다...', sentiment: 'negative' },
+      { text: '{team} 다음 경기엔 반등하자', sentiment: 'neutral' },
+      { text: '오늘은 우리 날이 아니었다', sentiment: 'negative' },
+      { text: '이 패배는 너무 쓰리다', sentiment: 'negative' },
+      { text: '속상하네', sentiment: 'negative' },
+      { text: '다음엔 더 강하게 돌아오자', sentiment: 'neutral' },
     ],
   },
 };
@@ -629,7 +410,7 @@ async function insertComments(
 // 공개 API
 // ─────────────────────────────────────────
 
-/** 이적 루머 생성 */
+/** 이적 루머 반응을 생성한다. */
 export async function generateTransferRumor(
   seasonId: number,
   date: string,
@@ -638,8 +419,8 @@ export async function generateTransferRumor(
   toTeam: string,
 ): Promise<void> {
   const source = pick(COMMUNITIES);
-  const title = `[루머] ${playerName}, ${toTeam}(으)로 이적 가능성`;
-  const content = `${fromTeam} 소속 ${playerName} 선수가 ${toTeam}(으)로 이적할 수 있다는 소문이 돌고 있다. 아직 공식 발표는 없으나, 관계자에 따르면 양 팀 간 협상이 진행 중인 것으로 알려졌다.`;
+  const title = `[루머] ${playerName}, ${toTeam} 이적설`;
+  const content = `${fromTeam} 소속 ${playerName} 선수가 ${toTeam}로 이적할 수 있다는 이야기가 커뮤니티를 중심으로 퍼지고 있다. 아직 공식 발표는 없지만 여러 반응이 이어지고 있다.`;
   const vars = { player: playerName, team: toTeam };
 
   const reactionId = await insertReaction(seasonId, 'transfer_rumor', date, title, content, source);
@@ -647,7 +428,7 @@ export async function generateTransferRumor(
   await insertComments(reactionId, TRANSFER_RUMOR_COMMENTS[source], vars, source, commentCount);
 }
 
-/** 이적 오피셜 생성 */
+/** 이적 오피셜 반응을 생성한다. */
 export async function generateTransferOfficial(
   seasonId: number,
   date: string,
@@ -658,10 +439,10 @@ export async function generateTransferOfficial(
   const source = pick(COMMUNITIES);
   const title = isJoining
     ? `[오피셜] ${playerName}, ${teamName} 합류`
-    : `[오피셜] ${playerName}, ${teamName} 방출`;
+    : `[오피셜] ${playerName}, ${teamName} 결별`;
   const content = isJoining
-    ? `${teamName}이(가) ${playerName} 선수의 영입을 공식 발표했다. ${playerName} 선수는 새 시즌부터 ${teamName}의 일원으로 활동할 예정이다.`
-    : `${teamName}이(가) ${playerName} 선수의 방출을 공식 발표했다. ${playerName} 선수는 FA 시장에 나서게 된다.`;
+    ? `${teamName}이(가) ${playerName} 영입을 공식 발표했다. ${playerName}는 다음 일정부터 팀 전력에 합류할 예정이다.`
+    : `${teamName}이(가) ${playerName}와의 결별을 공식 발표했다. ${playerName}는 자유계약 시장에 나설 전망이다.`;
   const vars = { player: playerName, team: teamName };
 
   const reactionId = await insertReaction(seasonId, 'transfer_official', date, title, content, source);
@@ -687,7 +468,7 @@ export async function generateTransferOfficial(
   } catch { /* AI 실패 시 기존 템플릿 댓글만 유지 */ }
 }
 
-/** 스태프 영입/해고 반응 생성 */
+/** 스태프 영입/방출 반응을 생성한다. */
 export async function generateStaffReaction(
   seasonId: number,
   date: string,
@@ -698,11 +479,11 @@ export async function generateStaffReaction(
   const source = pick(COMMUNITIES);
   const eventType: SocialEventType = isHire ? 'staff_hire' : 'staff_fire';
   const title = isHire
-    ? `[오피셜] ${teamName}, ${staffName} 코칭스태프 영입`
-    : `[오피셜] ${teamName}, ${staffName} 코칭스태프 계약 해지`;
+    ? `[오피셜] ${teamName}, ${staffName} 스태프 영입`
+    : `[오피셜] ${teamName}, ${staffName} 스태프와 결별`;
   const content = isHire
-    ? `${teamName}이(가) ${staffName}을(를) 새로운 코칭스태프로 영입했다.`
-    : `${teamName}이(가) ${staffName}과(와)의 계약을 해지했다.`;
+    ? `${teamName}이(가) ${staffName}를 코칭 및 지원 스태프로 영입했다.`
+    : `${teamName}이(가) ${staffName}와의 계약을 종료했다.`;
   const vars = { staff: staffName, team: teamName };
 
   const templates = STAFF_COMMENTS[source][isHire ? 'hire' : 'fire'];
@@ -711,7 +492,7 @@ export async function generateStaffReaction(
   await insertComments(reactionId, templates, vars, source, commentCount);
 }
 
-/** 경기 결과 반응 생성 */
+/** 경기 결과 반응을 생성한다. */
 export async function generateMatchReaction(
   seasonId: number,
   date: string,
@@ -754,7 +535,7 @@ export async function generateMatchReaction(
   } catch { /* AI 실패 시 기존 템플릿 댓글만 유지 */ }
 }
 
-/** 최근 반응 조회 */
+/** 최근 반응을 가져온다. */
 export async function getRecentReactions(seasonId: number, limit: number = 20): Promise<SocialReaction[]> {
   const db = await getDatabase();
   const rows = await db.select<ReactionRow[]>(
@@ -764,7 +545,7 @@ export async function getRecentReactions(seasonId: number, limit: number = 20): 
   return rows.map(mapRowToReaction);
 }
 
-/** 반응 + 댓글 조회 */
+/** 특정 반응과 댓글을 함께 가져온다. */
 export async function getReactionWithComments(reactionId: number): Promise<{ reaction: SocialReaction; comments: SocialComment[] }> {
   const db = await getDatabase();
   const reactionRows = await db.select<ReactionRow[]>(
@@ -784,7 +565,7 @@ export async function getReactionWithComments(reactionId: number): Promise<{ rea
   };
 }
 
-/** 커뮤니티 소스 필터 조회 */
+/** 특정 커뮤니티 소스의 반응 목록을 가져온다. */
 export async function getReactionsBySource(
   seasonId: number,
   source: CommunitySource,

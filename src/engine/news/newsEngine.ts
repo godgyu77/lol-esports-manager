@@ -2,6 +2,7 @@ import type { NewsArticle, NewsCategory } from '../../types/news';
 import { getDatabase } from '../../db/database';
 import { generateNewsArticle } from '../../ai/advancedAiService';
 import { nextRandom, pickRandom, randomInt } from '../../utils/random';
+import { invalidateNewsBadges } from './newsEvents';
 
 interface NewsArticleRow {
   id: number;
@@ -363,7 +364,7 @@ export async function generateDailyNews(
     } else {
       const standingRows = await db.select<{ wins: number; losses: number; standing: number }[]>(
         `SELECT wins, losses, standing
-         FROM team_standings
+         FROM standings
          WHERE season_id = $1 AND team_id = $2
          LIMIT 1`,
         [seasonId, team.id],
@@ -751,6 +752,7 @@ export async function markAsRead(newsId: number): Promise<void> {
     `UPDATE news_articles SET is_read = 1 WHERE id = $1`,
     [newsId],
   );
+  invalidateNewsBadges();
 }
 
 export async function markAllAsRead(seasonId: number): Promise<void> {
@@ -759,4 +761,5 @@ export async function markAllAsRead(seasonId: number): Promise<void> {
     `UPDATE news_articles SET is_read = 1 WHERE season_id = $1 AND is_read = 0`,
     [seasonId],
   );
+  invalidateNewsBadges();
 }

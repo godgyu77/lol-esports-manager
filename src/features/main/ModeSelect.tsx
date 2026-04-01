@@ -2,57 +2,68 @@ import { useNavigate } from 'react-router-dom';
 import { useGameStore } from '../../stores/gameStore';
 import './ModeSelect.css';
 
+const MODE_OPTIONS = [
+  {
+    id: 'manager' as const,
+    icon: 'FRONT OFFICE',
+    title: '감독 모드',
+    difficulty: '추천 시작 방식',
+    fantasy: '로스터 운영, 밴픽, 보드 목표를 손에 쥐고 시즌 전체를 설계합니다.',
+    features: ['로스터와 주전 경쟁 관리', '코칭과 밴픽, 경기 운영', '팬 기대와 보드 압박 대응', '이적시장과 시즌 목표 조정'],
+  },
+  {
+    id: 'player' as const,
+    icon: 'RISING STAR',
+    title: '선수 모드',
+    difficulty: '추천 시작 난이도: 도전적',
+    fantasy: '한 명의 선수 커리어를 따라가며 성장, 관계, 출전 경쟁을 직접 겪습니다.',
+    features: ['커스텀 선수 성장', '폼과 멘탈 관리', '감독진과 팀원 관계 변화', '커리어 서사 중심 플레이'],
+  },
+];
+
 export function ModeSelect() {
   const navigate = useNavigate();
   const setMode = useGameStore((s) => s.setMode);
 
   const selectMode = (mode: 'manager' | 'player') => {
     setMode(mode);
-    if (mode === 'player') {
-      navigate('/player-create');
-    } else {
-      navigate('/manager-create');
-    }
+    navigate(mode === 'player' ? '/player-create' : '/manager-create');
   };
 
   return (
     <div className="mode-select">
-      <h1 className="mode-select__title">게임 모드 선택</h1>
+      <div className="mode-select__hero">
+        <span className="mode-select__eyebrow">CAREER ENTRY</span>
+        <h1 className="mode-select__title">어떤 방식으로 시즌에 들어갈지 정해보세요</h1>
+        <p className="mode-select__subtitle">
+          시작 선택은 이후의 시선과 책임을 완전히 바꿉니다.
+          감독으로 팀 전체를 이끌지, 선수로 커리어를 밀어 올릴지 먼저 정하는 단계입니다.
+        </p>
+      </div>
 
       <div className="mode-select__cards">
-        <button className="mode-card" onClick={() => selectMode('manager')}>
-          <div className="mode-card__icon">🏢</div>
-          <h2 className="mode-card__title">감독 모드</h2>
-          <p className="mode-card__desc">
-            팀 전체를 운영합니다. 로스터 편성, 밴픽 지시, 재정 관리, 전술 설정 등
-            거시적 관점에서 팀을 이끌어 보세요.
-          </p>
-          <ul className="mode-card__features">
-            <li>로스터 편성 및 이적 시장</li>
-            <li>밴픽 전략 수립</li>
-            <li>샐러리캡 및 재정 관리</li>
-            <li>코치진 관리</li>
-          </ul>
-        </button>
-
-        <button className="mode-card" onClick={() => selectMode('player')}>
-          <div className="mode-card__icon">🎮</div>
-          <h2 className="mode-card__title">선수 모드</h2>
-          <p className="mode-card__desc">
-            나만의 선수를 만들어 프로 리그에 도전합니다. 훈련, 멘탈 관리, 감독과의
-            관계 등 선수의 삶을 경험하세요.
-          </p>
-          <ul className="mode-card__features">
-            <li>커스텀 선수 생성</li>
-            <li>일과 스케줄 관리</li>
-            <li>감독/팀원과의 관계</li>
-            <li>은퇴 후 감독 전향 가능</li>
-          </ul>
-        </button>
+        {MODE_OPTIONS.map((option) => (
+          <button key={option.id} className="mode-card" onClick={() => selectMode(option.id)}>
+            <div className="mode-card__top">
+              <span className="mode-card__icon">{option.icon}</span>
+              <span className="mode-card__difficulty">{option.difficulty}</span>
+            </div>
+            <h2 className="mode-card__title">{option.title}</h2>
+            <p className="mode-card__desc">{option.fantasy}</p>
+            <ul className="mode-card__features">
+              {option.features.map((feature) => (
+                <li key={feature}>{feature}</li>
+              ))}
+            </ul>
+            <span className="mode-card__cta">
+              {option.id === 'manager' ? '감독 커리어 시작하기' : '선수 커리어 시작하기'}
+            </span>
+          </button>
+        ))}
       </div>
 
       <button className="mode-select__back" onClick={() => navigate('/')}>
-        ← 돌아가기
+        메인 메뉴로 돌아가기
       </button>
     </div>
   );

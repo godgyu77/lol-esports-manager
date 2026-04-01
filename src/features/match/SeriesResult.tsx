@@ -28,6 +28,8 @@ export function SeriesResult({
     if (e.key === 'Escape') onReturn();
   };
 
+  const winnerName = seriesScore.home > seriesScore.away ? homeTeamName : awayTeamName;
+
   return (
     <div className="fm-overlay" role="dialog" aria-modal="true" aria-label="경기 결과" onKeyDown={handleKeyDown}>
       <div className="animate-scaleIn match-result-box">
@@ -39,12 +41,7 @@ export function SeriesResult({
           </span>
           <span className="match-result-team">{awayTeamShortName}</span>
         </div>
-        <p className="match-result-winner">
-          {seriesScore.home > seriesScore.away
-            ? homeTeamName
-            : awayTeamName}{' '}
-          승리!
-        </p>
+        <p className="match-result-winner">{winnerName} 승리</p>
         {gameResults && gameResults.length > 0 && (
           <div className="match-result-highlights">
             <MatchHighlights

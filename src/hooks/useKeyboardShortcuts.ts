@@ -1,14 +1,7 @@
 import { useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useMatchStore } from '../stores/matchStore';
 
-/**
- * 글로벌 키보드 단축키 훅
- * - Space: 다음 날 진행 (DayView에서만, onAdvanceDay 콜백으로)
- * - Escape: 뒤로 가기
- * - 1~4: 경기 속도 변경 (LiveMatchView에서만)
- * - S: 저장 (Ctrl+S 방지 겸)
- */
 export function useKeyboardShortcuts({
   onAdvanceDay,
   onSave,
@@ -19,60 +12,59 @@ export function useKeyboardShortcuts({
   const navigate = useNavigate();
   const location = useLocation();
   const setSpeed = useMatchStore((s) => s.setSpeed);
+  const requestNavigationPause = useMatchStore((s) => s.requestNavigationPause);
 
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      // input/textarea/select에 포커스 시 단축키 무시
-      const target = e.target as HTMLElement;
+    const handler = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement;
       const tagName = target.tagName.toLowerCase();
-      if (tagName === 'input' || tagName === 'textarea' || tagName === 'select') {
-        return;
-      }
+      if (tagName === 'input' || tagName === 'textarea' || tagName === 'select') return;
       if (target.isContentEditable) return;
 
-      // Space = 다음 날 진행 (DayView에서만)
-      if (e.code === 'Space' && !e.ctrlKey && !e.altKey && !e.metaKey) {
-        const isDayView = location.pathname.endsWith('/day');
+      const isDayView = location.pathname.endsWith('/day');
+      const isMatchView = location.pathname.endsWith('/match');
+
+      if (event.code === 'Space' && !event.ctrlKey && !event.altKey && !event.metaKey) {
         if (isDayView && onAdvanceDay) {
-          e.preventDefault();
+          event.preventDefault();
           onAdvanceDay();
         }
         return;
       }
 
-      // Escape = 뒤로 가기
-      if (e.code === 'Escape') {
+      if (event.code === 'Escape') {
+        if (isMatchView) {
+          event.preventDefault();
+          requestNavigationPause();
+          return;
+        }
         navigate(-1);
         return;
       }
 
-      // 1~4 = 경기 속도 변경 (LiveMatchView에서만)
-      const isMatchView = location.pathname.endsWith('/match');
-      if (isMatchView && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      if (isMatchView && !event.ctrlKey && !event.altKey && !event.metaKey) {
         const speedMap: Record<string, number> = {
           Digit1: 1,
-          Digit2: 2,
-          Digit3: 4,
+          Digit2: 1.5,
+          Digit3: 2,
         };
-        const speed = speedMap[e.code];
+        const speed = speedMap[event.code];
         if (speed) {
-          e.preventDefault();
+          event.preventDefault();
           setSpeed(speed);
           return;
         }
       }
 
-      // S = 저장
-      if (e.code === 'KeyS' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      if (event.code === 'KeyS' && !event.ctrlKey && !event.altKey && !event.metaKey) {
         if (onSave) {
-          e.preventDefault();
+          event.preventDefault();
           onSave();
         }
-        return;
       }
     };
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [navigate, location.pathname, setSpeed, onAdvanceDay, onSave]);
+  }, [location.pathname, navigate, onAdvanceDay, onSave, requestNavigationPause, setSpeed]);
 }

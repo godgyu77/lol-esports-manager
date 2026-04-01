@@ -1,12 +1,11 @@
-/**
- * 실시간 선수 스탯 테이블 (OP.GG / LCK 방송 스타일)
- * - 5v5 선수별 KDA, CS, 골드, 데미지, KP%, GPM 실시간 표시
- */
-
 import type { LivePlayerStat } from '../../engine/match/liveMatch';
 
 const POS_LABELS: Record<string, string> = {
-  top: 'TOP', jungle: 'JGL', mid: 'MID', adc: 'ADC', support: 'SUP',
+  top: 'TOP',
+  jungle: 'JGL',
+  mid: 'MID',
+  adc: 'ADC',
+  support: 'SUP',
 };
 
 function formatGold(gold: number): string {
@@ -35,8 +34,8 @@ export function PlayerStatsTable({
   currentTick,
   killsHome,
   killsAway,
-  homeTeamName = 'Blue',
-  awayTeamName = 'Red',
+  homeTeamName = '블루',
+  awayTeamName = '레드',
 }: PlayerStatsTableProps) {
   const tickMin = Math.max(1, currentTick);
 
@@ -48,10 +47,7 @@ export function PlayerStatsTable({
     const isMvpCandidate = stat.kills >= 3 && stat.deaths <= 1;
 
     return (
-      <tr
-        key={stat.playerId}
-        className={`pst-row pst-row--${side} ${isMvpCandidate ? 'pst-row--mvp' : ''}`}
-      >
+      <tr key={stat.playerId} className={`pst-row pst-row--${side} ${isMvpCandidate ? 'pst-row--mvp' : ''}`}>
         <td className="pst-pos">{POS_LABELS[stat.position] ?? stat.position}</td>
         <td className="pst-kda">
           <span className="pst-k">{stat.kills}</span>
@@ -62,8 +58,8 @@ export function PlayerStatsTable({
         </td>
         <td className="pst-kda-ratio">{kda}</td>
         <td className="pst-kp">{kp}%</td>
-        <td className="pst-cs">{stat.cs} <span className="pst-cs-min">({csPerMin}/m)</span></td>
-        <td className="pst-gold">{formatGold(stat.goldEarned)} <span className="pst-cs-min">({gpm}/m)</span></td>
+        <td className="pst-cs">{stat.cs} <span className="pst-cs-min">({csPerMin}/분)</span></td>
+        <td className="pst-gold">{formatGold(stat.goldEarned)} <span className="pst-cs-min">({gpm}/분)</span></td>
         <td className="pst-dmg">{formatGold(stat.damageDealt)}</td>
       </tr>
     );
@@ -76,11 +72,17 @@ export function PlayerStatsTable({
         <table className="pst-table">
           <thead>
             <tr>
-              <th>POS</th><th>K/D/A</th><th>KDA</th><th>KP%</th><th>CS</th><th>Gold</th><th>DMG</th>
+              <th>포지션</th>
+              <th>K/D/A</th>
+              <th>KDA</th>
+              <th>킬관여</th>
+              <th>CS</th>
+              <th>골드</th>
+              <th>피해량</th>
             </tr>
           </thead>
           <tbody>
-            {playerStatsHome.map(s => renderRow(s, 'home', killsHome))}
+            {playerStatsHome.map((player) => renderRow(player, 'home', killsHome))}
           </tbody>
         </table>
       </div>
@@ -90,11 +92,17 @@ export function PlayerStatsTable({
         <table className="pst-table">
           <thead>
             <tr>
-              <th>POS</th><th>K/D/A</th><th>KDA</th><th>KP%</th><th>CS</th><th>Gold</th><th>DMG</th>
+              <th>포지션</th>
+              <th>K/D/A</th>
+              <th>KDA</th>
+              <th>킬관여</th>
+              <th>CS</th>
+              <th>골드</th>
+              <th>피해량</th>
             </tr>
           </thead>
           <tbody>
-            {playerStatsAway.map(s => renderRow(s, 'away', killsAway))}
+            {playerStatsAway.map((player) => renderRow(player, 'away', killsAway))}
           </tbody>
         </table>
       </div>

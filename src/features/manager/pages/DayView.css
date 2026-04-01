@@ -5,8 +5,10 @@
 /* ─── Date Hero Card ─── */
 .dv-date-card {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
   background: linear-gradient(135deg, var(--bg-tertiary) 0%, var(--bg-card) 100%);
   border: 1px solid var(--accent-border);
   border-radius: var(--radius-lg);
@@ -33,8 +35,7 @@
 .dv-focus-card__title {
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: 0.02em;
   color: var(--text-muted);
 }
 
@@ -217,4 +218,22 @@
 .dv-training-link:hover {
   background: var(--info-dim);
   border-color: rgba(59, 130, 246, 0.4);
+}
+
+@media (max-width: 768px) {
+  .dv-date-main {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .dv-date-day {
+    font-size: 22px;
+  }
+
+  .dv-date-info {
+    width: 100%;
+    justify-content: space-between;
+    flex-wrap: wrap;
+  }
 }

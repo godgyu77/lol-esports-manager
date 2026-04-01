@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGameStore } from '../../stores/gameStore';
 import { LCK_TEAMS, LCS_TEAMS, LEC_TEAMS, LPL_TEAMS } from '../../data/rosterDb';
 import type { TeamData, RosterPlayer } from '../../data/rosterDb';
 import type { Region } from '../../types';
+import { getTeamIntroMeta } from './introMeta';
+import './introFlow.css';
 
-// rosterDb에서 팀 목록 생성
 interface TeamListItem {
   id: string;
   name: string;
@@ -41,7 +42,10 @@ const REGIONS: { value: Region | 'ALL'; label: string }[] = [
 ];
 
 const TEAM_DATA_MAP: Record<Region, Record<string, TeamData>> = {
-  LCK: LCK_TEAMS, LPL: LPL_TEAMS, LEC: LEC_TEAMS, LCS: LCS_TEAMS,
+  LCK: LCK_TEAMS,
+  LPL: LPL_TEAMS,
+  LEC: LEC_TEAMS,
+  LCS: LCS_TEAMS,
 };
 
 const OVR_TO_NUMBER: Record<string, number> = {
@@ -57,20 +61,19 @@ function ovrToNumber(ovr: string): number {
 
 function getExpectation(tier: string): string {
   switch (tier) {
-    case 'S': return '우승';
-    case 'A': return '플레이오프';
-    case 'B': return '중위권';
-    default: return '잔류';
+    case 'S': return '우승 경쟁';
+    case 'A': return '플레이오프 진출';
+    case 'B': return '중위권 안착';
+    default: return '리빌딩';
   }
 }
 
 function getTeamData(team: TeamListItem): TeamData | null {
-  const regionTeams = TEAM_DATA_MAP[team.region];
-  return regionTeams?.[team.shortName] ?? null;
+  return TEAM_DATA_MAP[team.region]?.[team.shortName] ?? null;
 }
 
 function getStarterRoster(roster: RosterPlayer[]): RosterPlayer[] {
-  return roster.filter((p) => p.div === '1군' && p.name !== 'VACANT' && p.role !== 'SUB');
+  return roster.filter((player) => player.div === '1군' && player.name !== 'VACANT' && player.role !== 'SUB');
 }
 
 export function TeamSelect() {
@@ -81,16 +84,27 @@ export function TeamSelect() {
   const [selectedRegion, setSelectedRegion] = useState<Region | 'ALL'>('ALL');
   const [selectedTeam, setSelectedTeam] = useState<TeamListItem | null>(null);
 
-  const filteredTeams =
-    selectedRegion === 'ALL'
-      ? ALL_TEAMS
-      : ALL_TEAMS.filter((t) => t.region === selectedRegion);
+  const filteredTeams = selectedRegion === 'ALL'
+    ? ALL_TEAMS
+    : ALL_TEAMS.filter((team) => team.region === selectedRegion);
 
   const teamData = selectedTeam ? getTeamData(selectedTeam) : null;
   const starters = teamData ? getStarterRoster(teamData.roster) : [];
-  const avgOvr = starters.length > 0
-    ? Math.round(starters.reduce((sum, p) => sum + ovrToNumber(p.stats.ovr), 0) / starters.length)
-    : 0;
+  const avgOvr = useMemo(
+    () => (starters.length > 0
+      ? Math.round(starters.reduce((sum, player) => sum + ovrToNumber(player.stats.ovr), 0) / starters.length)
+      : 0),
+    [starters],
+  );
+  const teamMeta = selectedTeam && teamData
+    ? getTeamIntroMeta({
+      teamId: selectedTeam.id,
+      teamName: teamData.teamName,
+      financialTier: teamData.financialTier,
+      region: selectedTeam.region,
+      avgOvr,
+    })
+    : null;
 
   const handleStart = () => {
     if (!selectedTeam) return;
@@ -99,112 +113,138 @@ export function TeamSelect() {
   };
 
   return (
-    <div className="fm-content fm-flex-col fm-items-center" style={{ minHeight: '100vh' }}>
-      <h1 className="fm-text-2xl fm-font-bold fm-text-primary fm-mb-sm">팀 선택</h1>
-      <p className="fm-text-md fm-text-muted fm-mb-lg">
-        {mode === 'manager' ? '감독으로 이끌 팀을 선택하세요' : '소속될 팀을 선택하세요'}
-      </p>
-
-      {/* 리전 탭 */}
-      <div className="fm-tabs fm-mb-lg">
-        {REGIONS.map((r) => (
-          <button
-            key={r.value}
-            className={`fm-tab ${selectedRegion === r.value ? 'fm-tab--active' : ''}`}
-            onClick={() => setSelectedRegion(r.value)}
-          >
-            {r.label}
-          </button>
-        ))}
-      </div>
-
-      <div className="fm-flex fm-gap-lg" style={{ maxWidth: 1000, width: '100%' }}>
-        {/* 좌측: 팀 그리드 */}
-        <div className="fm-flex-1" style={{ minWidth: 0 }}>
-          <div className="fm-grid fm-grid--2" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
-            {filteredTeams.map((team) => (
-              <button
-                key={team.id}
-                className={`fm-card fm-card--clickable fm-flex fm-items-center fm-gap-md ${
-                  selectedTeam?.id === team.id ? 'fm-card--highlight' : ''
-                }`}
-                onClick={() => setSelectedTeam(team)}
-              >
-                <span className="fm-text-xl fm-font-bold fm-text-accent" style={{ minWidth: 40 }}>
-                  {team.shortName}
-                </span>
-                <span className="fm-text-lg fm-text-primary fm-flex-1">{team.name}</span>
-                <span className="fm-text-sm fm-text-muted">{team.region}</span>
-              </button>
-            ))}
+    <div className="fm-content fm-flex-col fm-items-center intro-page">
+      <div className="intro-shell">
+        <header className="fm-panel intro-hero intro-panel-soft">
+          <div className="fm-panel__body" style={{ padding: 28 }}>
+            <div className="fm-text-xs fm-font-semibold fm-text-accent fm-text-upper fm-mb-sm">Club Entry</div>
+            <h1 className="fm-text-2xl fm-font-bold fm-text-primary" style={{ margin: 0 }}>첫 시즌을 맡을 팀을 선택하세요</h1>
+            <p className="fm-text-md fm-text-muted fm-mt-sm" style={{ lineHeight: 1.7 }}>
+              {mode === 'manager'
+                ? '어떤 팀을 맡느냐에 따라 시즌 압박, 팬 기대, 보드 목표가 모두 달라집니다.'
+                : '어떤 팀에서 커리어를 시작하느냐에 따라 성장 속도와 경쟁 환경이 크게 달라집니다.'}
+            </p>
           </div>
+        </header>
+
+        <div className="fm-tabs">
+          {REGIONS.map((region) => (
+            <button
+              key={region.value}
+              className={`fm-tab ${selectedRegion === region.value ? 'fm-tab--active' : ''}`}
+              onClick={() => setSelectedRegion(region.value)}
+            >
+              {region.label}
+            </button>
+          ))}
         </div>
 
-        {/* 우측: 미리보기 패널 */}
-        <div className="fm-panel fm-flex-shrink-0" style={{ width: 340, maxHeight: '60vh', overflowY: 'auto' }}>
-          {selectedTeam && teamData ? (
-            <div>
-              <div className="fm-panel__header">
-                <span className="fm-panel__title">{teamData.teamName}</span>
+        <div className="intro-two-column intro-two-column--balanced">
+          <section className="fm-panel">
+            <div className="fm-panel__header">
+              <span className="fm-panel__title">팀 목록</span>
+            </div>
+            <div className="fm-panel__body">
+              <div className="fm-grid fm-grid--2 intro-scroll-panel" style={{ gap: 12 }}>
+                {filteredTeams.map((team) => (
+                  <button
+                    key={team.id}
+                    className={`fm-card fm-card--clickable fm-flex fm-items-center fm-gap-md ${
+                      selectedTeam?.id === team.id ? 'fm-card--highlight' : ''
+                    }`}
+                    onClick={() => setSelectedTeam(team)}
+                  >
+                    <span className="fm-text-xl fm-font-bold fm-text-accent" style={{ minWidth: 44 }}>
+                      {team.shortName}
+                    </span>
+                    <div className="fm-flex-col fm-flex-1" style={{ minWidth: 0 }}>
+                      <span className="fm-text-lg fm-text-primary">{team.name}</span>
+                      <span className="fm-text-xs fm-text-muted">{team.region}</span>
+                    </div>
+                  </button>
+                ))}
               </div>
+            </div>
+          </section>
 
-              <div className="fm-panel__body fm-flex-col fm-gap-md">
-                <div className="fm-flex fm-gap-sm">
+          <aside className="fm-panel intro-sidebar">
+            {selectedTeam && teamData && teamMeta ? (
+              <div>
+                <div className="fm-panel__header">
+                  <span className="fm-panel__title">{teamData.teamName}</span>
                   <span className="fm-badge fm-badge--accent">{selectedTeam.region}</span>
-                  <span className="fm-badge fm-badge--default">재정 {teamData.financialTier}티어</span>
                 </div>
 
-                {/* 재정 */}
-                <div>
-                  <h3 className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">재정</h3>
-                  <div className="fm-info-row">
-                    <span className="fm-info-row__label">예산</span>
-                    <span className="fm-info-row__value">{teamData.money}억</span>
+                <div className="fm-panel__body fm-flex-col fm-gap-md">
+                  <div className="fm-flex fm-gap-sm" style={{ flexWrap: 'wrap' }}>
+                    <span className="fm-badge fm-badge--accent">{teamMeta.playstyleTag}</span>
+                    <span className="fm-badge fm-badge--default">재정 티어 {teamData.financialTier}</span>
+                    <span className="fm-badge fm-badge--default">평균 OVR {avgOvr}</span>
                   </div>
-                  <div className="fm-info-row">
-                    <span className="fm-info-row__label">연간 지원금</span>
-                    <span className="fm-info-row__value">{teamData.annualSupport}억</span>
-                  </div>
-                </div>
 
-                {/* 1군 로스터 */}
-                <div>
-                  <h3 className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">1군 로스터</h3>
-                  <div className="fm-flex-col fm-gap-xs">
-                    {starters.map((p) => (
-                      <div key={p.name} className="fm-flex fm-items-center fm-gap-sm fm-p-sm" style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-sm)' }}>
-                        <span className="fm-text-xs fm-font-bold fm-text-accent" style={{ minWidth: 32 }}>{p.role}</span>
-                        <span className="fm-text-md fm-text-primary fm-flex-1">{p.name}</span>
-                        <span className="fm-text-md fm-font-bold fm-text-primary">{p.stats.ovr}</span>
-                      </div>
-                    ))}
+                  <div className="fm-card">
+                    <div className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">팀 선택 브리핑</div>
+                    <div className="fm-info-row">
+                      <span className="fm-info-row__label">팬 기대</span>
+                      <span className="fm-info-row__value">{teamMeta.fanExpectation}</span>
+                    </div>
+                    <div className="fm-info-row">
+                      <span className="fm-info-row__label">시즌 난이도</span>
+                      <span className="fm-info-row__value">{teamMeta.seasonDifficulty}</span>
+                    </div>
+                    <div className="fm-info-row">
+                      <span className="fm-info-row__label">추천 유저</span>
+                      <span className="fm-info-row__value">{teamMeta.recommendedFor}</span>
+                    </div>
+                    <div className="fm-info-row">
+                      <span className="fm-info-row__label">기본 목표</span>
+                      <span className="fm-info-row__value">{getExpectation(teamData.financialTier)}</span>
+                    </div>
                   </div>
-                  <div className="fm-text-right fm-text-md fm-text-muted fm-mt-sm">
-                    평균 OVR: <strong className="fm-text-primary">{avgOvr}</strong>
+
+                  <div className="fm-card">
+                    <div className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">시즌 서사</div>
+                    <p className="fm-text-sm fm-text-primary" style={{ lineHeight: 1.7, margin: 0 }}>
+                      {teamMeta.boardStoryline}
+                    </p>
+                    <p className="fm-text-sm fm-text-muted fm-mt-sm" style={{ lineHeight: 1.7 }}>
+                      라이벌 구도: {teamMeta.rivalry}
+                    </p>
                   </div>
-                </div>
 
-                {/* 구단 기대치 */}
-                <div>
-                  <h3 className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">구단 기대치</h3>
-                  <span className="fm-text-xl fm-font-bold fm-text-accent">{getExpectation(teamData.financialTier)}</span>
-                </div>
+                  <div>
+                    <h3 className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">1군 로스터</h3>
+                    <div className="fm-flex-col fm-gap-xs">
+                      {starters.map((player) => (
+                        <div
+                          key={player.name}
+                          className="fm-flex fm-items-center fm-gap-sm fm-p-sm"
+                          style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-sm)' }}
+                        >
+                          <span className="fm-text-xs fm-font-bold fm-text-accent" style={{ minWidth: 32 }}>{player.role}</span>
+                          <span className="fm-text-md fm-text-primary fm-flex-1">{player.name}</span>
+                          <span className="fm-text-md fm-font-bold fm-text-primary">{player.stats.ovr}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
 
-                <button className="fm-btn fm-btn--primary fm-btn--lg" style={{ width: '100%' }} onClick={handleStart}>
-                  이 팀으로 시작 →
-                </button>
+                  <button className="fm-btn fm-btn--primary fm-btn--lg" style={{ width: '100%' }} onClick={handleStart}>
+                    이 팀으로 부임 준비
+                  </button>
+                </div>
               </div>
-            </div>
-          ) : (
-            <div className="fm-panel__body fm-flex fm-items-center fm-justify-center fm-text-muted fm-text-lg fm-text-center" style={{ minHeight: 300 }}>
-              <p>팀을 선택하면 상세 정보가 표시됩니다</p>
-            </div>
-          )}
+            ) : (
+              <div className="fm-panel__body fm-flex fm-items-center fm-justify-center fm-text-muted fm-text-lg fm-text-center" style={{ minHeight: 300 }}>
+                <p>팀을 선택하면 시즌 압박, 로스터 개요, 추천 플레이 스타일이 함께 표시됩니다.</p>
+              </div>
+            )}
+          </aside>
         </div>
       </div>
 
-      <button className="fm-btn fm-btn--ghost fm-mt-lg" onClick={() => navigate('/mode-select')}>
-        ← 돌아가기
+      <button className="fm-btn fm-btn--ghost intro-back" onClick={() => navigate('/manager-create')}>
+        감독 생성으로 돌아가기
       </button>
     </div>
   );

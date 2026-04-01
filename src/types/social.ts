@@ -29,5 +29,5 @@ export const COMMUNITY_LABELS: Record<CommunitySource, string> = {
   dcinside: 'DC인사이드',
   fmkorea: 'FM코리아',
   reddit: 'Reddit',
-  twitter: 'X (Twitter)',
+  twitter: 'X',
 };

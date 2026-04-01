@@ -1,92 +1,166 @@
 .mode-select {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
   min-height: 100vh;
-  background: linear-gradient(135deg, #0a0a1a 0%, #1a1a3e 50%, #0a0a1a 100%);
-  color: #e0e0e0;
-  padding: 40px;
+  padding: 64px 28px 48px;
+  background:
+    radial-gradient(circle at top, rgba(209, 168, 76, 0.1), transparent 25%),
+    linear-gradient(160deg, #09111f 0%, #111935 52%, #090d18 100%);
+  color: #f7f2e7;
+}
+
+.mode-select__hero {
+  max-width: 760px;
+  margin: 0 auto 40px;
+  text-align: center;
+}
+
+.mode-select__eyebrow {
+  display: inline-block;
+  margin-bottom: 12px;
+  color: #d1a84c;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
 }
 
 .mode-select__title {
-  font-size: 32px;
-  font-weight: 700;
-  margin-bottom: 40px;
-  color: #f0e6d2;
+  margin: 0;
+  font-size: clamp(32px, 4vw, 52px);
+  line-height: 1.08;
+}
+
+.mode-select__subtitle {
+  margin: 16px auto 0;
+  max-width: 640px;
+  color: rgba(247, 242, 231, 0.7);
+  font-size: 16px;
+  line-height: 1.7;
+  text-wrap: pretty;
 }
 
 .mode-select__cards {
-  display: flex;
-  gap: 24px;
-  max-width: 800px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px;
+  max-width: 1040px;
+  margin: 0 auto;
 }
 
 .mode-card {
-  flex: 1;
-  padding: 32px;
-  border: 1px solid #3a3a5c;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.03);
-  color: #e0e0e0;
+  min-height: 420px;
+  padding: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 24px;
+  background: rgba(11, 18, 31, 0.76);
+  color: inherit;
   text-align: left;
   cursor: pointer;
-  transition: all 0.3s;
+  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+  box-shadow: 0 18px 34px rgba(0, 0, 0, 0.14);
 }
 
 .mode-card:hover {
-  border-color: #c89b3c;
-  background: rgba(200, 155, 60, 0.08);
   transform: translateY(-4px);
+  border-color: rgba(209, 168, 76, 0.36);
+  background: rgba(15, 24, 42, 0.92);
+}
+
+.mode-card__top {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
 }
 
 .mode-card__icon {
-  font-size: 48px;
-  margin-bottom: 16px;
+  color: #d1a84c;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+}
+
+.mode-card__difficulty {
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(247, 242, 231, 0.72);
+  font-size: 12px;
 }
 
 .mode-card__title {
-  font-size: 22px;
-  font-weight: 700;
-  color: #f0e6d2;
-  margin: 0 0 12px;
+  margin: 18px 0 10px;
+  font-size: 28px;
 }
 
 .mode-card__desc {
-  font-size: 14px;
-  color: #8a8a9a;
-  line-height: 1.6;
-  margin-bottom: 16px;
+  margin: 0;
+  color: rgba(247, 242, 231, 0.72);
+  line-height: 1.7;
+  text-wrap: pretty;
 }
 
 .mode-card__features {
   list-style: none;
   padding: 0;
-  margin: 0;
+  margin: 22px 0 0;
 }
 
 .mode-card__features li {
-  font-size: 13px;
-  color: #a0a0b0;
-  padding: 4px 0;
+  padding: 8px 0;
+  color: rgba(247, 242, 231, 0.86);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .mode-card__features li::before {
-  content: '✦ ';
-  color: #c89b3c;
+  content: '• ';
+  color: #d1a84c;
+}
+
+.mode-card__cta {
+  display: inline-block;
+  margin-top: 22px;
+  color: #fff0c1;
+  font-weight: 700;
 }
 
 .mode-select__back {
-  margin-top: 32px;
-  padding: 10px 20px;
+  display: block;
+  margin: 28px auto 0;
   border: none;
-  border-radius: 6px;
   background: transparent;
-  color: #6a6a7a;
+  color: rgba(247, 242, 231, 0.62);
   font-size: 14px;
   cursor: pointer;
 }
 
-.mode-select__back:hover {
-  color: #e0e0e0;
+@media (max-width: 780px) {
+  .mode-select__cards {
+    grid-template-columns: 1fr;
+  }
+
+  .mode-card {
+    min-height: auto;
+  }
+}
+
+@media (max-width: 560px) {
+  .mode-select {
+    padding: 32px 16px 40px;
+  }
+
+  .mode-select__title {
+    font-size: 30px;
+  }
+
+  .mode-select__subtitle {
+    font-size: 15px;
+    line-height: 1.65;
+  }
+
+  .mode-card {
+    padding: 22px;
+  }
+
+  .mode-card__title {
+    font-size: 24px;
+  }
 }

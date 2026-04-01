@@ -9,15 +9,21 @@ export type Difficulty = 'easy' | 'normal' | 'hard';
 export type Theme = 'dark' | 'light';
 export type WindowMode = 'windowed' | 'fullscreen' | 'borderless';
 export type AiProvider = 'ollama' | 'openai' | 'claude' | 'gemini' | 'grok' | 'template';
+type CloudAiProvider = Exclude<AiProvider, 'ollama' | 'template'>;
 
-const isMobile = (): boolean => {
+export const isMobileRuntime = (): boolean => {
   if (typeof window === 'undefined') return false;
   return /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth <= 480;
 };
 
 const VAULT_PASSWORD = 'lol-esports-manager';
 const CLIENT_NAME = 'api-keys';
-const API_KEY_RECORD = 'cloud-api-key';
+const API_KEY_RECORDS: Record<CloudAiProvider, string> = {
+  openai: 'openai-api-key',
+  claude: 'claude-api-key',
+  gemini: 'gemini-api-key',
+  grok: 'grok-api-key',
+};
 
 let strongholdInstance: Stronghold | null = null;
 let strongholdClient: Client | null = null;
@@ -37,21 +43,30 @@ async function getStrongholdClient(): Promise<Client> {
   return strongholdClient;
 }
 
-async function storeApiKeyToVault(key: string): Promise<void> {
+function resolveApiKeyRecord(provider: AiProvider): string | null {
+  if (provider === 'ollama' || provider === 'template') return null;
+  return API_KEY_RECORDS[provider];
+}
+
+async function storeApiKeyToVault(provider: AiProvider, key: string): Promise<void> {
+  const record = resolveApiKeyRecord(provider);
+  if (!record) return;
   const client = await getStrongholdClient();
   const store = client.getStore();
   const data = Array.from(new TextEncoder().encode(key));
-  await store.insert(API_KEY_RECORD, data);
+  await store.insert(record, data);
   if (strongholdInstance) {
     await strongholdInstance.save();
   }
 }
 
-async function getApiKeyFromVault(): Promise<string> {
+async function getApiKeyFromVault(provider: AiProvider): Promise<string> {
+  const record = resolveApiKeyRecord(provider);
+  if (!record) return '';
   try {
     const client = await getStrongholdClient();
     const store = client.getStore();
-    const data = await store.get(API_KEY_RECORD);
+    const data = await store.get(record);
     if (!data || data.length === 0) return '';
     return new TextDecoder().decode(new Uint8Array(data));
   } catch {
@@ -59,11 +74,13 @@ async function getApiKeyFromVault(): Promise<string> {
   }
 }
 
-async function deleteApiKeyFromVault(): Promise<void> {
+async function deleteApiKeyFromVault(provider: AiProvider): Promise<void> {
+  const record = resolveApiKeyRecord(provider);
+  if (!record) return;
   try {
     const client = await getStrongholdClient();
     const store = client.getStore();
-    await store.remove(API_KEY_RECORD);
+    await store.remove(record);
     if (strongholdInstance) {
       await strongholdInstance.save();
     }
@@ -101,17 +118,17 @@ interface SettingsState {
   setTheme: (theme: Theme) => void;
   setWindowMode: (mode: WindowMode) => void;
   setAiProvider: (provider: AiProvider) => void;
-  setApiKey: (key: string) => Promise<void>;
+  setApiKey: (key: string, provider?: AiProvider) => Promise<void>;
   setApiEndpoint: (endpoint: string) => void;
   setApiModel: (model: string) => void;
-  getApiKey: () => Promise<string>;
-  initApiKeyStatus: () => Promise<void>;
+  getApiKey: (provider?: AiProvider) => Promise<string>;
+  initApiKeyStatus: (provider?: AiProvider) => Promise<void>;
 }
 
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
-      defaultSpeed: 1,
+      defaultSpeed: 0.75,
       aiEnabled: true,
       aiModel: '',
       aiSetupCompleted: false,
@@ -122,7 +139,7 @@ export const useSettingsStore = create<SettingsState>()(
       soundVolume: 0.5,
       theme: 'dark',
       windowMode: 'windowed',
-      aiProvider: isMobile() ? 'template' : 'ollama',
+      aiProvider: isMobileRuntime() ? 'template' : 'ollama',
       hasApiKey: false,
       apiEndpoint: '',
       apiModel: 'gpt-4o-mini',
@@ -144,21 +161,27 @@ export const useSettingsStore = create<SettingsState>()(
       },
       setTheme: (theme) => set({ theme }),
       setWindowMode: (mode) => set({ windowMode: mode }),
-      setAiProvider: (provider) => set({ aiProvider: provider }),
-      setApiKey: async (key) => {
+      setAiProvider: (provider) => {
+        const nextProvider = isMobileRuntime() && provider === 'ollama' ? 'template' : provider;
+        set({ aiProvider: nextProvider });
+        void getApiKeyFromVault(nextProvider).then((key) => {
+          set({ hasApiKey: !!key });
+        });
+      },
+      setApiKey: async (key, provider = useSettingsStore.getState().aiProvider) => {
         if (key) {
-          await storeApiKeyToVault(key);
+          await storeApiKeyToVault(provider, key);
           set({ hasApiKey: true });
         } else {
-          await deleteApiKeyFromVault();
+          await deleteApiKeyFromVault(provider);
           set({ hasApiKey: false });
         }
       },
       setApiEndpoint: (endpoint) => set({ apiEndpoint: endpoint }),
       setApiModel: (model) => set({ apiModel: model }),
-      getApiKey: () => getApiKeyFromVault(),
-      initApiKeyStatus: async () => {
-        const key = await getApiKeyFromVault();
+      getApiKey: (provider = useSettingsStore.getState().aiProvider) => getApiKeyFromVault(provider),
+      initApiKeyStatus: async (provider = useSettingsStore.getState().aiProvider) => {
+        const key = await getApiKeyFromVault(provider);
         set({ hasApiKey: !!key });
       },
     }),

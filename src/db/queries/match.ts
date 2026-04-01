@@ -40,6 +40,7 @@ export function mapRowToMatch(row: MatchRow): Match {
     matchType: (row.match_type ?? 'regular') as Match['matchType'],
     boFormat: (row.bo_format ?? 'Bo3') as Match['boFormat'],
     fearlessDraft: Boolean(row.fearless_draft),
+    hardFearlessSeries: (row.bo_format ?? 'Bo3') !== 'Bo1' || Boolean(row.fearless_draft),
   };
 }
 

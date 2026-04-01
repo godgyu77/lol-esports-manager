@@ -61,6 +61,13 @@ export interface TeamDraftState {
   picks: { championId: string; position: Position }[];
 }
 
+const POSITION_ORDER: Position[] = ['top', 'jungle', 'mid', 'adc', 'support'];
+
+function getNextAvailablePickPosition(teamState: TeamDraftState): Position | null {
+  const usedPositions = new Set(teamState.picks.map((pick) => pick.position));
+  return POSITION_ORDER.find((position) => !usedPositions.has(position)) ?? null;
+}
+
 /** 전체 드래프트 상태 */
 export interface DraftState {
   /** 현재 단계 인덱스 (0~19) */
@@ -188,12 +195,12 @@ export function executeDraftAction(
     teamState.bans.push(championId);
     state.bannedChampions.push(championId);
   } else {
-    // pick에는 포지션 필요
-    if (!position) return false;
-    // 이미 선택된 포지션이면 거부
-    if (teamState.picks.some(p => p.position === position)) return false;
-    teamState.picks.push({ championId, position });
+    const resolvedPosition = position ?? getNextAvailablePickPosition(teamState);
+    if (!resolvedPosition) return false;
+    if (teamState.picks.some(p => p.position === resolvedPosition)) return false;
+    teamState.picks.push({ championId, position: resolvedPosition });
     state.pickedChampions.push(championId);
+    position = resolvedPosition;
   }
 
   state.history.push({
@@ -233,9 +240,9 @@ export function swapChampions(
   if (indexB < 0 || indexB >= team.picks.length) return false;
   if (indexA === indexB) return false;
 
-  const temp = team.picks[indexA];
-  team.picks[indexA] = team.picks[indexB];
-  team.picks[indexB] = temp;
+  const tempChampionId = team.picks[indexA].championId;
+  team.picks[indexA].championId = team.picks[indexB].championId;
+  team.picks[indexB].championId = tempChampionId;
   return true;
 }
 

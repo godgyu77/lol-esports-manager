@@ -1,25 +1,26 @@
-import { renderWithProviders, screen, resetStores } from '../../test/testUtils';
+import { renderWithProviders, resetStores, screen } from '../../test/testUtils';
 import { DraftView } from './DraftView';
-import type { Match, Team, GameSave } from '../../types';
+import type { GameSave, Match, Team } from '../../types';
 
-// 외부 의존성 모킹
 vi.mock('../../hooks/useBgm', () => ({
   useBgm: vi.fn(),
 }));
+
 vi.mock('../../audio/soundManager', () => ({
   soundManager: { play: vi.fn(), stop: vi.fn(), setEnabled: vi.fn(), setVolume: vi.fn() },
 }));
+
 vi.mock('../../ai/advancedAiService', () => ({
   generateDraftAdvice: vi.fn().mockResolvedValue(null),
 }));
+
 vi.mock('../../db/queries', () => ({
   getPlayersByTeamId: vi.fn().mockResolvedValue([]),
 }));
 
-// 드래프트 엔진 — 핵심 함수만 모킹
 vi.mock('../../engine/draft/draftEngine', () => ({
   createDraftState: vi.fn().mockReturnValue({
-    phase: 'ban',
+    phase: 'ban1',
     currentStep: 0,
     currentSide: 'blue',
     currentActionType: 'ban',
@@ -37,25 +38,29 @@ vi.mock('../../engine/draft/draftEngine', () => ({
   aiSelectBan: vi.fn().mockResolvedValue('champion_1'),
   aiSelectPick: vi.fn().mockResolvedValue({ championId: 'champion_1', position: 'mid' }),
   buildDraftTeamInfo: vi.fn().mockReturnValue({
-    top: null, jungle: null, mid: null, adc: null, support: null,
+    playerPools: { top: [], jungle: [], mid: [], adc: [], support: [] },
+    preferredTags: [],
   }),
   getRecommendedBans: vi.fn().mockReturnValue([]),
   getRecommendedPicks: vi.fn().mockReturnValue([]),
 }));
 
-// 자식 컴포넌트 스텁
 vi.mock('./BanSection', () => ({
   BanSection: () => <div data-testid="ban-section">BanSection</div>,
 }));
+
 vi.mock('./PickSection', () => ({
-  PickSection: ({ color }: { color: string }) => <div data-testid={`pick-section-${color}`}>PickSection</div>,
+  PickSection: ({ sideLabel }: { sideLabel: string }) => <div data-testid={`pick-section-${sideLabel}`}>PickSection</div>,
 }));
+
 vi.mock('./DraftCenterPanel', () => ({
   DraftCenterPanel: () => <div data-testid="draft-center-panel">DraftCenterPanel</div>,
 }));
+
 vi.mock('./ChampionGrid', () => ({
   ChampionGrid: () => <div data-testid="champion-grid">ChampionGrid</div>,
 }));
+
 vi.mock('./draft.css', () => ({}));
 
 const mockSave = {
@@ -63,7 +68,7 @@ const mockSave = {
   userTeamId: 'team-home',
   seasonId: 'season-1',
   currentDate: '2025-01-15',
-  managerName: '테스트 감독',
+  managerName: 'Test Manager',
   mode: 'manager',
 } as unknown as GameSave;
 
@@ -75,6 +80,7 @@ const mockPendingMatch = {
   date: '2025-01-15',
   matchType: 'regular',
   fearlessDraft: false,
+  boFormat: 'Bo3',
 } as unknown as Match;
 
 const mockTeams: Team[] = [
@@ -88,15 +94,15 @@ describe('DraftView', () => {
     vi.clearAllMocks();
   });
 
-  it('pendingMatch가 없으면 로딩 메시지를 표시한다', () => {
+  it('shows a loading message when there is no pending match', () => {
     renderWithProviders(<DraftView />, {
       gameState: { save: mockSave, teams: mockTeams, mode: 'manager' },
     });
 
-    expect(screen.getByText('밴픽 데이터 로딩 중...')).toBeInTheDocument();
+    expect(screen.getByText('밴픽 화면을 준비하는 중입니다...')).toBeInTheDocument();
   });
 
-  it('pendingMatch가 있으면 드래프트 UI를 렌더한다', async () => {
+  it('renders the full draft room shell when a pending match exists', async () => {
     renderWithProviders(<DraftView />, {
       gameState: {
         save: mockSave,
@@ -107,15 +113,13 @@ describe('DraftView', () => {
       },
     });
 
-    // 초기화 후 UI 렌더 확인
-    expect(await screen.findByText('블루')).toBeInTheDocument();
-    expect(screen.getByText('레드')).toBeInTheDocument();
-    expect(screen.getByText('VS')).toBeInTheDocument();
+    expect(await screen.findByText('세트 1 밴픽')).toBeInTheDocument();
     expect(screen.getByText('T1')).toBeInTheDocument();
     expect(screen.getByText('GEN')).toBeInTheDocument();
+    expect(screen.getByText('VS')).toBeInTheDocument();
   });
 
-  it('유저팀(블루)에 YOU 배지를 표시한다', async () => {
+  it('shows the user badge on the user team header', async () => {
     renderWithProviders(<DraftView />, {
       gameState: {
         save: mockSave,
@@ -126,10 +130,10 @@ describe('DraftView', () => {
       },
     });
 
-    expect(await screen.findByText('YOU')).toBeInTheDocument();
+    expect(await screen.findByText('내 팀')).toBeInTheDocument();
   });
 
-  it('밴/픽 섹션과 중앙 패널이 렌더된다', async () => {
+  it('renders the ban board and center panel', async () => {
     renderWithProviders(<DraftView />, {
       gameState: {
         save: mockSave,
