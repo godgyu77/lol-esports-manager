@@ -2,28 +2,38 @@ import { renderWithProviders, screen, resetStores } from '../../../test/testUtil
 import { ManagerDashboard } from './ManagerDashboard';
 import type { Team, Season, GameSave } from '../../../types';
 
-// 외부 의존성 모킹
 vi.mock('../../../hooks/useAutoSave', () => ({
   useAutoSave: vi.fn(),
 }));
+
 vi.mock('../../../hooks/useNavBadges', () => ({
   useNavBadges: vi.fn().mockReturnValue({}),
 }));
+
 vi.mock('../../../hooks/useKeyboardShortcuts', () => ({
   useKeyboardShortcuts: vi.fn(),
 }));
+
 vi.mock('../../../engine/season/dayAdvancer', () => ({
-  advanceDay: vi.fn().mockResolvedValue({ nextDate: '2025-01-16', date: '2025-01-15', dayType: 'training', hasUserMatch: false }),
+  advanceDay: vi.fn().mockResolvedValue({
+    nextDate: '2025-01-16',
+    date: '2025-01-15',
+    dayType: 'training',
+    hasUserMatch: false,
+  }),
   skipToNextMatchDay: vi.fn().mockResolvedValue([]),
 }));
+
 vi.mock('../../../components/CommandPalette', () => ({
   CommandPalette: () => null,
 }));
+
 vi.mock('../../../components/ErrorBoundary', () => ({
   ErrorBoundary: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
+
 vi.mock('../../../utils/formatUtils', () => ({
-  formatAmount: (v: number) => `₩${v}`,
+  formatAmount: (value: number) => `₩${value.toLocaleString('ko-KR')}`,
 }));
 
 const mockSave = {
@@ -65,29 +75,29 @@ describe('ManagerDashboard', () => {
       routerProps: { initialEntries: ['/manager'] },
     });
 
-    // 팀 이름이 로고/이름 양쪽에 존재
     expect(screen.getAllByText('T1').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('감독 겸 단장')).toBeInTheDocument();
 
-    // 사이드바 네비게이션 영역에서 확인
-    const sidebar = screen.getByRole('navigation', { name: 'Manager navigation' });
+    const sidebar = screen.getByRole('navigation', { name: '매니저 내비게이션' });
     expect(sidebar).toBeInTheDocument();
     expect(screen.getByText('대시보드')).toBeInTheDocument();
+    expect(screen.getByText('팀 운영')).toBeInTheDocument();
   });
 
-  it('상단바에 시즌/날짜/예산/리전 정보를 표시한다', () => {
+  it('상단바에 시즌 날짜 예산 명성 정보를 표시한다', () => {
     renderWithProviders(<ManagerDashboard />, {
       gameState: { save: mockSave, season: mockSeason, teams: [mockTeam] },
       routerProps: { initialEntries: ['/manager'] },
     });
 
-    expect(screen.getByText('2025 Spring')).toBeInTheDocument();
+    expect(screen.getByText('2025 스프링')).toBeInTheDocument();
     expect(screen.getByText('2025-01-15')).toBeInTheDocument();
     expect(screen.getByText('W3')).toBeInTheDocument();
-    expect(screen.getByText('₩5000000')).toBeInTheDocument();
+    expect(screen.getByText('₩5,000,000')).toBeInTheDocument();
+    expect(screen.getByText('85')).toBeInTheDocument();
   });
 
-  it('"시즌 진행" 버튼이 존재한다', () => {
+  it('시즌 진행 버튼이 존재한다', () => {
     renderWithProviders(<ManagerDashboard />, {
       gameState: { save: mockSave, season: mockSeason, teams: [mockTeam] },
       routerProps: { initialEntries: ['/manager'] },
@@ -96,7 +106,7 @@ describe('ManagerDashboard', () => {
     expect(screen.getAllByText('시즌 진행').length).toBeGreaterThanOrEqual(1);
   });
 
-  it('사이드바 푸터 버튼이 존재한다', () => {
+  it('사이드바 하단 버튼이 존재한다', () => {
     renderWithProviders(<ManagerDashboard />, {
       gameState: { save: mockSave, season: mockSeason, teams: [mockTeam] },
       routerProps: { initialEntries: ['/manager'] },
