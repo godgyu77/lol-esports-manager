@@ -53,9 +53,6 @@ vi.mock('../../engine/draft/draftEngine', () => ({
 }));
 
 // 자식 컴포넌트 스텁
-vi.mock('./Scoreboard', () => ({
-  Scoreboard: () => <div data-testid="scoreboard">Scoreboard</div>,
-}));
 vi.mock('./DecisionPopup', () => ({
   DecisionPopup: () => <div data-testid="decision-popup">DecisionPopup</div>,
 }));
@@ -71,11 +68,20 @@ vi.mock('./TacticsPanel', () => ({
 vi.mock('./PlayerInstructions', () => ({
   PlayerInstructions: () => <div data-testid="player-instructions">PlayerInstructions</div>,
 }));
-vi.mock('./PlayerStatsTable', () => ({
-  PlayerStatsTable: () => <div data-testid="player-stats-table">PlayerStatsTable</div>,
-}));
 vi.mock('./PostGameStats', () => ({
   PostGameStats: () => <div data-testid="post-game-stats">PostGameStats</div>,
+}));
+vi.mock('./BroadcastHud', () => ({
+  BroadcastHud: () => <div data-testid="broadcast-hud">BroadcastHud</div>,
+}));
+vi.mock('./BroadcastTeamColumn', () => ({
+  BroadcastTeamColumn: () => <div data-testid="broadcast-team-column">BroadcastTeamColumn</div>,
+}));
+vi.mock('./BroadcastBattlefield', () => ({
+  BroadcastBattlefield: () => <div data-testid="broadcast-battlefield">BroadcastBattlefield</div>,
+}));
+vi.mock('./BroadcastMiniMap', () => ({
+  BroadcastMiniMap: () => <div data-testid="broadcast-minimap">BroadcastMiniMap</div>,
 }));
 vi.mock('./match.css', () => ({}));
 

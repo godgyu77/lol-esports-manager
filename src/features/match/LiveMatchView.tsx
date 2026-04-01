@@ -21,14 +21,15 @@ import { CommentaryPanel } from './CommentaryPanel';
 import { DecisionPopup } from './DecisionPopup';
 import { PlayerInstructions } from './PlayerInstructions';
 import { PostGameStats } from './PostGameStats';
-import { Scoreboard } from './Scoreboard';
 import { SeriesResult } from './SeriesResult';
 import { TacticsPanel } from './TacticsPanel';
-import { TeamStatusBoard } from './TeamStatusBoard';
+import { BroadcastHud } from './BroadcastHud';
+import { BroadcastTeamColumn } from './BroadcastTeamColumn';
 import { soundManager } from '../../audio/soundManager';
 import './match.css';
 
-const MatchMinimap = lazy(() => import('./MatchMinimap').then((module) => ({ default: module.MatchMinimap })));
+const BroadcastBattlefield = lazy(() => import('./BroadcastBattlefield').then((module) => ({ default: module.BroadcastBattlefield })));
+const BroadcastMiniMap = lazy(() => import('./BroadcastMiniMap').then((module) => ({ default: module.BroadcastMiniMap })));
 
 const SPEED_PRESETS: Array<{ key: MatchSpeedPreset; label: string }> = [
   { key: 'focus', label: 'Focus' },
@@ -61,7 +62,7 @@ function formatZone(zone: string) {
 }
 
 function formatGoldDiff(diff: number) {
-  const leader = diff >= 0 ? '블루' : '레드';
+  const leader = diff >= 0 ? 'Blue side' : 'Red side';
   return `${leader} +${Math.abs(Math.round(diff / 100)) / 10}k`;
 }
 
@@ -396,7 +397,9 @@ export function LiveMatchView() {
   const handleProceedToNextGame = useCallback(() => {
     if (!pendingMatch || !draftResult) return;
     const nextGame = currentGameNum + 1;
-    const nextPool = hardFearlessSeries ? accumulateFearlessChampions(seriesFearlessPool.blue.length || seriesFearlessPool.red.length ? seriesFearlessPool : fearlessPool, draftResult) : seriesFearlessPool;
+    const nextPool = hardFearlessSeries
+      ? accumulateFearlessChampions(seriesFearlessPool.blue.length || seriesFearlessPool.red.length ? seriesFearlessPool : fearlessPool, draftResult)
+      : seriesFearlessPool;
     setSeriesFearlessPool(nextPool);
     setFearlessPool(nextPool);
     setCurrentGameNum(nextGame);
@@ -419,7 +422,7 @@ export function LiveMatchView() {
   }, [basePath, navigate, resetSeries, setDayPhase, setDraftResult, setFearlessPool, setMatchActive, setPendingUserMatch, setSeriesFearlessPool]);
 
   const focusSummary = useMemo(() => {
-    if (!gameState?.focusEvent) return '아직 큰 사건은 없습니다. 다음 교전 준비를 지켜보세요.';
+    if (!gameState?.focusEvent) return 'No hard commit yet. The observer is tracking the next setup window.';
     return `${gameState.focusEvent.label} at ${gameState.focusEvent.tick}m: ${gameState.focusEvent.detail}`;
   }, [gameState?.focusEvent]);
 
@@ -429,29 +432,93 @@ export function LiveMatchView() {
   }, [gameState]);
 
   const goldTrendSummary = useMemo(() => {
-    if (!gameState || gameState.goldHistory.length < 2) return '골드 흐름이 아직 형성되는 중입니다.';
+    if (!gameState || gameState.goldHistory.length < 2) return 'Gold flow is still forming. Early lanes are testing for priority.';
     const recent = gameState.goldHistory.slice(-5);
     const start = recent[0]?.diff ?? 0;
     const end = recent[recent.length - 1]?.diff ?? 0;
     const swing = end - start;
-    if (Math.abs(swing) < 400) return `라인 구도는 비교적 안정적입니다. 현재 격차는 ${formatGoldDiff(end)}입니다.`;
-    const momentum = swing > 0 ? '블루가 최근 주도권을 넓히고 있습니다.' : '레드가 최근 주도권을 넓히고 있습니다.';
-    return `${momentum} 최근 구간 스윙은 ${Math.abs(Math.round(swing / 100)) / 10}k입니다.`;
+    if (Math.abs(swing) < 400) return `The map remains relatively even. Current edge: ${formatGoldDiff(end)}.`;
+    const momentum = swing > 0 ? 'Blue side has taken the recent tempo.' : 'Red side has taken the recent tempo.';
+    return `${momentum} The last swing was ${Math.abs(Math.round(swing / 100)) / 10}k.`;
   }, [gameState]);
 
   const objectivePressureSummary = useMemo(() => {
-    if (!gameState) return '주요 오브젝트가 아직 등장하지 않았습니다.';
+    if (!gameState) return 'Major neutral objectives are not active yet.';
     const nextObjective = [...gameState.objectiveStates]
       .filter((objective) => objective.nextSpawnTick !== undefined)
       .sort((left, right) => (left.nextSpawnTick ?? Number.MAX_SAFE_INTEGER) - (right.nextSpawnTick ?? Number.MAX_SAFE_INTEGER))[0];
-    if (!nextObjective) return '당장 남은 주요 중립 오브젝트는 없습니다.';
-    return `${nextObjective.key} 교전 구간은 ${nextObjective.nextSpawnTick}:00, ${formatZone(nextObjective.zone)} 근처입니다.`;
+    if (!nextObjective) return 'No contested neutral objective is currently scheduled.';
+    return `${nextObjective.key} is the next flashpoint at ${nextObjective.nextSpawnTick}:00 near ${formatZone(nextObjective.zone)}.`;
   }, [gameState]);
 
   const currentFocusSummary = useMemo(() => {
-    if (!gameState) return '카메라는 다음 의미 있는 장면을 기다리고 있습니다.';
-    if (!gameState.focusEvent) return `카메라는 다음 로테이션을 위해 ${formatZone(gameState.cameraZone)} 근처를 비추고 있습니다.`;
-    return `${gameState.focusEvent.eventType} 때문에 시선이 ${formatZone(gameState.focusEvent.zone)} 쪽으로 모였습니다.`;
+    if (!gameState) return 'Camera is waiting for the next meaningful shift on the map.';
+    if (!gameState.focusEvent) return `Camera is hovering around ${formatZone(gameState.cameraZone)} to track the next rotation.`;
+    return `${gameState.focusEvent.eventType} is pulling attention toward ${formatZone(gameState.focusEvent.zone)}.`;
+  }, [gameState]);
+
+  const winrateSummary = useMemo(() => {
+    if (!gameState) return null;
+    const homePct = Math.round(gameState.currentWinRate * 100);
+    return {
+      homePct,
+      awayPct: 100 - homePct,
+      leader: homePct >= 50 ? (homeTeam?.shortName ?? 'HOME') : (awayTeam?.shortName ?? 'AWAY'),
+    };
+  }, [awayTeam?.shortName, gameState, homeTeam?.shortName]);
+
+  const objectiveCountdown = useMemo(() => {
+    if (!gameState) return null;
+    const nextObjective = [...gameState.objectiveStates]
+      .filter((objective) => objective.nextSpawnTick !== undefined)
+      .sort((left, right) => (left.nextSpawnTick ?? Number.MAX_SAFE_INTEGER) - (right.nextSpawnTick ?? Number.MAX_SAFE_INTEGER))[0];
+    if (!nextObjective || nextObjective.nextSpawnTick === undefined) return null;
+    return {
+      key: nextObjective.key.toUpperCase(),
+      time: `${nextObjective.nextSpawnTick}:00`,
+      zone: formatZone(nextObjective.zone),
+    };
+  }, [gameState]);
+
+  const momentumWindows = useMemo(() => {
+    if (!gameState) return [];
+    const recent = gameState.goldHistory.slice(-6);
+    return recent.map((entry) => ({
+      tick: entry.tick,
+      diff: entry.diff,
+      favored: entry.diff >= 0 ? 'home' : 'away',
+      width: Math.min(100, Math.max(18, Math.abs(entry.diff) / 90)),
+    }));
+  }, [gameState]);
+
+  const recentEventHeadlines = useMemo(() => {
+    if (!gameState) return [];
+    return [...gameState.events]
+      .reverse()
+      .slice(0, 4)
+      .map((event) => ({
+        id: `${event.type}-${event.tick}-${event.side}`,
+        label: event.type.replace(/_/g, ' '),
+        tick: event.tick,
+        side: event.side,
+      }));
+  }, [gameState]);
+
+  const replayModeActive = recentEventHeadlines.length > 0;
+
+  const replayHighlights = useMemo(() => {
+    if (!gameState) return [];
+    return [...gameState.events]
+      .reverse()
+      .filter((event) => ['ace', 'pentakill', 'steal', 'baron', 'dragon', 'teamfight', 'tower_destroy'].includes(event.type))
+      .slice(0, 3)
+      .map((event) => ({
+        id: `${event.type}-${event.tick}-${event.side}-replay`,
+        title: event.type.replace(/_/g, ' ').toUpperCase(),
+        detail: event.description,
+        tick: `${event.tick}:00`,
+        side: event.side,
+      }));
   }, [gameState]);
 
   if (matchError) {
@@ -459,12 +526,20 @@ export function LiveMatchView() {
   }
 
   if (!pendingMatch || !gameState) {
-    return <p className="fm-text-muted fm-text-md">라이브 경기를 불러오는 중...</p>;
+    return <p className="fm-text-muted fm-text-md">Loading live match...</p>;
   }
 
   return (
     <div className="match-container">
-      <Scoreboard gameState={gameState} homeTeamShortName={homeTeam?.shortName ?? 'HOME'} awayTeamShortName={awayTeam?.shortName ?? 'AWAY'} seriesScore={seriesScore} currentGameNum={currentGameNum} phaseLabels={PHASE_LABELS} />
+      <BroadcastHud
+        gameState={gameState}
+        homeTeamShortName={homeTeam?.shortName ?? 'HOME'}
+        awayTeamShortName={awayTeam?.shortName ?? 'AWAY'}
+        seriesScore={seriesScore}
+        currentGameNum={currentGameNum}
+        phaseLabels={PHASE_LABELS}
+        replayMode={replayModeActive}
+      />
 
       {!gameState.isFinished && (
         <div className="match-control-bar">
@@ -474,7 +549,7 @@ export function LiveMatchView() {
           <div className="match-speed-row">
             {SPEED_PRESETS.map((preset) => (
               <button key={preset.key} className={`match-speed-btn ${speedPreset === preset.key ? 'match-speed-btn--active' : ''}`} onClick={() => setSpeedPreset(preset.key)}>
-                {preset.key === 'focus' ? '집중' : preset.key === 'standard' ? '표준' : '빠르게'}
+                {preset.label}
               </button>
             ))}
           </div>
@@ -484,60 +559,124 @@ export function LiveMatchView() {
 
       {currentDecision ? <DecisionPopup decision={currentDecision} onDecision={handleDecision} /> : null}
 
-      <div className="match-broadcast-layout">
-        <div className="match-broadcast-side">
-          <TeamStatusBoard title={homeTeam?.shortName ?? 'HOME'} side="home" gameState={gameState} playerStats={gameState.playerStatsHome} />
+      <div className="broadcast-layout">
+        <div className="broadcast-layout__team">
+          <BroadcastTeamColumn title={homeTeam?.shortName ?? 'HOME'} side="home" gameState={gameState} playerStats={gameState.playerStatsHome} />
           {mode === 'manager' && engine && !gameState.isFinished ? (
             <PlayerInstructions engine={engine} playerStats={gameState.playerStatsHome} side="home" teamShortName={homeTeam?.shortName ?? 'HOME'} onInstructionChanged={handleTacticsChanged} />
           ) : null}
         </div>
 
-        <div className="match-broadcast-center">
-          <div className="match-focus-banner">
-            <span>중계 포커스</span>
-            <span>{focusSummary}</span>
+        <div className="broadcast-layout__center">
+          <div className="broadcast-focus-strip">
+            <span className="broadcast-focus-strip__eyebrow">Director Focus</span>
+            <span className="broadcast-focus-strip__copy">{focusSummary}</span>
           </div>
-          <div className="match-center-stage">
+
+          <div className="broadcast-main-stage">
             <Suspense fallback={<div className="match-minimap-placeholder" />}>
-              <MatchMinimap gameState={gameState} width={640} height={640} />
+              <BroadcastBattlefield gameState={gameState} width={920} height={560} />
             </Suspense>
           </div>
-          <div className="match-center-bottom">
-            <div className="match-center-card">
-              <h3 className="match-center-card__title">현재 시점</h3>
-              <p className="match-center-card__copy">{currentFocusSummary}</p>
+
+          <div className="broadcast-stage-notes">
+            <div className="broadcast-stage-note">
+              <h3 className="broadcast-stage-note__title">Current Focus</h3>
+              <p className="broadcast-stage-note__copy">{currentFocusSummary}</p>
             </div>
-            <div className="match-center-card">
-              <h3 className="match-center-card__title">직전 큰 장면</h3>
-              <p className="match-center-card__copy">
-                {lastMajorEvent ? `${lastMajorEvent.tick}:00 ${formatZone(lastMajorEvent.zone ?? 'center')}에서 ${lastMajorEvent.type}. ${lastMajorEvent.description}` : '아직 큰 교전은 없었습니다.'}
+            <div className="broadcast-stage-note">
+              <h3 className="broadcast-stage-note__title">Latest Highlight</h3>
+              <p className="broadcast-stage-note__copy">
+                {lastMajorEvent ? `${lastMajorEvent.tick}:00 ${formatZone(lastMajorEvent.zone ?? 'center')} - ${lastMajorEvent.type}. ${lastMajorEvent.description}` : 'Waiting for the next major fight.'}
               </p>
             </div>
-            <div className="match-center-card">
-              <h3 className="match-center-card__title">골드 흐름</h3>
-              <p className="match-center-card__copy">{goldTrendSummary}</p>
+            <div className="broadcast-stage-note">
+              <h3 className="broadcast-stage-note__title">Gold Trend</h3>
+              {winrateSummary ? (
+                <div className="broadcast-stage-note__metric-row">
+                  <span className="broadcast-stage-note__metric">{winrateSummary.homePct}% / {winrateSummary.awayPct}%</span>
+                  <span className="broadcast-stage-note__metric-label">{winrateSummary.leader} favored</span>
+                </div>
+              ) : null}
+              <p className="broadcast-stage-note__copy">{goldTrendSummary}</p>
             </div>
-            <div className="match-center-card">
-              <h3 className="match-center-card__title">다음 포인트</h3>
-              <p className="match-center-card__copy">{objectivePressureSummary}</p>
+            <div className="broadcast-stage-note">
+              <h3 className="broadcast-stage-note__title">Objective Pressure</h3>
+              {objectiveCountdown ? (
+                <div className="broadcast-stage-note__metric-row">
+                  <span className="broadcast-stage-note__metric">{objectiveCountdown.key}</span>
+                  <span className="broadcast-stage-note__metric-label">{objectiveCountdown.time} / {objectiveCountdown.zone}</span>
+                </div>
+              ) : null}
+              <p className="broadcast-stage-note__copy">{objectivePressureSummary}</p>
             </div>
           </div>
+
+          <div className="broadcast-momentum-strip">
+            <div className="broadcast-momentum-strip__rail">
+              {momentumWindows.length > 0 ? momentumWindows.map((window) => (
+                <div key={`momentum-${window.tick}`} className="broadcast-momentum-strip__segment">
+                  <span className="broadcast-momentum-strip__tick">{window.tick}:00</span>
+                  <div className="broadcast-momentum-strip__bar">
+                    <div
+                      className={`broadcast-momentum-strip__fill broadcast-momentum-strip__fill--${window.favored}`}
+                      style={{ width: `${window.width}%` }}
+                    />
+                  </div>
+                </div>
+              )) : (
+                <span className="broadcast-momentum-strip__empty">Momentum rail is waiting for more gold snapshots.</span>
+              )}
+            </div>
+            <div className="broadcast-momentum-strip__events">
+              {recentEventHeadlines.map((event) => (
+                <span key={event.id} className={`broadcast-momentum-strip__event broadcast-momentum-strip__event--${event.side}`}>
+                  {event.tick}:00 {event.label}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {replayHighlights.length > 0 ? (
+            <div className="broadcast-highlight-reel">
+              <div className="broadcast-highlight-reel__header">
+                <h3>Highlight Reel</h3>
+                <span>Director queue</span>
+              </div>
+              <div className="broadcast-highlight-reel__list">
+                {replayHighlights.map((highlight) => (
+                  <article key={highlight.id} className={`broadcast-highlight-reel__item broadcast-highlight-reel__item--${highlight.side}`}>
+                    <span className="broadcast-highlight-reel__time">{highlight.tick}</span>
+                    <div className="broadcast-highlight-reel__copy">
+                      <strong>{highlight.title}</strong>
+                      <p>{highlight.detail}</p>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </div>
 
-        <div className="match-broadcast-side">
-          <TeamStatusBoard title={awayTeam?.shortName ?? 'AWAY'} side="away" gameState={gameState} playerStats={gameState.playerStatsAway} />
+        <div className="broadcast-layout__team">
+          <BroadcastTeamColumn title={awayTeam?.shortName ?? 'AWAY'} side="away" gameState={gameState} playerStats={gameState.playerStatsAway} />
           {mode === 'manager' && engine && !gameState.isFinished ? (
             <PlayerInstructions engine={engine} playerStats={gameState.playerStatsAway} side="away" teamShortName={awayTeam?.shortName ?? 'AWAY'} onInstructionChanged={handleTacticsChanged} />
           ) : null}
-          <CommentaryPanel commentary={gameState.commentary} panelRef={commentaryRef} />
-          <div className="match-chat-panel" ref={chatRef}>
-            <h3 className="match-chat-title">실시간 채팅</h3>
-            {liveChatMessages.length === 0 ? <p className="match-chat-empty">큰 장면이 나오면 채팅이 반응합니다.</p> : liveChatMessages.map((message, index) => (
-              <div key={`${message.username}-${index}`} className="match-chat-item">
-                <span className="match-chat-username" style={{ color: CHAT_TYPE_COLORS[message.type] ?? '#8a8a9a' }}>{message.username}</span>
-                <span className="match-chat-message">{message.message}</span>
-              </div>
-            ))}
+          <div className="broadcast-support-rail">
+            <CommentaryPanel commentary={gameState.commentary} panelRef={commentaryRef} />
+            <div className="match-chat-panel" ref={chatRef}>
+              <h3 className="match-chat-title">Live Chat</h3>
+              {liveChatMessages.length === 0 ? <p className="match-chat-empty">Audience reactions will appear after major moments.</p> : liveChatMessages.map((message, index) => (
+                <div key={`${message.username}-${index}`} className="match-chat-item">
+                  <span className="match-chat-username" style={{ color: CHAT_TYPE_COLORS[message.type] ?? '#8a8a9a' }}>{message.username}</span>
+                  <span className="match-chat-message">{message.message}</span>
+                </div>
+              ))}
+            </div>
+            <Suspense fallback={<div className="broadcast-minimap-panel broadcast-minimap-panel--loading" />}>
+              <BroadcastMiniMap gameState={gameState} />
+            </Suspense>
           </div>
         </div>
       </div>
@@ -545,7 +684,7 @@ export function LiveMatchView() {
       {gameState.isFinished && !betweenGames && !seriesComplete ? (
         <div className="match-end-cta">
           <button className="fm-btn fm-btn--primary fm-btn--lg" onClick={() => void handleGameEnd()}>
-            {pendingMatch.boFormat === 'Bo1' ? '경기 결과 보기' : `${currentGameNum}세트 정리하기`}
+            {pendingMatch.boFormat === 'Bo1' ? 'Open Match Summary' : `Wrap Up Game ${currentGameNum}`}
           </button>
         </div>
       ) : null}
@@ -553,33 +692,48 @@ export function LiveMatchView() {
       {betweenGames ? (
         <div className="fm-overlay">
           <div className="match-between-modal">
-            <h2 className="match-between-title">세트 정비</h2>
+            <h2 className="match-between-title">Between Games</h2>
             {gameResults.length > 0 ? (
-              <PostGameStats gameResult={gameResults[gameResults.length - 1]} homeTeamName={homeTeam?.shortName ?? 'HOME'} awayTeamName={awayTeam?.shortName ?? 'AWAY'} gameNumber={currentGameNum} insightReport={buildPostMatchInsightReport(gameResults[gameResults.length - 1], userSide)} />
+              <PostGameStats
+                gameResult={gameResults[gameResults.length - 1]}
+                homeTeamName={homeTeam?.shortName ?? 'HOME'}
+                awayTeamName={awayTeam?.shortName ?? 'AWAY'}
+                gameNumber={currentGameNum}
+                insightReport={buildPostMatchInsightReport(gameResults[gameResults.length - 1], userSide)}
+              />
             ) : null}
             <div className="match-between-series-score">
-              <span className="match-between-series-label">시리즈 스코어</span>
+              <span className="match-between-series-label">Series Score</span>
               <span className="match-between-series-value">{seriesScore.home} - {seriesScore.away}</span>
             </div>
             {mode === 'manager' ? (
               <div className="match-between-talk-section">
-                <span className="match-between-talk-label">세트 간 팀 토크</span>
+                <span className="match-between-talk-label">Team Talk</span>
                 {!teamTalkDone ? (
                   <div className="match-between-talk-btns">
-                    <button className="fm-btn fm-btn--success" onClick={() => void handleBetweenGamesTalk('motivate')}>격려</button>
-                    <button className="fm-btn fm-btn--info" onClick={() => void handleBetweenGamesTalk('calm')}>진정</button>
-                    <button className="fm-btn fm-btn--warning" onClick={() => void handleBetweenGamesTalk('warn')}>경고</button>
+                    <button className="fm-btn fm-btn--success" onClick={() => void handleBetweenGamesTalk('motivate')}>Motivate</button>
+                    <button className="fm-btn fm-btn--info" onClick={() => void handleBetweenGamesTalk('calm')}>Calm</button>
+                    <button className="fm-btn fm-btn--warning" onClick={() => void handleBetweenGamesTalk('warn')}>Warn</button>
                   </div>
                 ) : <p className="match-between-talk-result">{teamTalkResult}</p>}
               </div>
             ) : null}
-            <button className="fm-btn fm-btn--primary fm-btn--lg" onClick={handleProceedToNextGame}>다음 세트 밴픽으로</button>
+            <button className="fm-btn fm-btn--primary fm-btn--lg" onClick={handleProceedToNextGame}>Go To Next Draft</button>
           </div>
         </div>
       ) : null}
 
       {seriesComplete ? (
-        <SeriesResult homeTeamShortName={homeTeam?.shortName} awayTeamShortName={awayTeam?.shortName} homeTeamName={homeTeam?.name} awayTeamName={awayTeam?.name} seriesScore={seriesScore} postMatchComment={postMatchComment} gameResults={gameResults} onReturn={handleReturnToDashboard} />
+        <SeriesResult
+          homeTeamShortName={homeTeam?.shortName}
+          awayTeamShortName={awayTeam?.shortName}
+          homeTeamName={homeTeam?.name}
+          awayTeamName={awayTeam?.name}
+          seriesScore={seriesScore}
+          postMatchComment={postMatchComment}
+          gameResults={gameResults}
+          onReturn={handleReturnToDashboard}
+        />
       ) : null}
     </div>
   );

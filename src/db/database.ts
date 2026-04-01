@@ -2,6 +2,26 @@ import Database from '@tauri-apps/plugin-sql';
 
 let db: Database | null = null;
 let txLock = false;
+let repairsApplied = false;
+
+async function repairLegacyDerivedData(conn: Database): Promise<void> {
+  if (repairsApplied) return;
+
+  try {
+    await conn.execute(
+      `UPDATE player_career_stats
+       SET total_damage = COALESCE((
+         SELECT SUM(damage_dealt)
+         FROM player_game_stats
+         WHERE player_id = player_career_stats.player_id
+       ), 0)`,
+    );
+  } catch (err) {
+    console.warn('[database] legacy career damage repair skipped:', err);
+  } finally {
+    repairsApplied = true;
+  }
+}
 
 export async function getDatabase(): Promise<Database> {
   if (!db) {
@@ -31,6 +51,7 @@ export async function getDatabase(): Promise<Database> {
     await db.execute('PRAGMA journal_mode = WAL');
     await db.execute('PRAGMA busy_timeout = 15000');
     await db.execute('PRAGMA foreign_keys = ON');
+    await repairLegacyDerivedData(db);
   }
 
   return db;
@@ -42,15 +63,21 @@ export async function withTransaction<T>(fn: (db: Database) => Promise<T>): Prom
   }
 
   txLock = true;
-  const conn = await getDatabase();
-  await conn.execute('BEGIN TRANSACTION');
+  let transactionStarted = false;
 
   try {
+    const conn = await getDatabase();
+    await conn.execute('BEGIN TRANSACTION');
+    transactionStarted = true;
+
     const result = await fn(conn);
     await conn.execute('COMMIT');
     return result;
   } catch (err) {
-    await conn.execute('ROLLBACK').catch(() => {});
+    if (transactionStarted) {
+      const conn = await getDatabase().catch(() => null);
+      await conn?.execute('ROLLBACK').catch(() => {});
+    }
     throw err;
   } finally {
     txLock = false;
@@ -61,5 +88,6 @@ export async function closeDatabase(): Promise<void> {
   if (db) {
     await db.close();
     db = null;
+    repairsApplied = false;
   }
 }

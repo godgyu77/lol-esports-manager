@@ -23,6 +23,9 @@ import {
   insertGameResult,
   insertPlayerGameStats,
   getActiveSeason,
+  upsertPlayerCareerStats,
+  insertPlayerFormHistory,
+  adjustPlayerChemistry,
 } from '../../db/queries';
 import type { PlayerGameStats } from '../../types/match';
 import { buildLineup } from '../match/teamRating';
@@ -621,7 +624,7 @@ export async function saveUserMatchResult(
   }
 
   try {
-    await updateCareerStats(result, match.teamHomeId, match.teamAwayId);
+    await updateCareerStats(result, match.teamHomeId, match.teamAwayId, match.matchDate);
   } catch (e) {
     console.warn('[dayAdvancer] updateCareerStats failed:', e);
   }
@@ -681,6 +684,7 @@ async function updateCareerStats(
   result: MatchResult,
   homeTeamId: string,
   awayTeamId: string,
+  matchDate: string,
 ): Promise<void> {
   const db = await getDatabase();
 
@@ -692,34 +696,18 @@ async function updateCareerStats(
         await db.execute('UPDATE players SET career_games = COALESCE(career_games, 0) + 1 WHERE id = $1', [stat.playerId]);
       } catch { /* career_games ???棺堉?댆???????븍툖??野껊갭?????????嶺뚮Ĳ????*/ }
 
-      // UPSERT into player_career_stats
-      await db.execute(
-        `INSERT INTO player_career_stats (player_id, team_id, total_games, total_kills, total_deaths, total_assists, total_cs, total_damage)
-         VALUES ($1, $2, 1, $3, $4, $5, $6, $7)
-         ON CONFLICT(player_id) DO UPDATE SET
-           total_games = total_games + 1,
-           total_kills = total_kills + $3,
-           total_deaths = total_deaths + $4,
-           total_assists = total_assists + $5,
-           total_cs = total_cs + $6,
-           total_damage = total_damage + $7`,
-        [stat.playerId, teamId, stat.kills, stat.deaths, stat.assists, stat.cs, stat.goldEarned],
-      );
+      await upsertPlayerCareerStats(stat.playerId, teamId, {
+        kills: stat.kills,
+        deaths: stat.deaths,
+        assists: stat.assists,
+        cs: stat.cs,
+        damage: stat.damageDealt,
+      });
 
       const kda = stat.deaths === 0 ? (stat.kills + stat.assists) * 2 : (stat.kills + stat.assists) / stat.deaths;
       const formScore = Math.min(100, Math.max(0, Math.round(kda * 12))); // KDA 4.0 ????48, KDA 8.0 ????96
       try {
-        await db.execute(
-          `INSERT INTO player_form_history (player_id, game_date, form_score)
-           VALUES ($1, datetime('now'), $2)`,
-          [stat.playerId, formScore],
-        );
-        await db.execute(
-          `DELETE FROM player_form_history WHERE player_id = $1 AND id NOT IN (
-             SELECT id FROM player_form_history WHERE player_id = $1 ORDER BY id DESC LIMIT 10
-           )`,
-          [stat.playerId],
-        );
+        await insertPlayerFormHistory(stat.playerId, matchDate, formScore);
       } catch { /* ??????????븍툖??野껊갭?????????嶺뚮Ĳ????*/ }
     }
   }
@@ -730,13 +718,7 @@ async function updateCareerStats(
     const winPlayers = await getPlayersByTeamId(winTeamId);
     for (let i = 0; i < winPlayers.length; i++) {
       for (let j = i + 1; j < winPlayers.length; j++) {
-        await db.execute(
-          `INSERT INTO player_chemistry (player_a_id, player_b_id, chemistry_score)
-           VALUES ($1, $2, 51)
-           ON CONFLICT(player_a_id, player_b_id) DO UPDATE SET
-             chemistry_score = MIN(100, chemistry_score + 1)`,
-          [winPlayers[i].id, winPlayers[j].id],
-        );
+        await adjustPlayerChemistry(winPlayers[i].id, winPlayers[j].id, 1);
       }
     }
   } catch { /* ??????????븍툖??野껊갭?????????嶺뚮Ĳ????*/ }

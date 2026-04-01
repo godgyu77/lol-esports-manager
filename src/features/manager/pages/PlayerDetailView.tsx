@@ -163,7 +163,7 @@ export function PlayerDetailView() {
         const db = await getDatabase();
         const rows = await db.select<FormHistoryRow[]>(
           `SELECT * FROM player_form_history
-           WHERE player_id = $1 ORDER BY id DESC LIMIT 10`,
+           WHERE player_id = $1 ORDER BY game_date DESC, id DESC LIMIT 10`,
           [playerId],
         );
         if (!cancelled) setFormHistory(rows);

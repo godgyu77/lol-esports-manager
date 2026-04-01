@@ -6,6 +6,7 @@
  */
 
 import { getDatabase } from '../db/database';
+import { getPlayerChemistryLinks } from '../db/queries';
 
 // ─────────────────────────────────────────
 // 유틸
@@ -366,20 +367,32 @@ export async function buildPlayerContext(playerId: string): Promise<string> {
 
     // 8. 케미스트리 (가장 높은/낮은)
     if (player.team_id) {
-      const bestChem = await db.select<{ name: string; chemistry_score: number }[]>(
-        `SELECT p.name, c.chemistry_score
-         FROM player_chemistry c JOIN players p ON c.player_b_id = p.id
-         WHERE c.player_a_id = $1 AND p.team_id = $2
-         ORDER BY c.chemistry_score DESC LIMIT 1`,
-        [playerId, player.team_id],
-      );
-      const worstChem = await db.select<{ name: string; chemistry_score: number }[]>(
-        `SELECT p.name, c.chemistry_score
-         FROM player_chemistry c JOIN players p ON c.player_b_id = p.id
-         WHERE c.player_a_id = $1 AND p.team_id = $2
-         ORDER BY c.chemistry_score ASC LIMIT 1`,
-        [playerId, player.team_id],
-      );
+      const chemistryLinks = await getPlayerChemistryLinks(playerId);
+      const teammateIds = chemistryLinks.map((link) => link.otherPlayerId);
+      let bestChem: { name: string; chemistry_score: number }[] = [];
+      let worstChem: { name: string; chemistry_score: number }[] = [];
+
+      if (teammateIds.length > 0) {
+        const placeholders = teammateIds.map((_, index) => `$${index + 2}`).join(', ');
+        const chemistryRows = await db.select<{ id: string; name: string }[]>(
+          `SELECT id, name FROM players
+           WHERE team_id = $1 AND id IN (${placeholders})`,
+          [player.team_id, ...teammateIds],
+        );
+        const nameById = new Map(chemistryRows.map((row) => [row.id, row.name]));
+        const teammateChemistry = chemistryLinks
+          .filter((link) => nameById.has(link.otherPlayerId))
+          .map((link) => ({
+            name: nameById.get(link.otherPlayerId) ?? link.otherPlayerId,
+            chemistry_score: link.chemistryScore,
+          }))
+          .sort((a, b) => b.chemistry_score - a.chemistry_score);
+
+        if (teammateChemistry.length > 0) {
+          bestChem = [teammateChemistry[0]];
+          worstChem = [teammateChemistry[teammateChemistry.length - 1]];
+        }
+      }
       const chemParts: string[] = [];
       if (bestChem.length > 0) chemParts.push(`최고: ${bestChem[0].name}(${bestChem[0].chemistry_score})`);
       if (worstChem.length > 0) chemParts.push(`최저: ${worstChem[0].name}(${worstChem[0].chemistry_score})`);

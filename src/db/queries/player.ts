@@ -438,7 +438,7 @@ export async function getPlayerFormHistory(playerId: string): Promise<PlayerForm
   const rows = await db.select<{
     id: number; player_id: string; game_date: string; form_score: number;
   }[]>(
-    'SELECT * FROM player_form_history WHERE player_id = $1 ORDER BY id DESC LIMIT 10',
+    'SELECT * FROM player_form_history WHERE player_id = $1 ORDER BY game_date DESC, id DESC LIMIT 10',
     [playerId],
   );
   return rows.map(r => ({
@@ -456,6 +456,12 @@ export async function getPlayerFormHistory(playerId: string): Promise<PlayerForm
 export interface PlayerChemistryRow {
   playerAId: string;
   playerBId: string;
+  chemistryScore: number;
+}
+
+export interface PlayerChemistryLink {
+  playerId: string;
+  otherPlayerId: string;
   chemistryScore: number;
 }
 
@@ -511,5 +517,23 @@ export async function getTeamChemistryPairs(teamId: string): Promise<PlayerChemi
     playerAId: r.player_a_id,
     playerBId: r.player_b_id,
     chemistryScore: r.chemistry_score,
+  }));
+}
+
+export async function getPlayerChemistryLinks(playerId: string): Promise<PlayerChemistryLink[]> {
+  const db = await getDatabase();
+  const rows = await db.select<{
+    player_a_id: string; player_b_id: string; chemistry_score: number;
+  }[]>(
+    `SELECT player_a_id, player_b_id, chemistry_score
+     FROM player_chemistry
+     WHERE player_a_id = $1 OR player_b_id = $1`,
+    [playerId],
+  );
+
+  return rows.map((row) => ({
+    playerId,
+    otherPlayerId: row.player_a_id === playerId ? row.player_b_id : row.player_a_id,
+    chemistryScore: row.chemistry_score,
   }));
 }

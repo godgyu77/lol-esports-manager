@@ -9,6 +9,8 @@ import { getDatabase } from '../../db/database';
 import {
   getPlayersByTeamId,
   adjustPlayerChemistry,
+  getPlayerChemistryLinks,
+  upsertPlayerChemistry,
 } from '../../db/queries';
 import {
   getPlayerPersonality,
@@ -101,13 +103,12 @@ export async function getTeamChemistry(teamId: string): Promise<TeamChemistryRep
  */
 export async function getPlayerChemistry(playerId: string): Promise<ChemistryPair[]> {
   try {
-    const db = await getDatabase();
-    const rows = await db.select<ChemistryRow[]>(
-      `SELECT * FROM player_chemistry
-       WHERE player_a_id = $1 OR player_b_id = $1`,
-      [playerId],
-    );
-    return rows.map(mapRow);
+    const rows = await getPlayerChemistryLinks(playerId);
+    return rows.map((row) => ({
+      playerAId: playerId,
+      playerBId: row.otherPlayerId,
+      chemistryScore: row.chemistryScore,
+    }));
   } catch {
     return [];
   }
@@ -263,14 +264,9 @@ export async function initializeTeamChemistry(teamId: string): Promise<void> {
 
     if (players.length < 2) return;
 
-    const db = await getDatabase();
     for (let i = 0; i < players.length; i++) {
       for (let j = i + 1; j < players.length; j++) {
-        await db.execute(
-          `INSERT OR IGNORE INTO player_chemistry (player_a_id, player_b_id, chemistry_score)
-           VALUES ($1, $2, 50)`,
-          [players[i].id, players[j].id],
-        );
+        await upsertPlayerChemistry(players[i].id, players[j].id, 50);
       }
     }
   } catch (e) {
