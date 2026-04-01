@@ -89,6 +89,10 @@ export function SeasonGoalView() {
   const [negotiated, setNegotiated] = useState(false);
   const [isLoading, setLocalLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const managerTraits = useMemo(
+    () => (pendingManager ? getDominantManagerTraits(pendingManager.philosophy) : []),
+    [pendingManager],
+  );
 
   if (!pendingTeamId) {
     return (
@@ -128,10 +132,6 @@ export function SeasonGoalView() {
   });
   const baseGoal = calculateGoal(teamData.financialTier);
   const currentGoal = negotiated ? relaxGoal(baseGoal) : baseGoal;
-  const managerTraits = useMemo(
-    () => (pendingManager ? getDominantManagerTraits(pendingManager.philosophy) : []),
-    [pendingManager],
-  );
 
   const handleAccept = async () => {
     if (!mode) {

@@ -95,7 +95,9 @@ export function AiSetupWizard({ onComplete }: { onComplete: () => void }) {
             }
             return;
           }
-        } catch {}
+        } catch {
+          // Ollama may still be starting; keep polling until timeout.
+        }
 
         attempt += 1;
         if (!cancelled) {

@@ -133,12 +133,11 @@ export function DraftView() {
     if (!draft || !blueInfo || !redInfo || draft.isComplete) return;
 
     const currentIsUserTurn = mode === 'manager' && draft.currentSide === userSide;
-    if (currentIsUserTurn) {
-      setIsAiTurn(false);
-      return;
-    }
+    if (currentIsUserTurn) return;
 
-    setIsAiTurn(true);
+    const thinkingTimer = setTimeout(() => {
+      setIsAiTurn(true);
+    }, 0);
     const timer = setTimeout(async () => {
       const nextDraft = structuredClone(draft);
       if (draft.currentActionType === 'ban') {
@@ -154,7 +153,10 @@ export function DraftView() {
       setIsAiTurn(false);
     }, 900);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(thinkingTimer);
+      clearTimeout(timer);
+    };
   }, [blueInfo, draft, mode, redInfo, userSide]);
 
   const recommendations = useMemo(() => {
@@ -179,13 +181,12 @@ export function DraftView() {
     if (!draft || draft.isComplete) return;
 
     const currentIsUserTurn = mode === 'manager' && draft.currentSide === userSide;
-    if (!currentIsUserTurn) {
-      setAiAdvice(null);
-      return;
-    }
+    if (!currentIsUserTurn) return;
 
-    setAiAdviceLoading(true);
-    setAiAdvice(null);
+    const loadingTimer = setTimeout(() => {
+      setAiAdviceLoading(true);
+      setAiAdvice(null);
+    }, 0);
 
     const recommendedBans =
       draft.currentActionType === 'ban' && recommendations.length > 0
@@ -206,6 +207,7 @@ export function DraftView() {
       .then(setAiAdvice)
       .catch(() => {})
       .finally(() => setAiAdviceLoading(false));
+    return () => clearTimeout(loadingTimer);
   }, [awayTeam?.shortName, draft, homeTeam?.shortName, isUserBlue, mode, recommendations, userSide]);
 
   useEffect(() => {
@@ -374,7 +376,7 @@ export function DraftView() {
                 <span className="draft-ai-advice-label">AI 코치 브리핑</span>
                 {aiAdviceLoading ? (
                   <span className="draft-ai-advice-loading">현재 밴픽 흐름을 분석하는 중입니다...</span>
-                ) : aiAdvice ? (
+                ) : currentIsUser && aiAdvice ? (
                   <div className="draft-ai-advice-content">
                     <span className="draft-ai-advice-suggestion">{aiAdvice.suggestion}</span>
                     <span className="draft-ai-advice-reason">{aiAdvice.reason}</span>

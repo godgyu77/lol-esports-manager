@@ -100,7 +100,7 @@ async function chatWithOllama(userMessage: string, options: AiProviderOptions): 
   }
 }
 
-async function requireApiKey(providerLabel: string): Promise<string> {
+async function _requireApiKey(providerLabel: string): Promise<string> {
   const provider = useSettingsStore.getState().aiProvider;
   const apiKey = await useSettingsStore.getState().getApiKey(provider);
   if (!apiKey) {

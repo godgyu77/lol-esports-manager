@@ -135,8 +135,11 @@ export function LiveMatchView() {
 
   useEffect(() => {
     if (!navigationPauseRequested) return;
-    setIsRunning(false);
+    const timer = setTimeout(() => {
+      setIsRunning(false);
+    }, 0);
     clearNavigationPause();
+    return () => clearTimeout(timer);
   }, [clearNavigationPause, navigationPauseRequested]);
 
   const initGame = useCallback(async (gameNum: number) => {
@@ -211,7 +214,10 @@ export function LiveMatchView() {
   }, [currentDate, draftResult, pendingMatch, save, setSpeedPreset]);
 
   useEffect(() => {
-    void initGame(currentGameNum);
+    const timer = setTimeout(() => {
+      void initGame(currentGameNum);
+    }, 0);
+    return () => clearTimeout(timer);
   }, [currentGameNum, initGame]);
 
   useEffect(() => {

@@ -84,12 +84,17 @@ export function TeamSelect() {
   const [selectedRegion, setSelectedRegion] = useState<Region | 'ALL'>('ALL');
   const [selectedTeam, setSelectedTeam] = useState<TeamListItem | null>(null);
 
-  const filteredTeams = selectedRegion === 'ALL'
-    ? ALL_TEAMS
-    : ALL_TEAMS.filter((team) => team.region === selectedRegion);
-
   const teamData = selectedTeam ? getTeamData(selectedTeam) : null;
-  const starters = teamData ? getStarterRoster(teamData.roster) : [];
+  const filteredTeams = useMemo(
+    () => (selectedRegion === 'ALL'
+      ? ALL_TEAMS
+      : ALL_TEAMS.filter((team) => team.region === selectedRegion)),
+    [selectedRegion],
+  );
+  const starters = useMemo(
+    () => (teamData ? getStarterRoster(teamData.roster) : []),
+    [teamData],
+  );
   const avgOvr = useMemo(
     () => (starters.length > 0
       ? Math.round(starters.reduce((sum, player) => sum + ovrToNumber(player.stats.ovr), 0) / starters.length)
