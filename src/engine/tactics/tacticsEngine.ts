@@ -69,6 +69,19 @@ export async function getTeamTactics(teamId: string): Promise<TeamTactics | null
   };
 }
 
+export function createDefaultTactics(teamId: string): TeamTactics {
+  return {
+    teamId,
+    earlyStrategy: 'standard',
+    midStrategy: 'balanced',
+    lateStrategy: 'teamfight',
+    wardPriority: 'balanced',
+    dragonPriority: 5,
+    baronPriority: 5,
+    aggressionLevel: 5,
+  };
+}
+
 // ─────────────────────────────────────────
 // 전술 저장
 // ─────────────────────────────────────────
@@ -104,15 +117,8 @@ export async function setTeamTactics(teamId: string, tactics: Omit<TeamTactics, 
 // ─────────────────────────────────────────
 
 export async function initDefaultTactics(teamId: string): Promise<void> {
-  await setTeamTactics(teamId, {
-    earlyStrategy: 'standard',
-    midStrategy: 'balanced',
-    lateStrategy: 'teamfight',
-    wardPriority: 'balanced',
-    dragonPriority: 5,
-    baronPriority: 5,
-    aggressionLevel: 5,
-  });
+  const { teamId: _, ...defaults } = createDefaultTactics(teamId);
+  await setTeamTactics(teamId, defaults);
 }
 
 // ─────────────────────────────────────────

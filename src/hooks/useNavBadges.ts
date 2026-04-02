@@ -3,7 +3,8 @@ import { getUnreadCount } from '../engine/news/newsEngine';
 import { getActiveComplaints } from '../engine/complaint/complaintEngine';
 import { getPendingReports } from '../engine/scouting/scoutingEngine';
 import { getTeamTransferOffers } from '../engine/economy/transferEngine';
-import { NEWS_BADGES_INVALIDATED_EVENT } from '../engine/news/newsEvents';
+import { getUnreadInboxCount } from '../engine/inbox/inboxEngine';
+import { NOTIFICATIONS_INVALIDATED_EVENT, NEWS_BADGES_INVALIDATED_EVENT } from '../engine/news/newsEvents';
 
 /**
  * 사이드바 네비게이션 뱃지 카운트를 비동기로 로드하는 훅
@@ -19,8 +20,9 @@ export function useNavBadges(userTeamId: string, seasonId: number): Record<strin
 
     const load = async () => {
       try {
-        const [unreadNews, complaints, pendingScouts, transferOffers] = await Promise.all([
+        const [unreadNews, unreadInbox, complaints, pendingScouts, transferOffers] = await Promise.all([
           getUnreadCount(seasonId).catch(() => 0),
+          getUnreadInboxCount(userTeamId).catch(() => 0),
           getActiveComplaints(userTeamId).catch(() => []),
           getPendingReports(userTeamId).catch(() => []),
           getTeamTransferOffers(seasonId, userTeamId).catch(() => ({ sent: [], received: [] })),
@@ -38,6 +40,7 @@ export function useNavBadges(userTeamId: string, seasonId: number): Record<strin
 
         const newBadges: Record<string, number> = {};
         if (unreadNews > 0) newBadges['/manager/news'] = unreadNews;
+        if (unreadInbox > 0) newBadges['/manager/inbox'] = unreadInbox;
         if (complaints.length > 0) newBadges['/manager/complaints'] = complaints.length;
         if (completedScouts > 0) newBadges['/manager/scouting'] = completedScouts;
         if (pendingReceived > 0) newBadges['/manager/transfer'] = pendingReceived;
@@ -55,6 +58,7 @@ export function useNavBadges(userTeamId: string, seasonId: number): Record<strin
     };
 
     window.addEventListener(NEWS_BADGES_INVALIDATED_EVENT, handleInvalidate);
+    window.addEventListener(NOTIFICATIONS_INVALIDATED_EVENT, handleInvalidate);
 
     // 30초마다 갱신
     const interval = setInterval(load, 30000);
@@ -63,6 +67,7 @@ export function useNavBadges(userTeamId: string, seasonId: number): Record<strin
       cancelled = true;
       clearInterval(interval);
       window.removeEventListener(NEWS_BADGES_INVALIDATED_EVENT, handleInvalidate);
+      window.removeEventListener(NOTIFICATIONS_INVALIDATED_EVENT, handleInvalidate);
     };
   }, [userTeamId, seasonId]);
 

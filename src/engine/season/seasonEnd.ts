@@ -130,6 +130,7 @@ export async function processFullSeasonEnd(
   season: Season,
   championTeamId?: string,
   saveId?: number,
+  userTeamId?: string,
 ): Promise<SeasonEndResult> {
   const standings = await getStandings(season.id);
 
@@ -343,10 +344,7 @@ export async function processFullSeasonEnd(
   if (saveId != null) {
     try {
       // save_metadata에서 실제 유저 팀 ID 조회
-      const { getSaveById } = await import('../../db/queries');
-      const saveData = await getSaveById(saveId);
-      const userTeamId = saveData?.userTeamId ?? '';
-      const ctx = await buildAchievementContext(saveId, userTeamId, season.id);
+      const ctx = await buildAchievementContext(saveId, userTeamId ?? '', season.id);
       ctx.isPlayoffChampion = championTeamId != null && ctx.trophyCount > 0;
       ctx.isFirstSeason = ctx.seasonsPlayed <= 1;
       await checkAndUnlockAchievements(saveId, ctx, season.endDate);

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGameStore } from '../../stores/gameStore';
 import { LCK_TEAMS, LCS_TEAMS, LEC_TEAMS, LPL_TEAMS } from '../../data/rosterDb';
@@ -7,6 +7,7 @@ import type { Region } from '../../types';
 import { MANAGER_BG_LABELS } from '../../types/manager';
 import { initializeNewGame, loadGameIntoStore } from '../../db/initGame';
 import { getDominantManagerTraits } from '../../engine/manager/managerIdentityEngine';
+import { getSaveSlots } from '../../engine/save/saveEngine';
 import { describePressureTone, getTeamIntroMeta } from './introMeta';
 import './introFlow.css';
 
@@ -78,17 +79,45 @@ function ovrToNumber(ovr: string): number {
   return table[ovr] ?? 0;
 }
 
+function toCareerStartErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const normalized = message.toLowerCase();
+
+  if (normalized.includes('database is locked') || normalized.includes('code: 5')) {
+    return '세이브 슬롯을 준비하는 중 잠금 충돌이 발생했습니다. 잠시 후 다시 시도해 주세요.';
+  }
+
+  return message;
+}
+
 export function SeasonGoalView() {
   const navigate = useNavigate();
-  const pendingTeamId = useGameStore((s) => s.pendingTeamId);
-  const pendingManager = useGameStore((s) => s.pendingManager);
-  const pendingPlayer = useGameStore((s) => s.pendingPlayer);
-  const mode = useGameStore((s) => s.mode);
-  const setLoading = useGameStore((s) => s.setLoading);
+  const pendingTeamId = useGameStore((state) => state.pendingTeamId);
+  const pendingManager = useGameStore((state) => state.pendingManager);
+  const pendingPlayer = useGameStore((state) => state.pendingPlayer);
+  const mode = useGameStore((state) => state.mode);
+  const setLoading = useGameStore((state) => state.setLoading);
 
   const [negotiated, setNegotiated] = useState(false);
   const [isLoading, setLocalLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedSlot, setSelectedSlot] = useState(1);
+  const [occupiedSlots, setOccupiedSlots] = useState<number[]>([]);
+
+  useEffect(() => {
+    getSaveSlots()
+      .then((slots) => {
+        const manualSlots = slots.filter((slot) => slot.slotNumber > 0);
+        const occupied = manualSlots.filter((slot) => slot.save !== null).map((slot) => slot.slotNumber);
+        const firstEmpty = manualSlots.find((slot) => slot.save === null)?.slotNumber ?? 1;
+        setOccupiedSlots(occupied);
+        setSelectedSlot(firstEmpty);
+      })
+      .catch((slotError) => {
+        console.error('save slot lookup failed:', slotError);
+      });
+  }, []);
+
   const managerTraits = useMemo(
     () => (pendingManager ? getDominantManagerTraits(pendingManager.philosophy) : []),
     [pendingManager],
@@ -97,7 +126,7 @@ export function SeasonGoalView() {
   if (!pendingTeamId) {
     return (
       <div className="fm-content fm-flex-col fm-items-center fm-justify-center" style={{ minHeight: '100vh' }}>
-        <p className="fm-alert fm-alert--danger fm-mb-md">선택한 팀이 없습니다.</p>
+        <p className="fm-alert fm-alert--danger fm-mb-md">선택된 팀이 없습니다.</p>
         <button className="fm-btn fm-btn--ghost" onClick={() => navigate('/team-select')}>
           팀 선택으로 돌아가기
         </button>
@@ -111,7 +140,7 @@ export function SeasonGoalView() {
   if (!teamData || !region) {
     return (
       <div className="fm-content fm-flex-col fm-items-center fm-justify-center" style={{ minHeight: '100vh' }}>
-        <p className="fm-alert fm-alert--danger fm-mb-md">팀 데이터를 불러올 수 없습니다.</p>
+        <p className="fm-alert fm-alert--danger fm-mb-md">팀 정보를 불러올 수 없습니다.</p>
         <button className="fm-btn fm-btn--ghost" onClick={() => navigate('/team-select')}>
           팀 선택으로 돌아가기
         </button>
@@ -152,12 +181,12 @@ export function SeasonGoalView() {
     setError(null);
 
     try {
-      const save = await initializeNewGame(mode, pendingTeamId, pendingPlayer, pendingManager);
-      await loadGameIntoStore(save.id);
+      const save = await initializeNewGame(mode, pendingTeamId, selectedSlot, pendingPlayer, pendingManager);
+      await loadGameIntoStore(save.metadataId);
       navigate(mode === 'manager' ? '/manager' : '/player');
     } catch (err) {
-      console.error('게임 초기화 실패:', err);
-      setError(err instanceof Error ? err.message : String(err));
+      console.error('failed to initialize new game:', err);
+      setError(toCareerStartErrorMessage(err));
     } finally {
       setLocalLoading(false);
       setLoading(false);
@@ -178,7 +207,7 @@ export function SeasonGoalView() {
             <div className="fm-text-xs fm-font-semibold fm-text-accent fm-text-upper fm-mb-sm">Arrival Briefing</div>
             <h1 className="fm-text-2xl fm-font-bold fm-text-primary" style={{ margin: 0 }}>2026 시즌 부임 브리핑</h1>
             <p className="fm-text-md fm-text-muted fm-mt-sm" style={{ lineHeight: 1.7 }}>
-              이제 팀과 시즌 목표가 정해집니다. 이 화면은 계약 확인서가 아니라, 어떤 압박 속에서 시즌을 시작하는지 보여주는 첫 브리핑입니다.
+              이제 팀과 시즌 목표가 정해집니다. 이 화면은 계약 확인이 아니라 어떤 압박 속에서 시즌을 시작하는지 보여주는 첫 브리핑입니다.
             </p>
           </div>
         </header>
@@ -209,7 +238,7 @@ export function SeasonGoalView() {
 
                 <div className="intro-card-grid intro-card-grid--2">
                   <div className="fm-card">
-                    <div className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">첫 시즌 포인트</div>
+                    <div className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">첫 시즌 초점</div>
                     <p className="fm-text-sm fm-text-primary" style={{ lineHeight: 1.7, margin: 0 }}>
                       {teamMeta.openingFocus}
                     </p>
@@ -299,7 +328,7 @@ export function SeasonGoalView() {
                 </div>
                 {negotiated && (
                   <div className="fm-alert fm-alert--warning fm-mt-sm">
-                    <span className="fm-alert__text">목표를 낮춘 대신 시즌 시작 보드 만족도는 감소합니다.</span>
+                    <span className="fm-alert__text">목표를 한 단계 낮춘 대신 시즌 초반 보드 만족도는 줄어듭니다.</span>
                   </div>
                 )}
               </div>
@@ -307,7 +336,7 @@ export function SeasonGoalView() {
 
             <section className="fm-panel">
               <div className="fm-panel__header">
-                <span className="fm-panel__title">리스크와 보상</span>
+                <span className="fm-panel__title">리스크 보상</span>
               </div>
               <div className="fm-panel__body fm-flex-col fm-gap-sm">
                 <div className="fm-card">
@@ -321,6 +350,32 @@ export function SeasonGoalView() {
                   <p className="fm-text-sm fm-text-primary" style={{ margin: 0, lineHeight: 1.7 }}>
                     {teamMeta.failureRisk}
                   </p>
+                </div>
+              </div>
+            </section>
+
+            <section className="fm-panel">
+              <div className="fm-panel__header">
+                <span className="fm-panel__title">세이브 슬롯</span>
+              </div>
+              <div className="fm-panel__body fm-flex-col fm-gap-sm">
+                <div className="fm-text-sm fm-text-muted">
+                  새 커리어를 저장할 슬롯을 선택하세요. 이미 사용 중인 슬롯을 고르면 해당 슬롯의 이전 커리어를 덮어씁니다.
+                </div>
+                <div className="fm-flex fm-gap-sm" style={{ flexWrap: 'wrap' }}>
+                  {Array.from({ length: 10 }, (_, index) => index + 1).map((slotNumber) => {
+                    const occupied = occupiedSlots.includes(slotNumber);
+                    return (
+                      <button
+                        key={slotNumber}
+                        type="button"
+                        className={`fm-btn ${selectedSlot === slotNumber ? 'fm-btn--primary' : 'fm-btn--ghost'}`}
+                        onClick={() => setSelectedSlot(slotNumber)}
+                      >
+                        {occupied ? `슬롯 ${slotNumber} 덮어쓰기` : `슬롯 ${slotNumber}`}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             </section>

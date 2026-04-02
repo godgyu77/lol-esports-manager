@@ -17,6 +17,7 @@ export * from './facility';
 export * from './social';
 export * from './rivalry';
 export * from './manager';
+export * from './managerSetup';
 export * from './injury';
 export * from './playerGoal';
 export * from './agent';

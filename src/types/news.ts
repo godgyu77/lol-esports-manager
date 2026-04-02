@@ -10,7 +10,10 @@ export type NewsCategory =
   | 'scandal'
   | 'fan_reaction'
   | 'award_news'
-  | 'patch_notes';
+  | 'patch_notes'
+  | 'coach_briefing';
+
+export type NewsPresentation = 'briefing' | 'feature';
 
 export interface NewsArticle {
   id: number;
@@ -23,6 +26,8 @@ export interface NewsArticle {
   relatedPlayerId: string | null;
   importance: number;
   isRead: boolean;
+  presentation: NewsPresentation;
+  isDismissible: boolean;
 }
 
 export const NEWS_CATEGORY_LABELS: Record<NewsCategory, string> = {
@@ -38,4 +43,5 @@ export const NEWS_CATEGORY_LABELS: Record<NewsCategory, string> = {
   fan_reaction: '팬 반응',
   award_news: '수상',
   patch_notes: '패치 노트',
+  coach_briefing: '코치 브리핑',
 };

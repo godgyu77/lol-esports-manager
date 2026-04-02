@@ -5,10 +5,18 @@ import { useMatchStore } from '../../../stores/matchStore';
 import type { GameSave, Team } from '../../../types';
 import type { Season } from '../../../types/game';
 
-const { mockNavigate, mockAdvanceDay, mockSkipToNextMatchDay } = vi.hoisted(() => ({
+const {
+  mockNavigate,
+  mockAdvanceDay,
+  mockSkipToNextMatchDay,
+  mockGetManagerSetupStatus,
+  mockGenerateInitialCoachRecommendations,
+} = vi.hoisted(() => ({
   mockNavigate: vi.fn(),
   mockAdvanceDay: vi.fn(),
   mockSkipToNextMatchDay: vi.fn(),
+  mockGetManagerSetupStatus: vi.fn(),
+  mockGenerateInitialCoachRecommendations: vi.fn(),
 }));
 
 vi.mock('react-router-dom', async () => {
@@ -37,6 +45,20 @@ vi.mock('../../../engine/manager/managerInterventionEngine', () => ({
   getActiveInterventionEffects: vi.fn().mockResolvedValue(new Map()),
 }));
 
+vi.mock('../../../engine/manager/managerSetupEngine', () => ({
+  getManagerSetupStatus: mockGetManagerSetupStatus,
+  generateInitialCoachRecommendations: mockGenerateInitialCoachRecommendations,
+  applyCoachTrainingRecommendation: vi.fn().mockResolvedValue(undefined),
+  applyCoachTacticsRecommendation: vi.fn().mockResolvedValue(undefined),
+  ManagerSetupBlockedError: class extends Error {
+    status;
+    constructor(status: unknown) {
+      super('blocked');
+      this.status = status;
+    }
+  },
+}));
+
 vi.mock('../../../engine/staff/staffEngine', () => ({
   generateStaffRecommendations: vi.fn().mockResolvedValue([]),
 }));
@@ -56,6 +78,7 @@ const mockSave = {
   currentDate: '2025-01-15',
   managerName: '테스트 감독',
   mode: 'manager',
+  currentSeasonId: 1,
 } as unknown as GameSave;
 
 const mockSeason = {
@@ -94,9 +117,16 @@ describe('DayView', () => {
   beforeEach(() => {
     resetStores();
     vi.clearAllMocks();
+    mockGetManagerSetupStatus.mockResolvedValue({
+      isTrainingConfigured: true,
+      isTacticsConfigured: true,
+      isReadyToAdvance: true,
+      blockingReasons: [],
+    });
+    mockGenerateInitialCoachRecommendations.mockResolvedValue([]);
   });
 
-  it('하루 진행으로 유저 경기를 만나면 시리즈 상태를 초기화하고 프리매치로 이동한다', async () => {
+  it('moves to pre-match when advancing reaches a user match', async () => {
     mockAdvanceDay.mockResolvedValue({
       date: '2025-01-15',
       nextDate: '2025-01-16',
@@ -111,7 +141,8 @@ describe('DayView', () => {
       gameState: { save: mockSave, season: mockSeason, teams: [mockTeam] },
     });
 
-    const advanceButton = screen.getByRole('button', { name: '하루 진행' });
+    const advanceButton = await screen.findByRole('button', { name: '하루 진행' });
+    await waitFor(() => expect(advanceButton).toBeEnabled());
     advanceButton.click();
 
     await waitFor(() => {
@@ -124,7 +155,7 @@ describe('DayView', () => {
     });
   });
 
-  it('다음 경기까지 건너뛰기도 같은 방식으로 경기 준비 상태를 만든다', async () => {
+  it('prepares the same pre-match state when skipping to the next match day', async () => {
     mockSkipToNextMatchDay.mockResolvedValue([
       {
         date: '2025-01-15',
@@ -149,7 +180,8 @@ describe('DayView', () => {
       gameState: { save: mockSave, season: mockSeason, teams: [mockTeam] },
     });
 
-    const skipButton = screen.getByRole('button', { name: '다음 경기까지 건너뛰기' });
+    const skipButton = await screen.findByRole('button', { name: '다음 경기까지 건너뛰기' });
+    await waitFor(() => expect(skipButton).toBeEnabled());
     skipButton.click();
 
     await waitFor(() => {
@@ -160,5 +192,56 @@ describe('DayView', () => {
       expect(useMatchStore.getState().currentGameDraftRequired).toBe(true);
       expect(mockNavigate).toHaveBeenCalledWith('/manager/pre-match');
     });
+  });
+
+  it('shows the coach briefing and disables progression when setup is incomplete', async () => {
+    mockGetManagerSetupStatus.mockResolvedValue({
+      isTrainingConfigured: false,
+      isTacticsConfigured: false,
+      isReadyToAdvance: false,
+      blockingReasons: ['훈련 계획이 없습니다.', '전술 설정이 없습니다.'],
+    });
+    mockGenerateInitialCoachRecommendations.mockResolvedValue([
+      {
+        id: 'training-team-user',
+        kind: 'training',
+        authorStaffId: 1,
+        authorName: '김 코치',
+        authorRole: 'coach',
+        headline: '훈련안을 먼저 잡아야 합니다.',
+        summary: '라인전 보완이 우선입니다.',
+        reasons: ['훈련 계획이 없습니다.'],
+        payload: [],
+      },
+      {
+        id: 'tactics-team-user',
+        kind: 'tactics',
+        authorStaffId: 2,
+        authorName: '박 분석관',
+        authorRole: 'analyst',
+        headline: '기본 전술을 먼저 확정해 주세요.',
+        summary: '오브젝트 운영 중심 전술입니다.',
+        reasons: ['전술 설정이 없습니다.'],
+        payload: {
+          earlyStrategy: 'standard',
+          midStrategy: 'balanced',
+          lateStrategy: 'teamfight',
+          wardPriority: 'balanced',
+          dragonPriority: 5,
+          baronPriority: 5,
+          aggressionLevel: 5,
+        },
+      },
+    ]);
+
+    renderWithProviders(<DayView />, {
+      gameState: { save: mockSave, season: mockSeason, teams: [mockTeam] },
+    });
+
+    expect(await screen.findByText('코치 브리핑: 진행 전 필수 세팅')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '훈련 추천 적용' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '전술 추천 적용' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '하루 진행' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '다음 경기까지 건너뛰기' })).toBeDisabled();
   });
 });

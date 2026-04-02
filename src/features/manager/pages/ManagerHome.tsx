@@ -33,6 +33,7 @@ import type { Match } from '../../../types/match';
 import { STAFF_ROLE_LABELS } from '../../../types/staff';
 import { formatAmount } from '../../../utils/formatUtils';
 import { TutorialOverlay } from '../../tutorial/TutorialOverlay';
+import { MainLoopPanel } from '../components/MainLoopPanel';
 import { MeetingModal } from '../components/MeetingModal';
 import './ManagerHome.css';
 
@@ -468,6 +469,47 @@ export function ManagerHome() {
           <span className="fm-alert__text">최신 팀 상태를 다시 불러오는 중입니다.</span>
         </div>
       )}
+
+      <MainLoopPanel
+        eyebrow="Manager Loop"
+        title="지금 가장 먼저 볼 것과 오늘의 다음 행동을 먼저 정리합니다"
+        subtitle="대시보드는 정보를 많이 보여주는 대신, 오늘 할 일과 리스크를 가장 먼저 읽히는 쪽으로 다시 배치했습니다."
+        insights={[
+          {
+            label: '오늘 해야 할 일',
+            value: urgentIssue.title,
+            detail: urgentIssue.body,
+            tone: alerts[0]?.type === 'danger' ? 'danger' : 'accent',
+          },
+          {
+            label: '가장 큰 리스크',
+            value: alerts[0]?.type === 'danger' ? '즉시 확인' : alerts[0] ? '주의 필요' : '안정',
+            detail: alerts[0]?.message ?? '급하게 터진 경고는 없습니다. 다음 경기 준비와 팀 분위기 정리에 집중해도 됩니다.',
+            tone: alerts[0]?.type === 'danger' ? 'danger' : alerts[0] ? 'accent' : 'success',
+          },
+          {
+            label: '다음 경기',
+            value: nextMatchSummary,
+            detail: upcomingMatches[0]
+              ? '상대 분석과 전술 우선순위를 오늘 안에 정리해두면 경기 당일 의사결정이 훨씬 빨라집니다.'
+              : '가까운 공식전이 없으니 성장, 회복, 내부 관리 쪽 여유를 가져갈 수 있습니다.',
+            tone: 'accent',
+          },
+          {
+            label: '코치 조언',
+            value: briefingActions[0] ?? '브리핑 대기',
+            detail: briefing?.briefing ?? '코치와 스태프 브리핑을 정리하는 중입니다.',
+            tone: 'success',
+          },
+        ]}
+        actions={[
+          { label: '시즌 진행', onClick: () => navigate('/manager/day'), variant: 'primary' },
+          { label: '훈련 보기', onClick: () => navigate('/manager/training') },
+          { label: '전술 보기', onClick: () => navigate('/manager/tactics') },
+          { label: '뉴스 확인', onClick: () => navigate('/manager/news'), variant: 'info' },
+        ]}
+        note="위 브리핑 한 줄만 읽어도 오늘 해야 할 일, 팀의 리스크, 다음 경기 준비 상태를 바로 파악할 수 있게 맞췄습니다."
+      />
 
       {alerts.length > 0 && (
         <div className="fm-flex-col fm-gap-sm fm-mb-lg">

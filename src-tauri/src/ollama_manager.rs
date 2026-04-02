@@ -39,6 +39,14 @@ pub struct OllamaState {
     pub detail: Mutex<OllamaStatusDetail>,
 }
 
+async fn probe_ready(timeout_secs: u64) -> Result<bool, String> {
+    let client = http_client(timeout_secs)?;
+    match client.get("http://localhost:11434/api/tags").send().await {
+        Ok(response) => Ok(response.status().is_success()),
+        Err(_) => Ok(false),
+    }
+}
+
 fn http_client(timeout_secs: u64) -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .timeout(Duration::from_secs(timeout_secs))
@@ -160,10 +168,36 @@ pub fn start_ollama(app: &tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub async fn start_ollama_runtime(app: tauri::AppHandle) -> Result<OllamaStatusDetail, String> {
+    if probe_ready(2).await? {
+        let state = app.state::<OllamaState>();
+        set_status(
+            &state,
+            OllamaRuntimeStatus::Ready,
+            "이미 실행 중인 Ollama 서버를 감지했습니다.",
+        );
+        return Ok(get_status(&state));
+    }
+
+    start_ollama(&app)?;
+    wait_until_ready(&app, 40, 500).await?;
+    Ok(get_status(&app.state::<OllamaState>()))
+}
+
+#[tauri::command]
 pub async fn get_ollama_status_detail(
     app: tauri::AppHandle,
     state: State<'_, OllamaState>,
 ) -> Result<OllamaStatusDetail, String> {
+    if probe_ready(2).await? {
+        set_status(
+            &state,
+            OllamaRuntimeStatus::Ready,
+            "Ollama 서버가 준비되었습니다.",
+        );
+        return Ok(get_status(&state));
+    }
+
     let detail = get_status(&state);
     if detail.status == OllamaRuntimeStatus::Ready {
         return Ok(detail);
@@ -182,12 +216,24 @@ pub async fn ensure_ollama_ready(
     app: tauri::AppHandle,
     state: State<'_, OllamaState>,
 ) -> Result<OllamaStatusDetail, String> {
+    if probe_ready(2).await? {
+        set_status(
+            &state,
+            OllamaRuntimeStatus::Ready,
+            "Ollama 서버가 준비되었습니다.",
+        );
+        return Ok(get_status(&state));
+    }
+
     let detail = get_status(&state);
-    if detail.status == OllamaRuntimeStatus::NotStarted {
+    if matches!(
+        detail.status,
+        OllamaRuntimeStatus::NotStarted | OllamaRuntimeStatus::Failed
+    ) {
         start_ollama(&app)?;
     }
 
-    wait_until_ready(&app, 30, 500).await?;
+    wait_until_ready(&app, 40, 500).await?;
     Ok(get_status(&state))
 }
 

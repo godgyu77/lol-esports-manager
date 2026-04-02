@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { SaveSlot, GameSave } from '../../types/game';
+import type { GameSave, SaveSlot } from '../../types/game';
 import { useGameStore } from '../../stores/gameStore';
 import {
-  getSaveSlots,
   createManualSaveFromCurrent,
-  loadSave,
   deleteSave,
+  getSaveSlots,
+  loadSave,
 } from '../../engine/save/saveEngine';
 import { loadGameIntoStore } from '../../db/initGame';
 import './introFlow.css';
@@ -36,13 +36,19 @@ function formatDate(dateStr: string): string {
 function buildSaveSummary(save: GameSave): { stage: string; focus: string } {
   return {
     stage: save.seasonInfo ?? '프리시즌',
-    focus: save.teamName ? `${save.teamName} 운영 중` : (save.mode === 'manager' ? '감독 커리어 진행 중' : '선수 커리어 진행 중'),
+    focus: save.teamName
+      ? `${save.teamName} 운영 중`
+      : (save.mode === 'manager' ? '감독 커리어 진행 중' : '선수 커리어 진행 중'),
   };
+}
+
+function getReadableErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
 }
 
 export function SaveLoadView() {
   const navigate = useNavigate();
-  const save = useGameStore((s) => s.save);
+  const save = useGameStore((state) => state.save);
 
   const [slots, setSlots] = useState<SaveSlot[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,7 +66,8 @@ export function SaveLoadView() {
       setLoading(true);
       setSlots(await getSaveSlots());
     } catch (error) {
-      console.error('세이브 목록 조회 실패:', error);
+      console.error('failed to fetch save slots:', error);
+      setMessage(getReadableErrorMessage(error, '세이브 목록을 불러오지 못했습니다.'));
     } finally {
       setLoading(false);
     }
@@ -81,7 +88,7 @@ export function SaveLoadView() {
 
     const slotName = slotNumber === 0 ? '자동 저장' : `세이브 슬롯 ${slotNumber}`;
     const existing = slots.find((slot) => slot.slotNumber === slotNumber)?.save;
-    if (existing && !window.confirm(`${slotName}에 이미 저장 데이터가 있습니다. 덮어쓰시겠습니까?`)) return;
+    if (existing && !window.confirm(`${slotName}에 기존 커리어가 있습니다. 덮어쓰시겠습니까?`)) return;
 
     try {
       setProcessing(true);
@@ -89,43 +96,43 @@ export function SaveLoadView() {
       showMessage(`${slotName}에 저장했습니다.`);
       await fetchSlots();
     } catch (error) {
-      console.error('저장 실패:', error);
-      showMessage('저장에 실패했습니다.');
+      console.error('failed to save snapshot:', error);
+      showMessage(getReadableErrorMessage(error, '저장에 실패했습니다.'));
     } finally {
       setProcessing(false);
     }
   };
 
-  const handleLoad = async (saveId: number) => {
+  const handleLoad = async (metadataId: number) => {
     if (processing) return;
-    if (isInGame && !window.confirm('현재 진행 중인 커리어 대신 이 세이브를 불러오시겠습니까?')) return;
+    if (isInGame && !window.confirm('현재 진행 중인 커리어를 나가고 선택한 세이브를 불러오시겠습니까?')) return;
 
     try {
       setProcessing(true);
-      const loadedSave = await loadSave(saveId);
-      await loadGameIntoStore(loadedSave.id);
+      const loadedSave = await loadSave(metadataId);
+      await loadGameIntoStore(loadedSave.metadataId);
       navigate(loadedSave.mode === 'manager' ? '/manager' : '/player');
     } catch (error) {
-      console.error('불러오기 실패:', error);
-      showMessage('불러오기에 실패했습니다.');
+      console.error('failed to load save:', error);
+      showMessage(getReadableErrorMessage(error, '불러오기에 실패했습니다.'));
     } finally {
       setProcessing(false);
     }
   };
 
-  const handleDelete = async (saveId: number, slotNumber: number) => {
+  const handleDelete = async (metadataId: number, slotNumber: number) => {
     if (processing) return;
     const slotName = slotNumber === 0 ? '자동 저장' : `세이브 슬롯 ${slotNumber}`;
     if (!window.confirm(`${slotName}을 삭제하시겠습니까?`)) return;
 
     try {
       setProcessing(true);
-      await deleteSave(saveId);
+      await deleteSave(metadataId);
       showMessage(`${slotName}을 삭제했습니다.`);
       await fetchSlots();
     } catch (error) {
-      console.error('삭제 실패:', error);
-      showMessage('삭제에 실패했습니다.');
+      console.error('failed to delete save:', error);
+      showMessage(getReadableErrorMessage(error, '삭제에 실패했습니다.'));
     } finally {
       setProcessing(false);
     }
@@ -158,7 +165,7 @@ export function SaveLoadView() {
               <span className="fm-badge fm-badge--default">{summary.stage}</span>
               <span className="fm-badge fm-badge--default">{formatPlayTime(slot.save!.playTimeMinutes)}</span>
             </div>
-            <div className="fm-text-sm fm-text-muted">복귀 포인트: {summary.focus}</div>
+            <div className="fm-text-sm fm-text-muted">복귀 지점: {summary.focus}</div>
           </div>
         ) : (
           <div className="fm-flex-1 fm-text-lg fm-text-muted" style={{ fontStyle: 'italic', alignSelf: 'center' }}>
@@ -179,10 +186,10 @@ export function SaveLoadView() {
           )}
           {hasSave && (
             <>
-              <button className="fm-btn fm-btn--sm fm-btn--success" onClick={() => void handleLoad(slot.save!.id)} disabled={processing}>
+              <button className="fm-btn fm-btn--sm fm-btn--success" onClick={() => void handleLoad(slot.save!.metadataId)} disabled={processing}>
                 불러오기
               </button>
-              <button className="fm-btn fm-btn--sm fm-btn--danger" onClick={() => void handleDelete(slot.save!.id, slot.slotNumber)} disabled={processing}>
+              <button className="fm-btn fm-btn--sm fm-btn--danger" onClick={() => void handleDelete(slot.save!.metadataId, slot.slotNumber)} disabled={processing}>
                 삭제
               </button>
             </>
@@ -198,9 +205,10 @@ export function SaveLoadView() {
         <header className="fm-panel intro-hero intro-panel-soft">
           <div className="fm-panel__body" style={{ padding: 28 }}>
             <div className="fm-text-xs fm-font-semibold fm-text-accent fm-text-upper fm-mb-sm">Career Resume</div>
-            <h1 className="fm-text-2xl fm-font-bold fm-text-primary" style={{ margin: 0 }}>세이브와 복귀 지점 관리</h1>
+            <h1 className="fm-text-2xl fm-font-bold fm-text-primary" style={{ margin: 0 }}>세이브 및 복귀 관리</h1>
             <p className="fm-text-md fm-text-muted fm-mt-sm" style={{ lineHeight: 1.7 }}>
-              가장 최근 세이브는 메인 메뉴에서 바로 이어할 수 있고, 이 화면은 전체 슬롯을 정리하고 원하는 지점으로 이동하는 관리 허브입니다.
+              각 슬롯은 서로 다른 DB 파일을 사용합니다. 수동 저장은 현재 커리어의 상태를 복사하고,
+              불러오기는 해당 슬롯의 커리어를 그대로 복원합니다.
             </p>
           </div>
         </header>
@@ -226,7 +234,7 @@ export function SaveLoadView() {
         )}
 
         {loading ? (
-          <div className="fm-p-lg fm-text-muted fm-text-lg">세이브 목록을 불러오는 중...</div>
+          <div className="fm-p-lg fm-text-muted fm-text-lg">세이브 목록을 불러오는 중입니다...</div>
         ) : (
           <div className="fm-flex-col fm-gap-sm">
             {slots.map(renderSlot)}

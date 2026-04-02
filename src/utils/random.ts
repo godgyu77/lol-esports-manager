@@ -12,11 +12,13 @@ import { createRng } from './rng';
 
 let _globalRng: (() => number) | null = null;
 let _baseSeed = '';
+let _didWarnMissingGlobalRng = false;
 
 /** 전역 RNG 초기화 (게임 시작/로드/일간 진행 시 호출) */
 export function initGlobalRng(seed: string): void {
   _baseSeed = seed;
   _globalRng = createRng(seed);
+  _didWarnMissingGlobalRng = false;
 }
 
 /** 현재 base seed 반환 (저장 시 사용) */
@@ -27,7 +29,10 @@ export function getBaseSeed(): string {
 /** Math.random() 대체 — 0 이상 1 미만 난수 */
 export function nextRandom(): number {
   if (!_globalRng) {
-    console.warn('[RNG] initGlobalRng 미호출 — Math.random() 폴백');
+    if (!_didWarnMissingGlobalRng) {
+      console.warn('[RNG] initGlobalRng 미호출 — Math.random() 폴백');
+      _didWarnMissingGlobalRng = true;
+    }
     return Math.random();
   }
   return _globalRng();

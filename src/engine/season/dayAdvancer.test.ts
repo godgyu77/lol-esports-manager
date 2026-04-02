@@ -143,6 +143,10 @@ vi.mock('../manager/managerIdentityEngine', () => ({
   getManagerIdentityEffects: vi.fn(),
 }));
 
+vi.mock('../manager/managerSetupEngine', () => ({
+  assertManagerReadyToAdvance: vi.fn(),
+}));
+
 vi.mock('./dayAdvancerTasks', () => ({
   processNonMatchDay: vi.fn(),
   processWeeklyTasks: vi.fn(),

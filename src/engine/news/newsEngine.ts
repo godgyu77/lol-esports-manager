@@ -1,4 +1,5 @@
-import type { NewsArticle, NewsCategory } from '../../types/news';
+import type { NewsArticle, NewsCategory, NewsPresentation } from '../../types/news';
+import type { CoachSetupRecommendation } from '../../types/managerSetup';
 import { getDatabase } from '../../db/database';
 import { generateNewsArticle } from '../../ai/advancedAiService';
 import { nextRandom, pickRandom, randomInt } from '../../utils/random';
@@ -18,6 +19,7 @@ interface NewsArticleRow {
 }
 
 function mapRowToNewsArticle(row: NewsArticleRow): NewsArticle {
+  const presentation: NewsPresentation = row.category === 'coach_briefing' ? 'briefing' : 'feature';
   return {
     id: row.id,
     seasonId: row.season_id,
@@ -29,6 +31,8 @@ function mapRowToNewsArticle(row: NewsArticleRow): NewsArticle {
     relatedPlayerId: row.related_player_id,
     importance: row.importance,
     isRead: Boolean(row.is_read),
+    presentation,
+    isDismissible: presentation === 'briefing',
   };
 }
 
@@ -47,6 +51,31 @@ async function insertNews(
     `INSERT INTO news_articles (season_id, article_date, category, title, content, importance, related_team_id, related_player_id)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
     [seasonId, date, category, title, content, importance, relatedTeamId, relatedPlayerId],
+  );
+}
+
+function truncateSummary(content: string, maxLength = 110): string {
+  const normalized = content.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, maxLength).trim()}...`;
+}
+
+function buildCoachBriefingContent(recommendations: CoachSetupRecommendation[]): string {
+  const lead = recommendations
+    .map((recommendation) => `${recommendation.authorName} 코치가 ${recommendation.kind === 'training' ? '훈련' : '전술'} 우선안을 전달했습니다. ${recommendation.headline}`)
+    .join(' ');
+
+  const details = recommendations
+    .map((recommendation) => {
+      const title = recommendation.kind === 'training' ? '훈련 제안' : '전술 제안';
+      return `${title}: ${recommendation.summary}\n- ${recommendation.reasons.join('\n- ')}`;
+    })
+    .join('\n\n');
+
+  return buildNewsParagraphs(
+    lead,
+    details,
+    '브리핑에 담긴 추천은 진행 화면에서 바로 적용할 수 있으며, 감독이 직접 수정해 최종 운영안으로 확정할 수 있습니다.',
   );
 }
 
@@ -697,6 +726,103 @@ export async function generatePatchNotesNews(
   await insertNews(seasonId, date, 'patch_notes', title, content, 2);
 }
 
+export async function generateCoachBriefingNews(
+  seasonId: number,
+  date: string,
+  teamId: string,
+  recommendations: CoachSetupRecommendation[],
+): Promise<void> {
+  if (recommendations.length === 0) return;
+
+  const trainingRec = recommendations.find((recommendation) => recommendation.kind === 'training');
+  const tacticsRec = recommendations.find((recommendation) => recommendation.kind === 'tactics');
+  const titleParts = [trainingRec?.authorName, tacticsRec?.authorName].filter(Boolean);
+  const title = titleParts.length > 0
+    ? `${titleParts[0]} 코치진이 시즌 개막 브리핑을 올렸습니다`
+    : '코치진이 시즌 개막 브리핑을 올렸습니다';
+
+  await insertNews(
+    seasonId,
+    date,
+    'coach_briefing',
+    title,
+    buildCoachBriefingContent(recommendations),
+    2,
+    teamId,
+  );
+}
+
+export async function generateTrainingDigest(
+  seasonId: number,
+  date: string,
+  teamId: string,
+  coachName: string,
+  summary: string,
+  reasons: string[],
+): Promise<void> {
+  const title = `${coachName} 코치의 훈련 리포트`;
+  const content = buildNewsParagraphs(
+    `${coachName} 코치가 최근 훈련 결과를 짧게 정리해 전달했습니다.`,
+    summary,
+    reasons.length > 0 ? `핵심 메모\n- ${reasons.join('\n- ')}` : null,
+  );
+  await insertNews(seasonId, date, 'coach_briefing', title, content, 1, teamId);
+}
+
+export async function generateScrimBriefing(
+  seasonId: number,
+  date: string,
+  teamId: string,
+  coachName: string,
+  opponentName: string,
+  recommendation: string,
+  notes: string[],
+): Promise<void> {
+  const title = `${coachName} 코치가 스크림 메모를 남겼습니다`;
+  const content = buildNewsParagraphs(
+    `${opponentName} 상대로 진행한 최근 스크림을 바탕으로 코치진이 짧은 브리핑을 올렸습니다.`,
+    recommendation,
+    notes.length > 0 ? `체크 포인트\n- ${notes.join('\n- ')}` : null,
+  );
+  await insertNews(seasonId, date, 'coach_briefing', title, content, 1, teamId);
+}
+
+export async function generateOpponentScoutBriefing(
+  seasonId: number,
+  date: string,
+  teamId: string,
+  coachName: string,
+  opponentName: string,
+  summary: string,
+  watchPoints: string[],
+): Promise<void> {
+  const title = `${opponentName}전 상대팀 보고서가 도착했습니다`;
+  const content = buildNewsParagraphs(
+    `${coachName} 코치가 다음 상대 ${opponentName}의 핵심 패턴을 정리했습니다.`,
+    summary,
+    watchPoints.length > 0 ? `주목 포인트\n- ${watchPoints.join('\n- ')}` : null,
+  );
+  await insertNews(seasonId, date, 'coach_briefing', title, content, 2, teamId);
+}
+
+export async function generateMoraleWarningBriefing(
+  seasonId: number,
+  date: string,
+  teamId: string,
+  coachName: string,
+  playerNames: string[],
+  summary: string,
+): Promise<void> {
+  const title = `${coachName} 코치가 라커룸 경고를 전했습니다`;
+  const playerLine = playerNames.length > 0 ? `주의 대상: ${playerNames.join(', ')}` : null;
+  const content = buildNewsParagraphs(
+    '코치진이 최근 팀 분위기와 선수 컨디션 변화를 짧게 공유했습니다.',
+    summary,
+    playerLine,
+  );
+  await insertNews(seasonId, date, 'coach_briefing', title, content, 2, teamId);
+}
+
 export async function getNewsByDate(seasonId: number, date: string): Promise<NewsArticle[]> {
   const db = await getDatabase();
   const rows = await db.select<NewsArticleRow[]>(
@@ -735,6 +861,24 @@ export async function getRecentNews(
 
   const rows = await db.select<NewsArticleRow[]>(sql, params);
   return rows.map(mapRowToNewsArticle);
+}
+
+export async function getUnreadBriefings(seasonId: number, limit: number = 20): Promise<NewsArticle[]> {
+  const db = await getDatabase();
+  const rows = await db.select<NewsArticleRow[]>(
+    `SELECT id, season_id, article_date, category, title, content,
+            related_team_id, related_player_id, importance, is_read
+     FROM news_articles
+     WHERE season_id = $1 AND category = 'coach_briefing' AND is_read = 0
+     ORDER BY article_date DESC, importance DESC, id DESC
+     LIMIT $2`,
+    [seasonId, limit],
+  );
+  return rows.map(mapRowToNewsArticle);
+}
+
+export function getArticleSummary(article: NewsArticle): string {
+  return truncateSummary(article.content);
 }
 
 export async function getUnreadCount(seasonId: number): Promise<number> {

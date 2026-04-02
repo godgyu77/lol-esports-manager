@@ -94,6 +94,7 @@ interface SettingsState {
   aiEnabled: boolean;
   aiModel: string;
   aiSetupCompleted: boolean;
+  aiSetupSkipped: boolean;
   autoSaveInterval: 'daily' | 'weekly' | 'manual';
   tutorialComplete: boolean;
   difficulty: Difficulty;
@@ -110,6 +111,7 @@ interface SettingsState {
   setAiEnabled: (enabled: boolean) => void;
   setAiModel: (model: string) => void;
   setAiSetupCompleted: (done: boolean) => void;
+  setAiSetupSkipped: (skipped: boolean) => void;
   setAutoSaveInterval: (interval: 'daily' | 'weekly' | 'manual') => void;
   setTutorialComplete: (complete: boolean) => void;
   setDifficulty: (difficulty: Difficulty) => void;
@@ -132,6 +134,7 @@ export const useSettingsStore = create<SettingsState>()(
       aiEnabled: true,
       aiModel: '',
       aiSetupCompleted: false,
+      aiSetupSkipped: false,
       autoSaveInterval: 'daily',
       tutorialComplete: false,
       difficulty: 'normal',
@@ -139,7 +142,7 @@ export const useSettingsStore = create<SettingsState>()(
       soundVolume: 0.5,
       theme: 'dark',
       windowMode: 'windowed',
-      aiProvider: isMobileRuntime() ? 'template' : 'ollama',
+      aiProvider: 'template',
       hasApiKey: false,
       apiEndpoint: '',
       apiModel: 'gpt-4o-mini',
@@ -148,6 +151,7 @@ export const useSettingsStore = create<SettingsState>()(
       setAiEnabled: (enabled) => set({ aiEnabled: enabled }),
       setAiModel: (model) => set({ aiModel: model }),
       setAiSetupCompleted: (done) => set({ aiSetupCompleted: done }),
+      setAiSetupSkipped: (skipped) => set({ aiSetupSkipped: skipped }),
       setAutoSaveInterval: (interval) => set({ autoSaveInterval: interval }),
       setTutorialComplete: (complete) => set({ tutorialComplete: complete }),
       setDifficulty: (difficulty) => set({ difficulty }),
@@ -192,6 +196,7 @@ export const useSettingsStore = create<SettingsState>()(
         aiEnabled: state.aiEnabled,
         aiModel: state.aiModel,
         aiSetupCompleted: state.aiSetupCompleted,
+        aiSetupSkipped: state.aiSetupSkipped,
         autoSaveInterval: state.autoSaveInterval,
         tutorialComplete: state.tutorialComplete,
         difficulty: state.difficulty,

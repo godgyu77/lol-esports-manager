@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { PlayerAvatar } from '../../../../components/PlayerAvatar';
 import { updatePlayerDivision, updateTeamPlayStyle } from '../../../../db/queries';
@@ -19,6 +19,36 @@ interface RosterTabProps {
   userTeam: Team;
   teams: Team[];
   setTeams: (teams: Team[]) => void;
+}
+
+function getMainAverage(team: Team): number {
+  const mainPlayers = team.roster.filter((player) => (player as { division?: string }).division === 'main');
+  if (mainPlayers.length === 0) return 0;
+  return Math.round(mainPlayers.reduce((sum, player) => sum + getOvr(player), 0) / mainPlayers.length);
+}
+
+function getSwapPreview(userTeam: Team, sourceId: string, targetId: string): { delta: number; riskLabel: string; summary: string } | null {
+  const source = userTeam.roster.find((player) => player.id === sourceId);
+  const target = userTeam.roster.find((player) => player.id === targetId);
+  if (!source || !target) return null;
+
+  const currentMainAverage = getMainAverage(userTeam);
+  const projectedRoster = userTeam.roster.map((player) => {
+    if (player.id === sourceId) return { ...player, division: target.division };
+    if (player.id === targetId) return { ...player, division: source.division };
+    return player;
+  });
+  const projectedTeam = { ...userTeam, roster: projectedRoster };
+  const nextMainAverage = getMainAverage(projectedTeam);
+  const delta = nextMainAverage - currentMainAverage;
+
+  const samePosition = source.position === target.position;
+  const riskLabel = samePosition ? '포지션 리스크 낮음' : '포지션 리스크 있음';
+  const summary = samePosition
+    ? '같은 포지션끼리 교체라 전술 밸런스 변화가 적습니다.'
+    : '다른 포지션끼리 이동하면 운영 안정감이 흔들릴 수 있습니다.';
+
+  return { delta, riskLabel, summary };
 }
 
 export function RosterTab({ userTeam, teams, setTeams }: RosterTabProps) {
@@ -99,7 +129,7 @@ export function RosterTab({ userTeam, teams, setTeams }: RosterTabProps) {
 
       setTeams(updatedTeams);
       const player = userTeam.roster.find((entry) => entry.id === playerId);
-      setMessage(`${player?.name} 선수를 ${newDivision === 'main' ? '1군으로 승격' : '2군으로 이동'}했습니다.`);
+      setMessage(`${player?.name}을(를) ${newDivision === 'main' ? '1군으로 승격' : '2군으로 이동'}했습니다.`);
     } finally {
       setSwapSource(null);
       setIsSwapping(false);
@@ -112,11 +142,12 @@ export function RosterTab({ userTeam, teams, setTeams }: RosterTabProps) {
       team.id === userTeam.id ? { ...team, playStyle: style } : team
     ));
     setTeams(updatedTeams);
-    setMessage(`팀 운영 스타일을 "${PLAY_STYLE_INFO[style].name}"으로 변경했습니다.`);
+    setMessage(`팀 운영 스타일을 "${PLAY_STYLE_INFO[style].name}"로 변경했습니다.`);
   }, [setTeams, teams, userTeam.id]);
 
   const mainRoster = userTeam.roster.filter((player) => (player as { division?: string }).division === 'main');
   const subRoster = userTeam.roster.filter((player) => (player as { division?: string }).division === 'sub');
+  const selectedPlayer = swapSource ? userTeam.roster.find((player) => player.id === swapSource.id) : null;
 
   const renderTable = (players: typeof userTeam.roster, title: string, division: Division) => (
     <div className="fm-panel fm-mb-md">
@@ -146,6 +177,7 @@ export function RosterTab({ userTeam, teams, setTeams }: RosterTabProps) {
             {sortByPosition(players).map((player) => {
               const avgOvr = getOvr(player);
               const isSelected = swapSource?.id === player.id;
+              const preview = swapSource && swapSource.id !== player.id ? getSwapPreview(userTeam, swapSource.id, player.id) : null;
 
               return (
                 <tr key={player.id} className={isSelected ? 'fm-table__row--selected' : ''}>
@@ -178,14 +210,14 @@ export function RosterTab({ userTeam, teams, setTeams }: RosterTabProps) {
                   <td>{player.mental.mental}</td>
                   <td>{player.contract.contractEndSeason}</td>
                   <td>
-                    <div className="fm-flex fm-gap-xs">
+                    <div className="fm-flex fm-gap-xs fm-flex-wrap">
                       <button
                         className={`fm-btn fm-btn--sm ${isSelected ? 'fm-btn--primary' : ''}`}
                         onClick={() => handleSwap(player.id, division)}
                         disabled={isSwapping}
                         title="교체 기준 선수로 선택"
                       >
-                        {isSelected ? '취소' : '스왑'}
+                        {!swapSource ? '교체 대상 선택' : isSelected ? '선택 취소' : '이 선수와 교체'}
                       </button>
                       <button
                         className="fm-btn fm-btn--sm fm-btn--ghost"
@@ -193,9 +225,14 @@ export function RosterTab({ userTeam, teams, setTeams }: RosterTabProps) {
                         disabled={isSwapping}
                         title={division === 'main' ? '2군으로 내리기' : '1군으로 올리기'}
                       >
-                        {division === 'main' ? '\u2193' : '\u2191'}
+                        {division === 'main' ? '2군 이동' : '1군 승격'}
                       </button>
                     </div>
+                    {preview ? (
+                      <div className="fm-text-xs fm-text-muted" style={{ marginTop: 6 }}>
+                        주전 평균 {preview.delta >= 0 ? '+' : ''}{preview.delta} / {preview.riskLabel}
+                      </div>
+                    ) : null}
                   </td>
                 </tr>
               );
@@ -205,6 +242,14 @@ export function RosterTab({ userTeam, teams, setTeams }: RosterTabProps) {
       </div>
     </div>
   );
+
+  const selectedPreview = useMemo(() => {
+    if (!selectedPlayer) return null;
+    return {
+      label: swapSource?.division === 'main' ? '1군에서 이동 대기' : '2군에서 승격 대기',
+      summary: selectedPlayer.position,
+    };
+  }, [selectedPlayer, swapSource?.division]);
 
   return (
     <>
@@ -237,11 +282,13 @@ export function RosterTab({ userTeam, teams, setTeams }: RosterTabProps) {
         </div>
       </div>
 
-      {swapSource && (
+      {swapSource && selectedPlayer && selectedPreview ? (
         <div className="fm-alert fm-alert--warning fm-mb-md">
-          <span className="fm-alert__text">교체할 상대 선수를 선택해주세요. 1군과 2군 사이에서 바로 스왑할 수 있습니다.</span>
+          <span className="fm-alert__text">
+            선택 선수: {selectedPlayer.name} ({POSITION_LABELS[selectedPlayer.position]}) / {selectedPreview.label}. 다른 군의 선수를 눌러 바로 교체할 수 있습니다.
+          </span>
         </div>
-      )}
+      ) : null}
 
       {message && (
         <div className="fm-alert fm-alert--success fm-mb-md">

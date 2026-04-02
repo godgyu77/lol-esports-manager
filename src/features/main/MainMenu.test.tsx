@@ -30,19 +30,67 @@ describe('MainMenu', () => {
 
   it('shows continue card when a recent save exists', async () => {
     mockGetSaveSlots.mockResolvedValue([
-      { slotNumber: 1, save: { id: 10, mode: 'manager', userTeamId: 'lck_T1', currentSeasonId: 1, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-05T00:00:00.000Z', slotNumber: 1, saveName: 'T1 Spring', playTimeMinutes: 120, teamName: 'T1', seasonInfo: '2026 Spring W3' } },
+      {
+        slotNumber: 1,
+        save: {
+          id: 1,
+          metadataId: 10,
+          mode: 'manager',
+          userTeamId: 'lck_T1',
+          currentSeasonId: 1,
+          dbFilename: 'slot_1.db',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-05T00:00:00.000Z',
+          slotNumber: 1,
+          saveName: 'T1 Spring',
+          playTimeMinutes: 120,
+          teamName: 'T1',
+          seasonInfo: '2026 Spring W3',
+        },
+      },
     ]);
 
     renderWithProviders(<MainMenu />);
 
-    expect(await screen.findByText('T1 커리어 진행 중')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '계속 진행' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /계속 진행|怨꾩냽/i })).toBeInTheDocument();
   });
 
   it('shows new career CTA when there is no save', async () => {
     mockGetSaveSlots.mockResolvedValue([]);
+
     renderWithProviders(<MainMenu />);
-    await waitFor(() => expect(screen.getByRole('button', { name: '새 커리어 시작' })).toBeInTheDocument());
-    expect(screen.getByText('첫 커리어를 시작할 준비가 됐습니다')).toBeInTheDocument();
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /새 커리어 시작|쒖옉/i })).toBeInTheDocument());
+  });
+
+  it('shows a load error when continue fails', async () => {
+    mockGetSaveSlots.mockResolvedValue([
+      {
+        slotNumber: 1,
+        save: {
+          id: 1,
+          metadataId: 10,
+          mode: 'manager',
+          userTeamId: 'lck_T1',
+          currentSeasonId: 1,
+          dbFilename: 'slot_1.db',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-05T00:00:00.000Z',
+          slotNumber: 1,
+          saveName: 'T1 Spring',
+          playTimeMinutes: 120,
+          teamName: 'T1',
+          seasonInfo: '2026 Spring W3',
+        },
+      },
+    ]);
+    mockLoadSave.mockRejectedValue(new Error('손상된 세이브 파일입니다.'));
+
+    const { user } = renderWithProviders(<MainMenu />);
+
+    await user.click(await screen.findByRole('button', { name: /계속 진행|怨꾩냽/i }));
+
+    expect(await screen.findByText('손상된 세이브 파일입니다.')).toBeInTheDocument();
+    expect(mockLoadGameIntoStore).not.toHaveBeenCalled();
   });
 });

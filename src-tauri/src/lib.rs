@@ -3,53 +3,46 @@ mod ollama_manager;
 
 use commands::rag::RagState;
 use ollama_manager::OllamaState;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::thread;
+use std::time::Duration;
 use tauri::Manager;
 use tauri_plugin_sql::{Migration, MigrationKind};
 
-#[tauri::command]
-fn mark_db_for_reset(app: tauri::AppHandle) -> Result<(), String> {
-    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
-    std::fs::write(data_dir.join("db_reset_marker"), "reset").map_err(|e| e.to_string())?;
-    Ok(())
-}
+const META_DB_FILE: &str = "index.db";
+const AUTOSAVE_DB_FILE: &str = "autosave.db";
+const LEGACY_DB_FILE: &str = "lol_esports_manager.db";
 
-fn check_db_reset_marker() {
-    let app_data = if cfg!(target_os = "windows") {
-        std::env::var("APPDATA")
-            .ok()
-            .map(|p| std::path::PathBuf::from(p).join("com.lolesportsmanager.app"))
-    } else if cfg!(target_os = "macos") {
-        std::env::var("HOME")
-            .ok()
-            .map(|h| {
-                std::path::PathBuf::from(h).join("Library/Application Support/com.lolesportsmanager.app")
-            })
-    } else {
-        std::env::var("XDG_DATA_HOME")
-            .or_else(|_| std::env::var("HOME").map(|h| format!("{}/.local/share", h)))
-            .ok()
-            .map(|p| std::path::PathBuf::from(p).join("com.lolesportsmanager.app"))
-    };
-
-    if let Some(dir) = app_data {
-        let marker = dir.join("db_reset_marker");
-        if marker.exists() {
-            eprintln!("[DB] reset marker detected. clearing database files.");
-            let _ = std::fs::remove_file(dir.join("lol_esports_manager.db"));
-            let _ = std::fs::remove_file(dir.join("lol_esports_manager.db-wal"));
-            let _ = std::fs::remove_file(dir.join("lol_esports_manager.db-shm"));
-            let _ = std::fs::remove_file(marker);
-        }
+fn known_database_files() -> Vec<String> {
+    let mut files = vec![
+        META_DB_FILE.to_string(),
+        AUTOSAVE_DB_FILE.to_string(),
+        LEGACY_DB_FILE.to_string(),
+    ];
+    for slot in 1..=10 {
+        files.push(format!("slot_{}.db", slot));
     }
+    files
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
-    check_db_reset_marker();
+fn game_database_files(file_name: &str) -> Vec<String> {
+    vec![
+        file_name.to_string(),
+        format!("{}-wal", file_name),
+        format!("{}-shm", file_name),
+    ]
+}
 
-    let migrations = vec![
+fn app_data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
+    Ok(data_dir)
+}
+
+fn build_migrations() -> Vec<Migration> {
+    vec![
         Migration { version: 1, description: "create initial tables", sql: include_str!("../migrations/001_initial.sql"), kind: MigrationKind::Up },
         Migration { version: 2, description: "add division column to players", sql: include_str!("../migrations/002_add_division.sql"), kind: MigrationKind::Up },
         Migration { version: 3, description: "create champions and patch tables", sql: include_str!("../migrations/003_champions.sql"), kind: MigrationKind::Up },
@@ -106,14 +99,130 @@ pub fn run() {
         Migration { version: 54, description: "add training activity column", sql: include_str!("../migrations/054_training_activity.sql"), kind: MigrationKind::Up },
         Migration { version: 55, description: "add manager interventions", sql: include_str!("../migrations/055_manager_interventions.sql"), kind: MigrationKind::Up },
         Migration { version: 56, description: "add manager philosophy columns", sql: include_str!("../migrations/056_manager_philosophy.sql"), kind: MigrationKind::Up },
-    ];
+        Migration { version: 57, description: "add staff role preference columns", sql: include_str!("../migrations/057_staff_role_preferences.sql"), kind: MigrationKind::Up },
+        Migration { version: 58, description: "add save db file metadata", sql: include_str!("../migrations/058_save_db_files.sql"), kind: MigrationKind::Up },
+        Migration { version: 59, description: "detach save metadata foreign keys", sql: include_str!("../migrations/059_save_metadata_detach_foreign_keys.sql"), kind: MigrationKind::Up },
+    ]
+}
+
+fn delete_database_files(base_dir: &Path, file_name: &str) -> Result<(), String> {
+    for file in game_database_files(file_name) {
+        let path = base_dir.join(file);
+        if path.exists() {
+            let mut last_error: Option<String> = None;
+            let mut removed = false;
+
+            for attempt in 0..4 {
+                match fs::remove_file(&path) {
+                    Ok(_) => {
+                        removed = true;
+                        break;
+                    }
+                    Err(err) => {
+                        last_error = Some(err.to_string());
+                        if attempt == 3 {
+                            break;
+                        }
+                        thread::sleep(Duration::from_millis(100 * (attempt + 1) as u64));
+                    }
+                }
+            }
+
+            if !removed && path.exists() {
+                return Err(last_error.unwrap_or_else(|| format!("failed to delete {:?}", path)));
+            }
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn mark_db_for_reset(app: tauri::AppHandle) -> Result<(), String> {
+    let data_dir = app_data_dir(&app)?;
+    fs::write(data_dir.join("db_reset_marker"), "reset").map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn copy_game_database_files(
+    app: tauri::AppHandle,
+    source_file_name: String,
+    target_file_name: String,
+) -> Result<(), String> {
+    let data_dir = app_data_dir(&app)?;
+    let source_path = data_dir.join(&source_file_name);
+
+    if !source_path.exists() {
+        return Err(format!("source DB does not exist: {}", source_file_name));
+    }
+
+    delete_database_files(&data_dir, &target_file_name)?;
+    fs::copy(&source_path, data_dir.join(&target_file_name)).map_err(|e| e.to_string())?;
+
+    let source_wal = data_dir.join(format!("{}-wal", source_file_name));
+    if source_wal.exists() {
+        fs::copy(&source_wal, data_dir.join(format!("{}-wal", target_file_name))).map_err(|e| e.to_string())?;
+    }
+
+    let source_shm = data_dir.join(format!("{}-shm", source_file_name));
+    if source_shm.exists() {
+        fs::copy(&source_shm, data_dir.join(format!("{}-shm", target_file_name))).map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+fn delete_game_database_files(app: tauri::AppHandle, file_name: String) -> Result<(), String> {
+    let data_dir = app_data_dir(&app)?;
+    delete_database_files(&data_dir, &file_name)
+}
+
+#[tauri::command]
+fn game_database_exists(app: tauri::AppHandle, file_name: String) -> Result<bool, String> {
+    let data_dir = app_data_dir(&app)?;
+    Ok(data_dir.join(file_name).exists())
+}
+
+fn check_db_reset_marker() {
+    let app_data = if cfg!(target_os = "windows") {
+        std::env::var("APPDATA")
+            .ok()
+            .map(|p| PathBuf::from(p).join("com.lolesportsmanager.app"))
+    } else if cfg!(target_os = "macos") {
+        std::env::var("HOME")
+            .ok()
+            .map(|h| PathBuf::from(h).join("Library/Application Support/com.lolesportsmanager.app"))
+    } else {
+        std::env::var("XDG_DATA_HOME")
+            .or_else(|_| std::env::var("HOME").map(|h| format!("{}/.local/share", h)))
+            .ok()
+            .map(|p| PathBuf::from(p).join("com.lolesportsmanager.app"))
+    };
+
+    if let Some(dir) = app_data {
+        let marker = dir.join("db_reset_marker");
+        if marker.exists() {
+            eprintln!("[DB] reset marker detected. clearing database files.");
+            for file_name in known_database_files() {
+                let _ = delete_database_files(&dir, &file_name);
+            }
+            let _ = fs::remove_file(marker);
+        }
+    }
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    check_db_reset_marker();
+
+    let mut sql_builder = tauri_plugin_sql::Builder::default();
+    for file_name in known_database_files() {
+        sql_builder = sql_builder.add_migrations(&format!("sqlite:{}", file_name), build_migrations());
+    }
 
     tauri::Builder::default()
-        .plugin(
-            tauri_plugin_sql::Builder::default()
-                .add_migrations("sqlite:lol_esports_manager.db", migrations)
-                .build(),
-        )
+        .plugin(sql_builder.build())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
         .manage(OllamaState {
@@ -130,11 +239,6 @@ pub fn run() {
             app.handle()
                 .plugin(tauri_plugin_stronghold::Builder::with_argon2(&salt_path).build())?;
 
-            let handle = app.handle().clone();
-            if let Err(error) = ollama_manager::start_ollama(&handle) {
-                eprintln!("Ollama auto-start failed: {}", error);
-            }
-
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -149,10 +253,14 @@ pub fn run() {
             commands::rag::get_rag_status,
             ollama_manager::get_ollama_status_detail,
             ollama_manager::ensure_ollama_ready,
+            ollama_manager::start_ollama_runtime,
             ollama_manager::pull_model,
             ollama_manager::list_models,
             ollama_manager::delete_model,
             mark_db_for_reset,
+            copy_game_database_files,
+            delete_game_database_files,
+            game_database_exists,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

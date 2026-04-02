@@ -21,7 +21,10 @@ vi.mock('@tauri-apps/plugin-sql', () => {
 
 // ── Tauri core API mock ──
 vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn().mockResolvedValue(null),
+  invoke: vi.fn().mockImplementation(async (command: string) => {
+    if (command === 'game_database_exists') return true;
+    return null;
+  }),
 }));
 
 vi.mock('@tauri-apps/api/path', () => ({

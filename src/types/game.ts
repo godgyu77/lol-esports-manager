@@ -1,4 +1,5 @@
 export type GameMode = 'manager' | 'player';
+export type ModeAvailability = 'available' | 'coming_soon';
 
 export type Position = 'top' | 'jungle' | 'mid' | 'adc' | 'support';
 
@@ -8,10 +9,12 @@ export type Region = 'LCK' | 'LPL' | 'LEC' | 'LCS';
 
 export interface GameSave {
   id: number;
+  metadataId: number;
   mode: GameMode;
   userTeamId: string;
-  userPlayerId?: string; // 선수 모드일 때만
+  userPlayerId?: string;
   currentSeasonId: number;
+  dbFilename: string;
   createdAt: string;
   updatedAt: string;
   slotNumber: number;
@@ -22,7 +25,6 @@ export interface GameSave {
   rngSeed?: string;
 }
 
-/** 저장 슬롯 표시용 (빈 슬롯 포함) */
 export interface SaveSlot {
   slotNumber: number;
   save: GameSave | null;
@@ -33,8 +35,8 @@ export interface Season {
   year: number;
   split: Split;
   currentWeek: number;
-  currentDate: string;   // YYYY-MM-DD (일간 진행 현재 날짜)
-  startDate: string;     // 시즌 시작일
-  endDate: string;       // 시즌 종료일
+  currentDate: string;
+  startDate: string;
+  endDate: string;
   isActive: boolean;
 }

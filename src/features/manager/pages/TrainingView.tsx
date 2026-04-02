@@ -7,6 +7,7 @@
  */
 
 import { useEffect, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useGameStore } from '../../../stores/gameStore';
 import {
   getTrainingSchedule,
@@ -14,7 +15,6 @@ import {
   getPlayerTraining,
   setPlayerTraining,
   getRecentTrainingLogs,
-  initDefaultSchedule,
 } from '../../../engine/training/trainingEngine';
 import type {
   TrainingScheduleEntry,
@@ -37,11 +37,17 @@ import {
   getRecentScrims,
   getTrainingRecommendation,
 } from '../../../engine/season/scrimEngine';
+import { generateScrimBriefing, generateTrainingDigest } from '../../../engine/news/newsEngine';
 import type { TrainingRecommendation } from '../../../engine/season/scrimEngine';
 import type { Player } from '../../../types/player';
 import { POSITION_LABELS_SHORT as POSITION_LABELS } from '../../../utils/constants';
+import { applyCoachTrainingRecommendation, generateInitialCoachRecommendations } from '../../../engine/manager/managerSetupEngine';
+import type { CoachSetupRecommendation } from '../../../types/managerSetup';
+import { MainLoopPanel } from '../components/MainLoopPanel';
+import { useToolbarNavigation } from '../hooks/useToolbarNavigation';
 
 type Tab = 'schedule' | 'individual' | 'logs' | 'mentoring';
+const TRAINING_TABS: Tab[] = ['schedule', 'individual', 'logs', 'mentoring'];
 
 const DAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
 const ACTIVITY_OPTIONS: TrainingActivity[] = ['rest', 'training', 'scrim'];
@@ -63,6 +69,9 @@ const POS_CLASS: Record<string, string> = {
 export function TrainingView() {
   const save = useGameStore((s) => s.save);
   const teams = useGameStore((s) => s.teams);
+  const season = useGameStore((s) => s.season);
+  const pendingMatch = useGameStore((s) => s.pendingUserMatch);
+  const navigate = useNavigate();
 
   const [tab, setTab] = useState<Tab>('schedule');
   const [schedule, setScheduleState] = useState<TrainingScheduleEntry[]>([]);
@@ -78,6 +87,12 @@ export function TrainingView() {
   const [selectedMentorId, setSelectedMentorId] = useState('');
   const [selectedMenteeId, setSelectedMenteeId] = useState('');
   const [scrimRecommendation, setScrimRecommendation] = useState<TrainingRecommendation | null>(null);
+  const [coachRecommendation, setCoachRecommendation] = useState<CoachSetupRecommendation | null>(null);
+  const { getItemProps } = useToolbarNavigation({
+    items: TRAINING_TABS,
+    activeItem: tab,
+    onSelect: setTab,
+  });
 
   const userTeamId = save?.userTeamId ?? '';
   const userTeam = teams.find(t => t.id === userTeamId);
@@ -87,14 +102,11 @@ export function TrainingView() {
     if (!save) return;
     setIsLoading(true);
     try {
-      let sched = await getTrainingSchedule(userTeamId);
-      if (sched.length === 0) {
-        await initDefaultSchedule(userTeamId);
-        sched = await getTrainingSchedule(userTeamId);
-      }
-      const [assign, recentLogs] = await Promise.all([
+      const [sched, assign, recentLogs, setupRecommendations] = await Promise.all([
+        getTrainingSchedule(userTeamId),
         getPlayerTraining(userTeamId),
         getRecentTrainingLogs(userTeamId, 30),
+        generateInitialCoachRecommendations(userTeamId, save.currentSeasonId).catch(() => []),
       ]);
       const [pairs, mentors, mentees] = await Promise.all([
         getMentoringPairs(userTeamId).catch(() => [] as MentoringPair[]),
@@ -104,6 +116,9 @@ export function TrainingView() {
       setScheduleState(sched);
       setAssignments(assign);
       setLogs(recentLogs);
+      setCoachRecommendation(
+        setupRecommendations.find((recommendation) => recommendation.kind === 'training') ?? null,
+      );
       setMentoringPairs(pairs);
       setEligibleMentors(mentors);
       setEligibleMentees(mentees);
@@ -172,6 +187,11 @@ export function TrainingView() {
   if (!save) return <p className="fm-text-muted">데이터를 불러오는 중...</p>;
   if (isLoading) return <p className="fm-text-muted">훈련 정보를 불러오는 중...</p>;
 
+  const nextOpponent = pendingMatch
+    ? teams.find((team) => team.id === (pendingMatch.teamHomeId === userTeamId ? pendingMatch.teamAwayId : pendingMatch.teamHomeId))?.name ?? '상대 대기'
+    : null;
+  const currentScheduleSummary = schedule.find((entry) => entry.activityType !== 'rest') ?? schedule[1] ?? null;
+
   return (
     <div>
       <div className="fm-page-header">
@@ -184,16 +204,117 @@ export function TrainingView() {
         </div>
       )}
 
-      <div className="fm-tabs">
+      <MainLoopPanel
+        eyebrow="Training Loop"
+        title="훈련 화면도 메인 루프 기준으로 바로 읽히게 정리했습니다"
+        subtitle="지금 이 주간 계획이 다음 경기와 팀 컨디션에 어떤 영향을 주는지 먼저 보고, 그 아래에서 세부 조정을 이어가는 구조입니다."
+        insights={[
+          {
+            label: '오늘 해야 할 일',
+            value: tab === 'schedule' ? '주간 스케줄 점검' : tab === 'individual' ? '개별 훈련 조정' : tab === 'logs' ? '훈련 결과 확인' : '멘토링 조정',
+            detail: currentScheduleSummary
+              ? `${TRAINING_ACTIVITY_LABELS[currentScheduleSummary.activityType]} / ${TRAINING_TYPE_LABELS[currentScheduleSummary.trainingType]} / 강도 ${currentScheduleSummary.intensity}`
+              : '아직 구성된 훈련 루틴이 없습니다.',
+            tone: 'accent',
+          },
+          {
+            label: '가장 큰 리스크',
+            value: scrimRecommendation ? '스크림 기반 경고' : coachRecommendation ? '코치 피드백' : '안정',
+            detail: scrimRecommendation?.reason ?? coachRecommendation?.summary ?? '즉시 수정이 필요한 훈련 리스크는 없습니다.',
+            tone: scrimRecommendation || coachRecommendation ? 'danger' : 'success',
+          },
+          {
+            label: '다음 경기',
+            value: pendingMatch ? `${pendingMatch.matchDate ?? season?.currentDate ?? '일정'} vs ${nextOpponent}` : 'DayView에서 일정 확인',
+            detail: pendingMatch ? '경기 전까지 훈련 강도와 방향을 맞춰 두면 당일 의사결정이 훨씬 단순해집니다.' : '가까운 경기 일정이 잡히면 이 화면의 설정이 바로 준비 루프로 이어집니다.',
+            tone: 'accent',
+          },
+          {
+            label: '코치 조언',
+            value: coachRecommendation?.authorName ?? '데이터 브리핑',
+            detail: coachRecommendation?.headline ?? scrimRecommendation?.reason ?? '훈련 로그와 스크림 피드백을 보고 다음 조정을 선택하세요.',
+            tone: 'success',
+          },
+        ]}
+        actions={[
+          { label: 'DayView로 돌아가기', onClick: () => navigate('/manager/day'), variant: 'primary' },
+          { label: '전술 정리', onClick: () => navigate('/manager/tactics') },
+          { label: '뉴스 브리핑 보기', onClick: () => navigate('/manager/news'), variant: 'info' },
+        ]}
+        note="훈련은 별도 하위 화면이 아니라 메인 루프의 준비 단계라는 점이 바로 읽히도록 상단 요약을 추가했습니다."
+      />
+
+      <div className="fm-tabs" role="tablist" aria-label="훈련 화면 섹션" aria-orientation="horizontal">
         <button className={`fm-tab ${tab === 'schedule' ? 'fm-tab--active' : ''}`}
-                onClick={() => setTab('schedule')}>주간 스케줄</button>
+                onClick={() => setTab('schedule')}
+                role="tab"
+                aria-selected={tab === 'schedule'}
+                aria-controls="training-panel-schedule"
+                id="training-tab-schedule"
+                {...getItemProps('schedule')}>주간 스케줄</button>
         <button className={`fm-tab ${tab === 'individual' ? 'fm-tab--active' : ''}`}
-                onClick={() => setTab('individual')}>개별 훈련</button>
+                onClick={() => setTab('individual')}
+                role="tab"
+                aria-selected={tab === 'individual'}
+                aria-controls="training-panel-individual"
+                id="training-tab-individual"
+                {...getItemProps('individual')}>개별 훈련</button>
         <button className={`fm-tab ${tab === 'logs' ? 'fm-tab--active' : ''}`}
-                onClick={() => setTab('logs')}>훈련 이력</button>
+                onClick={() => setTab('logs')}
+                role="tab"
+                aria-selected={tab === 'logs'}
+                aria-controls="training-panel-logs"
+                id="training-tab-logs"
+                {...getItemProps('logs')}>훈련 이력</button>
         <button className={`fm-tab ${tab === 'mentoring' ? 'fm-tab--active' : ''}`}
-                onClick={() => setTab('mentoring')}>멘토링</button>
+                onClick={() => setTab('mentoring')}
+                role="tab"
+                aria-selected={tab === 'mentoring'}
+                aria-controls="training-panel-mentoring"
+                id="training-tab-mentoring"
+                {...getItemProps('mentoring')}>멘토링</button>
       </div>
+
+      <div role="tabpanel" id={`training-panel-${tab}`} aria-labelledby={`training-tab-${tab}`}>
+
+      {coachRecommendation && tab === 'schedule' && (
+        <div className="fm-alert fm-alert--info fm-mb-md" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '6px' }}>
+          <div className="fm-flex fm-items-center fm-gap-xs">
+            <span className="fm-text-md fm-font-semibold fm-text-accent">코치 브리핑</span>
+            <span className="fm-text-xs fm-text-secondary">{coachRecommendation.authorName}</span>
+          </div>
+          <span className="fm-text-md fm-font-semibold fm-text-primary">{coachRecommendation.headline}</span>
+          <p className="fm-text-xs fm-text-secondary" style={{ margin: 0 }}>{coachRecommendation.summary}</p>
+          <ul className="fm-text-xs fm-text-secondary" style={{ margin: 0, paddingLeft: 18 }}>
+            {coachRecommendation.reasons.map((reason) => (
+              <li key={reason}>{reason}</li>
+            ))}
+          </ul>
+          <button
+            className="fm-btn fm-btn--primary fm-btn--sm"
+            onClick={async () => {
+              try {
+                await applyCoachTrainingRecommendation(userTeamId, coachRecommendation);
+                await generateTrainingDigest(
+                  save.currentSeasonId,
+                  useGameStore.getState().season?.currentDate ?? new Date().toISOString().slice(0, 10),
+                  userTeamId,
+                  coachRecommendation.authorName,
+                  coachRecommendation.summary,
+                  coachRecommendation.reasons,
+                );
+                setMessage({ text: '코치 추천 주간 훈련안을 적용했습니다.', type: 'success' });
+                await loadData();
+              } catch (error) {
+                console.error('코치 훈련 추천 적용 실패:', error);
+                setMessage({ text: '코치 추천 훈련안 적용에 실패했습니다.', type: 'error' });
+              }
+            }}
+          >
+            훈련 추천 적용
+          </button>
+        </div>
+      )}
 
       {/* 스크림 기반 추천 배너 */}
       {scrimRecommendation && tab === 'schedule' && (
@@ -228,6 +349,15 @@ export function TrainingView() {
                   'scrim',
                   scrimRecommendation.trainingType as TrainingType,
                   scrimRecommendation.intensity as TrainingIntensity,
+                );
+                await generateScrimBriefing(
+                  save.currentSeasonId,
+                  gameDate,
+                  userTeamId,
+                  coachRecommendation?.authorName ?? '수석',
+                  '최근 스크림',
+                  `${TRAINING_TYPE_LABELS[scrimRecommendation.trainingType as TrainingType] ?? scrimRecommendation.trainingType} 훈련과 ${INTENSITY_LABELS[scrimRecommendation.intensity]} 강도를 추천합니다.`,
+                  [scrimRecommendation.reason],
                 );
                 setMessage({ text: `${DAY_LABELS[targetDay]}요일 스케줄에 추천 훈련을 적용했습니다.`, type: 'success' });
                 await loadData();
@@ -573,6 +703,7 @@ export function TrainingView() {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

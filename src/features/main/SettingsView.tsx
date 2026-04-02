@@ -73,6 +73,8 @@ export function SettingsView() {
   const defaultSpeed = useSettingsStore((s) => s.defaultSpeed);
   const aiEnabled = useSettingsStore((s) => s.aiEnabled);
   const aiModel = useSettingsStore((s) => s.aiModel);
+  const aiSetupCompleted = useSettingsStore((s) => s.aiSetupCompleted);
+  const aiSetupSkipped = useSettingsStore((s) => s.aiSetupSkipped);
   const autoSaveInterval = useSettingsStore((s) => s.autoSaveInterval);
   const difficulty = useSettingsStore((s) => s.difficulty);
   const soundEnabled = useSettingsStore((s) => s.soundEnabled);
@@ -297,6 +299,23 @@ export function SettingsView() {
           </div>
 
           <div className="fm-mt-md">
+            <div className="fm-card fm-mb-md" style={{ padding: 12 }}>
+              <div className="fm-flex fm-justify-between fm-items-center fm-gap-sm">
+                <div>
+                  <div className="fm-text-sm fm-font-semibold fm-text-primary">로컬 AI 자동 준비</div>
+                  <div className="fm-text-xs fm-text-muted fm-mt-sm">
+                    {aiSetupCompleted
+                      ? `권장 로컬 AI가 준비되었습니다.${aiModel ? ` 현재 모델: ${aiModel}` : ''}`
+                      : aiSetupSkipped
+                        ? '초기 설정에서 AI 준비를 건너뛰었습니다. 필요할 때 다시 실행할 수 있습니다.'
+                        : '첫 실행용 AI 준비가 아직 완료되지 않았습니다.'}
+                  </div>
+                </div>
+                <button className="fm-btn fm-btn--sm fm-btn--primary" onClick={() => setShowAiWizard(true)}>
+                  {aiSetupCompleted ? '복구/재설치' : 'AI 준비'}
+                </button>
+              </div>
+            </div>
             <span className="fm-text-sm fm-font-semibold fm-text-primary">AI 사용 방식</span>
             <div className="fm-grid fm-grid--2 fm-mt-sm">
               {AI_PROVIDER_OPTIONS.map((option) => (

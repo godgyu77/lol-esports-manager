@@ -5,6 +5,11 @@
 
 import { getDatabase } from '../../db/database';
 import type { InboxMessage, InboxCategory } from '../../types/inbox';
+import { invalidateNotifications } from '../news/newsEvents';
+
+function isStickyInboxCategory(category: InboxCategory): boolean {
+  return ['complaint', 'injury', 'promise', 'board', 'contract'].includes(category);
+}
 
 export async function addInboxMessage(
   teamId: string,
@@ -39,18 +44,26 @@ export async function getInboxMessages(
     `SELECT * FROM inbox_messages WHERE team_id = $1 ${where} ORDER BY created_date DESC, id DESC LIMIT $2`,
     [teamId, limit],
   );
-  return rows.map(r => ({
-    id: r.id,
-    teamId: r.team_id,
-    category: r.category,
-    title: r.title,
-    content: r.content,
-    isRead: r.is_read === 1,
-    actionRequired: r.action_required === 1,
-    actionRoute: r.action_route,
-    relatedId: r.related_id,
-    createdDate: r.created_date,
-  }));
+  return rows
+    .map((r) => ({
+      id: r.id,
+      teamId: r.team_id,
+      category: r.category,
+      title: r.title,
+      content: r.content,
+      isRead: r.is_read === 1,
+      actionRequired: r.action_required === 1,
+      actionRoute: r.action_route,
+      relatedId: r.related_id,
+      createdDate: r.created_date,
+      dismissOnRead: false,
+      sticky: r.action_required === 1 || isStickyInboxCategory(r.category),
+    }))
+    .sort((left, right) => {
+      if (left.sticky !== right.sticky) return left.sticky ? -1 : 1;
+      if (left.isRead !== right.isRead) return left.isRead ? 1 : -1;
+      return right.id - left.id;
+    });
 }
 
 export async function getUnreadInboxCount(teamId: string): Promise<number> {
@@ -65,9 +78,11 @@ export async function getUnreadInboxCount(teamId: string): Promise<number> {
 export async function markInboxRead(messageId: number): Promise<void> {
   const db = await getDatabase();
   await db.execute('UPDATE inbox_messages SET is_read = 1 WHERE id = $1', [messageId]);
+  invalidateNotifications();
 }
 
 export async function markAllInboxRead(teamId: string): Promise<void> {
   const db = await getDatabase();
   await db.execute('UPDATE inbox_messages SET is_read = 1 WHERE team_id = $1', [teamId]);
+  invalidateNotifications();
 }

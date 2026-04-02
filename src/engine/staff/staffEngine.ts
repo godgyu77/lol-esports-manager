@@ -1,26 +1,22 @@
-/**
- * 스태프 엔진
- * - 스태프 고용/해고/조회
- * - 스태프 능력에 따른 게임 보정 효과 계산
- * - 감독: 훈련 효율 + 사기 보정
- * - 코치: 특정 훈련 효율 추가 보정
- * - 분석관: 밴픽 추천 정확도 보정
- * - 스카우트 매니저: 스카우팅 속도/정확도 보정
- */
-
 import { getDatabase } from '../../db/database';
-import type { Staff, StaffRole, StaffSpecialty, CoachingPhilosophy } from '../../types/staff';
+import { getActiveSeason } from '../../db/queries';
+import { getManagerIdentity } from '../manager/managerIdentityEngine';
+import { getTeamRecentWinRate } from '../../db/queries/team';
+import type {
+  CoachingPhilosophy,
+  Staff,
+  StaffAcceptanceLevel,
+  StaffCandidateView,
+  StaffOfferDecision,
+  StaffOfferEvaluation,
+  StaffRole,
+  StaffRoleFlexibility,
+  StaffSpecialty,
+} from '../../types/staff';
 import type { Region } from '../../types/game';
 import { pickRandom, randomInt } from '../../utils/random';
 import { getPlayerManagementInsights, type PlayerManagementInsight } from '../satisfaction/playerSatisfactionEngine';
 import { getActiveComplaints } from '../complaint/complaintEngine';
-
-// ─────────────────────────────────────────
-// Row 매핑
-// ─────────────────────────────────────────
-
-// -- MIGRATION: ALTER TABLE staff ADD COLUMN philosophy TEXT DEFAULT NULL;
-// -- MIGRATION: ALTER TABLE staff ADD COLUMN nationality TEXT DEFAULT NULL;
 
 interface StaffRow {
   id: number;
@@ -36,7 +32,62 @@ interface StaffRow {
   is_free_agent: number;
   philosophy: string | null;
   nationality: string | null;
+  preferred_role: string | null;
+  role_flexibility: string | null;
+  career_origin: string | null;
 }
+
+interface TeamContextRow {
+  id: string;
+  name: string;
+  region: Region;
+  budget: number;
+  salary_cap: number;
+  reputation: number;
+  play_style: string | null;
+}
+
+const STAFF_LIMITS: Record<StaffRole, number> = {
+  head_coach: 1,
+  coach: 2,
+  analyst: 1,
+  scout_manager: 1,
+  sports_psychologist: 1,
+  nutritionist: 1,
+  physiotherapist: 1,
+  data_analyst: 1,
+};
+
+export const TEAM_STAFF_LIMIT = 9;
+
+const ROLE_PRIORITY: Record<StaffRole, number> = {
+  head_coach: 4,
+  coach: 3,
+  analyst: 2,
+  scout_manager: 2,
+  sports_psychologist: 1,
+  nutritionist: 1,
+  physiotherapist: 1,
+  data_analyst: 2,
+};
+
+const REGION_TO_NATIONALITY: Record<Region, string> = {
+  LCK: 'KR',
+  LPL: 'CN',
+  LEC: 'EU',
+  LCS: 'NA',
+};
+
+const DEFAULT_SECONDARY_ROLES: Partial<Record<StaffRole, StaffRole[]>> = {
+  head_coach: ['coach'],
+  coach: ['analyst'],
+  analyst: ['coach', 'data_analyst'],
+  scout_manager: ['analyst'],
+  sports_psychologist: ['coach'],
+  nutritionist: ['physiotherapist'],
+  physiotherapist: ['nutritionist'],
+  data_analyst: ['analyst'],
+};
 
 function mapRowToStaff(row: StaffRow): Staff {
   return {
@@ -53,91 +104,65 @@ function mapRowToStaff(row: StaffRow): Staff {
     isFreeAgent: row.is_free_agent === 1,
     philosophy: (row.philosophy as CoachingPhilosophy) ?? null,
     nationality: row.nationality ?? null,
+    preferredRole: (row.preferred_role as StaffRole) ?? (row.role as StaffRole),
+    roleFlexibility: (row.role_flexibility as StaffRoleFlexibility) ?? getDefaultRoleFlexibility(row.role as StaffRole),
+    careerOrigin: (row.career_origin as StaffRole | null) ?? null,
   };
 }
 
-/** 팀당 스태프 역할별 제한 */
-const STAFF_LIMITS: Record<StaffRole, number> = {
-  head_coach: 1,
-  coach: 2,
-  analyst: 1,
-  scout_manager: 1,
-  sports_psychologist: 1,
-  nutritionist: 1,
-  physiotherapist: 1,
-  data_analyst: 1,
-};
+function getDefaultRoleFlexibility(role: StaffRole): StaffRoleFlexibility {
+  switch (role) {
+    case 'head_coach':
+      return 'strict';
+    case 'coach':
+    case 'analyst':
+    case 'data_analyst':
+      return 'normal';
+    default:
+      return 'flexible';
+  }
+}
 
-/** 팀당 총 스태프 제한 */
-export const TEAM_STAFF_LIMIT = 9;
+function getDefaultSecondaryRoles(role: StaffRole): StaffRole[] {
+  return DEFAULT_SECONDARY_ROLES[role] ?? [];
+}
 
-/** 팀 스태프 역할별 현황 조회 */
-export function getStaffCounts(staffList: Staff[]): Record<StaffRole, number> {
+function getStaffCounts(staffList: Staff[]): Record<StaffRole, number> {
   const counts: Record<StaffRole, number> = {
-    head_coach: 0, coach: 0, analyst: 0, scout_manager: 0,
-    sports_psychologist: 0, nutritionist: 0, physiotherapist: 0, data_analyst: 0,
+    head_coach: 0,
+    coach: 0,
+    analyst: 0,
+    scout_manager: 0,
+    sports_psychologist: 0,
+    nutritionist: 0,
+    physiotherapist: 0,
+    data_analyst: 0,
   };
-  for (const s of staffList) {
-    counts[s.role]++;
+  for (const staff of staffList) {
+    counts[staff.role] += 1;
   }
   return counts;
 }
 
-/** 특정 역할을 더 고용할 수 있는지 확인 */
 export function canHireRole(staffList: Staff[], role: StaffRole): boolean {
   const counts = getStaffCounts(staffList);
   return counts[role] < STAFF_LIMITS[role] && staffList.length < TEAM_STAFF_LIMIT;
 }
 
-// ─────────────────────────────────────────
-// 리전별 스태프 이름 풀
-// ─────────────────────────────────────────
-
-/**
- * 2026 시즌 확정 기준 리전별 스태프 이름 풀
- * 실제 팀 감독/코치 데이터를 반영
- */
 const STAFF_NAMES_BY_REGION: Record<Region, Record<StaffRole, string[]>> = {
   LCK: {
-    head_coach: [
-      '김정균 (kkOma)',      // T1 감독
-      '류상욱 (Ryu)',        // Gen.G 감독
-      '윤성영 (Homme)',      // HLE 감독
-      '김대호 (cvMax)',      // DK 감독
-      '고동빈 (Score)',      // KT 감독
-      '주영달',              // DN SOOPers 감독
-      '최인규',              // NS 감독
-      '김상수 (SSONG)',      // BRION 감독
-      '박준석 (Edo)',        // BNK FearX 감독
-      '조재읍 (Joker)',      // DRX 감독
-    ],
-    coach: [
-      '이재하 (Mowgli)',     // HLE 코치
-      '연형모 (Shin)',       // HLE 코치
-      '김다빈 (Lyn)',        // Gen.G 코치
-      '박찬호 (Nova)',       // Gen.G 코치
-      '김윤수', '이성진', '정성민', '조규남',
-    ],
-    analyst: ['김태현', '이동현', '박준서', '최우석', '홍승우', '한승엽', '이재민'],
-    scout_manager: ['서민석', '강동욱', '남궁민', '장현우', '류재현'],
+    head_coach: ['kkOma', 'Ryu', 'Homme', 'cvMax', 'Score', 'Joker', 'SSONG', 'Edo'],
+    coach: ['Mowgli', 'Shin', 'Lyn', 'Nova', 'Kim Minsoo', 'Lee Sungjin', 'Park Sunghyun'],
+    analyst: ['Kim Jihyun', 'Lee Dongho', 'Park Jinseok', 'Choi Woojin', 'Seo Minho'],
+    scout_manager: ['Han Minjae', 'Kang Donghyun', 'Seo Jihoon', 'Ryu Jaemin'],
     sports_psychologist: [],
     nutritionist: [],
     physiotherapist: [],
     data_analyst: [],
   },
   LPL: {
-    head_coach: [
-      '양대인 (Daeny)',      // BLG 감독
-      '严强 (Tabe)',         // JDG 감독
-      '장포호 (Poppy)',      // TES 감독 (前 RNG/EDG)
-      '증신이 (Maizijian)',  // NIP 감독
-      '권영재 (Helper)',     // AL 감독
-      '강천 (Teacherma)',    // AL 코치 (前 WE 감독)
-    ],
-    coach: [
-      '陈伟 (Chen)', '王磊 (Wang)', '李浩 (Li)', '张凯 (Zhang)', '赵鹏 (Zhao)',
-      '周明 (Zhou)', '黄强 (Huang)',
-    ],
+    head_coach: ['Daeny', 'Tabe', 'Poppy', 'Maizijian', 'Helper', 'Teacherma'],
+    coach: ['Chen', 'Wang', 'Li', 'Zhang', 'Zhao', 'Zhou', 'Huang'],
     analyst: ['Liu Wei', 'Yang Hao', 'Wu Chen', 'Xu Ming', 'Gao Lei', 'Jiang Tao'],
     scout_manager: ['Zhao Feng', 'Lin Jie', 'Sun Tao', 'Ma Jun', 'He Yi'],
     sports_psychologist: [],
@@ -146,42 +171,18 @@ const STAFF_NAMES_BY_REGION: Record<Region, Record<StaffRole, string[]>> = {
     data_analyst: [],
   },
   LEC: {
-    head_coach: [
-      'Dylan Falco',          // G2 감독
-      'Yanis Kella (Striker)', // FNC 감독
-      'André Guilhoto',       // GX 감독
-      '복한규 (Reapered)',    // KC 감독
-      'Rehareha Ramanana (Reha)', // Shifters 감독
-      'Tomás Fernández (Melzhet)', // VIT 감독
-      'Vasilis Voltis (TheRock)', // TH 감독
-      'Simon Payne (fredy122)', // KOI 감독
-      'David Rodriguez (Own3r)', // SK 감독
-      'Patrick Suckow-Breum (Pad)', // NAVI 감독
-    ],
-    coach: [
-      'Peter Dun', 'Tore', 'Jesiz', 'Mikael (Hiiva)',
-      'Lucas', 'Markus', 'Nikolaj',
-    ],
-    analyst: ['Thomas', 'Marcus', 'Erik', 'Luka', 'Andreas', 'Fabian', 'Ianis (Blidzy)'],
-    scout_manager: ['Stefan', 'François', 'Björn', 'Henrik', 'Carlos'],
+    head_coach: ['Dylan Falco', 'Striker', 'Guilhoto', 'Reapered', 'Reha', 'Melzhet', 'TheRock'],
+    coach: ['Peter Dun', 'Tore', 'Jesiz', 'Hiiva', 'Lucas', 'Markus', 'Nikolaj'],
+    analyst: ['Thomas', 'Marcus', 'Erik', 'Luka', 'Andreas', 'Fabian'],
+    scout_manager: ['Stefan', 'Francois', 'Bjorn', 'Henrik', 'Carlos'],
     sports_psychologist: [],
     nutritionist: [],
     physiotherapist: [],
     data_analyst: [],
   },
   LCS: {
-    head_coach: [
-      'Jake Tiberi (Spawn)',    // TL 감독
-      'Thinkcard',              // FLY 감독
-      'Goldenglue',             // SEN 감독
-      'Simon Papamarkos (Swiffer)', // DIG 감독 (前 TL)
-      '복한규 (Reapered)',      // 前 LCS 감독 (현 KC)
-      'Nick (Inero)',           // 前 LCS 감독
-    ],
-    coach: [
-      'Mark (MarkZ)', 'David Lim', 'Pr0lly', 'Amazing',
-      'Brendan (Bubbadub)', 'Tyler (Thien)',
-    ],
+    head_coach: ['Spawn', 'Thinkcard', 'Goldenglue', 'Swiffer', 'Reapered', 'Inero'],
+    coach: ['MarkZ', 'David Lim', 'Pr0lly', 'Amazing', 'Bubbadub', 'Thien'],
     analyst: ['Kevin', 'Brian', 'James', 'David', 'Michael', 'Chris'],
     scout_manager: ['Jason', 'Andrew', 'Ryan', 'Daniel', 'Matt'],
     sports_psychologist: [],
@@ -191,29 +192,174 @@ const STAFF_NAMES_BY_REGION: Record<Region, Record<StaffRole, string[]>> = {
   },
 };
 
-/** 전문 스태프 이름 풀 (리전 공통) */
 const SPECIALIST_NAMES: Partial<Record<StaffRole, string[]>> = {
-  sports_psychologist: [
-    '김서윤 (심리상담)', '박민지 (스포츠심리)', '이하은 (정신건강)', '최유진 (멘탈코치)',
-    'Dr. Sarah Chen', 'Dr. Marcus Weber', '장은비 (마인드코치)', 'Dr. Emily Park',
-  ],
-  nutritionist: [
-    '정아름 (스포츠영양)', '한소희 (영양관리)', '이수정 (식단설계)', '박지영 (체력영양)',
-    'James Kim (Nutrition)', 'Dr. Min-ho Lee', '오세영 (건강관리)', 'Rachel Choi',
-  ],
-  physiotherapist: [
-    '김태훈 (물리치료)', '이준혁 (재활전문)', '박성호 (스포츠재활)', '최동현 (근골격)',
-    'Dr. David Yoon', 'Alex Park (PT)', '남궁현 (물리재활)', 'Chris Kang (Sports PT)',
-  ],
-  data_analyst: [
-    '임지훈 (데이터)', '강민수 (전술분석)', '서현우 (통계)', '조영호 (AI분석)',
-    'Kevin Liu (Data)', 'Michael Cho (Analytics)', '윤석현 (메타분석)', 'Jason Han (Stats)',
-  ],
+  sports_psychologist: ['Kim Seoyoon', 'Park Jiyoung', 'Lee Hada', 'Dr. Sarah Chen', 'Dr. Marcus Weber'],
+  nutritionist: ['Jung Arin', 'Seo Soyeon', 'Lee Sujin', 'Park Hyunji', 'Rachel Choi'],
+  physiotherapist: ['Kim Jihoo', 'Lee Minsoo', 'Park Sungjin', 'Choi Dongha', 'Alex Park'],
+  data_analyst: ['Han Jiwon', 'Kang Minho', 'Seo Minjae', 'Cho Youngmin', 'Kevin Liu'],
 };
 
-// ─────────────────────────────────────────
-// CRUD
-// ─────────────────────────────────────────
+interface StaffGenerationOptions {
+  role: StaffRole;
+  region: Region;
+  hiredDate: string;
+  contractEndSeason: number;
+  forceRoleFlexibility?: StaffRoleFlexibility;
+  preferredRole?: StaffRole;
+  careerOrigin?: StaffRole | null;
+  isFreeAgent?: boolean;
+}
+
+function generateStaffProfile(options: StaffGenerationOptions): Omit<Staff, 'id'> {
+  const regionNames = STAFF_NAMES_BY_REGION[options.region] ?? STAFF_NAMES_BY_REGION.LCK;
+  const names = regionNames[options.role] ?? SPECIALIST_NAMES[options.role] ?? ['Staff'];
+  const abilityRange =
+    options.role === 'head_coach'
+      ? [58, 84]
+      : options.role === 'coach'
+        ? [52, 80]
+        : [45, 78];
+  const ability = randomInt(abilityRange[0], abilityRange[1]);
+  const specialties: StaffSpecialty[] = ['training', 'draft', 'mentoring', 'conditioning'];
+  const philosophyPool: CoachingPhilosophy[] = ['aggressive', 'defensive', 'balanced', 'developmental'];
+
+  return {
+    teamId: options.isFreeAgent ? null : null,
+    name: pickRandom(names),
+    role: options.role,
+    ability,
+    specialty: options.role === 'head_coach' ? pickRandom(specialties) : pickRandom([...specialties, null]),
+    salary:
+      options.role === 'head_coach'
+        ? 5000 + Math.round(ability * 60)
+        : 2800 + Math.round(ability * 45),
+    morale: 70,
+    contractEndSeason: options.contractEndSeason,
+    hiredDate: options.hiredDate,
+    isFreeAgent: options.isFreeAgent ?? false,
+    philosophy: options.role === 'head_coach' ? pickRandom(philosophyPool) : null,
+    nationality: REGION_TO_NATIONALITY[options.region] ?? 'KR',
+    preferredRole: options.preferredRole ?? options.role,
+    roleFlexibility: options.forceRoleFlexibility ?? getDefaultRoleFlexibility(options.role),
+    careerOrigin: options.careerOrigin ?? null,
+  };
+}
+
+async function insertStaffRecord(staff: Omit<Staff, 'id'>, teamId: string | null): Promise<void> {
+  const db = await getDatabase();
+  await db.execute(
+    `INSERT INTO staff (
+      team_id, name, role, ability, specialty, salary, morale, contract_end_season, hired_date,
+      is_free_agent, philosophy, nationality, preferred_role, role_flexibility, career_origin
+    )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+    [
+      teamId,
+      staff.name,
+      staff.role,
+      staff.ability,
+      staff.specialty,
+      staff.salary,
+      staff.morale,
+      staff.contractEndSeason,
+      staff.hiredDate,
+      staff.isFreeAgent ? 1 : 0,
+      staff.philosophy,
+      staff.nationality,
+      staff.preferredRole,
+      staff.roleFlexibility,
+      staff.careerOrigin,
+    ],
+  );
+}
+
+async function getTeamContext(teamId: string): Promise<TeamContextRow | null> {
+  const db = await getDatabase();
+  const rows = await db.select<TeamContextRow[]>(
+    'SELECT id, name, region, budget, salary_cap, reputation, play_style FROM teams WHERE id = $1 LIMIT 1',
+    [teamId],
+  );
+  return rows[0] ?? null;
+}
+
+async function getStaffById(staffId: number): Promise<Staff | null> {
+  const db = await getDatabase();
+  const rows = await db.select<StaffRow[]>('SELECT * FROM staff WHERE id = $1 LIMIT 1', [staffId]);
+  return rows[0] ? mapRowToStaff(rows[0]) : null;
+}
+
+function getManagerPhilosophyAlignment(
+  philosophy: CoachingPhilosophy | null,
+  identity: Awaited<ReturnType<typeof getManagerIdentity>>,
+): number {
+  if (!philosophy || !identity) return 0;
+
+  const { playerCare, tacticalFocus, resultDriven } = identity.philosophy;
+  switch (philosophy) {
+    case 'aggressive':
+      return Math.round((resultDriven - 50) * 0.5 + (tacticalFocus - 50) * 0.35);
+    case 'defensive':
+      return Math.round((playerCare - 50) * 0.35 - (resultDriven - 50) * 0.2);
+    case 'developmental':
+      return Math.round((playerCare - 50) * 0.55 - (resultDriven - 50) * 0.2);
+    case 'balanced':
+    default:
+      return Math.round((tacticalFocus - 50) * 0.2);
+  }
+}
+
+function scoreToDecision(score: number): { decision: StaffOfferDecision; acceptance: StaffAcceptanceLevel } {
+  if (score >= 72) return { decision: 'accept', acceptance: 'high' };
+  if (score >= 58) return { decision: 'accept', acceptance: 'medium' };
+  if (score >= 43) return { decision: 'hesitate', acceptance: 'low' };
+  return { decision: 'reject', acceptance: 'unlikely' };
+}
+
+function getMarketCategory(staff: Staff, offeredRole: StaffRole): StaffCandidateView['marketCategory'] {
+  if (offeredRole === 'coach' && (staff.preferredRole === 'head_coach' || staff.careerOrigin === 'head_coach')) {
+    return 'former_head_coach';
+  }
+  if (offeredRole === 'coach') return 'coach';
+  return 'specialist';
+}
+
+function buildRoleReason(staff: Staff, offeredRole: StaffRole): { scoreDelta: number; reason: string } {
+  if (staff.preferredRole === offeredRole) {
+    return { scoreDelta: 28, reason: '선호 역할과 정확히 맞는 제안입니다.' };
+  }
+
+  const secondaryRoles = getDefaultSecondaryRoles(staff.preferredRole);
+  if (secondaryRoles.includes(offeredRole)) {
+    return { scoreDelta: 10, reason: '주 역할은 아니지만 수용 가능한 범위의 제안입니다.' };
+  }
+
+  if (staff.roleFlexibility === 'strict') {
+    return { scoreDelta: -38, reason: '선호 역할이 아니라 강하게 망설입니다.' };
+  }
+  if (staff.roleFlexibility === 'normal') {
+    return { scoreDelta: -18, reason: '주 역할이 아니라 조건을 더 까다롭게 봅니다.' };
+  }
+  return { scoreDelta: -8, reason: '원래 역할은 아니지만 유연하게 검토합니다.' };
+}
+
+function buildCareerReason(staff: Staff, offeredRole: StaffRole): { scoreDelta: number; reason: string | null } {
+  const preferredPriority = ROLE_PRIORITY[staff.preferredRole] ?? 1;
+  const offeredPriority = ROLE_PRIORITY[offeredRole] ?? 1;
+  const currentPriority = ROLE_PRIORITY[staff.role] ?? offeredPriority;
+
+  if (offeredPriority < preferredPriority) {
+    if (staff.preferredRole === 'head_coach' && offeredRole === 'coach') {
+      return { scoreDelta: -16, reason: '감독 경험이 있어 코치 역할 제안에 자존심이 걸려 있습니다.' };
+    }
+    return { scoreDelta: -10, reason: '현재 커리어보다 낮은 역할 제안으로 받아들입니다.' };
+  }
+
+  if (offeredPriority > currentPriority) {
+    return { scoreDelta: 8, reason: '커리어 업그레이드 기회로 보고 있습니다.' };
+  }
+
+  return { scoreDelta: 0, reason: null };
+}
 
 export async function getTeamStaff(teamId: string): Promise<Staff[]> {
   const db = await getDatabase();
@@ -230,51 +376,24 @@ export async function hireStaff(
   contractEndSeason: number,
   hiredDate: string,
 ): Promise<Staff> {
-  const db = await getDatabase();
+  const context = await getTeamContext(teamId);
+  const region = context?.region ?? 'LCK';
+  const profile = generateStaffProfile({
+    role,
+    region,
+    hiredDate,
+    contractEndSeason,
+  });
 
-  // 팀의 리전 조회
-  const teamRows = await db.select<{ region: string }[]>(
-    'SELECT region FROM teams WHERE id = $1',
+  await insertStaffRecord({ ...profile, isFreeAgent: false }, teamId);
+  const db = await getDatabase();
+  const rows = await db.select<StaffRow[]>(
+    'SELECT * FROM staff WHERE team_id = $1 ORDER BY id DESC LIMIT 1',
     [teamId],
   );
-  const region = (teamRows[0]?.region ?? 'LCK') as Region;
-
-  // 리전별 이름 풀 선택
-  const regionNames = STAFF_NAMES_BY_REGION[region] ?? STAFF_NAMES_BY_REGION['LCK'];
-  const names = regionNames[role] ?? SPECIALIST_NAMES[role] ?? ['전문가'];
-  const name = pickRandom(names);
-  const ability = randomInt(30, 79); // 30~79
-  const specialties: (StaffSpecialty | null)[] = ['training', 'draft', 'mentoring', 'conditioning', null];
-  const specialty = role === 'head_coach' ? null : pickRandom(specialties);
-  const salary = role === 'head_coach'
-    ? 1500 + Math.round(ability * 15)
-    : 500 + Math.round(ability * 8);
-
-  // 감독만 코칭 철학 배정
-  const philosophies: CoachingPhilosophy[] = ['aggressive', 'defensive', 'balanced', 'developmental'];
-  const philosophy = role === 'head_coach'
-    ? pickRandom(philosophies)
-    : null;
-
-  // 리전별 국적 매핑
-  const REGION_TO_NATIONALITY: Record<string, string> = { LCK: 'KR', LPL: 'CN', LEC: 'EU', LCS: 'NA' };
-  const nationality = REGION_TO_NATIONALITY[region] ?? 'KR';
-
-  const result = await db.execute(
-    `INSERT INTO staff (team_id, name, role, ability, specialty, salary, contract_end_season, hired_date, philosophy, nationality)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-    [teamId, name, role, ability, specialty, salary, contractEndSeason, hiredDate, philosophy, nationality],
-  );
-
-  return {
-    id: result.lastInsertId ?? 0,
-    teamId, name, role, ability, specialty, salary,
-    morale: 70, contractEndSeason, hiredDate,
-    isFreeAgent: false, philosophy, nationality,
-  };
+  return mapRowToStaff(rows[0]);
 }
 
-/** 스태프 해고 → FA 전환 (DELETE 대신 team_id = NULL, is_free_agent = 1) */
 export async function fireStaff(staffId: number): Promise<void> {
   const db = await getDatabase();
   await db.execute(
@@ -283,47 +402,224 @@ export async function fireStaff(staffId: number): Promise<void> {
   );
 }
 
-/** FA 스태프 목록 조회 */
 export async function getFreeAgentStaff(): Promise<Staff[]> {
   const db = await getDatabase();
   const rows = await db.select<StaffRow[]>(
-    'SELECT * FROM staff WHERE is_free_agent = 1 ORDER BY ability DESC',
+    'SELECT * FROM staff WHERE is_free_agent = 1 ORDER BY ability DESC, id DESC',
   );
   return rows.map(mapRowToStaff);
 }
 
-/** FA 스태프를 팀에 영입 */
 export async function hireExistingStaff(
   staffId: number,
   teamId: string,
   contractEndSeason: number,
 ): Promise<void> {
+  const staff = await getStaffById(staffId);
+  if (!staff) return;
+  await hireStaffByOffer(staffId, teamId, staff.role, contractEndSeason);
+}
+
+export async function seedInitialTeamStaff(
+  teamId: string,
+  seasonYear: number,
+  isUserTeamCandidate = false,
+): Promise<void> {
+  const context = await getTeamContext(teamId);
+  if (!context) return;
+
+  const existing = await getTeamStaff(teamId);
+  if (existing.length > 0) return;
+
+  const hiredDate = `${seasonYear}-01-01`;
+  const contractEndSeason = seasonYear + 1;
+  const roles: StaffRole[] = ['head_coach', 'coach', 'coach', 'analyst'];
+
+  for (const role of roles) {
+    if (role === 'analyst' && !isUserTeamCandidate && randomInt(0, 100) < 35) {
+      continue;
+    }
+
+    const profile = generateStaffProfile({
+      role,
+      region: context.region,
+      hiredDate,
+      contractEndSeason,
+    });
+
+    await insertStaffRecord({ ...profile, isFreeAgent: false }, teamId);
+  }
+}
+
+export async function seedAllTeamsStaff(seasonYear: number, userTeamId?: string): Promise<void> {
   const db = await getDatabase();
+  const teams = await db.select<Array<{ id: string }>>('SELECT id FROM teams');
+  for (const team of teams) {
+    await seedInitialTeamStaff(team.id, seasonYear, team.id === userTeamId);
+  }
+}
+
+export async function releaseUserTeamHeadCoach(teamId: string): Promise<void> {
+  const db = await getDatabase();
+  const rows = await db.select<StaffRow[]>(
+    'SELECT * FROM staff WHERE team_id = $1 AND role = $2 ORDER BY ability DESC LIMIT 1',
+    [teamId, 'head_coach'],
+  );
+  const row = rows[0];
+  if (!row) return;
+
   await db.execute(
-    'UPDATE staff SET team_id = $1, is_free_agent = 0, contract_end_season = $2 WHERE id = $3',
-    [teamId, contractEndSeason, staffId],
+    `UPDATE staff
+     SET team_id = NULL,
+         role = 'coach',
+         is_free_agent = 1,
+         preferred_role = COALESCE(preferred_role, 'head_coach'),
+         role_flexibility = COALESCE(role_flexibility, 'strict'),
+         career_origin = COALESCE(career_origin, 'head_coach')
+     WHERE id = $1`,
+    [row.id],
   );
 }
 
-// ─────────────────────────────────────────
-// 보정 효과 계산
-// ─────────────────────────────────────────
+export async function evaluateStaffOffer(
+  teamId: string,
+  saveId: number,
+  staffId: number,
+  offeredRole: StaffRole,
+): Promise<StaffOfferEvaluation> {
+  const staff = await getStaffById(staffId);
+  if (!staff) {
+    throw new Error(`Staff ${staffId} not found`);
+  }
+
+  const [context, teamStaff, identity, activeSeason] = await Promise.all([
+    getTeamContext(teamId),
+    getTeamStaff(teamId),
+    getManagerIdentity(saveId).catch(() => null),
+    getActiveSeason().catch(() => null),
+  ]);
+
+  const reasons: string[] = [];
+  let score = 50;
+
+  if (!canHireRole(teamStaff, offeredRole)) {
+    return {
+      staff,
+      offeredRole,
+      decision: 'reject',
+      acceptance: 'unlikely',
+      score: 0,
+      reasons: ['현재 팀에 이 역할의 자리가 없습니다.'],
+    };
+  }
+
+  const roleReason = buildRoleReason(staff, offeredRole);
+  score += roleReason.scoreDelta;
+  reasons.push(roleReason.reason);
+
+  const careerReason = buildCareerReason(staff, offeredRole);
+  score += careerReason.scoreDelta;
+  if (careerReason.reason) reasons.push(careerReason.reason);
+
+  const philosophyAlignment = getManagerPhilosophyAlignment(staff.philosophy, identity);
+  if (philosophyAlignment !== 0) {
+    score += philosophyAlignment;
+    reasons.push(
+      philosophyAlignment > 0
+        ? '당신의 운영 철학과 잘 맞는 편입니다.'
+        : '당신의 운영 철학과는 약간 거리감이 있습니다.',
+    );
+  }
+
+  if (context) {
+    const projectScore = Math.round((context.reputation - 50) * 0.35 + ((context.budget / Math.max(context.salary_cap, 1)) - 1) * 12);
+    score += projectScore;
+    reasons.push(
+      projectScore >= 0
+        ? '팀 프로젝트의 매력도는 나쁘지 않게 평가합니다.'
+        : '팀 규모와 기대치가 아직 완전히 매력적이지는 않습니다.',
+    );
+  }
+
+  const counts = getStaffCounts(teamStaff);
+  if (offeredRole === 'coach' && counts.coach === 0) {
+    score += 10;
+    reasons.push('당장 현장 코칭 공백을 메울 수 있는 제안입니다.');
+  } else if (offeredRole === 'analyst' && counts.analyst === 0) {
+    score += 8;
+    reasons.push('분석 파트 공석이라 역할 중요도가 높습니다.');
+  }
+
+  if (activeSeason) {
+    const winRate = await getTeamRecentWinRate(teamId, activeSeason.id).catch(() => 0.5);
+    if (winRate >= 0.6) {
+      score += 8;
+      reasons.push('최근 성적이 좋아 우승 프로젝트로 인식됩니다.');
+    } else if (winRate <= 0.4) {
+      score -= 6;
+      reasons.push('최근 성적이 좋지 않아 리스크를 더 크게 봅니다.');
+    }
+  }
+
+  score += Math.round((staff.ability - 60) * 0.15);
+
+  const boundedScore = Math.max(0, Math.min(100, score));
+  const outcome = scoreToDecision(boundedScore);
+  return {
+    staff,
+    offeredRole,
+    decision: outcome.decision,
+    acceptance: outcome.acceptance,
+    score: boundedScore,
+    reasons: reasons.slice(0, 4),
+  };
+}
+
+export async function hireStaffByOffer(
+  staffId: number,
+  teamId: string,
+  offeredRole: StaffRole,
+  contractEndSeason: number,
+): Promise<void> {
+  const db = await getDatabase();
+  await db.execute(
+    `UPDATE staff
+     SET team_id = $1,
+         role = $2,
+         is_free_agent = 0,
+         contract_end_season = $3
+     WHERE id = $4`,
+    [teamId, offeredRole, contractEndSeason, staffId],
+  );
+}
+
+export async function buildStaffCandidateView(
+  teamId: string,
+  saveId: number,
+  staff: Staff,
+  offeredRole: StaffRole,
+): Promise<StaffCandidateView> {
+  const evaluation = await evaluateStaffOffer(teamId, saveId, staff.id, offeredRole);
+  return {
+    ...evaluation,
+    marketCategory: getMarketCategory(staff, offeredRole),
+  };
+}
 
 export interface StaffBonuses {
-  trainingEfficiency: number;     // 훈련 효율 배율 (1.0 = 기본)
-  moraleBoost: number;            // 사기 보정 (0~+10)
-  draftAccuracy: number;          // 밴픽 정확도 보정 (0~+20)
-  scoutingSpeedBonus: number;     // 스카우팅 속도 보너스 일수 (-1~0)
-  scoutingAccuracyBonus: number;  // 스카우팅 정확도 보너스 (0~+15)
-  // 전문 스태프 보너스
-  moraleRecoveryBonus: number;    // 일일 사기 회복 추가량 (0~+3)
-  pressureResistanceBonus: number; // 압박 저항력 보정 (0~+0.1)
-  staminaRecoveryBonus: number;   // 스태미나 회복 보정 배율 (1.0 = 기본)
-  injuryPreventionBonus: number;  // 부상 확률 감소율 (0~-0.3 = 30% 감소)
-  injuryRecoveryBonus: number;    // 부상 회복 가속 (0~-0.2 = 20% 빠른 회복)
-  reinjuryPreventionBonus: number; // 재부상 방지율 (0~-0.5)
-  opponentAnalysisBonus: number;  // 상대 분석 정확도 (0~+20)
-  metaAdaptationBonus: number;    // 메타 적응 가속 일수 (0~-3)
+  trainingEfficiency: number;
+  moraleBoost: number;
+  draftAccuracy: number;
+  scoutingSpeedBonus: number;
+  scoutingAccuracyBonus: number;
+  moraleRecoveryBonus: number;
+  pressureResistanceBonus: number;
+  staminaRecoveryBonus: number;
+  injuryPreventionBonus: number;
+  injuryRecoveryBonus: number;
+  reinjuryPreventionBonus: number;
+  opponentAnalysisBonus: number;
+  metaAdaptationBonus: number;
 }
 
 export interface StaffRecommendation {
@@ -334,12 +630,10 @@ export interface StaffRecommendation {
   urgency: 'high' | 'medium' | 'low';
 }
 
-/** 스태프 사기에 따른 효율 계수 (0.7 ~ 1.3) */
 function getMoraleFactor(morale: number): number {
   return 0.7 + (morale / 100) * 0.6;
 }
 
-/** 팀 스태프 보정 효과 합산 (사기 반영) */
 export async function calculateStaffBonuses(teamId: string): Promise<StaffBonuses> {
   const staff = await getTeamStaff(teamId);
 
@@ -360,7 +654,7 @@ export async function calculateStaffBonuses(teamId: string): Promise<StaffBonuse
   };
 
   for (const s of staff) {
-    const factor = s.ability / 100; // 0.0 ~ 1.0
+    const factor = s.ability / 100;
     const moraleFactor = getMoraleFactor(s.morale);
 
     switch (s.role) {
@@ -379,24 +673,20 @@ export async function calculateStaffBonuses(teamId: string): Promise<StaffBonuse
         bonuses.scoutingAccuracyBonus += Math.round((5 + factor * 10) * moraleFactor);
         break;
       case 'sports_psychologist':
-        // 사기 회복 가속 + 압박 저항력 향상
         bonuses.moraleRecoveryBonus += Math.round((1 + factor * 2) * moraleFactor);
         bonuses.pressureResistanceBonus += (0.03 + factor * 0.07) * moraleFactor;
         break;
       case 'nutritionist':
-        // 스태미나 회복 가속 + 부상 예방
         bonuses.staminaRecoveryBonus += (0.1 + factor * 0.15) * moraleFactor;
-        bonuses.injuryPreventionBonus -= (0.1 + factor * 0.2) * moraleFactor; // 음수 = 부상 확률 감소
+        bonuses.injuryPreventionBonus -= (0.1 + factor * 0.2) * moraleFactor;
         break;
       case 'physiotherapist':
-        // 부상 회복 가속 + 재부상 방지
-        bonuses.injuryRecoveryBonus -= (0.05 + factor * 0.15) * moraleFactor; // 음수 = 회복 빠름
-        bonuses.reinjuryPreventionBonus -= (0.1 + factor * 0.4) * moraleFactor; // 음수 = 재부상 감소
+        bonuses.injuryRecoveryBonus -= (0.05 + factor * 0.15) * moraleFactor;
+        bonuses.reinjuryPreventionBonus -= (0.1 + factor * 0.4) * moraleFactor;
         break;
       case 'data_analyst':
-        // 상대 분석 + 메타 적응
         bonuses.opponentAnalysisBonus += Math.round((5 + factor * 15) * moraleFactor);
-        bonuses.metaAdaptationBonus -= Math.round((1 + factor * 2) * moraleFactor); // 음수 = 적응 빠름
+        bonuses.metaAdaptationBonus -= Math.round((1 + factor * 2) * moraleFactor);
         break;
     }
   }
@@ -404,32 +694,24 @@ export async function calculateStaffBonuses(teamId: string): Promise<StaffBonuse
   return bonuses;
 }
 
-// ─────────────────────────────────────────
-// 스태프 사기 시스템
-// ─────────────────────────────────────────
-
-/** 스태프 사기 변경 */
 export async function updateStaffMorale(staffId: number, delta: number): Promise<void> {
   const db = await getDatabase();
   await db.execute(
-    `UPDATE staff SET morale = MAX(0, MIN(100, morale + $1)) WHERE id = $2`,
+    'UPDATE staff SET morale = MAX(0, MIN(100, morale + $1)) WHERE id = $2',
     [delta, staffId],
   );
 }
 
-/** 팀 전체 스태프 사기 일괄 변경 (승리/패배 시) */
 export async function updateTeamStaffMorale(teamId: string, delta: number): Promise<void> {
   const db = await getDatabase();
   await db.execute(
-    `UPDATE staff SET morale = MAX(0, MIN(100, morale + $1)) WHERE team_id = $2`,
+    'UPDATE staff SET morale = MAX(0, MIN(100, morale + $1)) WHERE team_id = $2',
     [delta, teamId],
   );
 }
 
-/** 주간 스태프 사기 자연 회복 (70 방향으로 수렴) */
 export async function weeklyStaffMoraleRecovery(teamId: string): Promise<void> {
   const db = await getDatabase();
-  // 70 이하이면 +2, 70 초과이면 -1 (자연 수렴)
   await db.execute(
     `UPDATE staff SET morale = CASE
        WHEN morale < 70 THEN MIN(70, morale + 2)
@@ -441,27 +723,24 @@ export async function weeklyStaffMoraleRecovery(teamId: string): Promise<void> {
   );
 }
 
-// ─────────────────────────────────────────
-// 코칭 철학 효과
-// ─────────────────────────────────────────
-
 export interface PhilosophyBonus {
-  /** 스탯별 훈련 배율 조정 */
   statMultipliers: Record<string, number>;
-  /** 젊은 선수 성장 배율 */
   youngPlayerGrowth: number;
 }
 
-/** 감독 코칭 철학에 따른 훈련 보정 */
 export async function getPhilosophyBonus(teamId: string): Promise<PhilosophyBonus> {
   const staff = await getTeamStaff(teamId);
-  const headCoach = staff.find(s => s.role === 'head_coach');
+  const headCoach = staff.find((entry) => entry.role === 'head_coach');
   const philosophy = headCoach?.philosophy ?? 'balanced';
 
   const base: PhilosophyBonus = {
     statMultipliers: {
-      mechanical: 1.0, gameSense: 1.0, teamwork: 1.0,
-      consistency: 1.0, laning: 1.0, aggression: 1.0,
+      mechanical: 1.0,
+      gameSense: 1.0,
+      teamwork: 1.0,
+      consistency: 1.0,
+      laning: 1.0,
+      aggression: 1.0,
     },
     youngPlayerGrowth: 1.0,
   };
@@ -476,9 +755,8 @@ export async function getPhilosophyBonus(teamId: string): Promise<PhilosophyBonu
       base.statMultipliers.aggression = 0.95;
       break;
     case 'developmental':
-      base.youngPlayerGrowth = 1.20;
+      base.youngPlayerGrowth = 1.2;
       break;
-    case 'balanced':
     default:
       break;
   }
@@ -486,56 +764,36 @@ export async function getPhilosophyBonus(teamId: string): Promise<PhilosophyBonu
   return base;
 }
 
-// ─────────────────────────────────────────
-// 코치-선수 케미스트리
-// ─────────────────────────────────────────
-
-/**
- * 코치-선수 간 케미스트리 점수 (0~100)
- * 같은 국적: +10, 전문 분야 매칭: +15
- */
-export function calculateCoachPlayerChemistry(
-  coach: Staff,
-  playerNationality: string,
-): number {
-  let chemistry = 50; // 기본 50
-
-  // 국적 보너스
+export function calculateCoachPlayerChemistry(coach: Staff, playerNationality: string): number {
+  let chemistry = 50;
   if (coach.nationality === playerNationality) chemistry += 10;
-
-  // 전문 분야 보너스
   if (coach.specialty === 'training') chemistry += 15;
   if (coach.specialty === 'mentoring') chemistry += 10;
   if (coach.specialty === 'conditioning') chemistry += 5;
-
   return Math.min(100, chemistry);
 }
 
-/** 팀 평균 코치-선수 케미스트리 → 훈련 보너스 (최대 +5%) */
 export async function getChemistryTrainingBonus(
   teamId: string,
   playerNationalities: Record<string, string>,
 ): Promise<number> {
   const staff = await getTeamStaff(teamId);
-  const coaches = staff.filter(s => s.role === 'head_coach' || s.role === 'coach');
-  if (coaches.length === 0) return 0;
-
+  const coaches = staff.filter((entry) => entry.role === 'head_coach' || entry.role === 'coach');
   const playerIds = Object.keys(playerNationalities);
-  if (playerIds.length === 0) return 0;
+
+  if (coaches.length === 0 || playerIds.length === 0) return 0;
 
   let totalChemistry = 0;
   let count = 0;
-
   for (const coach of coaches) {
     for (const playerId of playerIds) {
       totalChemistry += calculateCoachPlayerChemistry(coach, playerNationalities[playerId]);
-      count++;
+      count += 1;
     }
   }
 
   const avgChemistry = totalChemistry / count;
-  // 0~100 → 0~0.05 (최대 +5%)
-  return (avgChemistry - 50) / 50 * 0.05;
+  return ((avgChemistry - 50) / 50) * 0.05;
 }
 
 function buildRecommendationFromInsight(insight: PlayerManagementInsight): StaffRecommendation {
@@ -543,17 +801,17 @@ function buildRecommendationFromInsight(insight: PlayerManagementInsight): Staff
     case 'teamChemistry':
       return {
         role: 'sports_psychologist',
-        title: '심리 담당 추천',
-        summary: `팀 케미 이슈가 큰 선수가 있습니다. ${insight.recommendation}`,
+        title: '심리 지원 추천',
+        summary: `팀 케미 이슈가 있는 선수가 있습니다. ${insight.recommendation}`,
         route: '/manager/complaints',
         urgency: insight.urgency,
       };
     case 'roleClarity':
     case 'playtime':
       return {
-        role: 'head_coach',
-        title: '감독 추천',
-        summary: `선수 운영 설명이 필요합니다. ${insight.recommendation}`,
+        role: 'coach',
+        title: '코치 추천',
+        summary: `선수 역할 정리와 소통 보강이 필요합니다. ${insight.recommendation}`,
         route: '/manager/complaints',
         urgency: insight.urgency,
       };
@@ -561,7 +819,7 @@ function buildRecommendationFromInsight(insight: PlayerManagementInsight): Staff
       return {
         role: 'coach',
         title: '코치 추천',
-        summary: `개인 퍼포먼스 회복이 우선입니다. ${insight.recommendation}`,
+        summary: `개인 퍼포먼스 회복을 위한 현장 코칭이 필요합니다. ${insight.recommendation}`,
         route: '/manager/training',
         urgency: insight.urgency,
       };
@@ -569,16 +827,15 @@ function buildRecommendationFromInsight(insight: PlayerManagementInsight): Staff
       return {
         role: 'analyst',
         title: '분석가 추천',
-        summary: `경기 준비 재정렬이 필요합니다. ${insight.recommendation}`,
+        summary: `경기 준비와 사전 분석 강화가 필요합니다. ${insight.recommendation}`,
         route: '/manager/tactics',
         urgency: insight.urgency,
       };
-    case 'salary':
     default:
       return {
         role: 'data_analyst',
-        title: '프런트 추천',
-        summary: `계약 기대치 관리가 필요합니다. ${insight.recommendation}`,
+        title: '데이터 분석가 추천',
+        summary: `근거 기반 의사결정을 강화할 여지가 있습니다. ${insight.recommendation}`,
         route: '/manager/roster',
         urgency: insight.urgency,
       };
@@ -600,9 +857,9 @@ export async function generateStaffRecommendations(
 
   if (complaints.length > 0) {
     recommendations.push({
-      role: availableRoles.has('sports_psychologist') ? 'sports_psychologist' : 'head_coach',
-      title: availableRoles.has('sports_psychologist') ? '심리 담당 추천' : '감독 추천',
-      summary: `활성 불만이 ${complaints.length}건 있습니다. 선수 관리 창에서 우선 정리하는 편이 좋습니다.`,
+      role: availableRoles.has('sports_psychologist') ? 'sports_psychologist' : 'coach',
+      title: availableRoles.has('sports_psychologist') ? '심리 지원 추천' : '코치 추천',
+      summary: `활성 불만이 ${complaints.length}건 있습니다. 선수 관리 화면에서 우선 정리하는 편이 좋습니다.`,
       route: '/manager/complaints',
       urgency: complaints.some((complaint) => complaint.severity >= 3) ? 'high' : 'medium',
     });
@@ -617,9 +874,9 @@ export async function generateStaffRecommendations(
 
   if (!recommendations.some((item) => item.route === '/manager/tactics')) {
     recommendations.push({
-      role: availableRoles.has('analyst') ? 'analyst' : 'head_coach',
-      title: availableRoles.has('analyst') ? '분석가 추천' : '감독 추천',
-      summary: '다음 경기 전 밴픽 우선순위와 상대 분석 메모를 다시 확인하는 편이 좋습니다.',
+      role: availableRoles.has('analyst') ? 'analyst' : 'coach',
+      title: availableRoles.has('analyst') ? '분석가 추천' : '코치 추천',
+      summary: '다음 경기 전 밴픽 우선순위와 상대 분석 메모를 다시 확인해두는 편이 좋습니다.',
       route: '/manager/tactics',
       urgency: 'low',
     });

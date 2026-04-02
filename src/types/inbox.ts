@@ -11,6 +11,8 @@ export interface InboxMessage {
   actionRoute: string | null;
   relatedId: string | null;
   createdDate: string;
+  dismissOnRead: boolean;
+  sticky: boolean;
 }
 
 export const INBOX_CATEGORY_LABELS: Record<InboxCategory, string> = {

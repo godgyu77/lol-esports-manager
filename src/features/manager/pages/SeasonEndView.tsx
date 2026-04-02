@@ -70,7 +70,7 @@ export function SeasonEndView() {
           : finalMatch.teamAwayId;
       }
 
-      const result = await processFullSeasonEnd(season, championTeamId, save?.id);
+      const result = await processFullSeasonEnd(season, championTeamId, save?.id, save?.userTeamId);
       setFullResult(result);
     } catch (err) {
       console.error('시즌 종료 처리 오류:', err);
@@ -142,7 +142,7 @@ export function SeasonEndView() {
   // 다음 스플릿 시작
   const handleNextSeason = useCallback(async () => {
     if (!save || !fullResult?.nextSeasonId) return;
-    await loadGameIntoStore(save.id);
+    await loadGameIntoStore(save.metadataId);
     navigate(dayPath);
   }, [save, fullResult, navigate, dayPath]);
 

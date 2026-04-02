@@ -1,13 +1,6 @@
-/**
- * 챔피언, 패치, 세이브, 패치 메타
- */
 import type { GameMode, GameSave, Position } from '../../types';
 import type { Champion, ChampionTag } from '../../types/champion';
-import { getDatabase } from '../database';
-
-// ─────────────────────────────────────────
-// 유틸
-// ─────────────────────────────────────────
+import { getDatabase, getGameDatabaseFileName, getMetaDatabase } from '../database';
 
 function safeJsonParse<T>(json: string | null | undefined, fallback: T): T {
   if (!json) return fallback;
@@ -18,18 +11,14 @@ function safeJsonParse<T>(json: string | null | undefined, fallback: T): T {
   }
 }
 
-// ─────────────────────────────────────────
-// 챔피언 CRUD
-// ─────────────────────────────────────────
-
 interface ChampionRow {
   id: string;
   name: string;
   name_ko: string;
   primary_role: Position;
-  secondary_roles: string;  // JSON string
+  secondary_roles: string;
   tier: Champion['tier'];
-  tags: string;             // JSON string
+  tags: string;
   early_game: number;
   late_game: number;
   teamfight: number;
@@ -94,11 +83,6 @@ export async function getChampionById(id: string): Promise<Champion | null> {
   return mapRowToChampion(rows[0]);
 }
 
-// ─────────────────────────────────────────
-// 챔피언 패치 시스템
-// ─────────────────────────────────────────
-
-/** 챔피언 패치 이력 삽입 */
 export async function insertChampionPatch(patch: {
   seasonId: number;
   week: number;
@@ -116,7 +100,6 @@ export async function insertChampionPatch(patch: {
   );
 }
 
-/** 챔피언 스탯 모디파이어 타입 */
 export interface ChampionStatModifier {
   earlyGameMod: number;
   lateGameMod: number;
@@ -124,7 +107,6 @@ export interface ChampionStatModifier {
   splitPushMod: number;
 }
 
-/** 챔피언 스탯 모디파이어 UPSERT */
 export async function upsertChampionStatModifier(mod: {
   championId: string;
   seasonId: number;
@@ -146,7 +128,6 @@ export async function upsertChampionStatModifier(mod: {
   );
 }
 
-/** 특정 챔피언의 시즌 스탯 모디파이어 조회 */
 export async function getChampionStatModifier(
   championId: string,
   seasonId: number,
@@ -170,16 +151,14 @@ export async function getChampionStatModifier(
   };
 }
 
-// ─────────────────────────────────────────
-// 세이브 CRUD
-// ─────────────────────────────────────────
-
 interface SaveRow {
   id: number;
+  game_save_id: number;
   mode: GameMode;
   user_team_id: string;
   user_player_id: string | null;
   current_season_id: number;
+  db_filename: string;
   created_at: string;
   updated_at: string;
   slot_number: number;
@@ -192,11 +171,13 @@ interface SaveRow {
 
 export function mapRowToSave(row: SaveRow): GameSave {
   return {
-    id: row.id,
+    id: row.game_save_id,
+    metadataId: row.id,
     mode: row.mode,
     userTeamId: row.user_team_id,
     userPlayerId: row.user_player_id ?? undefined,
     currentSeasonId: row.current_season_id,
+    dbFilename: row.db_filename,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     slotNumber: row.slot_number,
@@ -208,25 +189,53 @@ export function mapRowToSave(row: SaveRow): GameSave {
   };
 }
 
-export async function createSave(
-  mode: GameMode,
-  teamId: string,
-  playerId: string | null,
-  seasonId: number,
-  rngSeed?: string,
-): Promise<number> {
-  const db = await getDatabase();
+export async function createSave(params: {
+  mode: GameMode;
+  teamId: string;
+  playerId: string | null;
+  seasonId: number;
+  slotNumber: number;
+  saveName: string;
+  teamName?: string | null;
+  seasonInfo?: string | null;
+  rngSeed?: string | null;
+  dbFilename?: string;
+  gameSaveId?: number;
+}): Promise<number> {
+  const db = await getMetaDatabase();
+  const dbFilename = params.dbFilename ?? getGameDatabaseFileName(params.slotNumber);
+
+  await db.execute('DELETE FROM save_metadata WHERE slot_number = $1', [params.slotNumber]);
   const result = await db.execute(
-    `INSERT INTO save_metadata (mode, user_team_id, user_player_id, current_season_id, rng_seed)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [mode, teamId, playerId, seasonId, rngSeed ?? null],
+    `INSERT INTO save_metadata (
+       mode, user_team_id, user_player_id, current_season_id, db_filename,
+       game_save_id, slot_number, save_name, team_name, season_info, rng_seed
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+    [
+      params.mode,
+      params.teamId,
+      params.playerId,
+      params.seasonId,
+      dbFilename,
+      params.gameSaveId ?? 1,
+      params.slotNumber,
+      params.saveName,
+      params.teamName ?? null,
+      params.seasonInfo ?? null,
+      params.rngSeed ?? null,
+    ],
   );
-  if (!result.lastInsertId) throw new Error('세이브 생성 실패: lastInsertId 없음');
+
+  if (!result.lastInsertId) {
+    throw new Error('Failed to create save metadata: missing lastInsertId');
+  }
+
   return result.lastInsertId;
 }
 
 export async function getSaveById(id: number): Promise<GameSave | null> {
-  const db = await getDatabase();
+  const db = await getMetaDatabase();
   const rows = await db.select<SaveRow[]>(
     'SELECT * FROM save_metadata WHERE id = $1',
     [id],
@@ -235,73 +244,97 @@ export async function getSaveById(id: number): Promise<GameSave | null> {
   return mapRowToSave(rows[0]);
 }
 
-/** 세이브 타임스탬프(updated_at) 갱신 — 자동/수동 저장 시 호출 */
+export async function getSaveBySlotNumber(slotNumber: number): Promise<GameSave | null> {
+  const db = await getMetaDatabase();
+  const rows = await db.select<SaveRow[]>(
+    'SELECT * FROM save_metadata WHERE slot_number = $1 LIMIT 1',
+    [slotNumber],
+  );
+  if (rows.length === 0) return null;
+  return mapRowToSave(rows[0]);
+}
+
 export async function updateSaveTimestamp(saveId: number): Promise<void> {
-  const db = await getDatabase();
+  const db = await getMetaDatabase();
   await db.execute(
     'UPDATE save_metadata SET updated_at = CURRENT_TIMESTAMP WHERE id = $1',
     [saveId],
   );
 }
 
-/** 수동 저장 생성 (슬롯 지정) */
-export async function createManualSave(
-  mode: GameMode,
-  teamId: string,
-  playerId: string | null,
-  seasonId: number,
-  slotNumber: number,
-  saveName: string,
-  teamName: string | null,
-  seasonInfo: string | null,
-  rngSeed: string | null,
-): Promise<number> {
-  const db = await getDatabase();
-  // 같은 슬롯에 기존 저장이 있으면 삭제
-  await db.execute(
-    'DELETE FROM save_metadata WHERE slot_number = $1',
-    [slotNumber],
-  );
+export async function createManualSave(params: {
+  mode: GameMode;
+  teamId: string;
+  playerId: string | null;
+  seasonId: number;
+  slotNumber: number;
+  saveName: string;
+  teamName: string | null;
+  seasonInfo: string | null;
+  rngSeed: string | null;
+  dbFilename?: string;
+  playTimeMinutes?: number;
+  gameSaveId?: number;
+}): Promise<number> {
+  const db = await getMetaDatabase();
+  const dbFilename = params.dbFilename ?? getGameDatabaseFileName(params.slotNumber);
+
+  await db.execute('DELETE FROM save_metadata WHERE slot_number = $1', [params.slotNumber]);
   const result = await db.execute(
-    `INSERT INTO save_metadata (mode, user_team_id, user_player_id, current_season_id, slot_number, save_name, team_name, season_info, rng_seed)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-    [mode, teamId, playerId, seasonId, slotNumber, saveName, teamName, seasonInfo, rngSeed],
+    `INSERT INTO save_metadata (
+       mode, user_team_id, user_player_id, current_season_id, db_filename,
+       game_save_id, slot_number, save_name, team_name, season_info, rng_seed, play_time_minutes
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+    [
+      params.mode,
+      params.teamId,
+      params.playerId,
+      params.seasonId,
+      dbFilename,
+      params.gameSaveId ?? 1,
+      params.slotNumber,
+      params.saveName,
+      params.teamName,
+      params.seasonInfo,
+      params.rngSeed,
+      params.playTimeMinutes ?? 0,
+    ],
   );
-  if (!result.lastInsertId) throw new Error('수동 세이브 생성 실패: lastInsertId 없음');
+  if (!result.lastInsertId) {
+    throw new Error('Failed to create manual save metadata: missing lastInsertId');
+  }
   return result.lastInsertId;
 }
 
-/** 모든 저장 슬롯 조회 */
 export async function getAllSaves(): Promise<GameSave[]> {
-  const db = await getDatabase();
+  const db = await getMetaDatabase();
   const rows = await db.select<SaveRow[]>(
     'SELECT * FROM save_metadata ORDER BY slot_number ASC',
   );
   return rows.map(mapRowToSave);
 }
 
-/** 자동 저장(슬롯 0) 조회 */
 export async function getAutoSave(): Promise<GameSave | null> {
-  const db = await getDatabase();
-  const rows = await db.select<SaveRow[]>(
-    'SELECT * FROM save_metadata WHERE slot_number = 0 LIMIT 1',
-  );
-  if (rows.length === 0) return null;
-  return mapRowToSave(rows[0]);
+  return getSaveBySlotNumber(0);
 }
 
-/** 저장 삭제 */
 export async function deleteSave(saveId: number): Promise<void> {
-  const db = await getDatabase();
+  const db = await getMetaDatabase();
   await db.execute('DELETE FROM save_metadata WHERE id = $1', [saveId]);
 }
 
-/** 저장 메타 업데이트 (팀 이름, 시즌 정보 등) */
 export async function updateSaveMeta(
   saveId: number,
-  updates: { saveName?: string; teamName?: string; seasonInfo?: string; playTimeMinutes?: number },
+  updates: {
+    saveName?: string;
+    teamName?: string | null;
+    seasonInfo?: string | null;
+    playTimeMinutes?: number;
+    dbFilename?: string;
+  },
 ): Promise<void> {
-  const db = await getDatabase();
+  const db = await getMetaDatabase();
   const setClauses: string[] = [];
   const params: unknown[] = [];
   let idx = 1;
@@ -322,10 +355,14 @@ export async function updateSaveMeta(
     setClauses.push(`play_time_minutes = $${idx++}`);
     params.push(updates.playTimeMinutes);
   }
+  if (updates.dbFilename !== undefined) {
+    setClauses.push(`db_filename = $${idx++}`);
+    params.push(updates.dbFilename);
+  }
 
   if (setClauses.length === 0) return;
 
-  setClauses.push(`updated_at = CURRENT_TIMESTAMP`);
+  setClauses.push('updated_at = CURRENT_TIMESTAMP');
   params.push(saveId);
 
   await db.execute(
@@ -334,27 +371,21 @@ export async function updateSaveMeta(
   );
 }
 
-/** RNG 시드 업데이트 */
 export async function updateRngSeed(saveId: number, rngSeed: string): Promise<void> {
-  const db = await getDatabase();
+  const db = await getMetaDatabase();
   await db.execute(
     'UPDATE save_metadata SET rng_seed = $1 WHERE id = $2',
     [rngSeed, saveId],
   );
 }
 
-/** 플레이 시간 업데이트 */
 export async function updatePlayTime(saveId: number, minutes: number): Promise<void> {
-  const db = await getDatabase();
+  const db = await getMetaDatabase();
   await db.execute(
-    'UPDATE save_metadata SET play_time_minutes = $1 WHERE id = $2',
+    'UPDATE save_metadata SET play_time_minutes = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
     [minutes, saveId],
   );
 }
-
-// ═════════════════════════════════════════
-// patch_meta_modifiers CRUD
-// ═════════════════════════════════════════
 
 export interface PatchMetaModifiersRow {
   seasonId: number;
@@ -385,20 +416,23 @@ export async function upsertPatchMetaModifiers(params: {
 export async function getLatestPatchMetaModifiers(): Promise<PatchMetaModifiersRow | null> {
   const db = await getDatabase();
   const rows = await db.select<{
-    season_id: number; patch_number: number;
-    teamfight_efficiency: number; split_push_efficiency: number;
-    early_aggro_efficiency: number; objective_efficiency: number;
+    season_id: number;
+    patch_number: number;
+    teamfight_efficiency: number;
+    split_push_efficiency: number;
+    early_aggro_efficiency: number;
+    objective_efficiency: number;
   }[]>(
     'SELECT * FROM patch_meta_modifiers ORDER BY season_id DESC, patch_number DESC LIMIT 1',
   );
   if (rows.length === 0) return null;
-  const r = rows[0];
+  const row = rows[0];
   return {
-    seasonId: r.season_id,
-    patchNumber: r.patch_number,
-    teamfightEfficiency: r.teamfight_efficiency,
-    splitPushEfficiency: r.split_push_efficiency,
-    earlyAggroEfficiency: r.early_aggro_efficiency,
-    objectiveEfficiency: r.objective_efficiency,
+    seasonId: row.season_id,
+    patchNumber: row.patch_number,
+    teamfightEfficiency: row.teamfight_efficiency,
+    splitPushEfficiency: row.split_push_efficiency,
+    earlyAggroEfficiency: row.early_aggro_efficiency,
+    objectiveEfficiency: row.objective_efficiency,
   };
 }

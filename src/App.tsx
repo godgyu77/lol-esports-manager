@@ -78,11 +78,12 @@ const LiveMatchView = lazy(() => import('./features/match/LiveMatchView').then(m
 
 function AiSetupGate() {
   const aiSetupCompleted = useSettingsStore((s) => s.aiSetupCompleted);
+  const aiSetupSkipped = useSettingsStore((s) => s.aiSetupSkipped);
 
-  if (!aiSetupCompleted) {
+  if (!aiSetupCompleted && !aiSetupSkipped) {
     return (
       <AiSetupWizard
-        onComplete={() => useSettingsStore.getState().setAiSetupCompleted(true)}
+        onComplete={() => undefined}
       />
     );
   }

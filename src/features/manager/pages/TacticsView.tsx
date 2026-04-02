@@ -6,11 +6,12 @@
  */
 
 import { useEffect, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useGameStore } from '../../../stores/gameStore';
 import {
   getTeamTactics,
   setTeamTactics,
-  initDefaultTactics,
+  createDefaultTactics,
   calculateTacticsBonus,
 } from '../../../engine/tactics/tacticsEngine';
 import type {
@@ -27,6 +28,9 @@ import {
   WARD_PRIORITY_LABELS,
 } from '../../../types/tactics';
 import { generateTacticalSuggestion, type TacticalSuggestion } from '../../../ai/advancedAiService';
+import { applyCoachTacticsRecommendation, generateInitialCoachRecommendations } from '../../../engine/manager/managerSetupEngine';
+import type { CoachSetupRecommendation } from '../../../types/managerSetup';
+import { MainLoopPanel } from '../components/MainLoopPanel';
 
 const EARLY_STRATEGIES: EarlyStrategy[] = ['standard', 'lane_swap', 'invade', 'safe_farm'];
 const MID_STRATEGIES: MidStrategy[] = ['balanced', 'pick_comp', 'split_push', 'objective_control'];
@@ -37,12 +41,14 @@ export function TacticsView() {
   const save = useGameStore((s) => s.save);
   const teams = useGameStore((s) => s.teams);
   const pendingMatch = useGameStore((s) => s.pendingUserMatch);
+  const navigate = useNavigate();
 
   const [tactics, setTacticsState] = useState<TeamTactics | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const [aiSuggestion, setAiSuggestion] = useState<TacticalSuggestion | null>(null);
   const [aiSuggestionLoading, setAiSuggestionLoading] = useState(false);
+  const [coachRecommendation, setCoachRecommendation] = useState<CoachSetupRecommendation | null>(null);
 
   const userTeamId = save?.userTeamId ?? '';
 
@@ -50,12 +56,14 @@ export function TacticsView() {
     if (!save) return;
     setIsLoading(true);
     try {
-      let data = await getTeamTactics(userTeamId);
-      if (!data) {
-        await initDefaultTactics(userTeamId);
-        data = await getTeamTactics(userTeamId);
-      }
-      setTacticsState(data);
+      const [data, setupRecommendations] = await Promise.all([
+        getTeamTactics(userTeamId),
+        generateInitialCoachRecommendations(userTeamId, save.currentSeasonId).catch(() => []),
+      ]);
+      setTacticsState(data ?? createDefaultTactics(userTeamId));
+      setCoachRecommendation(
+        setupRecommendations.find((recommendation) => recommendation.kind === 'tactics') ?? null,
+      );
     } catch (err) {
       console.error('전술 데이터 로딩 실패:', err);
     } finally {
@@ -118,6 +126,9 @@ export function TacticsView() {
   if (!tactics) return <p className="fm-text-muted">전술 데이터를 찾을 수 없습니다.</p>;
 
   const bonus = calculateTacticsBonus(tactics);
+  const nextOpponent = pendingMatch
+    ? teams.find((team) => team.id === (pendingMatch.teamHomeId === userTeamId ? pendingMatch.teamAwayId : pendingMatch.teamHomeId))?.name ?? '상대 대기'
+    : null;
 
   return (
     <div>
@@ -177,6 +188,38 @@ export function TacticsView() {
         </div>
       )}
 
+      {coachRecommendation && (
+        <div className="fm-alert fm-alert--info fm-flex-col fm-gap-xs fm-mb-md" style={{ alignItems: 'flex-start' }}>
+          <div className="fm-flex fm-items-center fm-gap-xs">
+            <span className="fm-text-xs fm-font-bold fm-text-accent">코치 브리핑</span>
+            <span className="fm-text-xs fm-text-secondary">{coachRecommendation.authorName}</span>
+          </div>
+          <span className="fm-text-md fm-font-semibold fm-text-primary">{coachRecommendation.headline}</span>
+          <span className="fm-text-xs fm-text-secondary">{coachRecommendation.summary}</span>
+          <ul className="fm-text-xs fm-text-secondary" style={{ margin: 0, paddingLeft: 18 }}>
+            {coachRecommendation.reasons.map((reason) => (
+              <li key={reason}>{reason}</li>
+            ))}
+          </ul>
+          <button
+            className="fm-btn fm-btn--primary fm-btn--sm"
+            onClick={async () => {
+              try {
+                await applyCoachTacticsRecommendation(userTeamId, coachRecommendation);
+                const refreshed = await getTeamTactics(userTeamId);
+                setTacticsState(refreshed ?? createDefaultTactics(userTeamId));
+                setMessage({ text: '코치 추천 전술안을 적용했습니다.', type: 'success' });
+              } catch (error) {
+                console.error('코치 전술 추천 적용 실패:', error);
+                setMessage({ text: '코치 추천 전술안 적용에 실패했습니다.', type: 'error' });
+              }
+            }}
+          >
+            전술 추천 적용
+          </button>
+        </div>
+      )}
+
       {message && (
         <div className={`fm-alert ${message.type === 'success' ? 'fm-alert--success' : 'fm-alert--danger'} fm-mb-md`}>
           <span className="fm-alert__text">{message.text}</span>
@@ -184,6 +227,44 @@ export function TacticsView() {
       )}
 
       {/* 전략 선택 섹션 */}
+      <MainLoopPanel
+        eyebrow="Tactics Loop"
+        title="전술 조정도 다음 경기 준비 흐름 안에서 바로 읽히게 정리했습니다"
+        subtitle="세부 수치보다 먼저, 지금 전술이 무엇을 노리고 있고 어떤 리스크를 안고 있는지 한 화면에서 파악할 수 있게 상단 요약을 추가했습니다."
+        insights={[
+          {
+            label: '오늘 해야 할 일',
+            value: `${EARLY_STRATEGY_LABELS[tactics.earlyStrategy]} / ${MID_STRATEGY_LABELS[tactics.midStrategy]}`,
+            detail: `후반 운영은 ${LATE_STRATEGY_LABELS[tactics.lateStrategy]}, 시야 우선순위는 ${WARD_PRIORITY_LABELS[tactics.wardPriority]}입니다.`,
+            tone: 'accent',
+          },
+          {
+            label: '가장 큰 리스크',
+            value: coachRecommendation ? '코치 피드백' : aiSuggestion ? 'AI 제안' : '안정',
+            detail: coachRecommendation?.summary ?? aiSuggestion?.reason ?? '즉시 수정이 필요한 전술 리스크는 아직 크게 보이지 않습니다.',
+            tone: coachRecommendation || aiSuggestion ? 'danger' : 'success',
+          },
+          {
+            label: '다음 경기',
+            value: pendingMatch ? `${pendingMatch.matchDate ?? '일정'} vs ${nextOpponent}` : '경기 일정 대기',
+            detail: pendingMatch ? '밴픽과 오브젝트 우선순위 판단을 미리 맞춰 두면 경기 당일 판단이 훨씬 빨라집니다.' : '경기 일정이 가까워지면 이 화면의 결정이 DayView와 프리매치 준비에 바로 연결됩니다.',
+            tone: 'accent',
+          },
+          {
+            label: '코치 조언',
+            value: coachRecommendation?.authorName ?? (aiSuggestion ? 'AI 코치' : '준비 완료'),
+            detail: coachRecommendation?.headline ?? aiSuggestion?.suggestion ?? '현재 전술 보정치와 운영 축이 안정권입니다. 다음 상대가 잡히면 세부 조정을 이어가면 됩니다.',
+            tone: 'success',
+          },
+        ]}
+        actions={[
+          { label: 'DayView로 돌아가기', onClick: () => navigate('/manager/day'), variant: 'primary' },
+          { label: '훈련 조정', onClick: () => navigate('/manager/training') },
+          { label: 'AI 코치 다시 받기', onClick: () => void handleAiCoach(), variant: 'info', disabled: aiSuggestionLoading },
+        ]}
+        note={`현재 전술 보정치는 공격 ${bonus.offense}, 수비 ${bonus.defense}, 운영 ${bonus.objective}입니다.`}
+      />
+
       <div className="fm-panel fm-mb-lg">
         <div className="fm-panel__header">
           <span className="fm-panel__title">게임 페이즈별 전략</span>

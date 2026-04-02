@@ -65,6 +65,19 @@ function buildSwapTags(player: Player | undefined, championId: string): string[]
   return tags;
 }
 
+function buildSwapSummary(player: Player | undefined, championId: string): string {
+  if (!player) return '선수 배치가 아직 확정되지 않았습니다.';
+
+  const comfortPick = [...player.championPool]
+    .sort((left, right) => right.proficiency - left.proficiency)
+    .slice(0, 3)
+    .some((entry) => entry.championId === championId);
+
+  return comfortPick
+    ? '주력 챔피언 계열이라 최종 배치 적합도가 높습니다.'
+    : '숙련도는 충분하지만 마지막 교정이 필요할 수 있습니다.';
+}
+
 export function DraftView() {
   useBgm('draft');
 
@@ -396,6 +409,10 @@ export function DraftView() {
                   <p className="draft-swap-desc">
                     같은 팀 카드에서 챔피언을 하나 누르고, 바꿀 다른 카드를 누르면 챔피언만 서로 맞바뀝니다. 포지션 슬롯은 그대로 유지됩니다.
                   </p>
+                </div>
+
+                <div className="fm-alert fm-alert--info" style={{ marginBottom: 12 }}>
+                  <span className="fm-alert__text">주력 픽은 안정적이고 낯선 픽은 위험합니다. 최종 배치 전에 카드 상태를 한 번 더 확인하세요.</span>
                 </div>
 
                 <div className="draft-swap-picks">

@@ -9,6 +9,7 @@ import { FINANCIAL_CONSTANTS, MATCH_CONSTANTS } from '../data/systemPrompt';
 import { LCK_TEAMS, LCS_TEAMS, LEC_TEAMS, LPL_TEAMS } from '../data/rosterDb';
 import type { Role, RosterPlayer, TeamData } from '../data/rosterDb';
 import type { Position, Region } from '../types';
+import type { StaffRole, StaffRoleFlexibility } from '../types/staff';
 import { clamp } from '../utils/mathUtils';
 import { getDatabase, withTransaction } from './database';
 import { insertChampion, insertPlayer, insertPlayerTrait, insertTeam } from './queries';
@@ -32,6 +33,23 @@ const REGION_NATIONALITY: Record<Region, string> = {
   LCS: 'NA',
   LEC: 'EU',
 };
+
+function getDefaultPreferredRole(role: StaffRole): StaffRole {
+  return role;
+}
+
+function getDefaultRoleFlexibility(role: StaffRole): StaffRoleFlexibility {
+  switch (role) {
+    case 'head_coach':
+      return 'strict';
+    case 'coach':
+    case 'analyst':
+    case 'data_analyst':
+      return 'normal';
+    default:
+      return 'flexible';
+  }
+}
 
 /**
  * 지표를 -10 ~ +10 범위의 보정값으로 정규화
@@ -396,9 +414,22 @@ async function seedFreeAgents(): Promise<void> {
   // 자유계약 스태프 시딩
   for (const staff of FREE_AGENT_STAFF) {
     await db.execute(
-      `INSERT INTO staff (team_id, name, role, ability, specialty, salary, morale, contract_end_season, hired_date, is_free_agent)
-       VALUES (NULL, $1, $2, $3, $4, $5, 70, 0, '2026-01-01', 1)`,
-      [staff.name, staff.role, staff.ability, staff.specialty, staff.salary],
+      `INSERT INTO staff (
+        team_id, name, role, ability, specialty, salary, morale, contract_end_season, hired_date, is_free_agent,
+        philosophy, nationality, preferred_role, role_flexibility, career_origin
+      )
+       VALUES (NULL, $1, $2, $3, $4, $5, 70, 0, '2026-01-01', 1, $6, $7, $8, $9, NULL)`,
+      [
+        staff.name,
+        staff.role,
+        staff.ability,
+        staff.specialty,
+        staff.salary,
+        staff.philosophy,
+        staff.nationality,
+        getDefaultPreferredRole(staff.role),
+        getDefaultRoleFlexibility(staff.role),
+      ],
     );
   }
 }

@@ -52,6 +52,7 @@ import { initGlobalRng, getBaseSeed, randomInt } from '../../utils/random';
 import { getTrainingScheduleEntry } from '../training/trainingEngine';
 import { getActiveInterventionEffects } from '../manager/managerInterventionEngine';
 import { getManagerIdentity, getManagerIdentityEffects, type ManagerIdentityEffects } from '../manager/managerIdentityEngine';
+import { assertManagerReadyToAdvance } from '../manager/managerSetupEngine';
 import * as dayAdvancerTasks from './dayAdvancerTasks';
 
 // advanceDay가 중복 실행되지 않도록 단일 큐로 직렬화한다.
@@ -196,7 +197,7 @@ export async function advanceDay(
   seasonId: number,
   currentDate: string,
   userTeamId: string,
-  _gameMode: GameMode,
+  gameMode: GameMode,
   overrideDayType?: DayType,
   saveId?: number,
   difficulty: Difficulty = 'normal',
@@ -206,6 +207,9 @@ export async function advanceDay(
   _dayAdvanceQueue = new Promise<void>(resolve => { releaseLock = resolve; });
   await prev;
   try {
+  if (gameMode === 'manager') {
+    await assertManagerReadyToAdvance(userTeamId);
+  }
   const baseSeed = getBaseSeed();
   if (baseSeed) {
     initGlobalRng(`${baseSeed}_day_${currentDate}`);
@@ -739,6 +743,10 @@ export async function skipToNextMatchDay(
   defaultActivity?: DayType,
   difficulty: Difficulty = 'normal',
 ): Promise<DayResult[]> {
+  if (gameMode === 'manager') {
+    await assertManagerReadyToAdvance(userTeamId);
+  }
+
   const results: DayResult[] = [];
   let date = currentDate;
 
