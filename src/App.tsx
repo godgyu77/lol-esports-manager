@@ -5,6 +5,7 @@ import { Skeleton } from './components/Skeleton';
 import { AiSetupWizard } from './components/AiSetupWizard';
 import { useTheme } from './hooks/useTheme';
 import { useSettingsStore } from './stores/settingsStore';
+import type { SettingsState } from './stores/settingsStore';
 import { ToastContainer } from './components/ToastContainer';
 
 // ─────────────────────────────────────────
@@ -77,8 +78,8 @@ const DraftView = lazy(() => import('./features/draft/DraftView').then(m => ({ d
 const LiveMatchView = lazy(() => import('./features/match/LiveMatchView').then(m => ({ default: m.LiveMatchView })));
 
 function AiSetupGate() {
-  const aiSetupCompleted = useSettingsStore((s) => s.aiSetupCompleted);
-  const aiSetupSkipped = useSettingsStore((s) => s.aiSetupSkipped);
+  const aiSetupCompleted = useSettingsStore((s: SettingsState) => s.aiSetupCompleted);
+  const aiSetupSkipped = useSettingsStore((s: SettingsState) => s.aiSetupSkipped);
 
   if (!aiSetupCompleted && !aiSetupSkipped) {
     return (

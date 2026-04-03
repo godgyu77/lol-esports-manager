@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { PlayerAvatar } from '../../../../components/PlayerAvatar';
 import { updatePlayerDivision, updateTeamPlayStyle } from '../../../../db/queries';
 import type { Position } from '../../../../types/game';
+import type { Player } from '../../../../types/player';
 import type { Team } from '../../../../types/team';
 import type { PlayStyle } from '../../../../types/team';
 import { POSITION_LABELS_KR as POSITION_LABELS } from '../../../../utils/constants';
@@ -21,8 +22,10 @@ interface RosterTabProps {
   setTeams: (teams: Team[]) => void;
 }
 
+type RosterPlayer = Player & { division?: Division };
+
 function getMainAverage(team: Team): number {
-  const mainPlayers = team.roster.filter((player) => (player as { division?: string }).division === 'main');
+  const mainPlayers = team.roster.filter((player) => (player as RosterPlayer).division === 'main');
   if (mainPlayers.length === 0) return 0;
   return Math.round(mainPlayers.reduce((sum, player) => sum + getOvr(player), 0) / mainPlayers.length);
 }
@@ -34,8 +37,8 @@ function getSwapPreview(userTeam: Team, sourceId: string, targetId: string): { d
 
   const currentMainAverage = getMainAverage(userTeam);
   const projectedRoster = userTeam.roster.map((player) => {
-    if (player.id === sourceId) return { ...player, division: target.division };
-    if (player.id === targetId) return { ...player, division: source.division };
+    if (player.id === sourceId) return { ...player, division: (target as RosterPlayer).division };
+    if (player.id === targetId) return { ...player, division: (source as RosterPlayer).division };
     return player;
   });
   const projectedTeam = { ...userTeam, roster: projectedRoster };
@@ -145,8 +148,8 @@ export function RosterTab({ userTeam, teams, setTeams }: RosterTabProps) {
     setMessage(`팀 운영 스타일을 "${PLAY_STYLE_INFO[style].name}"로 변경했습니다.`);
   }, [setTeams, teams, userTeam.id]);
 
-  const mainRoster = userTeam.roster.filter((player) => (player as { division?: string }).division === 'main');
-  const subRoster = userTeam.roster.filter((player) => (player as { division?: string }).division === 'sub');
+  const mainRoster = userTeam.roster.filter((player) => (player as RosterPlayer).division === 'main');
+  const subRoster = userTeam.roster.filter((player) => (player as RosterPlayer).division === 'sub');
   const selectedPlayer = swapSource ? userTeam.roster.find((player) => player.id === swapSource.id) : null;
 
   const renderTable = (players: typeof userTeam.roster, title: string, division: Division) => (

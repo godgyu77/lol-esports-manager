@@ -7,6 +7,7 @@
 
 import { getDatabase } from '../../db/database';
 import { clamp } from '../../utils/mathUtils';
+import { getManagerIdentity, getManagerIdentityEffects } from '../manager/managerIdentityEngine';
 
 // ─────────────────────────────────────────
 // 타입
@@ -34,6 +35,14 @@ export interface PlayerManagementInsight {
   weakestScore: number;
   recommendation: string;
   urgency: 'high' | 'medium' | 'low';
+}
+
+export interface RoleExpectationState {
+  playerId: string;
+  expectedRole: 'starter' | 'rotation' | 'prospect' | 'bench';
+  actualRole: 'starter' | 'rotation' | 'prospect' | 'bench';
+  mismatchScore: number;
+  summary: string;
 }
 
 // ─────────────────────────────────────────
@@ -74,6 +83,10 @@ interface RecentKDARow {
 
 interface ChemistryRow {
   chemistry_score: number;
+}
+
+interface RelationAffinityRow {
+  affinity: number;
 }
 
 interface SatisfactionRow {
@@ -164,6 +177,7 @@ export async function calculatePlayerSatisfaction(
   playerId: string,
   teamId: string,
   seasonId: number,
+  saveId?: number,
 ): Promise<PlayerSatisfaction> {
   const db = await getDatabase();
 
@@ -192,12 +206,17 @@ export async function calculatePlayerSatisfaction(
       calculateChemistrySatisfaction(db, playerId),
     ]);
 
+  const roleExpectationState = await getRoleExpectationState(playerId, teamId, seasonId, saveId).catch(() => null);
+  const adjustedRoleClarity = roleExpectationState
+    ? clamp(roleClarity - Math.round(roleExpectationState.mismatchScore * 0.4), 0, 100)
+    : roleClarity;
+
   const factors: SatisfactionFactors = {
     playtime,
     salary,
     teamPerformance: teamPerf,
     personalPerformance: personalPerf,
-    roleClarity,
+    roleClarity: adjustedRoleClarity,
     teamChemistry: chemistry,
   };
 
@@ -225,6 +244,7 @@ export async function processWeeklySatisfaction(
   teamId: string,
   seasonId: number,
   currentDate: string,
+  saveId?: number,
 ): Promise<void> {
   const db = await getDatabase();
 
@@ -234,7 +254,7 @@ export async function processWeeklySatisfaction(
   );
 
   for (const row of playerRows) {
-    const satisfaction = await calculatePlayerSatisfaction(row.id, teamId, seasonId);
+    const satisfaction = await calculatePlayerSatisfaction(row.id, teamId, seasonId, saveId);
 
     // DB 저장
     await db.execute(
@@ -272,6 +292,7 @@ export async function processWeeklySatisfaction(
 export async function getSatisfactionReport(
   teamId: string,
   seasonId?: number,
+  saveId?: number,
 ): Promise<PlayerSatisfaction[]> {
   const db = await getDatabase();
 
@@ -309,7 +330,7 @@ export async function getSatisfactionReport(
 
   const results: PlayerSatisfaction[] = [];
   for (const row of playerRows) {
-    results.push(await calculatePlayerSatisfaction(row.id, teamId, activeSeasonId));
+    results.push(await calculatePlayerSatisfaction(row.id, teamId, activeSeasonId, saveId));
   }
 
   return results;
@@ -334,12 +355,122 @@ export async function getPlayerManagementInsights(
   teamId: string,
   seasonId?: number,
   limit = 5,
+  saveId?: number,
 ): Promise<PlayerManagementInsight[]> {
-  const report = await getSatisfactionReport(teamId, seasonId);
+  const report = await getSatisfactionReport(teamId, seasonId, saveId);
   return report
     .map(buildManagementInsight)
     .sort((a, b) => a.overallSatisfaction - b.overallSatisfaction || a.weakestScore - b.weakestScore)
     .slice(0, limit);
+}
+
+function rankToExpectedRole(rank: number, closeToStarter: boolean, age: number, potential: number): RoleExpectationState['expectedRole'] {
+  if (rank === 0) return 'starter';
+  if (rank === 1 && closeToStarter) return 'rotation';
+  if (age <= 20 || potential >= 82) return 'prospect';
+  return 'bench';
+}
+
+function ratioToActualRole(ratio: number): RoleExpectationState['actualRole'] {
+  if (ratio >= 0.75) return 'starter';
+  if (ratio >= 0.35) return 'rotation';
+  if (ratio >= 0.12) return 'prospect';
+  return 'bench';
+}
+
+const ROLE_WEIGHT: Record<RoleExpectationState['expectedRole'], number> = {
+  starter: 3,
+  rotation: 2,
+  prospect: 1,
+  bench: 0,
+};
+
+export async function getRoleExpectationState(
+  playerId: string,
+  teamId: string,
+  seasonId: number,
+  saveId?: number,
+): Promise<RoleExpectationState> {
+  const db = await getDatabase();
+  const [playerRows, positionRows, gamesRows, managerIdentity] = await Promise.all([
+    db.select<Array<{ id: string; position: string; salary: number; age: number; potential: number; division: string | null; mechanical: number; game_sense: number; teamwork: number; consistency: number; laning: number; aggression: number }>>(
+      `SELECT id, position, salary, age, potential, division, mechanical, game_sense, teamwork, consistency, laning, aggression
+       FROM players
+       WHERE id = $1
+       LIMIT 1`,
+      [playerId],
+    ),
+    db.select<Array<{ id: string; position: string; salary: number; age: number; potential: number; mechanical: number; game_sense: number; teamwork: number; consistency: number; laning: number; aggression: number }>>(
+      `SELECT id, position, salary, age, potential, mechanical, game_sense, teamwork, consistency, laning, aggression
+       FROM players
+       WHERE team_id = $1
+         AND position = (SELECT position FROM players WHERE id = $2 LIMIT 1)`,
+      [teamId, playerId],
+    ),
+    db.select<GamesPlayedRow[]>(
+      `SELECT
+         (SELECT COUNT(DISTINCT match_id) FROM player_game_stats
+          WHERE player_id = $1
+            AND match_id IN (SELECT id FROM matches WHERE season_id = $3)) as player_games,
+         (SELECT COUNT(*) FROM matches
+          WHERE season_id = $3 AND is_played = 1
+            AND (team_home_id = $2 OR team_away_id = $2)) as total_team_games`,
+      [playerId, teamId, seasonId],
+    ),
+    saveId ? getManagerIdentity(saveId).catch(() => null) : Promise.resolve(null),
+  ]);
+
+  const player = playerRows[0];
+  if (!player) {
+    return {
+      playerId,
+      expectedRole: 'rotation',
+      actualRole: 'rotation',
+      mismatchScore: 0,
+      summary: 'Role expectation is currently neutral.',
+    };
+  }
+
+  const sortedPeers = [...positionRows].sort((left, right) => {
+    const leftOvr = calculateOVR(left as PlayerInfoRow);
+    const rightOvr = calculateOVR(right as PlayerInfoRow);
+    return rightOvr - leftOvr;
+  });
+  const playerIndex = Math.max(0, sortedPeers.findIndex((row) => row.id === playerId));
+  const playerOvr = calculateOVR(player as PlayerInfoRow);
+  const starterOvr = sortedPeers[0] ? calculateOVR(sortedPeers[0] as PlayerInfoRow) : playerOvr;
+  const closeToStarter = Math.abs(starterOvr - playerOvr) <= 4;
+  let expectedRole = rankToExpectedRole(playerIndex, closeToStarter, player.age, player.potential);
+
+  if (managerIdentity) {
+    const identityEffects = getManagerIdentityEffects(managerIdentity.philosophy);
+    if (identityEffects.playerMeetingBonus > 0 && player.potential >= 80 && expectedRole === 'bench') {
+      expectedRole = 'prospect';
+    }
+    if (identityEffects.moraleRiskModifier > 0 && playerIndex === 0) {
+      expectedRole = 'starter';
+    }
+  }
+
+  const totalGames = gamesRows[0]?.total_team_games ?? 0;
+  const playerGames = gamesRows[0]?.player_games ?? 0;
+  const actualRatio = totalGames > 0 ? playerGames / totalGames : player.division === 'main' ? 0.7 : 0.15;
+  const actualRole = ratioToActualRole(actualRatio);
+  const mismatchScore = Math.max(0, (ROLE_WEIGHT[expectedRole] - ROLE_WEIGHT[actualRole]) * 18);
+  const summary =
+    mismatchScore >= 36
+      ? 'Current minutes are well below the role this player is likely expecting.'
+      : mismatchScore >= 18
+        ? 'The player is beginning to notice a gap between expected role and actual usage.'
+        : 'Role usage and expectation are mostly aligned.';
+
+  return {
+    playerId,
+    expectedRole,
+    actualRole,
+    mismatchScore,
+    summary,
+  };
 }
 
 // ─────────────────────────────────────────
@@ -476,16 +607,31 @@ async function calculateChemistrySatisfaction(
   db: Awaited<ReturnType<typeof getDatabase>>,
   playerId: string,
 ): Promise<number> {
-  const rows = await db.select<ChemistryRow[]>(
-    `SELECT chemistry_score FROM player_chemistry
-     WHERE player_a_id = $1 OR player_b_id = $1`,
-    [playerId],
-  );
+  const [chemistryRows, relationRows] = await Promise.all([
+    db.select<ChemistryRow[]>(
+      `SELECT chemistry_score FROM player_chemistry
+       WHERE player_a_id = $1 OR player_b_id = $1`,
+      [playerId],
+    ),
+    db.select<RelationAffinityRow[]>(
+      `SELECT affinity FROM player_relations
+       WHERE player_id = $1`,
+      [playerId],
+    ),
+  ]);
 
-  if (rows.length === 0) return 50;
+  if (chemistryRows.length === 0 && relationRows.length === 0) return 50;
 
-  const avgChemistry = rows.reduce((s, r) => s + r.chemistry_score, 0) / rows.length;
-  return clamp(Math.round(avgChemistry), 0, 100);
+  const chemistryAverage =
+    chemistryRows.length > 0
+      ? chemistryRows.reduce((sum, row) => sum + row.chemistry_score, 0) / chemistryRows.length
+      : 50;
+  const relationAverage =
+    relationRows.length > 0
+      ? relationRows.reduce((sum, row) => sum + row.affinity, 0) / relationRows.length
+      : 50;
+
+  return clamp(Math.round(chemistryAverage * 0.6 + relationAverage * 0.4), 0, 100);
 }
 
 // ─────────────────────────────────────────

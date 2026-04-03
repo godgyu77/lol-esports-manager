@@ -6,6 +6,7 @@ import type { Season } from '../../../types/game';
 const {
   mockGetTeamStaff,
   mockCalculateStaffBonuses,
+  mockGetStaffFitSummary,
   mockGetFreeAgentStaff,
   mockBuildStaffCandidateView,
   mockHireStaffByOffer,
@@ -15,6 +16,7 @@ const {
 } = vi.hoisted(() => ({
   mockGetTeamStaff: vi.fn(),
   mockCalculateStaffBonuses: vi.fn(),
+  mockGetStaffFitSummary: vi.fn(),
   mockGetFreeAgentStaff: vi.fn(),
   mockBuildStaffCandidateView: vi.fn(),
   mockHireStaffByOffer: vi.fn(),
@@ -26,6 +28,7 @@ const {
 vi.mock('../../../engine/staff/staffEngine', () => ({
   getTeamStaff: mockGetTeamStaff,
   calculateStaffBonuses: mockCalculateStaffBonuses,
+  getStaffFitSummary: mockGetStaffFitSummary,
   getFreeAgentStaff: mockGetFreeAgentStaff,
   buildStaffCandidateView: mockBuildStaffCandidateView,
   hireStaffByOffer: mockHireStaffByOffer,
@@ -82,6 +85,7 @@ describe('StaffView', () => {
       opponentAnalysisBonus: 0,
       metaAdaptationBonus: 0,
     });
+    mockGetStaffFitSummary.mockResolvedValue([]);
   });
 
   it('shows the manager-as-head-coach banner and current coaching staff', async () => {
@@ -144,7 +148,7 @@ describe('StaffView', () => {
       decision: 'accept',
       acceptance: 'medium',
       score: 64,
-      reasons: ['감독 경험이 있어 코치 역할 제안에 자존심이 걸려 있습니다.', '팀 프로젝트의 매력도는 나쁘지 않게 평가합니다.'],
+      reasons: ['Head coach background makes the coaching offer realistic.', 'The club project looks competitive enough.'],
     });
 
     const { user } = renderWithProviders(<StaffView />, {
@@ -155,7 +159,7 @@ describe('StaffView', () => {
 
     expect(await screen.findByText('Former Boss')).toBeInTheDocument();
     expect(screen.getAllByText('감독 출신').length).toBeGreaterThan(0);
-    expect(screen.getByText(/자존심이 걸려 있습니다/)).toBeInTheDocument();
+    expect(screen.getByText(/coaching offer realistic/i)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '코치 제안' }));
 

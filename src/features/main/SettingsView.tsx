@@ -7,6 +7,7 @@ import { AI_FEATURE_POLICIES, describeProviderExecution, getProviderRecommendati
 import { AiSetupWizard } from '../../components/AiSetupWizard';
 import { useSettingsStore } from '../../stores/settingsStore';
 import type { AiProvider, Difficulty, Theme } from '../../stores/settingsStore';
+import type { SettingsState } from '../../stores/settingsStore';
 import './introFlow.css';
 
 const SPEED_OPTIONS = [
@@ -70,35 +71,35 @@ function getPriorityLabel(priority: 'high' | 'medium' | 'low'): string {
 
 export function SettingsView() {
   const navigate = useNavigate();
-  const defaultSpeed = useSettingsStore((s) => s.defaultSpeed);
-  const aiEnabled = useSettingsStore((s) => s.aiEnabled);
-  const aiModel = useSettingsStore((s) => s.aiModel);
-  const aiSetupCompleted = useSettingsStore((s) => s.aiSetupCompleted);
-  const aiSetupSkipped = useSettingsStore((s) => s.aiSetupSkipped);
-  const autoSaveInterval = useSettingsStore((s) => s.autoSaveInterval);
-  const difficulty = useSettingsStore((s) => s.difficulty);
-  const soundEnabled = useSettingsStore((s) => s.soundEnabled);
-  const soundVolume = useSettingsStore((s) => s.soundVolume);
-  const theme = useSettingsStore((s) => s.theme);
-  const windowMode = useSettingsStore((s) => s.windowMode);
-  const aiProvider = useSettingsStore((s) => s.aiProvider);
-  const hasApiKey = useSettingsStore((s) => s.hasApiKey);
-  const apiEndpoint = useSettingsStore((s) => s.apiEndpoint);
-  const apiModel = useSettingsStore((s) => s.apiModel);
-  const setDefaultSpeed = useSettingsStore((s) => s.setDefaultSpeed);
-  const setAiEnabled = useSettingsStore((s) => s.setAiEnabled);
-  const setAiModel = useSettingsStore((s) => s.setAiModel);
-  const setAutoSaveInterval = useSettingsStore((s) => s.setAutoSaveInterval);
-  const setDifficulty = useSettingsStore((s) => s.setDifficulty);
-  const setSoundEnabled = useSettingsStore((s) => s.setSoundEnabled);
-  const setSoundVolume = useSettingsStore((s) => s.setSoundVolume);
-  const setTheme = useSettingsStore((s) => s.setTheme);
-  const setWindowMode = useSettingsStore((s) => s.setWindowMode);
-  const setAiProvider = useSettingsStore((s) => s.setAiProvider);
-  const setApiKey = useSettingsStore((s) => s.setApiKey);
-  const setApiEndpoint = useSettingsStore((s) => s.setApiEndpoint);
-  const setApiModel = useSettingsStore((s) => s.setApiModel);
-  const getApiKey = useSettingsStore((s) => s.getApiKey);
+  const defaultSpeed = useSettingsStore((s: SettingsState) => s.defaultSpeed);
+  const aiEnabled = useSettingsStore((s: SettingsState) => s.aiEnabled);
+  const aiModel = useSettingsStore((s: SettingsState) => s.aiModel);
+  const aiSetupCompleted = useSettingsStore((s: SettingsState) => s.aiSetupCompleted);
+  const aiSetupSkipped = useSettingsStore((s: SettingsState) => s.aiSetupSkipped);
+  const autoSaveInterval = useSettingsStore((s: SettingsState) => s.autoSaveInterval);
+  const difficulty = useSettingsStore((s: SettingsState) => s.difficulty);
+  const soundEnabled = useSettingsStore((s: SettingsState) => s.soundEnabled);
+  const soundVolume = useSettingsStore((s: SettingsState) => s.soundVolume);
+  const theme = useSettingsStore((s: SettingsState) => s.theme);
+  const windowMode = useSettingsStore((s: SettingsState) => s.windowMode);
+  const aiProvider = useSettingsStore((s: SettingsState) => s.aiProvider);
+  const hasApiKey = useSettingsStore((s: SettingsState) => s.hasApiKey);
+  const apiEndpoint = useSettingsStore((s: SettingsState) => s.apiEndpoint);
+  const apiModel = useSettingsStore((s: SettingsState) => s.apiModel);
+  const setDefaultSpeed = useSettingsStore((s: SettingsState) => s.setDefaultSpeed);
+  const setAiEnabled = useSettingsStore((s: SettingsState) => s.setAiEnabled);
+  const setAiModel = useSettingsStore((s: SettingsState) => s.setAiModel);
+  const setAutoSaveInterval = useSettingsStore((s: SettingsState) => s.setAutoSaveInterval);
+  const setDifficulty = useSettingsStore((s: SettingsState) => s.setDifficulty);
+  const setSoundEnabled = useSettingsStore((s: SettingsState) => s.setSoundEnabled);
+  const setSoundVolume = useSettingsStore((s: SettingsState) => s.setSoundVolume);
+  const setTheme = useSettingsStore((s: SettingsState) => s.setTheme);
+  const setWindowMode = useSettingsStore((s: SettingsState) => s.setWindowMode);
+  const setAiProvider = useSettingsStore((s: SettingsState) => s.setAiProvider);
+  const setApiKey = useSettingsStore((s: SettingsState) => s.setApiKey);
+  const setApiEndpoint = useSettingsStore((s: SettingsState) => s.setApiEndpoint);
+  const setApiModel = useSettingsStore((s: SettingsState) => s.setApiModel);
+  const getApiKey = useSettingsStore((s: SettingsState) => s.getApiKey);
 
   const [ollamaStatus, setOllamaStatus] = useState<boolean | null>(null);
   const [installedModels, setInstalledModels] = useState<string[]>([]);

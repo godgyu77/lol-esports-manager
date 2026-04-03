@@ -41,6 +41,9 @@ export interface TacticsBonus {
   midBonus: number;
   lateBonus: number;
   objectiveBonus: number;
+  offense: number;
+  defense: number;
+  objective: number;
 }
 
 // ─────────────────────────────────────────
@@ -162,6 +165,9 @@ export function calculateTacticsBonus(tactics: TeamTactics): TacticsBonus {
     midBonus: midBonusMap[tactics.midStrategy],
     lateBonus: lateBonusMap[tactics.lateStrategy] - aggressionOffset,
     objectiveBonus,
+    offense: Math.round((midBonusMap[tactics.midStrategy] + Math.max(aggressionOffset, 0)) * 100),
+    defense: Math.round((lateBonusMap[tactics.lateStrategy] + Math.max(-aggressionOffset, 0)) * 100),
+    objective: Math.round(objectiveBonus * 100),
   };
 }
 

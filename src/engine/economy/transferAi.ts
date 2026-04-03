@@ -3,7 +3,6 @@ import {
   createTransferOffer,
   getAllTeams,
   getPlayersByTeamId,
-  getTeamTotalSalary,
   getFreeAgents as dbGetFreeAgents,
   type TransferOffer,
 } from '../../db/queries';
@@ -15,9 +14,9 @@ import {
   calculateFairSalary,
   calculatePlayerValue,
   findWeakestPosition,
-  SALARY_CAP,
   WEAK_POSITION_THRESHOLD,
 } from './transferValuation';
+import { evaluatePayrollImpact, getTeamPayrollSnapshot } from './payrollEngine';
 import { acceptFreeAgentOffer, acceptTransferOffer } from './transferTransactions';
 import { getPlayerOverall } from '../../utils/playerUtils';
 
@@ -50,9 +49,12 @@ export async function processAIFreeAgentSignings(
     const topCandidates = candidates.slice(0, Math.min(3, candidates.length));
     const target = pickRandom(topCandidates);
     const fairSalary = calculateFairSalary(target);
-    const currentTotalSalary = await getTeamTotalSalary(team.id);
-
-    if (currentTotalSalary + fairSalary > SALARY_CAP) continue;
+    const payrollSnapshot = await getTeamPayrollSnapshot(team.id);
+    const payrollImpact = evaluatePayrollImpact({
+      totalPayroll: payrollSnapshot.totalPayroll + fairSalary,
+      salaryCap: payrollSnapshot.salaryCap,
+    });
+    if (payrollImpact.pressureBand === 'hard_stop') continue;
     if (team.budget < fairSalary) continue;
 
     const agentResult = await agentNegotiate(target.id, fairSalary, fairSalary);
@@ -138,8 +140,12 @@ export async function processAITransfers(
 
     if (buyingTeam.budget < transferFee) continue;
 
-    const buyingTotalSalary = await getTeamTotalSalary(buyingTeam.id);
-    if (buyingTotalSalary + offeredSalary > SALARY_CAP) continue;
+    const payrollSnapshot = await getTeamPayrollSnapshot(buyingTeam.id);
+    const payrollImpact = evaluatePayrollImpact({
+      totalPayroll: payrollSnapshot.totalPayroll + offeredSalary,
+      salaryCap: payrollSnapshot.salaryCap,
+    });
+    if (payrollImpact.pressureBand === 'hard_stop') continue;
 
     const sellingTeam = teams.find(t => t.id === selected.sellingTeamId);
     if (!sellingTeam) continue;

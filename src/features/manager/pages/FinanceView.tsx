@@ -20,8 +20,10 @@ import {
   type SponsorTier,
 } from '../../../engine/economy/sponsorEngine';
 import { getManagerIdentity, getManagerIdentityEffects } from '../../../engine/manager/managerIdentityEngine';
+import { getBudgetPressureSnapshot } from '../../../engine/manager/systemDepthEngine';
 import { useGameStore } from '../../../stores/gameStore';
 import { formatAmount } from '../../../utils/formatUtils';
+import type { BudgetPressureSnapshot } from '../../../types/systemDepth';
 
 const CATEGORY_LABELS: Record<string, string> = {
   salary: '선수 연봉',
@@ -78,6 +80,7 @@ export function FinanceView() {
   const [offers, setOffers] = useState<ConditionalSponsorOffer[]>([]);
   const [isGeneratingOffers, setIsGeneratingOffers] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pressureSnapshot, setPressureSnapshot] = useState<BudgetPressureSnapshot | null>(null);
 
   const rerollKey = season ? `sponsor_rerolls_${season.id}` : '';
   const [rerollsUsed, setRerollsUsed] = useState<number>(() => {
@@ -107,11 +110,12 @@ export function FinanceView() {
     setError(null);
 
     try {
-      const [financeSummary, team, sponsors, identity] = await Promise.all([
+      const [financeSummary, team, sponsors, identity, pressure] = await Promise.all([
         getTeamFinanceSummary(save.userTeamId, season.id),
         getTeamWithRoster(save.userTeamId),
         getActiveSponsors(save.userTeamId, season.id),
         getManagerIdentity(save.id).catch(() => null),
+        getBudgetPressureSnapshot(save.userTeamId, season.id).catch(() => null),
       ]);
 
       const nextBudget = team?.budget ?? 0;
@@ -123,6 +127,7 @@ export function FinanceView() {
       setReputation(nextReputation);
       setSponsorBonus(nextSponsorBonus);
       setActiveSponsors(sponsors);
+      setPressureSnapshot(pressure);
       syncStoreTeam(nextBudget, nextReputation);
     } catch (err) {
       console.error('finance load failed:', err);
@@ -258,6 +263,97 @@ export function FinanceView() {
           </div>
         </div>
       </div>
+
+      {pressureSnapshot && (
+        <div className="fm-panel fm-mb-lg">
+          <div className="fm-panel__header">
+            <span className="fm-panel__title">Budget Pressure</span>
+          </div>
+          <div className="fm-panel__body">
+            <div className="fm-grid fm-grid--3 fm-mb-md">
+              <div className="fm-card">
+                <div className="fm-flex fm-justify-between fm-items-center fm-mb-sm">
+                  <strong className="fm-text-primary">Pressure</strong>
+                  <span className={`fm-badge ${pressureSnapshot.pressureLevel === 'critical' ? 'fm-badge--danger' : pressureSnapshot.pressureLevel === 'watch' ? 'fm-badge--warning' : 'fm-badge--success'}`}>
+                    {pressureSnapshot.pressureLevel}
+                  </span>
+                </div>
+                <p className="fm-text-secondary" style={{ margin: 0 }}>
+                  Score {pressureSnapshot.pressureScore} / 100
+                </p>
+              </div>
+              <div className="fm-card">
+                <div className="fm-flex fm-justify-between fm-items-center fm-mb-sm">
+                  <strong className="fm-text-primary">Weekly burn</strong>
+                  <span className="fm-badge fm-badge--default">{formatAmount(pressureSnapshot.weeklyRecurringExpenses)}</span>
+                </div>
+                <p className="fm-text-secondary" style={{ margin: 0 }}>
+                  Monthly baseline {formatAmount(pressureSnapshot.monthlyRecurringExpenses)}
+                </p>
+              </div>
+              <div className="fm-card">
+                <div className="fm-flex fm-justify-between fm-items-center fm-mb-sm">
+                  <strong className="fm-text-primary">Failed talks</strong>
+                  <span className="fm-badge fm-badge--warning">{formatAmount(pressureSnapshot.recentNegotiationCosts)}</span>
+                </div>
+                <p className="fm-text-secondary" style={{ margin: 0 }}>
+                  Failed negotiations now leave a visible cost trail.
+                </p>
+              </div>
+            </div>
+            <div className="fm-grid fm-grid--3 fm-mb-md">
+              <div className="fm-card">
+                <div className="fm-flex fm-justify-between fm-items-center fm-mb-sm">
+                  <strong className="fm-text-primary">Payroll / cap</strong>
+                  <span className={`fm-badge ${pressureSnapshot.pressureBand === 'hard_stop' ? 'fm-badge--danger' : pressureSnapshot.pressureBand === 'warning' ? 'fm-badge--warning' : pressureSnapshot.pressureBand === 'taxed' ? 'fm-badge--info' : 'fm-badge--success'}`}>
+                    {pressureSnapshot.pressureBand}
+                  </span>
+                </div>
+                <p className="fm-text-secondary" style={{ margin: 0 }}>
+                  {formatAmount(pressureSnapshot.totalPayroll)} / {formatAmount(pressureSnapshot.salaryCap)}
+                </p>
+              </div>
+              <div className="fm-card">
+                <div className="fm-flex fm-justify-between fm-items-center fm-mb-sm">
+                  <strong className="fm-text-primary">Staff cap weight</strong>
+                  <span className="fm-badge fm-badge--default">{formatAmount(pressureSnapshot.effectiveStaffPayroll)}</span>
+                </div>
+                <p className="fm-text-secondary" style={{ margin: 0 }}>
+                  Actual staff {formatAmount(pressureSnapshot.staffSalaryTotal)} to cap weighted {formatAmount(pressureSnapshot.effectiveStaffPayroll)}
+                </p>
+              </div>
+              <div className="fm-card">
+                <div className="fm-flex fm-justify-between fm-items-center fm-mb-sm">
+                  <strong className="fm-text-primary">Cap room</strong>
+                  <span className={`fm-badge ${pressureSnapshot.capRoom >= 0 ? 'fm-badge--success' : 'fm-badge--danger'}`}>
+                    {formatAmount(pressureSnapshot.capRoom)}
+                  </span>
+                </div>
+                <p className="fm-text-secondary" style={{ margin: 0 }}>
+                  Negative room means every week gets more expensive.
+                </p>
+              </div>
+              <div className="fm-card">
+                <div className="fm-flex fm-justify-between fm-items-center fm-mb-sm">
+                  <strong className="fm-text-primary">Luxury tax</strong>
+                  <span className="fm-badge fm-badge--warning">{formatAmount(pressureSnapshot.luxuryTax)}</span>
+                </div>
+                <p className="fm-text-secondary" style={{ margin: 0 }}>
+                  Soft-cap overages flow into weekly finance logs and board pressure.
+                </p>
+              </div>
+            </div>
+            <div className="fm-card">
+              <strong className="fm-text-primary">What is driving the pressure</strong>
+              <ul className="fm-text-secondary" style={{ marginBottom: 0 }}>
+                {pressureSnapshot.topDrivers.map((driver) => (
+                  <li key={driver}>{driver}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="fm-alert fm-alert--danger fm-mb-md">

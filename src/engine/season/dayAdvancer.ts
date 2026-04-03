@@ -53,6 +53,7 @@ import { getTrainingScheduleEntry } from '../training/trainingEngine';
 import { getActiveInterventionEffects } from '../manager/managerInterventionEngine';
 import { getManagerIdentity, getManagerIdentityEffects, type ManagerIdentityEffects } from '../manager/managerIdentityEngine';
 import { assertManagerReadyToAdvance } from '../manager/managerSetupEngine';
+import { recordMatchNarrativeHooks } from '../manager/releaseDepthEngine';
 import * as dayAdvancerTasks from './dayAdvancerTasks';
 
 // advanceDay가 중복 실행되지 않도록 단일 큐로 직렬화한다.
@@ -426,9 +427,42 @@ async function processMatchDay(
       });
 
       try {
-        await generateMatchResultNews(seasonId, currentDate, match.teamHomeId, match.teamAwayId, result.scoreHome, result.scoreAway);
+        const db = await getDatabase();
+        const teamRows = await db.select<Array<{ id: string; name: string }>>(
+          'SELECT id, name FROM teams WHERE id IN ($1, $2)',
+          [match.teamHomeId, match.teamAwayId],
+        );
+        const homeName = teamRows.find((team) => team.id === match.teamHomeId)?.name ?? match.teamHomeId;
+        const awayName = teamRows.find((team) => team.id === match.teamAwayId)?.name ?? match.teamAwayId;
+        await generateMatchResultNews(
+          seasonId,
+          currentDate,
+          homeName,
+          awayName,
+          result.scoreHome,
+          result.scoreAway,
+          {
+            homeTeamId: match.teamHomeId,
+            awayTeamId: match.teamAwayId,
+            matchType: match.matchType,
+          },
+        );
       } catch (e) {
         console.warn('[dayAdvancer] generateMatchResultNews failed:', e);
+      }
+
+      try {
+        await recordMatchNarrativeHooks({
+          seasonId,
+          currentDate,
+          homeTeamId: match.teamHomeId,
+          awayTeamId: match.teamAwayId,
+          homeScore: result.scoreHome,
+          awayScore: result.scoreAway,
+          matchType: match.matchType,
+        });
+      } catch (e) {
+        console.warn('[dayAdvancer] recordMatchNarrativeHooks failed:', e);
       }
 
       if (match.matchType !== 'regular') {
@@ -616,9 +650,10 @@ export async function saveUserMatchResult(
       const isWin =
         (result.winner === 'home' && match.teamHomeId === userTeamId) ||
         (result.winner === 'away' && match.teamAwayId === userTeamId);
-      await processBoardMatchResult(userTeamId, seasonId, isWin, true, saveId);
+      const boardDate = match.matchDate ?? '';
+      await processBoardMatchResult(userTeamId, seasonId, isWin, true, boardDate, saveId);
 
-      const firingStatus = await checkFiringRisk(userTeamId, seasonId, saveId);
+      const firingStatus = await checkFiringRisk(userTeamId, seasonId, boardDate, saveId);
       if (firingStatus === 'fired') {
         console.warn('[dayAdvancer] manager was fired after board review');
       }
@@ -628,9 +663,25 @@ export async function saveUserMatchResult(
   }
 
   try {
-    await updateCareerStats(result, match.teamHomeId, match.teamAwayId, match.matchDate);
+    await updateCareerStats(result, match.teamHomeId, match.teamAwayId, match.matchDate ?? '');
   } catch (e) {
     console.warn('[dayAdvancer] updateCareerStats failed:', e);
+  }
+
+  try {
+    await recordMatchNarrativeHooks({
+      seasonId: seasonId ?? 0,
+      currentDate: match.matchDate ?? '',
+      homeTeamId: match.teamHomeId,
+      awayTeamId: match.teamAwayId,
+      homeScore: result.scoreHome,
+      awayScore: result.scoreAway,
+      matchType: match.matchType,
+      saveId,
+      userTeamId,
+    });
+  } catch (e) {
+    console.warn('[dayAdvancer] recordMatchNarrativeHooks failed:', e);
   }
 }
 

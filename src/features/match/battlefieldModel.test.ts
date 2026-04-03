@@ -32,7 +32,6 @@ const baseState: LiveGameState = {
     {
       playerId: 'h1',
       playerName: 'Zeus',
-      side: 'home',
       position: 'top',
       championId: 'aatrox',
       kills: 3,
@@ -41,6 +40,7 @@ const baseState: LiveGameState = {
       cs: 201,
       goldEarned: 10800,
       form: 82,
+      comfortPick: true,
       damageDealt: 22100,
     },
   ],
@@ -48,7 +48,6 @@ const baseState: LiveGameState = {
     {
       playerId: 'a1',
       playerName: 'Kiin',
-      side: 'away',
       position: 'top',
       championId: 'ornn',
       kills: 1,
@@ -57,6 +56,7 @@ const baseState: LiveGameState = {
       cs: 182,
       goldEarned: 9400,
       form: 68,
+      comfortPick: false,
       damageDealt: 16900,
     },
   ],

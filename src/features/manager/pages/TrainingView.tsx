@@ -42,9 +42,11 @@ import type { TrainingRecommendation } from '../../../engine/season/scrimEngine'
 import type { Player } from '../../../types/player';
 import { POSITION_LABELS_SHORT as POSITION_LABELS } from '../../../utils/constants';
 import { applyCoachTrainingRecommendation, generateInitialCoachRecommendations } from '../../../engine/manager/managerSetupEngine';
+import { getPrepRecommendationRecords, recordPrepRecommendation } from '../../../engine/manager/systemDepthEngine';
 import type { CoachSetupRecommendation } from '../../../types/managerSetup';
 import { MainLoopPanel } from '../components/MainLoopPanel';
 import { useToolbarNavigation } from '../hooks/useToolbarNavigation';
+import type { PrepRecommendationRecord } from '../../../types/systemDepth';
 
 type Tab = 'schedule' | 'individual' | 'logs' | 'mentoring';
 const TRAINING_TABS: Tab[] = ['schedule', 'individual', 'logs', 'mentoring'];
@@ -65,6 +67,13 @@ const POS_CLASS: Record<string, string> = {
   adc: 'fm-pos-badge--adc',
   support: 'fm-pos-badge--sup',
 };
+
+function getPrepOutcomeTone(record: PrepRecommendationRecord | null): 'success' | 'info' | 'danger' {
+  if (!record) return 'info';
+  if (record.observedOutcome === 'positive') return 'success';
+  if (record.status === 'observed') return 'danger';
+  return 'info';
+}
 
 export function TrainingView() {
   const save = useGameStore((s) => s.save);
@@ -88,6 +97,7 @@ export function TrainingView() {
   const [selectedMenteeId, setSelectedMenteeId] = useState('');
   const [scrimRecommendation, setScrimRecommendation] = useState<TrainingRecommendation | null>(null);
   const [coachRecommendation, setCoachRecommendation] = useState<CoachSetupRecommendation | null>(null);
+  const [prepRecords, setPrepRecords] = useState<PrepRecommendationRecord[]>([]);
   const { getItemProps } = useToolbarNavigation({
     items: TRAINING_TABS,
     activeItem: tab,
@@ -102,11 +112,12 @@ export function TrainingView() {
     if (!save) return;
     setIsLoading(true);
     try {
-      const [sched, assign, recentLogs, setupRecommendations] = await Promise.all([
+      const [sched, assign, recentLogs, setupRecommendations, recentPrep] = await Promise.all([
         getTrainingSchedule(userTeamId),
         getPlayerTraining(userTeamId),
         getRecentTrainingLogs(userTeamId, 30),
         generateInitialCoachRecommendations(userTeamId, save.currentSeasonId).catch(() => []),
+        getPrepRecommendationRecords(userTeamId, save.currentSeasonId, 3).catch(() => []),
       ]);
       const [pairs, mentors, mentees] = await Promise.all([
         getMentoringPairs(userTeamId).catch(() => [] as MentoringPair[]),
@@ -119,6 +130,7 @@ export function TrainingView() {
       setCoachRecommendation(
         setupRecommendations.find((recommendation) => recommendation.kind === 'training') ?? null,
       );
+      setPrepRecords(recentPrep.filter((record) => record.focusArea === 'training'));
       setMentoringPairs(pairs);
       setEligibleMentors(mentors);
       setEligibleMentees(mentees);
@@ -191,6 +203,7 @@ export function TrainingView() {
     ? teams.find((team) => team.id === (pendingMatch.teamHomeId === userTeamId ? pendingMatch.teamAwayId : pendingMatch.teamHomeId))?.name ?? '상대 대기'
     : null;
   const currentScheduleSummary = schedule.find((entry) => entry.activityType !== 'rest') ?? schedule[1] ?? null;
+  const latestPrepRecord = prepRecords[0] ?? null;
 
   return (
     <div>
@@ -294,10 +307,24 @@ export function TrainingView() {
             className="fm-btn fm-btn--primary fm-btn--sm"
             onClick={async () => {
               try {
+                const gameDate = season?.currentDate ?? pendingMatch?.matchDate ?? '2000-01-01';
                 await applyCoachTrainingRecommendation(userTeamId, coachRecommendation);
+                await recordPrepRecommendation({
+                  teamId: userTeamId,
+                  seasonId: save.currentSeasonId,
+                  source: 'coach_briefing',
+                  focusArea: 'training',
+                  title: coachRecommendation.headline,
+                  summary: coachRecommendation.summary,
+                  recommendedChanges: coachRecommendation.reasons,
+                  appliedChanges: coachRecommendation.reasons,
+                  targetMatchId: pendingMatch?.id ?? null,
+                  targetDate: pendingMatch?.matchDate ?? season?.currentDate ?? null,
+                  gameDate,
+                });
                 await generateTrainingDigest(
                   save.currentSeasonId,
-                  useGameStore.getState().season?.currentDate ?? new Date().toISOString().slice(0, 10),
+                  gameDate,
                   userTeamId,
                   coachRecommendation.authorName,
                   coachRecommendation.summary,
@@ -336,7 +363,7 @@ export function TrainingView() {
             className="fm-btn fm-btn--primary fm-btn--sm"
             onClick={async () => {
               // 게임 내 날짜 기준 요일 계산 (1=월 ~ 6=토)
-              const gameDate = useGameStore.getState().season?.currentDate ?? new Date().toISOString().slice(0, 10);
+              const gameDate = season?.currentDate ?? pendingMatch?.matchDate ?? '2000-01-01';
               const gameDateObj = new Date(gameDate + 'T00:00:00');
               const dayOfWeek = gameDateObj.getDay(); // 0=일 ~ 6=토
               // 다음 훈련 가능 요일 (일요일/경기일 제외)
@@ -359,6 +386,25 @@ export function TrainingView() {
                   `${TRAINING_TYPE_LABELS[scrimRecommendation.trainingType as TrainingType] ?? scrimRecommendation.trainingType} 훈련과 ${INTENSITY_LABELS[scrimRecommendation.intensity]} 강도를 추천합니다.`,
                   [scrimRecommendation.reason],
                 );
+                await recordPrepRecommendation({
+                  teamId: userTeamId,
+                  seasonId: save.currentSeasonId,
+                  source: 'coach_briefing',
+                  focusArea: 'training',
+                  title: '스크림 기반 훈련 조정',
+                  summary: scrimRecommendation.reason,
+                  recommendedChanges: [
+                    `${TRAINING_TYPE_LABELS[scrimRecommendation.trainingType as TrainingType] ?? scrimRecommendation.trainingType} 훈련`,
+                    `${INTENSITY_LABELS[scrimRecommendation.intensity]} 강도`,
+                  ],
+                  appliedChanges: [
+                    `${DAY_LABELS[targetDay]}요일에 스크림 편성`,
+                    `${TRAINING_TYPE_LABELS[scrimRecommendation.trainingType as TrainingType] ?? scrimRecommendation.trainingType} 훈련`,
+                  ],
+                  targetMatchId: pendingMatch?.id ?? null,
+                  targetDate: pendingMatch?.matchDate ?? season?.currentDate ?? null,
+                  gameDate,
+                });
                 setMessage({ text: `${DAY_LABELS[targetDay]}요일 스케줄에 추천 훈련을 적용했습니다.`, type: 'success' });
                 await loadData();
               } catch {
@@ -368,6 +414,26 @@ export function TrainingView() {
           >
             적용
           </button>
+        </div>
+      )}
+
+      {tab === 'schedule' && latestPrepRecord && (
+        <div className={`fm-alert fm-alert--${getPrepOutcomeTone(latestPrepRecord)} fm-mb-md`} style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '6px' }}>
+          <div className="fm-flex fm-items-center fm-justify-between" style={{ width: '100%' }}>
+            <span className="fm-text-sm fm-font-semibold">
+              준비 추적
+            </span>
+            <span className="fm-badge fm-badge--default">{latestPrepRecord.status}</span>
+          </div>
+          <span className="fm-text-md fm-font-semibold fm-text-primary">{latestPrepRecord.title}</span>
+          <p className="fm-text-xs fm-text-secondary" style={{ margin: 0 }}>
+            {latestPrepRecord.impactSummary ?? latestPrepRecord.summary}
+          </p>
+          <div className="fm-flex fm-gap-xs fm-flex-wrap">
+            {latestPrepRecord.appliedChanges.slice(0, 3).map((change) => (
+              <span key={change} className="fm-badge fm-badge--info">{change}</span>
+            ))}
+          </div>
         </div>
       )}
 
@@ -672,7 +738,7 @@ export function TrainingView() {
                   disabled={!selectedMentorId || !selectedMenteeId}
                   onClick={async () => {
                     const season = useGameStore.getState().season;
-                    const currentDate = season?.currentDate ?? new Date().toISOString().slice(0, 10);
+                    const currentDate = season?.currentDate ?? '';
                     const result = await assignMentor(selectedMentorId, selectedMenteeId, userTeamId, currentDate);
                     setMessage({ text: result.message, type: result.success ? 'success' : 'error' });
                     if (result.success) {

@@ -16,6 +16,41 @@ interface NewsArticleRow {
   related_player_id: string | null;
   importance: number;
   is_read: number;
+  narrative_tags_json?: string | null;
+}
+
+function toJson(value: string[]): string {
+  return JSON.stringify(value);
+}
+
+function fromJson(value: string | null | undefined): string[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter((entry): entry is string => typeof entry === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+const NARRATIVE_KEYWORDS: Record<string, string[]> = {
+  legacy: ['dynasty', 'franchise arc', 'legacy', '왕조', '계보', '프랜차이즈', '레거시'],
+  international: ['international', 'cross-region', 'broadcast desk', 'worlds', 'msi', '국제전', '국제', '지역 대항'],
+  rivalry: ['rival', 'rivalry', 'head-to-head', '라이벌', '맞대결', '숙적'],
+  pressure: ['rebuild', 'collapse', 'pressure', '압박', '붕괴', '재건', '위기'],
+};
+
+function normalizeNarrativeTags(tags: string[]): string[] {
+  return Array.from(new Set(tags.filter(Boolean))).slice(0, 3);
+}
+
+export function inferNarrativeTags(title: string, content: string): string[] {
+  const haystack = `${title} ${content}`.toLowerCase();
+  return normalizeNarrativeTags(
+    Object.entries(NARRATIVE_KEYWORDS)
+      .filter(([, keywords]) => keywords.some((keyword) => haystack.includes(keyword)))
+      .map(([tag]) => tag),
+  );
 }
 
 function mapRowToNewsArticle(row: NewsArticleRow): NewsArticle {
@@ -33,6 +68,7 @@ function mapRowToNewsArticle(row: NewsArticleRow): NewsArticle {
     isRead: Boolean(row.is_read),
     presentation,
     isDismissible: presentation === 'briefing',
+    narrativeTags: normalizeNarrativeTags(fromJson(row.narrative_tags_json)),
   };
 }
 
@@ -45,12 +81,16 @@ async function insertNews(
   importance: number = 1,
   relatedTeamId: string | null = null,
   relatedPlayerId: string | null = null,
+  narrativeTags?: string[],
 ): Promise<void> {
   const db = await getDatabase();
+  const resolvedNarrativeTags = normalizeNarrativeTags(narrativeTags ?? inferNarrativeTags(title, content));
   await db.execute(
-    `INSERT INTO news_articles (season_id, article_date, category, title, content, importance, related_team_id, related_player_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-    [seasonId, date, category, title, content, importance, relatedTeamId, relatedPlayerId],
+    `INSERT INTO news_articles (
+      season_id, article_date, category, title, content, importance, related_team_id, related_player_id, narrative_tags_json
+    )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    [seasonId, date, category, title, content, importance, relatedTeamId, relatedPlayerId, toJson(resolvedNarrativeTags)],
   );
 }
 
@@ -125,6 +165,174 @@ function buildAiFallbackArticle(
   );
 }
 
+function inferLegacyLabel(playerName: string | null | undefined): string {
+  if (!playerName) return '베테랑';
+  return `${playerName} 같은 베테랑`;
+}
+
+async function insertNarrativeChain(
+  seasonId: number,
+  date: string,
+  entries: Array<{
+    category: NewsCategory;
+    title: string;
+    content: string;
+    importance: number;
+    relatedTeamId?: string | null;
+    relatedPlayerId?: string | null;
+    narrativeTags?: string[];
+  }>,
+): Promise<void> {
+  for (const entry of entries) {
+    await insertNews(
+      seasonId,
+      date,
+      entry.category,
+      entry.title,
+      entry.content,
+      entry.importance,
+      entry.relatedTeamId ?? null,
+      entry.relatedPlayerId ?? null,
+      entry.narrativeTags,
+    );
+  }
+}
+
+async function generateMatchNarrativeChainNews(params: {
+  seasonId: number;
+  date: string;
+  homeTeam: string;
+  awayTeam: string;
+  winner: string;
+  loser: string;
+  score: string;
+  homeTeamId?: string | null;
+  awayTeamId?: string | null;
+  matchType?: string;
+  legacyPlayerName?: string | null;
+}): Promise<void> {
+  const isInternational = Boolean(
+    params.matchType?.startsWith('worlds') ||
+    params.matchType?.startsWith('msi') ||
+    params.matchType?.startsWith('ewc') ||
+    params.matchType?.startsWith('fst'),
+  );
+
+  const chainEntries: Array<{
+    category: NewsCategory;
+    title: string;
+    content: string;
+    importance: number;
+    relatedTeamId?: string | null;
+  }> = [];
+
+  if (isInternational) {
+    chainEntries.push({
+      category: 'team_analysis',
+      title: `[국제전 포커스] ${params.winner}, ${params.score} 승리로 리그 대표 시나리오 장악`,
+      content: buildArticle(
+        `${params.winner}의 이번 승리는 단순한 1승 이상의 의미를 남겼다. 국제전 무대에서는 한 경기 결과조차 리그 전체의 패치 해석과 운영 완성도를 설명하는 근거로 소비되기 때문이다.`,
+        `${params.winner}는 밴픽 단계부터 오브젝트 교전까지 흐름을 비교적 선명하게 잡았고, ${params.loser}는 대응 템포를 찾는 데 시간이 걸렸다. 결국 국제전에서는 이런 미세한 준비 차이가 곧 지역 경쟁력의 이야기로 번진다.`,
+        buildQuoteParagraph('국제전 데스크', `${params.winner}의 승리는 단순한 업셋이나 이변이 아니라 준비된 운영의 결과로 읽히고 있다.`),
+        '다음 경기에서도 같은 흐름이 반복된다면 이번 시리즈는 개인 기량보다 리그 단위의 패치 적응력 차이를 상징하는 사례로 남을 가능성이 크다.',
+      ),
+      importance: 2,
+      relatedTeamId: params.homeTeamId ?? params.awayTeamId ?? null,
+    });
+  } else {
+    chainEntries.push({
+      category: 'social_media',
+      title: `[여론] ${params.winner} 승리 후 커뮤니티 화두는 운영 완성도`,
+      content: buildArticle(
+        `${params.winner}의 승리 직후 커뮤니티 반응은 단순한 환호보다 '어떻게 이겼는가'에 집중됐다.`,
+        `${params.score} 스코어보다 더 주목받는 부분은 드래곤 타이밍과 한타 진입 각도, 그리고 불필요한 추격을 줄인 운영 완성도다. 반대로 ${params.loser}는 개별 장면보다 연결 과정이 매끄럽지 못했다는 평가가 많다.`,
+        buildQuoteParagraph('팬 반응', `${params.winner}는 그냥 잘한 게 아니라 오늘 경기 플랜이 명확해 보였다는 말이 많이 나온다.`),
+        '결과 하나가 곧바로 서사로 이어지는 이유는, 시즌 중반 이후에는 한 경기의 분위기가 다음 대진과 보드 압박, 팬 기대까지 함께 흔들기 때문이다.',
+      ),
+      importance: 1,
+      relatedTeamId: params.homeTeamId ?? params.awayTeamId ?? null,
+    });
+  }
+
+  if (params.legacyPlayerName) {
+    chainEntries.push({
+      category: 'interview',
+      title: `[커리어 조명] ${inferLegacyLabel(params.legacyPlayerName)}의 무대는 아직 끝나지 않았다`,
+      content: buildArticle(
+        `${params.legacyPlayerName}처럼 긴 커리어를 끌고 온 선수에게 중요한 건 단순한 출전 여부가 아니라, 어떤 경기에서 다시 존재감을 남기느냐다.`,
+        `이번 결과는 세대교체가 가속되는 장면 속에서도 경험 많은 선수들이 여전히 밴픽 해석, 오브젝트 셋업, 시리즈 호흡 조절에서 별도의 무게를 갖는다는 점을 다시 확인시켰다.`,
+        buildQuoteParagraph('중계 해설', `${params.legacyPlayerName} 같은 선수는 한 번의 플레이보다 경기 전체 흐름을 읽는 장면에서 커리어의 가치가 드러난다.`),
+        '이런 순간이 쌓일수록 선수 개인의 장기 서사는 단순한 노쇠화 서사가 아니라, 역할 변주와 생존 방식의 이야기로 확장된다.',
+      ),
+      importance: 1,
+      relatedTeamId: params.homeTeamId ?? params.awayTeamId ?? null,
+    });
+  }
+
+  await insertNarrativeChain(params.seasonId, params.date, chainEntries);
+}
+
+async function generatePatchNarrativeChainNews(
+  seasonId: number,
+  date: string,
+  patchNumber: number,
+  patchNote: string,
+): Promise<void> {
+  await insertNarrativeChain(seasonId, date, [
+    {
+      category: 'team_analysis',
+      title: `[메타 해석전] 패치 ${patchNumber}, 스크림 해석 속도가 순위를 가를 변수`,
+      content: buildArticle(
+        `패치 ${patchNumber}의 핵심은 수치 변경 자체보다 팀들이 무엇을 먼저 믿고 준비하느냐다.`,
+        `프로씬에서는 같은 패치를 받아도 어떤 팀은 밴픽 우선순위를 빠르게 재정렬하고, 어떤 팀은 스크림 데이터를 쌓는 동안 한두 주를 허비한다. 결국 메타 적응전은 리그 운영 게임의 출발점이 된다.`,
+        buildQuoteParagraph('분석 데스크', `이번 패치는 챔피언 티어표보다도 스크림을 통해 누가 먼저 운영 해석을 굳히느냐가 중요해 보인다.`),
+        buildNewsParagraphs(
+          patchNote,
+          '패치 초기에는 결과보다 해석이 앞선다. 그래서 패치 기사는 곧 코치 브리핑, 스크림 메모, 상대 리포트와 이어지는 하나의 사건 체인이 된다.',
+        ),
+      ),
+      importance: 2,
+    },
+    {
+      category: 'social_media',
+      title: `[커뮤니티 온도] 패치 ${patchNumber} 이후 팬들은 “누가 먼저 읽느냐”에 주목`,
+      content: buildArticle(
+        `팬들은 패치 ${patchNumber} 이후 단순 승패보다 어느 팀이 더 LoL답게 메타를 읽는지에 민감하게 반응하고 있다.`,
+        '특히 스크림 루머, 코치 브리핑, 연습 챔피언 노출 여부 같은 주변 정보가 경기 자체 못지않게 소비되며 메타 서사의 일부가 되고 있다.',
+        buildQuoteParagraph('커뮤니티 반응', '결국 패치는 숫자보다 해석 싸움이고, 그걸 제일 빨리 보여주는 팀이 분위기를 먹는다.'),
+        '이 분위기는 다음 경기 결과와 연결되며 짧은 기간에도 특정 팀을 메타 선도팀 혹은 적응이 느린 팀으로 규정할 수 있다.',
+      ),
+      importance: 1,
+    },
+  ]);
+}
+
+async function generateCoachBriefingChainNews(
+  seasonId: number,
+  date: string,
+  teamId: string,
+  recommendations: CoachSetupRecommendation[],
+): Promise<void> {
+  const leads = recommendations.map((recommendation) => recommendation.authorName).filter(Boolean);
+  const focus = recommendations.map((recommendation) => recommendation.headline).slice(0, 2).join(' / ');
+  await insertNarrativeChain(seasonId, date, [
+    {
+      category: 'team_analysis',
+      title: `[운영 리포트] ${leads[0] ?? '코치진'}의 브리핑, 오늘 준비 체계를 드러내다`,
+      content: buildArticle(
+        '코치 브리핑은 더 이상 단순한 메모가 아니다. 패치 해석, 스크림 피드백, 상대 리포트, 밴픽 우선순위를 하나의 운영 체계로 묶는 순간이기 때문이다.',
+        focus
+          ? `이번 브리핑의 초점은 ${focus}에 놓였다. 중요한 건 개별 조언의 양보다 그 조언들이 경기 준비 루프 속에서 어떻게 연결되느냐다.`
+          : '이번 브리핑은 각 파트의 조언을 하나의 경기 준비 루프로 묶는 데 초점을 맞췄다.',
+        buildQuoteParagraph('코칭스태프 메모', '좋은 브리핑은 정보가 많은 브리핑이 아니라, 밴픽과 첫 15분 운영으로 바로 옮길 수 있는 브리핑이다.'),
+        '결국 브리핑이 강한 팀은 경기 전 화면, 드래프트, 라이브 매치 해설에서 같은 이야기축을 반복해서 보여주게 된다.',
+      ),
+      importance: 1,
+      relatedTeamId: teamId,
+    },
+  ]);
+}
+
 /** 경기 결과 뉴스 */
 export async function generateMatchResultNews(
   seasonId: number,
@@ -133,6 +341,12 @@ export async function generateMatchResultNews(
   awayTeam: string,
   scoreHome: number,
   scoreAway: number,
+  options?: {
+    homeTeamId?: string | null;
+    awayTeamId?: string | null;
+    matchType?: string;
+    legacyPlayerName?: string | null;
+  },
 ): Promise<void> {
   const winner = scoreHome > scoreAway ? homeTeam : awayTeam;
   const loser = scoreHome > scoreAway ? awayTeam : homeTeam;
@@ -167,6 +381,19 @@ export async function generateMatchResultNews(
       playerNames: [],
     });
     await insertNews(seasonId, date, 'match_result', aiNews.title, enrichNewsContent(aiNews.content, fallback), importance);
+    await generateMatchNarrativeChainNews({
+      seasonId,
+      date,
+      homeTeam,
+      awayTeam,
+      winner,
+      loser,
+      score: `${winScore}:${loseScore}`,
+      homeTeamId: options?.homeTeamId,
+      awayTeamId: options?.awayTeamId,
+      matchType: options?.matchType,
+      legacyPlayerName: options?.legacyPlayerName,
+    });
     return;
   } catch {
     // Fall back to templated copy when AI generation is unavailable.
@@ -179,6 +406,19 @@ export async function generateMatchResultNews(
     `${winner}, 접전 끝 ${loser} 꺾고 기세 유지`,
   ]);
   await insertNews(seasonId, date, 'match_result', title, fallback, importance);
+  await generateMatchNarrativeChainNews({
+    seasonId,
+    date,
+    homeTeam,
+    awayTeam,
+    winner,
+    loser,
+    score: `${winScore}:${loseScore}`,
+    homeTeamId: options?.homeTeamId,
+    awayTeamId: options?.awayTeamId,
+    matchType: options?.matchType,
+    legacyPlayerName: options?.legacyPlayerName,
+  });
 }
 
 /** 이적 루머 뉴스 */
@@ -724,6 +964,7 @@ export async function generatePatchNotesNews(
     ),
   );
   await insertNews(seasonId, date, 'patch_notes', title, content, 2);
+  await generatePatchNarrativeChainNews(seasonId, date, patchNumber, patchNote);
 }
 
 export async function generateCoachBriefingNews(
@@ -749,6 +990,79 @@ export async function generateCoachBriefingNews(
     buildCoachBriefingContent(recommendations),
     2,
     teamId,
+  );
+  await generateCoachBriefingChainNews(seasonId, date, teamId, recommendations);
+}
+
+export async function generateCareerArcNews(params: {
+  seasonId: number;
+  date: string;
+  teamId: string;
+  headline: string;
+  summary: string;
+  consequences: string[];
+  stage: string;
+  arcType: string;
+}): Promise<void> {
+  const content = buildArticle(
+    params.summary,
+    buildNarrativeAftermath([
+      'This is no longer a one-week mood swing. The result is now feeding into a longer franchise arc.',
+      'The room, the board, and outside coverage are now reading the same run of results as one connected story.',
+      'What used to be isolated results is now shaping the identity of the save itself.',
+    ]),
+    params.consequences.length > 0
+      ? `Consequence tags\n- ${params.consequences.join('\n- ')}`
+      : 'The next few weeks will decide whether this becomes momentum, pressure, or a turning point.',
+    `Arc stage: ${params.stage}. Arc type: ${params.arcType}.`,
+  );
+  const narrativeTags = normalizeNarrativeTags([
+    params.arcType === 'collapse' || params.arcType === 'rebuild' ? 'pressure' : 'legacy',
+    params.arcType === 'dynasty' || params.arcType === 'icon_transition' || params.arcType === 'legend_retirement'
+      ? 'legacy'
+      : '',
+  ]);
+  await insertNews(
+    params.seasonId,
+    params.date,
+    'team_analysis',
+    params.headline,
+    content,
+    2,
+    params.teamId,
+    null,
+    narrativeTags,
+  );
+}
+
+export async function generateInternationalPulseNews(params: {
+  seasonId: number;
+  date: string;
+  teamId: string;
+  title: string;
+  summary: string;
+  styleClash: string;
+  boardPressureNote: string;
+}): Promise<void> {
+  const content = buildArticle(
+    params.summary,
+    params.styleClash,
+    buildNarrativeAftermath([
+      params.boardPressureNote,
+      'International framing now reaches beyond one match and starts to influence prestige, expectation, and fan memory.',
+    ]),
+    'Cross-region results now carry meaning for next-season trust as much as current-season pride.',
+  );
+  await insertNews(
+    params.seasonId,
+    params.date,
+    'team_analysis',
+    params.title,
+    content,
+    2,
+    params.teamId,
+    null,
+    ['international', 'pressure'],
   );
 }
 
@@ -825,12 +1139,12 @@ export async function generateMoraleWarningBriefing(
 
 export async function getNewsByDate(seasonId: number, date: string): Promise<NewsArticle[]> {
   const db = await getDatabase();
-  const rows = await db.select<NewsArticleRow[]>(
-    `SELECT id, season_id, article_date, category, title, content,
-            related_team_id, related_player_id, importance, is_read
-     FROM news_articles
-     WHERE season_id = $1 AND article_date = $2
-     ORDER BY importance DESC, id DESC`,
+    const rows = await db.select<NewsArticleRow[]>(
+      `SELECT id, season_id, article_date, category, title, content,
+              related_team_id, related_player_id, importance, is_read, narrative_tags_json
+       FROM news_articles
+       WHERE season_id = $1 AND article_date = $2
+       ORDER BY importance DESC, id DESC`,
     [seasonId, date],
   );
   return rows.map(mapRowToNewsArticle);
@@ -845,9 +1159,9 @@ export async function getRecentNews(
   const db = await getDatabase();
 
   let sql = `SELECT id, season_id, article_date, category, title, content,
-                    related_team_id, related_player_id, importance, is_read
-             FROM news_articles
-             WHERE season_id = $1`;
+                      related_team_id, related_player_id, importance, is_read, narrative_tags_json
+               FROM news_articles
+               WHERE season_id = $1`;
   const params: unknown[] = [seasonId];
 
   if (category) {
@@ -867,10 +1181,10 @@ export async function getUnreadBriefings(seasonId: number, limit: number = 20): 
   const db = await getDatabase();
   const rows = await db.select<NewsArticleRow[]>(
     `SELECT id, season_id, article_date, category, title, content,
-            related_team_id, related_player_id, importance, is_read
-     FROM news_articles
-     WHERE season_id = $1 AND category = 'coach_briefing' AND is_read = 0
-     ORDER BY article_date DESC, importance DESC, id DESC
+              related_team_id, related_player_id, importance, is_read, narrative_tags_json
+       FROM news_articles
+       WHERE season_id = $1 AND category = 'coach_briefing' AND is_read = 0
+       ORDER BY article_date DESC, importance DESC, id DESC
      LIMIT $2`,
     [seasonId, limit],
   );

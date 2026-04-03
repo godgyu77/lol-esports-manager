@@ -6,7 +6,6 @@ import {
   getMatchesByTeam,
   getRecentDailyEvents,
   getTeamConditions,
-  getTeamTotalSalary,
 } from '../../../db/queries';
 import { getBoardExpectations } from '../../../engine/board/boardEngine';
 import { getActiveComplaints } from '../../../engine/complaint/complaintEngine';
@@ -25,19 +24,39 @@ import {
   SATISFACTION_FACTOR_LABELS,
   type PlayerManagementInsight,
 } from '../../../engine/satisfaction/playerSatisfactionEngine';
-import { generateStaffRecommendations, type StaffRecommendation } from '../../../engine/staff/staffEngine';
+import { generateStaffRecommendations, getStaffFitSummary, type StaffRecommendation } from '../../../engine/staff/staffEngine';
+import {
+  getActiveConsequences,
+  getBudgetPressureSnapshot,
+  getMainLoopRiskItems,
+  getPrepRecommendationRecords,
+} from '../../../engine/manager/systemDepthEngine';
+import {
+  getCareerArcEvents,
+  getInternationalExpectationSnapshot,
+  getRelationshipInfluenceSnapshot,
+} from '../../../engine/manager/releaseDepthEngine';
 import { useBgm } from '../../../hooks/useBgm';
-import { useGameStore } from '../../../stores/gameStore';
+import { useGameStore, type GameState } from '../../../stores/gameStore';
 import { useSettingsStore } from '../../../stores/settingsStore';
 import type { Match } from '../../../types/match';
 import { STAFF_ROLE_LABELS } from '../../../types/staff';
+import type {
+  BudgetPressureSnapshot,
+  CareerArcEvent,
+  InternationalExpectationSnapshot,
+  OngoingConsequence,
+  PrepRecommendationRecord,
+  RelationshipInfluenceSnapshot,
+  StaffFitSummary,
+  TeamLoopRiskItem,
+} from '../../../types/systemDepth';
 import { formatAmount } from '../../../utils/formatUtils';
 import { TutorialOverlay } from '../../tutorial/TutorialOverlay';
 import { MainLoopPanel } from '../components/MainLoopPanel';
 import { MeetingModal } from '../components/MeetingModal';
 import './ManagerHome.css';
 
-const SALARY_CAP = 400000;
 const PRESS_COOLDOWN_DAYS = 7;
 
 interface DashboardAlert {
@@ -93,9 +112,9 @@ function getOpponentName(
 export function ManagerHome() {
   useBgm('game');
 
-  const save = useGameStore((s) => s.save);
-  const season = useGameStore((s) => s.season);
-  const teams = useGameStore((s) => s.teams);
+  const save = useGameStore((s: GameState) => s.save);
+  const season = useGameStore((s: GameState) => s.season);
+  const teams = useGameStore((s: GameState) => s.teams);
   const tutorialComplete = useSettingsStore((s) => s.tutorialComplete);
   const navigate = useNavigate();
 
@@ -104,7 +123,6 @@ export function ManagerHome() {
   const [loading, setLoading] = useState(true);
   const [upcomingMatches, setUpcomingMatches] = useState<Match[]>([]);
   const [recentMatches, setRecentMatches] = useState<Match[]>([]);
-  const [totalSalary, setTotalSalary] = useState(0);
   const [conditions, setConditions] = useState<Map<string, { stamina: number; morale: number; form: number }>>(new Map());
   const [newsEvents, setNewsEvents] = useState<NewsEvent[]>([]);
   const [alerts, setAlerts] = useState<DashboardAlert[]>([]);
@@ -116,6 +134,14 @@ export function ManagerHome() {
   const [playerInsights, setPlayerInsights] = useState<PlayerManagementInsight[]>([]);
   const [staffRecommendations, setStaffRecommendations] = useState<StaffRecommendation[]>([]);
   const [managerIdentity, setManagerIdentity] = useState<ManagerIdentityProfile | null>(null);
+  const [budgetPressure, setBudgetPressure] = useState<BudgetPressureSnapshot | null>(null);
+  const [consequences, setConsequences] = useState<OngoingConsequence[]>([]);
+  const [prepRecords, setPrepRecords] = useState<PrepRecommendationRecord[]>([]);
+  const [loopRisks, setLoopRisks] = useState<TeamLoopRiskItem[]>([]);
+  const [staffFitSummary, setStaffFitSummary] = useState<StaffFitSummary[]>([]);
+  const [careerArcs, setCareerArcs] = useState<CareerArcEvent[]>([]);
+  const [relationshipSnapshot, setRelationshipSnapshot] = useState<RelationshipInfluenceSnapshot | null>(null);
+  const [internationalSnapshot, setInternationalSnapshot] = useState<InternationalExpectationSnapshot | null>(null);
   const briefingRequestRef = useRef<string | null>(null);
 
   const pressCooldown = season && lastPressDate
@@ -172,26 +198,40 @@ export function ManagerHome() {
       setLoading(true);
 
       try {
-        const [matches, salary, teamConditions, events, insights, recommendations, identity] = await Promise.all([
+        const [matches, teamConditions, events, insights, recommendations, identity, pressure, activeConsequences, recentPrep, riskItems, fitSummary, arcEvents, roomSnapshot, intlSnapshot] = await Promise.all([
           getMatchesByTeam(season.id, userTeam.id),
-          getTeamTotalSalary(userTeam.id),
           getTeamConditions(userTeam.id, season.currentDate),
           getRecentDailyEvents(season.id, 6, 0),
-          getPlayerManagementInsights(userTeam.id, season.id, 4).catch(() => []),
+          getPlayerManagementInsights(userTeam.id, season.id, 4, save?.id).catch(() => []),
           generateStaffRecommendations(userTeam.id, season.id).catch(() => []),
           save ? getManagerIdentity(save.id).catch(() => null) : Promise.resolve(null),
+          getBudgetPressureSnapshot(userTeam.id, season.id).catch(() => null),
+          getActiveConsequences(userTeam.id, season.id, season.currentDate).catch(() => []),
+          getPrepRecommendationRecords(userTeam.id, season.id, 3).catch(() => []),
+          getMainLoopRiskItems(userTeam.id, season.id, season.currentDate, save?.id).catch(() => []),
+          getStaffFitSummary(userTeam.id, save?.id).catch(() => []),
+          save ? getCareerArcEvents(save.id, userTeam.id, 4).catch(() => []) : Promise.resolve([]),
+          getRelationshipInfluenceSnapshot(userTeam.id, save?.id).catch(() => null),
+          getInternationalExpectationSnapshot(userTeam.id, season.id, null, save?.id).catch(() => null),
         ]);
 
         if (cancelled) return;
 
         setUpcomingMatches(matches.filter((match) => !match.isPlayed).slice(0, 3));
         setRecentMatches(matches.filter((match) => match.isPlayed).slice(-3).reverse());
-        setTotalSalary(salary);
         setConditions(teamConditions);
         setNewsEvents(events.filter((event) => event.eventType !== 'patch'));
         setPlayerInsights(insights);
         setStaffRecommendations(recommendations);
         setManagerIdentity(identity);
+        setBudgetPressure(pressure);
+        setConsequences(activeConsequences);
+        setPrepRecords(recentPrep);
+        setLoopRisks(riskItems);
+        setStaffFitSummary(fitSummary);
+        setCareerArcs(arcEvents);
+        setRelationshipSnapshot(roomSnapshot);
+        setInternationalSnapshot(intlSnapshot);
 
         const nextAlerts: DashboardAlert[] = [];
         const [expiring, complaints, unreadCount, board] = await Promise.all([
@@ -218,10 +258,10 @@ export function ManagerHome() {
           });
         }
 
-        if (salary / SALARY_CAP >= 0.9) {
+        if (pressure && pressure.pressureBand !== 'safe') {
           nextAlerts.push({
-            type: 'warning',
-            message: `총 연봉이 샐러리캡의 ${((salary / SALARY_CAP) * 100).toFixed(1)}%입니다.`,
+            type: pressure.pressureBand === 'hard_stop' ? 'danger' : 'warning',
+            message: `Payroll ${formatAmount(pressure.totalPayroll ?? 0)} / cap ${formatAmount(pressure.salaryCap ?? 0)}${(pressure.luxuryTax ?? 0) > 0 ? `, luxury tax ${formatAmount(pressure.luxuryTax ?? 0)}` : ''}`,
             link: '/manager/finance',
           });
         }
@@ -528,6 +568,107 @@ export function ManagerHome() {
         </div>
       )}
 
+      {(budgetPressure || consequences.length > 0 || prepRecords.length > 0 || careerArcs[0] || relationshipSnapshot || internationalSnapshot) && (
+        <div className="fm-grid fm-grid--3 fm-mb-lg">
+          {budgetPressure && (
+            <div className="fm-card">
+              <div className="fm-flex fm-justify-between fm-items-center fm-mb-sm">
+                <strong className="fm-text-primary">Budget pressure</strong>
+                <span className={`fm-badge ${budgetPressure.pressureLevel === 'critical' ? 'fm-badge--danger' : budgetPressure.pressureLevel === 'watch' ? 'fm-badge--warning' : 'fm-badge--success'}`}>
+                  {budgetPressure.pressureLevel}
+                </span>
+              </div>
+              <p className="fm-text-secondary fm-mb-sm" style={{ marginTop: 0 }}>
+                Weekly burn {formatAmount(budgetPressure.weeklyRecurringExpenses)} / failed talks {formatAmount(budgetPressure.recentNegotiationCosts)}
+              </p>
+                <p className="fm-text-xs fm-text-muted" style={{ margin: 0 }}>
+                  {loopRisks[0]?.summary ?? budgetPressure.topDrivers[0]}
+                </p>
+            </div>
+          )}
+          {consequences[0] && (
+            <div className="fm-card">
+              <div className="fm-flex fm-justify-between fm-items-center fm-mb-sm">
+                <strong className="fm-text-primary">Long-tail effect</strong>
+                <span className={`fm-badge ${consequences[0].severity === 'high' ? 'fm-badge--danger' : consequences[0].severity === 'medium' ? 'fm-badge--warning' : 'fm-badge--default'}`}>
+                  {consequences[0].severity}
+                </span>
+              </div>
+              <p className="fm-text-secondary fm-mb-sm" style={{ marginTop: 0 }}>
+                {consequences[0].title}
+              </p>
+                <p className="fm-text-xs fm-text-muted" style={{ margin: 0 }}>
+                  {staffFitSummary[0]?.summary ?? consequences[0].summary}
+                </p>
+            </div>
+          )}
+          {prepRecords[0] && (
+            <div className="fm-card">
+              <div className="fm-flex fm-justify-between fm-items-center fm-mb-sm">
+                <strong className="fm-text-primary">Prep tracking</strong>
+                <span className={`fm-badge ${prepRecords[0].observedOutcome === 'positive' ? 'fm-badge--success' : prepRecords[0].status === 'observed' ? 'fm-badge--danger' : 'fm-badge--info'}`}>
+                  {prepRecords[0].status}
+                </span>
+              </div>
+              <p className="fm-text-secondary fm-mb-sm" style={{ marginTop: 0 }}>
+                {prepRecords[0].title}
+              </p>
+              <p className="fm-text-xs fm-text-muted" style={{ margin: 0 }}>
+                {prepRecords[0].impactSummary ?? prepRecords[0].summary}
+              </p>
+            </div>
+          )}
+          {careerArcs[0] && (
+            <div className="fm-card">
+              <div className="fm-flex fm-justify-between fm-items-center fm-mb-sm">
+                <strong className="fm-text-primary">Franchise arc</strong>
+                <span className="fm-badge fm-badge--info">{careerArcs[0].stage}</span>
+              </div>
+              <p className="fm-text-secondary fm-mb-sm" style={{ marginTop: 0 }}>
+                {careerArcs[0].headline}
+              </p>
+              <p className="fm-text-xs fm-text-muted" style={{ margin: 0 }}>
+                {careerArcs[0].summary}
+              </p>
+            </div>
+          )}
+          {relationshipSnapshot && (
+            <div className="fm-card">
+              <div className="fm-flex fm-justify-between fm-items-center fm-mb-sm">
+                <strong className="fm-text-primary">Room chemistry</strong>
+                <span className={`fm-badge ${relationshipSnapshot.riskPairs.length > 0 ? 'fm-badge--warning' : 'fm-badge--success'}`}>
+                  {relationshipSnapshot.staffTrust}/100
+                </span>
+              </div>
+              <p className="fm-text-secondary fm-mb-sm" style={{ marginTop: 0 }}>
+                {relationshipSnapshot.strongPairs[0]
+                  ? `${relationshipSnapshot.strongPairs[0].names[0]} + ${relationshipSnapshot.strongPairs[0].names[1]}`
+                  : 'No locked-in duo yet'}
+              </p>
+              <p className="fm-text-xs fm-text-muted" style={{ margin: 0 }}>
+                {relationshipSnapshot.summary}
+              </p>
+            </div>
+          )}
+          {internationalSnapshot && (
+            <div className="fm-card">
+              <div className="fm-flex fm-justify-between fm-items-center fm-mb-sm">
+                <strong className="fm-text-primary">{internationalSnapshot.label}</strong>
+                <span className={`fm-badge ${internationalSnapshot.level === 'must_deliver' ? 'fm-badge--danger' : internationalSnapshot.level === 'contender' ? 'fm-badge--warning' : 'fm-badge--default'}`}>
+                  {internationalSnapshot.level}
+                </span>
+              </div>
+              <p className="fm-text-secondary fm-mb-sm" style={{ marginTop: 0 }}>
+                {internationalSnapshot.summary}
+              </p>
+              <p className="fm-text-xs fm-text-muted" style={{ margin: 0 }}>
+                {internationalSnapshot.styleClash}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="fm-grid fm-grid--4 fm-mb-lg">
         <div className="fm-card">
           <div className="fm-stat">
@@ -537,8 +678,12 @@ export function ManagerHome() {
         </div>
         <div className="fm-card">
           <div className="fm-stat">
-            <span className="fm-stat__label">총 연봉</span>
-            <span className="fm-stat__value">{formatAmount(totalSalary)}</span>
+            <span className="fm-stat__label">Payroll / Cap</span>
+            <span className="fm-stat__value">
+              {budgetPressure
+                ? `${formatAmount(budgetPressure.totalPayroll ?? 0)} / ${formatAmount(budgetPressure.salaryCap ?? 0)}`
+                : '-'}
+            </span>
           </div>
         </div>
         <div className="fm-card">

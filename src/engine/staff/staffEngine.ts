@@ -17,6 +17,7 @@ import type { Region } from '../../types/game';
 import { pickRandom, randomInt } from '../../utils/random';
 import { getPlayerManagementInsights, type PlayerManagementInsight } from '../satisfaction/playerSatisfactionEngine';
 import { getActiveComplaints } from '../complaint/complaintEngine';
+import type { StaffFitSummary } from '../../types/systemDepth';
 
 interface StaffRow {
   id: number;
@@ -306,6 +307,20 @@ function getManagerPhilosophyAlignment(
     default:
       return Math.round((tacticalFocus - 50) * 0.2);
   }
+}
+
+function getStaffRoleFitPenalty(staff: Staff): number {
+  if (staff.role === staff.preferredRole) return 0;
+  const secondaryRoles = getDefaultSecondaryRoles(staff.preferredRole);
+  if (secondaryRoles.includes(staff.role)) return 0.08;
+  return staff.roleFlexibility === 'strict' ? 0.22 : staff.roleFlexibility === 'normal' ? 0.12 : 0.06;
+}
+
+function buildStaffFitSummaryLine(alignmentScore: number, rolePenalty: number): string {
+  if (rolePenalty >= 0.2) return 'This staff member is working in a role they do not really want, so output will be less stable.';
+  if (alignmentScore <= -12) return 'The coach profile is drifting away from the manager identity, which weakens buy-in.';
+  if (alignmentScore >= 12) return 'The coach profile and manager identity are aligned, so recommendations land more cleanly.';
+  return 'The staff role fit is serviceable but not giving you a strong extra edge.';
 }
 
 function scoreToDecision(score: number): { decision: StaffOfferDecision; acceptance: StaffAcceptanceLevel } {
@@ -636,6 +651,19 @@ function getMoraleFactor(morale: number): number {
 
 export async function calculateStaffBonuses(teamId: string): Promise<StaffBonuses> {
   const staff = await getTeamStaff(teamId);
+  let managerIdentity = null;
+  try {
+    const db = await getDatabase();
+    const rows = await db.select<{ save_id: number }[]>(
+      'SELECT save_id FROM manager_profiles WHERE team_id = $1 LIMIT 1',
+      [teamId],
+    );
+    if (rows[0]?.save_id != null) {
+      managerIdentity = await getManagerIdentity(rows[0].save_id).catch(() => null);
+    }
+  } catch {
+    managerIdentity = null;
+  }
 
   const bonuses: StaffBonuses = {
     trainingEfficiency: 1.0,
@@ -656,42 +684,68 @@ export async function calculateStaffBonuses(teamId: string): Promise<StaffBonuse
   for (const s of staff) {
     const factor = s.ability / 100;
     const moraleFactor = getMoraleFactor(s.morale);
+    const rolePenalty = getStaffRoleFitPenalty(s);
+    const alignmentModifier = managerIdentity ? getManagerPhilosophyAlignment(s.philosophy, managerIdentity) / 100 : 0;
+    const fitModifier = Math.max(0.72, 1 - rolePenalty + alignmentModifier);
 
     switch (s.role) {
       case 'head_coach':
-        bonuses.trainingEfficiency += (0.1 + factor * 0.15) * moraleFactor;
-        bonuses.moraleBoost += Math.round((3 + factor * 5) * moraleFactor);
+        bonuses.trainingEfficiency += (0.1 + factor * 0.15) * moraleFactor * fitModifier;
+        bonuses.moraleBoost += Math.round((3 + factor * 5) * moraleFactor * fitModifier);
         break;
       case 'coach':
-        bonuses.trainingEfficiency += (0.05 + factor * 0.1) * moraleFactor;
+        bonuses.trainingEfficiency += (0.05 + factor * 0.1) * moraleFactor * fitModifier;
         break;
       case 'analyst':
-        bonuses.draftAccuracy += Math.round((5 + factor * 15) * moraleFactor);
+        bonuses.draftAccuracy += Math.round((5 + factor * 15) * moraleFactor * fitModifier);
         break;
       case 'scout_manager':
         bonuses.scoutingSpeedBonus = -1;
-        bonuses.scoutingAccuracyBonus += Math.round((5 + factor * 10) * moraleFactor);
+        bonuses.scoutingAccuracyBonus += Math.round((5 + factor * 10) * moraleFactor * fitModifier);
         break;
       case 'sports_psychologist':
-        bonuses.moraleRecoveryBonus += Math.round((1 + factor * 2) * moraleFactor);
-        bonuses.pressureResistanceBonus += (0.03 + factor * 0.07) * moraleFactor;
+        bonuses.moraleRecoveryBonus += Math.round((1 + factor * 2) * moraleFactor * fitModifier);
+        bonuses.pressureResistanceBonus += (0.03 + factor * 0.07) * moraleFactor * fitModifier;
         break;
       case 'nutritionist':
-        bonuses.staminaRecoveryBonus += (0.1 + factor * 0.15) * moraleFactor;
-        bonuses.injuryPreventionBonus -= (0.1 + factor * 0.2) * moraleFactor;
+        bonuses.staminaRecoveryBonus += (0.1 + factor * 0.15) * moraleFactor * fitModifier;
+        bonuses.injuryPreventionBonus -= (0.1 + factor * 0.2) * moraleFactor * fitModifier;
         break;
       case 'physiotherapist':
-        bonuses.injuryRecoveryBonus -= (0.05 + factor * 0.15) * moraleFactor;
-        bonuses.reinjuryPreventionBonus -= (0.1 + factor * 0.4) * moraleFactor;
+        bonuses.injuryRecoveryBonus -= (0.05 + factor * 0.15) * moraleFactor * fitModifier;
+        bonuses.reinjuryPreventionBonus -= (0.1 + factor * 0.4) * moraleFactor * fitModifier;
         break;
       case 'data_analyst':
-        bonuses.opponentAnalysisBonus += Math.round((5 + factor * 15) * moraleFactor);
-        bonuses.metaAdaptationBonus -= Math.round((1 + factor * 2) * moraleFactor);
+        bonuses.opponentAnalysisBonus += Math.round((5 + factor * 15) * moraleFactor * fitModifier);
+        bonuses.metaAdaptationBonus -= Math.round((1 + factor * 2) * moraleFactor * fitModifier);
         break;
     }
   }
 
   return bonuses;
+}
+
+export async function getStaffFitSummary(teamId: string, saveId?: number): Promise<StaffFitSummary[]> {
+  const [staffList, identity] = await Promise.all([
+    getTeamStaff(teamId),
+    saveId ? getManagerIdentity(saveId).catch(() => null) : Promise.resolve(null),
+  ]);
+
+  return staffList
+    .map((staff) => {
+      const rolePenalty = getStaffRoleFitPenalty(staff);
+      const alignmentScore = identity ? getManagerPhilosophyAlignment(staff.philosophy, identity) : 0;
+      const fitScore = Math.max(0, Math.min(100, Math.round(78 - rolePenalty * 100 + alignmentScore)));
+      return {
+        staffId: staff.id,
+        name: staff.name,
+        role: staff.role,
+        preferredRole: staff.preferredRole,
+        fitScore,
+        summary: buildStaffFitSummaryLine(alignmentScore, rolePenalty),
+      };
+    })
+    .sort((left, right) => left.fitScore - right.fitScore);
 }
 
 export async function updateStaffMorale(staffId: number, delta: number): Promise<void> {

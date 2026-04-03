@@ -102,6 +102,9 @@ fn build_migrations() -> Vec<Migration> {
         Migration { version: 57, description: "add staff role preference columns", sql: include_str!("../migrations/057_staff_role_preferences.sql"), kind: MigrationKind::Up },
         Migration { version: 58, description: "add save db file metadata", sql: include_str!("../migrations/058_save_db_files.sql"), kind: MigrationKind::Up },
         Migration { version: 59, description: "detach save metadata foreign keys", sql: include_str!("../migrations/059_save_metadata_detach_foreign_keys.sql"), kind: MigrationKind::Up },
+        Migration { version: 60, description: "phase 2 system depth", sql: include_str!("../migrations/060_phase2_system_depth.sql"), kind: MigrationKind::Up },
+        Migration { version: 61, description: "release depth systems", sql: include_str!("../migrations/061_release_depth.sql"), kind: MigrationKind::Up },
+        Migration { version: 62, description: "persist news narrative tags", sql: include_str!("../migrations/062_news_narrative_tags.sql"), kind: MigrationKind::Up },
     ]
 }
 

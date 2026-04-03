@@ -5,8 +5,9 @@
 import { CHAMPION_DB, getChampionsByPrimaryRole } from '../data/championDb';
 import { FREE_AGENT_PLAYERS, FREE_AGENT_STAFF } from '../data/freeAgentDb';
 import { SIGNATURE_CHAMPIONS } from '../data/signatureChampions';
-import { FINANCIAL_CONSTANTS, MATCH_CONSTANTS } from '../data/systemPrompt';
+import { MATCH_CONSTANTS } from '../data/systemPrompt';
 import { LCK_TEAMS, LCS_TEAMS, LEC_TEAMS, LPL_TEAMS } from '../data/rosterDb';
+import { calculateDynamicSalaryCap } from '../engine/economy/payrollEngine';
 import type { Role, RosterPlayer, TeamData } from '../data/rosterDb';
 import type { Position, Region } from '../types';
 import type { StaffRole, StaffRoleFlexibility } from '../types/staff';
@@ -148,7 +149,7 @@ async function seedTeams(
       shortName: key,
       region,
       budget: Math.round(teamData.money * 10000),
-      salaryCap: FINANCIAL_CONSTANTS.salaryCap * 10000,
+      salaryCap: calculateDynamicSalaryCap(Math.round(teamData.money * 10000), reputation, region),
       reputation,
     });
 

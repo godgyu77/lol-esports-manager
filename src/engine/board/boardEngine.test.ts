@@ -13,6 +13,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mockExecute = vi.fn().mockResolvedValue({ rowsAffected: 1 });
 const mockSelect = vi.fn().mockResolvedValue([]);
+const mockGetInternationalExpectationSnapshot = vi.fn().mockResolvedValue(null);
+
+vi.mock('../manager/releaseDepthEngine', () => ({
+  getInternationalExpectationSnapshot: (...args: unknown[]) => mockGetInternationalExpectationSnapshot(...args),
+}));
+
+vi.mock('../manager/managerIdentityEngine', () => ({
+  getManagerIdentity: vi.fn().mockResolvedValue(null),
+  getManagerIdentityEffects: vi.fn().mockReturnValue({
+    moraleRiskModifier: 0,
+    pressEffectBonus: 0,
+  }),
+}));
 
 vi.mock('../../db/database', () => ({
   getDatabase: vi.fn().mockResolvedValue({
@@ -24,10 +37,12 @@ vi.mock('../../db/database', () => ({
 import {
   initBoardExpectations,
   getBoardExpectations,
+  processMatchResult,
 } from './boardEngine';
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockGetInternationalExpectationSnapshot.mockResolvedValue(null);
 });
 
 // ─────────────────────────────────────────
@@ -133,5 +148,41 @@ describe('getBoardExpectations', () => {
     expect(result!.fanHappiness).toBe(70);
     expect(result!.warningCount).toBe(1);
     expect(result!.isFired).toBe(false);
+  });
+});
+
+describe('processMatchResult', () => {
+  it('applies extra pressure swing for must-deliver international teams', async () => {
+    mockSelect
+      .mockResolvedValueOnce([{
+        id: 1,
+        team_id: 'team_1',
+        season_id: 1,
+        target_standing: 2,
+        target_playoff: 1,
+        target_international: 1,
+        satisfaction: 50,
+        fan_happiness: 50,
+        warning_count: 0,
+        is_fired: 0,
+      }])
+      .mockResolvedValueOnce([]);
+
+    mockGetInternationalExpectationSnapshot.mockResolvedValueOnce({
+      teamId: 'team_1',
+      seasonId: 1,
+      label: 'International broadcast desk',
+      level: 'must_deliver',
+      summary: '',
+      styleClash: '',
+      boardPressureNote: '',
+      legacyImpact: '',
+      tags: ['international', 'pressure'],
+    });
+
+    const result = await processMatchResult('team_1', 1, false, true, '2026-04-03', 7);
+
+    expect(result?.satisfaction).toBe(42);
+    expect(result?.fanHappiness).toBe(41);
   });
 });

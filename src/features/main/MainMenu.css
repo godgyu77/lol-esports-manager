@@ -85,6 +85,23 @@
   text-wrap: balance;
 }
 
+.launcher__pillar-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.launcher__pillar-chip {
+  padding: 8px 12px;
+  border: 1px solid rgba(209, 168, 76, 0.18);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #f3e4bf;
+  font-size: 12px;
+  letter-spacing: 0.03em;
+}
+
 .launcher__story-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -93,7 +110,8 @@
 
 .launcher__story-card,
 .launcher__continue-card,
-.launcher__menu-card {
+.launcher__menu-card,
+.launcher__identity-card {
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(9, 14, 26, 0.7);
   backdrop-filter: blur(10px);
@@ -135,6 +153,23 @@
   padding: 28px;
   box-shadow: 0 20px 44px rgba(0, 0, 0, 0.24);
   min-height: 292px;
+}
+
+.launcher__identity-card {
+  padding: 20px 22px;
+  box-shadow: 0 16px 30px rgba(0, 0, 0, 0.18);
+}
+
+.launcher__identity-card strong {
+  display: block;
+  color: #fff4d8;
+  font-size: 18px;
+}
+
+.launcher__identity-card p {
+  margin: 12px 0 0;
+  color: rgba(246, 241, 232, 0.72);
+  line-height: 1.65;
 }
 
 .launcher__continue-head {
@@ -217,6 +252,12 @@
 .launcher__menu-card:hover,
 .launcher__primary-cta:hover {
   transform: translateY(-2px);
+}
+
+.launcher__menu-card:focus-visible,
+.launcher__primary-cta:focus-visible {
+  outline: 2px solid #f0c75e;
+  outline-offset: 3px;
 }
 
 .launcher__menu-card:hover {

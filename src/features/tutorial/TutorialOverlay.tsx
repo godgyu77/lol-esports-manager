@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSettingsStore } from '../../stores/settingsStore';
+import type { SettingsState } from '../../stores/settingsStore';
 
 // ─────────────────────────────────────────
 // 튜토리얼 단계 정의
@@ -48,7 +49,7 @@ const CATEGORY_BADGE_CLASS: Record<TutorialCategory, string> = {
 
 export function TutorialOverlay() {
   const [step, setStep] = useState(0);
-  const setTutorialComplete = useSettingsStore((s) => s.setTutorialComplete);
+  const setTutorialComplete = useSettingsStore((s: SettingsState) => s.setTutorialComplete);
   const navigate = useNavigate();
 
   const currentStep = TUTORIAL_STEPS[step];

@@ -13,6 +13,11 @@ import {
   getManagerSetupStatus,
   ManagerSetupBlockedError,
 } from '../../../engine/manager/managerSetupEngine';
+import {
+  getActiveConsequences,
+  getBudgetPressureSnapshot,
+  getPrepRecommendationRecords,
+} from '../../../engine/manager/systemDepthEngine';
 import { generateStaffRecommendations } from '../../../engine/staff/staffEngine';
 import { getTrainingSchedule } from '../../../engine/training/trainingEngine';
 import { useKeyboardShortcuts } from '../../../hooks/useKeyboardShortcuts';
@@ -22,6 +27,7 @@ import { usePlayerStore } from '../../../stores/playerStore';
 import { useSettingsStore } from '../../../stores/settingsStore';
 import { useTeamStore } from '../../../stores/teamStore';
 import type { CoachSetupRecommendation, ManagerSetupStatus } from '../../../types/managerSetup';
+import type { BudgetPressureSnapshot, OngoingConsequence, PrepRecommendationRecord } from '../../../types/systemDepth';
 import { TRAINING_ACTIVITY_LABELS, TRAINING_TYPE_LABELS, type TrainingScheduleEntry } from '../../../types/training';
 import { MainLoopPanel } from '../components/MainLoopPanel';
 import './DayView.css';
@@ -126,6 +132,9 @@ export function DayView() {
   const [todayTraining, setTodayTraining] = useState<TrainingScheduleEntry | null>(null);
   const [impactSummary, setImpactSummary] = useState<ImpactSummaryItem[]>([]);
   const [nextMatch, setNextMatch] = useState<NextMatchSummary | null>(null);
+  const [budgetPressure, setBudgetPressure] = useState<BudgetPressureSnapshot | null>(null);
+  const [consequences, setConsequences] = useState<OngoingConsequence[]>([]);
+  const [prepRecords, setPrepRecords] = useState<PrepRecommendationRecord[]>([]);
   const [setupStatus, setSetupStatus] = useState<ManagerSetupStatus | null>(null);
   const [setupRecommendations, setSetupRecommendations] = useState<CoachSetupRecommendation[]>([]);
   const [setupMessage, setSetupMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
@@ -241,13 +250,20 @@ export function DayView() {
     let cancelled = false;
     const loadImpactSummary = async () => {
       try {
-        const [identity, interventions, recommendations] = await Promise.all([
+        const [identity, interventions, recommendations, pressure, activeConsequences, recentPrep] = await Promise.all([
           getManagerIdentity(save.id).catch(() => null),
           getActiveInterventionEffects(season.currentDate).catch(() => new Map()),
           generateStaffRecommendations(userTeam.id, season.id).catch(() => []),
+          getBudgetPressureSnapshot(userTeam.id, season.id).catch(() => null),
+          getActiveConsequences(userTeam.id, season.id, season.currentDate).catch(() => []),
+          getPrepRecommendationRecords(userTeam.id, season.id, 2).catch(() => []),
         ]);
 
         if (cancelled) return;
+
+        setBudgetPressure(pressure);
+        setConsequences(activeConsequences);
+        setPrepRecords(recentPrep);
 
         const items: ImpactSummaryItem[] = [];
 
@@ -294,7 +310,12 @@ export function DayView() {
         setImpactSummary(items.slice(0, 4));
       } catch (error) {
         console.warn('[DayView] failed to build impact summary:', error);
-        if (!cancelled) setImpactSummary([]);
+        if (!cancelled) {
+          setImpactSummary([]);
+          setBudgetPressure(null);
+          setConsequences([]);
+          setPrepRecords([]);
+        }
       }
     };
 
@@ -525,6 +546,8 @@ export function DayView() {
   const trainingRecommendation = setupRecommendations.find((item) => item.kind === 'training') ?? null;
   const tacticsRecommendation = setupRecommendations.find((item) => item.kind === 'tactics') ?? null;
   const coachAdvice = trainingRecommendation ?? tacticsRecommendation ?? null;
+  const topConsequence = consequences[0] ?? null;
+  const latestPrepRecord = prepRecords[0] ?? null;
 
   if (!season || !save || !userTeam) {
     return <p className="fm-text-muted fm-text-md">시즌 데이터를 불러오는 중입니다...</p>;
@@ -685,6 +708,49 @@ export function DayView() {
           ]}
           note={getDecisionImpact(autoActivity, todayTraining)}
         />
+
+        {(budgetPressure || topConsequence || latestPrepRecord) && (
+          <div className="fm-grid fm-grid--3 fm-mb-md" style={{ gap: '12px' }}>
+            {budgetPressure && (
+              <div className="fm-card fm-flex-col fm-gap-sm">
+                <div className="fm-flex fm-items-center fm-justify-between fm-gap-sm">
+                  <span className="fm-text-sm fm-text-muted">예산 압박</span>
+                  <span className={`fm-badge ${budgetPressure.pressureLevel === 'critical' ? 'fm-badge--danger' : budgetPressure.pressureLevel === 'watch' ? 'fm-badge--warning' : 'fm-badge--success'}`}>
+                    {budgetPressure.pressureLevel}
+                  </span>
+                </div>
+                <strong className="fm-text-primary">이번 주 고정 지출</strong>
+                <p className="fm-text-sm fm-text-secondary" style={{ margin: 0 }}>
+                  {budgetPressure.weeklyRecurringExpenses.toLocaleString()} / 실패 협상 {budgetPressure.recentNegotiationCosts.toLocaleString()}
+                </p>
+              </div>
+            )}
+            {topConsequence && (
+              <div className="fm-card fm-flex-col fm-gap-sm">
+                <div className="fm-flex fm-items-center fm-justify-between fm-gap-sm">
+                  <span className="fm-text-sm fm-text-muted">지속 중인 후폭풍</span>
+                  <span className={`fm-badge ${topConsequence.severity === 'high' ? 'fm-badge--danger' : topConsequence.severity === 'medium' ? 'fm-badge--warning' : 'fm-badge--default'}`}>
+                    {topConsequence.severity}
+                  </span>
+                </div>
+                <strong className="fm-text-primary">{topConsequence.title}</strong>
+                <p className="fm-text-sm fm-text-secondary" style={{ margin: 0 }}>{topConsequence.summary}</p>
+              </div>
+            )}
+            {latestPrepRecord && (
+              <div className="fm-card fm-flex-col fm-gap-sm">
+                <div className="fm-flex fm-items-center fm-justify-between fm-gap-sm">
+                  <span className="fm-text-sm fm-text-muted">준비 추적</span>
+                  <span className="fm-badge fm-badge--info">{latestPrepRecord.status}</span>
+                </div>
+                <strong className="fm-text-primary">{latestPrepRecord.title}</strong>
+                <p className="fm-text-sm fm-text-secondary" style={{ margin: 0 }}>
+                  {latestPrepRecord.impactSummary ?? latestPrepRecord.summary}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="fm-panel">
           <div className="fm-panel__header">

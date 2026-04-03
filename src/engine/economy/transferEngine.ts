@@ -1,12 +1,15 @@
 import {
   createTransferOffer,
+  getActiveSeason,
   getPlayerById,
-  getTeamTotalSalary,
+  getPlayersByTeamId,
+  updateTransferOfferTerms,
 } from '../../db/queries';
 import { getDatabase } from '../../db/database';
 import { agentNegotiate } from '../agent/agentEngine';
 import { canSignForeignPlayer } from '../rules/leagueRulesEngine';
 import type { Region } from '../../types/game';
+import type { Player } from '../../types/player';
 import {
   AI_TRANSFER_ATTEMPT_RATE,
   calculateAgentFee,
@@ -15,9 +18,9 @@ import {
   findWeakestPosition,
   getAgeFactor,
   POSITIONS,
-  SALARY_CAP,
   WEAK_POSITION_THRESHOLD,
 } from './transferValuation';
+import { evaluatePayrollImpact, getTeamPayrollSnapshot } from './payrollEngine';
 import {
   acceptFreeAgentOffer,
   acceptTransferOffer,
@@ -32,6 +35,8 @@ import {
   processAIFreeAgentSignings,
   processAITransfers,
 } from './transferAi';
+import { recordNegotiationExpense } from '../manager/systemDepthEngine';
+import { getRelationshipInfluenceSnapshot } from '../manager/releaseDepthEngine';
 
 export {
   AI_TRANSFER_ATTEMPT_RATE,
@@ -50,13 +55,333 @@ export {
   processAITransfers,
   processExpiredContracts,
   rejectTransferOffer,
-  SALARY_CAP,
   WEAK_POSITION_THRESHOLD,
 };
 
 export interface TransferValidation {
   valid: boolean;
   reason?: string;
+}
+
+export interface TransferNegotiationEvaluation {
+  accepted: boolean;
+  reason: string;
+  counterOffer?: {
+    transferFee: number;
+    offeredSalary: number;
+    contractYears: number;
+  };
+}
+
+function roundOfferAmount(value: number): number {
+  return Math.max(0, Math.round(value / 100) * 100);
+}
+
+function calculateContactCost(transferFee: number, offeredSalary: number): number {
+  return Math.max(100, Math.round(offeredSalary * 0.05 + transferFee * 0.01));
+}
+
+function calculateFailureCost(contactCost: number): number {
+  return Math.max(75, Math.round(contactCost * 0.65));
+}
+
+type SellingClubStance = 'closed' | 'reluctant' | 'open';
+
+interface ContractTransferContext {
+  stance: SellingClubStance;
+  premiumMultiplier: number;
+  salaryMultiplier: number;
+  minimumYears: number;
+  reason: string;
+}
+
+function getPlayerRelationshipTransferModifier(
+  playerName: string,
+  relationshipSnapshot: Awaited<ReturnType<typeof getRelationshipInfluenceSnapshot>> | null,
+): {
+  premiumDelta: number;
+  salaryDelta: number;
+  reasonSuffix: string;
+} {
+  if (!relationshipSnapshot) {
+    return { premiumDelta: 0, salaryDelta: 0, reasonSuffix: '' };
+  }
+
+  const strongPairCount = relationshipSnapshot.strongPairs.filter((pair) => pair.names.includes(playerName)).length;
+  const mentorLinkCount = relationshipSnapshot.mentorLinks.filter((pair) => pair.names.includes(playerName)).length;
+  const riskPairCount = relationshipSnapshot.riskPairs.filter((pair) => pair.names.includes(playerName)).length;
+
+  if (strongPairCount === 0 && mentorLinkCount === 0 && riskPairCount === 0) {
+    return { premiumDelta: 0, salaryDelta: 0, reasonSuffix: '' };
+  }
+
+  return {
+    premiumDelta: strongPairCount * 0.45 + mentorLinkCount * 0.3 - riskPairCount * 0.35,
+    salaryDelta: strongPairCount * 0.05 + mentorLinkCount * 0.03 - riskPairCount * 0.04,
+    reasonSuffix:
+      strongPairCount > riskPairCount
+        ? ' 핵심 듀오와 멘토 축이 있어 판매 저항이 더 강합니다.'
+        : riskPairCount > 0
+          ? ' 라커룸 마찰이 있어 완전 불가보다는 대화 여지가 조금 더 있습니다.'
+          : '',
+  };
+}
+
+async function getContractTransferContext(teamId: string, playerId: string): Promise<ContractTransferContext> {
+  const db = await getDatabase();
+  const [player, activeSeason, roster, relationshipSnapshot] = await Promise.all([
+    getPlayerById(playerId),
+    getActiveSeason().catch(() => null),
+    getPlayersByTeamId(teamId),
+    getRelationshipInfluenceSnapshot(teamId).catch(() => null),
+  ]);
+
+  if (!player || player.teamId !== teamId) {
+    return {
+      stance: 'open',
+      premiumMultiplier: 1,
+      salaryMultiplier: 1,
+      minimumYears: 2,
+      reason: '시장에 나온 선수입니다.',
+    };
+  }
+
+  const division = (player as Player & { division?: string }).division ?? null;
+  const samePositionPlayers = roster.filter((candidate) => candidate.position === player.position);
+  const strongestAtPosition = samePositionPlayers.every((candidate) => calculatePlayerValue(candidate) <= calculatePlayerValue(player));
+  const expiringSoon = activeSeason ? player.contract.contractEndSeason <= activeSeason.id + 1 : false;
+  const lowMorale = player.mental.morale <= 25;
+  const isBenchPlayer = division === 'sub';
+  const relationshipModifier = getPlayerRelationshipTransferModifier(player.name, relationshipSnapshot);
+
+  const [transferComplaints, playerRequests] = await Promise.all([
+    db.select<{ severity: number }[]>(
+      `SELECT severity
+       FROM player_complaints
+       WHERE player_id = $1
+         AND team_id = $2
+         AND complaint_type = 'transfer'
+         AND status = 'active'
+       ORDER BY severity DESC`,
+      [playerId, teamId],
+    ),
+    db.select<{ id: number }[]>(
+      `SELECT id
+       FROM transfer_offers
+       WHERE player_id = $1
+         AND to_team_id = $2
+         AND status = 'player_request'`,
+      [playerId, teamId],
+    ),
+  ]);
+
+  const transferSeverity = transferComplaints[0]?.severity ?? 0;
+  const hasTransferRequest = playerRequests.length > 0 || transferSeverity >= 2;
+
+  if (hasTransferRequest) {
+    return {
+      stance: 'open',
+      premiumMultiplier: Math.max(1.4, (strongestAtPosition ? 2.1 : 1.7) + relationshipModifier.premiumDelta * 0.4),
+      salaryMultiplier: Math.max(1.08, 1.18 + relationshipModifier.salaryDelta * 0.5),
+      minimumYears: 2,
+      reason: '선수가 이적을 원하고 있어 협상은 가능하지만, 여전히 큰 프리미엄이 필요합니다.',
+    };
+  }
+
+  if ((isBenchPlayer && expiringSoon) || (isBenchPlayer && lowMorale)) {
+    return {
+      stance: 'reluctant',
+      premiumMultiplier:
+        Math.max(2.1, (strongestAtPosition ? 3.2 : 2.8) + Math.max(0, (relationshipSnapshot?.transferImpact ?? 0) * 0.02) + relationshipModifier.premiumDelta),
+      salaryMultiplier: Math.max(1.18, 1.28 + relationshipModifier.salaryDelta),
+      minimumYears: 2,
+      reason: '계약이 남은 선수라 기본적으로는 판매 대상이 아닙니다. 매우 큰 보상이 있어야만 대화가 가능합니다.',
+    };
+  }
+
+  return {
+    stance: 'closed',
+    premiumMultiplier:
+      Math.max(3.8, (strongestAtPosition ? 5 : 4.2) + Math.max(0, (relationshipSnapshot?.transferImpact ?? 0) * 0.03) + relationshipModifier.premiumDelta),
+    salaryMultiplier: Math.max(1.3, 1.45 + relationshipModifier.salaryDelta),
+    minimumYears: 3,
+    reason: 'LoL 팀은 계약이 남은 핵심 선수를 거의 시장에 내놓지 않습니다. 이 선수는 사실상 협상 불가입니다.',
+  };
+}
+
+async function getNegotiationThresholds(teamId: string, playerId: string): Promise<{
+  stance: SellingClubStance;
+  minTransferFee: number;
+  minSalary: number;
+  contractYears: number;
+  reason: string;
+}> {
+  const [player, roster] = await Promise.all([
+    getPlayerById(playerId),
+    getPlayersByTeamId(teamId),
+  ]);
+
+  if (!player) {
+    return {
+      stance: 'open',
+      minTransferFee: 0,
+      minSalary: 0,
+      contractYears: 2,
+      reason: '선수 정보를 찾을 수 없습니다.',
+    };
+  }
+
+  const contractContext = await getContractTransferContext(teamId, playerId);
+  const marketValue = calculatePlayerValue(player);
+  const fairSalary = calculateFairSalary(player);
+  const samePositionCount = roster.filter((candidate) => candidate.position === player.position).length;
+  const scarcityMultiplier = samePositionCount <= 1 ? 1.35 : samePositionCount === 2 ? 1.18 : 1.0;
+
+  return {
+    stance: contractContext.stance,
+    minTransferFee: roundOfferAmount(marketValue * scarcityMultiplier * contractContext.premiumMultiplier),
+    minSalary: roundOfferAmount(fairSalary * contractContext.salaryMultiplier),
+    contractYears: Math.max(contractContext.minimumYears, 2),
+    reason: contractContext.reason,
+  };
+}
+
+export async function evaluateIncomingTransferOffer(offer: {
+  teamId: string;
+  playerId: string;
+  transferFee: number;
+  offeredSalary: number;
+  contractYears: number;
+}): Promise<TransferNegotiationEvaluation> {
+  const thresholds = await getNegotiationThresholds(offer.teamId, offer.playerId);
+  if (thresholds.stance === 'closed') {
+    return {
+      accepted: false,
+      reason: thresholds.reason,
+    };
+  }
+  const feeGap = thresholds.minTransferFee - offer.transferFee;
+  const salaryGap = thresholds.minSalary - offer.offeredSalary;
+
+  if (feeGap <= 0 && salaryGap <= 0) {
+    return {
+      accepted: true,
+      reason: '현재 조건이면 상대 구단과 선수 측이 모두 합의할 가능성이 높습니다.',
+    };
+  }
+
+  const severeLowball = feeGap > thresholds.minTransferFee * (thresholds.stance === 'reluctant' ? 0.15 : 0.3);
+  const counterOffer = {
+    transferFee: roundOfferAmount(Math.max(offer.transferFee, thresholds.minTransferFee)),
+    offeredSalary: roundOfferAmount(Math.max(offer.offeredSalary, thresholds.minSalary)),
+    contractYears: Math.max(offer.contractYears, thresholds.contractYears),
+  };
+
+  return {
+    accepted: false,
+    reason: severeLowball
+      ? '현재 제안은 시장가보다 낮아 바로 수락하기 어렵습니다. 더 높은 이적료가 필요합니다.'
+      : '조건을 조금 더 올리면 협상이 가능합니다.',
+    counterOffer,
+  };
+}
+
+export async function evaluateOutgoingTransferCounter(params: {
+  fromTeamId: string;
+  toTeamId: string;
+  playerId: string;
+  transferFee: number;
+  offeredSalary: number;
+  contractYears: number;
+}): Promise<TransferNegotiationEvaluation> {
+  return evaluateIncomingTransferOffer({
+    teamId: params.toTeamId,
+    playerId: params.playerId,
+    transferFee: params.transferFee,
+    offeredSalary: params.offeredSalary,
+    contractYears: params.contractYears,
+  });
+}
+
+export async function respondToIncomingTransferOffer(
+  offer: {
+    id: number;
+    seasonId: number;
+    fromTeamId: string;
+    toTeamId: string | null;
+    playerId: string;
+    transferFee: number;
+    offeredSalary: number;
+    contractYears: number;
+    status: 'pending' | 'accepted' | 'rejected' | 'cancelled' | 'player_request';
+    offerDate: string;
+  },
+  currentSeasonId: number,
+  resolvedDate: string,
+  action: 'accept' | 'reject' | 'counter',
+  counterOffer?: {
+    transferFee: number;
+    offeredSalary: number;
+    contractYears: number;
+  },
+): Promise<TransferNegotiationEvaluation> {
+  if (action === 'reject') {
+    await rejectTransferOffer(offer.id, resolvedDate);
+    return {
+      accepted: false,
+      reason: '제안을 거절했습니다.',
+    };
+  }
+
+  if (action === 'accept') {
+    await acceptTransferOffer(offer, currentSeasonId, resolvedDate);
+    return {
+      accepted: true,
+      reason: '제안을 수락했습니다.',
+    };
+  }
+
+  if (!offer.toTeamId || !counterOffer) {
+    return {
+      accepted: false,
+      reason: '카운터 제안 조건이 올바르지 않습니다.',
+    };
+  }
+
+  const evaluation = await evaluateIncomingTransferOffer({
+    teamId: offer.toTeamId,
+    playerId: offer.playerId,
+    transferFee: counterOffer.transferFee,
+    offeredSalary: counterOffer.offeredSalary,
+    contractYears: counterOffer.contractYears,
+  });
+
+  if (!evaluation.accepted) {
+    return evaluation;
+  }
+
+  await updateTransferOfferTerms(
+    offer.id,
+    counterOffer.transferFee,
+    counterOffer.offeredSalary,
+    counterOffer.contractYears,
+  );
+
+  await acceptTransferOffer(
+    {
+      ...offer,
+      transferFee: counterOffer.transferFee,
+      offeredSalary: counterOffer.offeredSalary,
+      contractYears: counterOffer.contractYears,
+    },
+    currentSeasonId,
+    resolvedDate,
+  );
+
+  return {
+    accepted: true,
+    reason: '카운터 조건이 받아들여졌습니다.',
+  };
 }
 
 export async function validateTransferOffer(
@@ -87,14 +412,24 @@ export async function validateTransferOffer(
     };
   }
 
-  const currentTotalSalary = await getTeamTotalSalary(fromTeamId);
+  const payrollSnapshot = await getTeamPayrollSnapshot(fromTeamId);
   const player = await getPlayerById(playerId);
+  if (player && player.teamId && player.teamId !== fromTeamId) {
+    const contractContext = await getContractTransferContext(player.teamId, player.id);
+    if (contractContext.stance === 'closed') {
+      return { valid: false, reason: contractContext.reason };
+    }
+  }
   const departingPlayerSalary = player && player.teamId === fromTeamId ? player.contract.salary : 0;
-  const projectedSalary = currentTotalSalary - departingPlayerSalary + offeredSalary;
-  if (projectedSalary > SALARY_CAP) {
+  const projectedPayroll = payrollSnapshot.totalPayroll - departingPlayerSalary + offeredSalary;
+  const payrollImpact = evaluatePayrollImpact({
+    totalPayroll: projectedPayroll,
+    salaryCap: payrollSnapshot.salaryCap,
+  });
+  if (payrollImpact.pressureBand === 'hard_stop') {
     return {
       valid: false,
-      reason: `Salary cap exceeded: ${projectedSalary.toLocaleString()} > ${SALARY_CAP.toLocaleString()}.`,
+      reason: `Payroll would blow past the cap (${projectedPayroll.toLocaleString()} > ${payrollSnapshot.salaryCap.toLocaleString()}) and the board will not approve it.`,
     };
   }
 
@@ -148,10 +483,28 @@ export async function offerFreeAgent(params: {
     return { success: false, reason: validation.reason };
   }
 
+  const contactCost = calculateContactCost(0, params.offeredSalary);
+  await recordNegotiationExpense({
+    teamId: params.fromTeamId,
+    seasonId: params.seasonId,
+    gameDate: params.offerDate,
+    amount: contactCost,
+    category: 'negotiation_contact',
+    description: `Initial approach cost for free agent ${params.playerId}`,
+  });
+
   const fairSalary = calculateFairSalary(await getPlayerForAgent(params.playerId));
   const agentResult = await agentNegotiate(params.playerId, params.offeredSalary, fairSalary);
 
   if (!agentResult.accepted) {
+    await recordNegotiationExpense({
+      teamId: params.fromTeamId,
+      seasonId: params.seasonId,
+      gameDate: params.offerDate,
+      amount: calculateFailureCost(contactCost),
+      category: 'failed_negotiation',
+      description: `Failed free-agent negotiation with ${params.playerId}`,
+    });
     return {
       success: false,
       reason: agentResult.message,
@@ -194,10 +547,28 @@ export async function offerTransfer(params: {
     return { success: false, reason: validation.reason };
   }
 
+  const contactCost = calculateContactCost(params.transferFee, params.offeredSalary);
+  await recordNegotiationExpense({
+    teamId: params.fromTeamId,
+    seasonId: params.seasonId,
+    gameDate: params.offerDate,
+    amount: contactCost,
+    category: 'negotiation_contact',
+    description: `Initial transfer approach cost for ${params.playerId}`,
+  });
+
   const fairSalary = calculateFairSalary(await getPlayerForAgent(params.playerId));
   const agentResult = await agentNegotiate(params.playerId, params.offeredSalary, fairSalary);
 
   if (!agentResult.accepted) {
+    await recordNegotiationExpense({
+      teamId: params.fromTeamId,
+      seasonId: params.seasonId,
+      gameDate: params.offerDate,
+      amount: calculateFailureCost(contactCost),
+      category: 'failed_negotiation',
+      description: `Failed transfer negotiation with ${params.playerId}`,
+    });
     return {
       success: false,
       reason: agentResult.message,

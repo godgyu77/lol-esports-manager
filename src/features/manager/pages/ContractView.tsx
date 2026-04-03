@@ -1,21 +1,15 @@
-/**
- * 계약 관리 페이지
- * - 만료 임박 선수 목록 (현재/다음 시즌 만료)
- * - 갱신 모달: 연봉 슬라이더 + 계약 기간(1~3년) 선택
- * - 팀 총 연봉 / 샐러리캡 표시
- */
-
-import { useEffect, useState, useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useGameStore } from '../../../stores/gameStore';
-import { getTeamTotalSalary } from '../../../db/queries';
 import {
+  attemptRenewal,
   calculateRenewalOffer,
   evaluatePlayerDemand,
-  attemptRenewal,
   getTeamExpiringContracts,
 } from '../../../engine/economy/contractEngine';
 import { calculateFairSalary } from '../../../engine/economy/transferEngine';
+import { getTeamPayrollSnapshot } from '../../../engine/economy/payrollEngine';
 import type { Player } from '../../../types/player';
+import type { TeamPayrollSnapshot } from '../../../types/systemDepth';
 import { POSITION_LABELS_SHORT as POSITION_LABELS } from '../../../utils/constants';
 import { formatAmount } from '../../../utils/formatUtils';
 
@@ -24,21 +18,28 @@ function getOverall(player: Player): number {
   return Math.round((s.mechanical + s.gameSense + s.teamwork + s.consistency + s.laning + s.aggression) / 6);
 }
 
+function getPressureTone(snapshot: TeamPayrollSnapshot | null): string {
+  if (!snapshot) return 'fm-text-success';
+  if (snapshot.pressureBand === 'hard_stop') return 'fm-text-danger';
+  if (snapshot.pressureBand === 'warning') return 'fm-text-danger';
+  if (snapshot.pressureBand === 'taxed') return 'fm-text-accent';
+  return 'fm-text-success';
+}
+
 export function ContractView() {
   const season = useGameStore((s) => s.season);
   const save = useGameStore((s) => s.save);
   const teams = useGameStore((s) => s.teams);
 
   const [expiringPlayers, setExpiringPlayers] = useState<(Player & { division: string })[]>([]);
-  const [teamSalary, setTeamSalary] = useState(0);
+  const [payrollSnapshot, setPayrollSnapshot] = useState<TeamPayrollSnapshot | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [renewalModal, setRenewalModal] = useState<Player | null>(null);
   const [offerSalary, setOfferSalary] = useState(0);
   const [offerYears, setOfferYears] = useState(2);
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
-  const userTeam = teams.find(t => t.id === save?.userTeamId);
-  const salaryCap = (userTeam?.salaryCap ?? 40) * 10000; // 억 → 만 원
+  const userTeam = teams.find((t) => t.id === save?.userTeamId);
 
   const loadData = useCallback(async () => {
     if (!season || !save) return;
@@ -46,23 +47,22 @@ export function ContractView() {
     setMessage(null);
 
     try {
-      const [expiring, salary] = await Promise.all([
+      const [expiring, snapshot] = await Promise.all([
         getTeamExpiringContracts(save.userTeamId, season.id),
-        getTeamTotalSalary(save.userTeamId),
+        getTeamPayrollSnapshot(save.userTeamId),
       ]);
-
       setExpiringPlayers(expiring);
-      setTeamSalary(salary);
+      setPayrollSnapshot(snapshot);
     } catch (err) {
-      console.error('계약 데이터 로딩 실패:', err);
+      console.error('contract data load failed:', err);
       setMessage({ text: '계약 데이터를 불러오는 중 오류가 발생했습니다.', type: 'error' });
     } finally {
       setIsLoading(false);
     }
-  }, [season, save]);
+  }, [save, season]);
 
   useEffect(() => {
-    loadData();
+    void loadData();
   }, [loadData]);
 
   const handleOpenRenewal = (player: Player) => {
@@ -77,7 +77,6 @@ export function ContractView() {
     if (!renewalModal || !season || !save) return;
 
     try {
-      // 팀 평균 사기를 간단히 사용 (로스터의 morale 평균)
       const roster = userTeam?.roster ?? [];
       const avgMorale = roster.length > 0
         ? roster.reduce((sum, p) => sum + p.mental.morale, 0) / roster.length
@@ -93,27 +92,28 @@ export function ContractView() {
       );
 
       if (result.success) {
-        setMessage({ text: `${renewalModal.name} 계약 갱신 완료!`, type: 'success' });
+        setMessage({ text: `${renewalModal.name} 재계약이 완료되었습니다.`, type: 'success' });
         setRenewalModal(null);
         await loadData();
       } else {
         setMessage({ text: result.reason, type: 'error' });
       }
     } catch (err) {
-      console.error('계약 갱신 실패:', err);
-      setMessage({ text: '계약 갱신 중 오류가 발생했습니다.', type: 'error' });
+      console.error('contract renewal failed:', err);
+      setMessage({ text: '재계약 처리 중 오류가 발생했습니다.', type: 'error' });
     }
   };
 
   if (!season || !save) {
-    return <p className="fm-text-muted">데이터를 불러오는 중...</p>;
+    return <p className="fm-text-muted">게임 데이터를 불러오는 중입니다...</p>;
   }
 
   if (isLoading) {
-    return <p className="fm-text-muted">계약 정보를 불러오는 중...</p>;
+    return <p className="fm-text-muted">계약 정보를 불러오는 중입니다...</p>;
   }
 
-  const salaryRemaining = salaryCap - teamSalary;
+  const capRoom = payrollSnapshot?.capRoom ?? 0;
+  const toneClass = getPressureTone(payrollSnapshot);
 
   return (
     <div>
@@ -121,40 +121,46 @@ export function ContractView() {
         <h1 className="fm-page-title">계약 관리</h1>
       </div>
 
-      {/* 팀 연봉 요약 */}
       <div className="fm-panel fm-mb-md">
         <div className="fm-panel__body--compact">
-          <div className="fm-flex fm-gap-lg fm-text-md">
+          <div className="fm-grid fm-grid--4 fm-gap-md">
             <span className="fm-text-secondary">
-              총 연봉: <strong className="fm-text-primary">{formatAmount(teamSalary)}</strong>
+              선수 연봉: <strong className="fm-text-primary">{formatAmount(payrollSnapshot?.playerSalaryTotal ?? 0)}</strong>
             </span>
             <span className="fm-text-secondary">
-              연봉 상한: <strong className="fm-text-muted">{formatAmount(salaryCap)}</strong>
+              스태프 인건비: <strong className="fm-text-primary">{formatAmount(payrollSnapshot?.staffSalaryTotal ?? 0)}</strong>
             </span>
             <span className="fm-text-secondary">
-              여유: <strong className={salaryRemaining > 0 ? 'fm-text-success' : 'fm-text-danger'}>{formatAmount(salaryRemaining)}</strong>
+              캡 반영 스태프 payroll: <strong className="fm-text-primary">{formatAmount(payrollSnapshot?.effectiveStaffPayroll ?? 0)}</strong>
+            </span>
+            <span className="fm-text-secondary">
+              총 payroll / cap:{' '}
+              <strong className={toneClass}>
+                {formatAmount(payrollSnapshot?.totalPayroll ?? 0)} / {formatAmount(payrollSnapshot?.salaryCap ?? 0)}
+              </strong>
             </span>
           </div>
+          {payrollSnapshot && (
+            <p className="fm-text-xs fm-text-muted fm-mt-sm" style={{ marginBottom: 0 }}>
+              Soft cap 구조입니다. 선수 연봉은 전액, 스태프는 역할별 가중치로 cap에 반영됩니다. 현재 여유 {formatAmount(capRoom)}, 사치세 {formatAmount(payrollSnapshot.luxuryTax)}, 상태 {payrollSnapshot.pressureBand}
+            </p>
+          )}
         </div>
       </div>
 
-      {/* 메시지 */}
       {message && (
         <div className={`fm-alert ${message.type === 'success' ? 'fm-alert--success' : 'fm-alert--danger'} fm-mb-md`}>
           <span className="fm-alert__text">{message.text}</span>
         </div>
       )}
 
-      {/* 만료 임박 선수 목록 */}
       <div className="fm-panel">
         <div className="fm-panel__header">
-          <span className="fm-panel__title">만료 임박 선수 (현재~다음 시즌)</span>
+          <span className="fm-panel__title">만료 임박 선수</span>
         </div>
         <div className="fm-panel__body--flush">
           {expiringPlayers.length === 0 ? (
-            <p className="fm-text-muted fm-text-md fm-p-md">
-              만료 임박 선수가 없습니다.
-            </p>
+            <p className="fm-text-muted fm-text-md fm-p-md">만료 임박 선수가 없습니다.</p>
           ) : (
             <div className="fm-table-wrap">
               <table className="fm-table fm-table--striped">
@@ -164,49 +170,39 @@ export function ContractView() {
                     <th>이름</th>
                     <th>나이</th>
                     <th>OVR</th>
-                    <th>잠재력</th>
+                    <th>포텐</th>
                     <th>현재 연봉</th>
-                    <th>요구 연봉</th>
+                    <th>요구 범위</th>
                     <th>만료 시즌</th>
-                    <th></th>
+                    <th />
                   </tr>
                 </thead>
                 <tbody>
                   {expiringPlayers
                     .sort((a, b) => getOverall(b) - getOverall(a))
-                    .map(player => {
+                    .map((player) => {
                       const ovr = getOverall(player);
                       const demand = evaluatePlayerDemand(player);
                       const isExpiredThisSeason = player.contract.contractEndSeason <= season.id;
                       return (
                         <tr key={player.id}>
-                          <td className="fm-cell--accent">
-                            {POSITION_LABELS[player.position] ?? player.position}
-                          </td>
-                          <td className="fm-cell--name">
-                            {player.name}
-                          </td>
+                          <td className="fm-cell--accent">{POSITION_LABELS[player.position] ?? player.position}</td>
+                          <td className="fm-cell--name">{player.name}</td>
                           <td>{player.age}</td>
-                          <td className={
-                            ovr >= 80 ? 'fm-cell--gold' : ovr >= 65 ? 'fm-cell--name' : ''
-                          }>
-                            {ovr}
-                          </td>
+                          <td className={ovr >= 80 ? 'fm-cell--gold' : ovr >= 65 ? 'fm-cell--name' : ''}>{ovr}</td>
                           <td>{player.potential}</td>
                           <td>{formatAmount(player.contract.salary)}/년</td>
-                          <td>
-                            {formatAmount(demand.minSalary)}~{formatAmount(demand.maxSalary)}/년
-                          </td>
+                          <td>{formatAmount(demand.minSalary)}~{formatAmount(demand.maxSalary)}/년</td>
                           <td className={isExpiredThisSeason ? 'fm-cell--red' : 'fm-cell--gold'}>
                             시즌 {player.contract.contractEndSeason}
-                            {isExpiredThisSeason && ' (만료)'}
+                            {isExpiredThisSeason ? ' (만료)' : ''}
                           </td>
                           <td>
                             <button
                               className="fm-btn fm-btn--primary fm-btn--sm"
                               onClick={() => handleOpenRenewal(player)}
                             >
-                              갱신
+                              재계약
                             </button>
                           </td>
                         </tr>
@@ -219,26 +215,26 @@ export function ContractView() {
         </div>
       </div>
 
-      {/* 갱신 모달 */}
       {renewalModal && (
-        <div className="fm-overlay" role="dialog" aria-modal="true" aria-label="계약 갱신" onClick={() => setRenewalModal(null)}>
-          <div className="fm-modal" onClick={e => e.stopPropagation()}>
+        <div className="fm-overlay" role="dialog" aria-modal="true" aria-label="재계약" onClick={() => setRenewalModal(null)}>
+          <div className="fm-modal" onClick={(e) => e.stopPropagation()}>
             <div className="fm-modal__header">
-              <h2 className="fm-modal__title">계약 갱신</h2>
+              <h2 className="fm-modal__title">재계약</h2>
               <button className="fm-modal__close" onClick={() => setRenewalModal(null)}>&times;</button>
             </div>
 
             <div className="fm-modal__body">
               <div className="fm-flex fm-items-center fm-gap-sm fm-mb-md" style={{ padding: 12, background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)' }}>
                 <span className="fm-badge fm-badge--accent">
-                  {POSITION_LABELS[renewalModal.position]}
+                  {POSITION_LABELS[renewalModal.position] ?? renewalModal.position}
                 </span>
                 <span className="fm-text-lg fm-font-semibold fm-text-primary">{renewalModal.name}</span>
                 <span className="fm-text-md fm-text-secondary">{renewalModal.age}세</span>
-                <span className="fm-text-md fm-font-bold fm-text-accent" style={{ marginLeft: 'auto' }}>OVR {getOverall(renewalModal)}</span>
+                <span className="fm-text-md fm-font-bold fm-text-accent" style={{ marginLeft: 'auto' }}>
+                  OVR {getOverall(renewalModal)}
+                </span>
               </div>
 
-              {/* 현재 계약 정보 */}
               <div className="fm-card fm-mb-md">
                 <div className="fm-info-row">
                   <span className="fm-info-row__label">현재 연봉</span>
@@ -248,30 +244,51 @@ export function ContractView() {
                   <span className="fm-info-row__label">적정 연봉</span>
                   <span className="fm-info-row__value">{formatAmount(calculateFairSalary(renewalModal))}/년</span>
                 </div>
+                {payrollSnapshot && (
+                  <>
+                    <div className="fm-info-row">
+                      <span className="fm-info-row__label">현재 payroll / cap</span>
+                      <span className="fm-info-row__value">
+                        {formatAmount(payrollSnapshot.totalPayroll)} / {formatAmount(payrollSnapshot.salaryCap)}
+                      </span>
+                    </div>
+                    <div className="fm-info-row">
+                      <span className="fm-info-row__label">캡 여유 / 사치세</span>
+                      <span className={`fm-info-row__value ${toneClass}`}>
+                        {formatAmount(payrollSnapshot.capRoom)} / {formatAmount(payrollSnapshot.luxuryTax)}
+                      </span>
+                    </div>
+                    <div className="fm-info-row">
+                      <span className="fm-info-row__label">스태프 cap 반영치</span>
+                      <span className="fm-info-row__value">{formatAmount(payrollSnapshot.effectiveStaffPayroll)}</span>
+                    </div>
+                  </>
+                )}
               </div>
 
-              {/* 요구 연봉 범위 */}
               {(() => {
                 const demand = evaluatePlayerDemand(renewalModal);
                 return (
                   <div className="fm-alert fm-alert--warning fm-mb-md">
                     <span className="fm-alert__text">
                       선수 요구: {formatAmount(demand.minSalary)} ~ {formatAmount(demand.maxSalary)}/년
-                      <span className="fm-text-sm fm-text-secondary" style={{ marginLeft: 8 }}>(희망: {formatAmount(demand.idealSalary)})</span>
+                      <span className="fm-text-sm fm-text-secondary" style={{ marginLeft: 8 }}>
+                        (이상적 {formatAmount(demand.idealSalary)})
+                      </span>
                     </span>
                   </div>
                 );
               })()}
 
               <div className="fm-mb-md">
-                <label className="fm-text-base fm-text-secondary fm-mb-sm" style={{ display: 'block' }}>제안 연봉 (만 원/년)</label>
+                <label className="fm-text-base fm-text-secondary fm-mb-sm" style={{ display: 'block' }}>제안 연봉</label>
                 <input
                   type="range"
                   min={Math.max(100, Math.round(evaluatePlayerDemand(renewalModal).minSalary * 0.5))}
                   max={Math.round(evaluatePlayerDemand(renewalModal).maxSalary * 1.5)}
                   step={50}
                   value={offerSalary}
-                  onChange={e => setOfferSalary(Number(e.target.value))}
+                  onChange={(e) => setOfferSalary(Number(e.target.value))}
                   style={{ width: '100%', marginBottom: 8, accentColor: 'var(--accent)' }}
                 />
                 <div className="fm-flex fm-items-center fm-gap-sm">
@@ -279,19 +296,19 @@ export function ContractView() {
                     type="number"
                     className="fm-input"
                     value={offerSalary}
-                    onChange={e => setOfferSalary(Number(e.target.value))}
+                    onChange={(e) => setOfferSalary(Number(e.target.value))}
                     min={100}
                     step={50}
                     style={{ width: 120 }}
                   />
-                  <span className="fm-text-base fm-text-muted">만 원/년</span>
+                  <span className="fm-text-base fm-text-muted">만원/년</span>
                 </div>
               </div>
 
               <div className="fm-mb-md">
-                <label className="fm-text-base fm-text-secondary fm-mb-sm" style={{ display: 'block' }}>계약 기간 (년)</label>
+                <label className="fm-text-base fm-text-secondary fm-mb-sm" style={{ display: 'block' }}>계약 기간</label>
                 <div className="fm-flex fm-gap-sm">
-                  {[1, 2, 3].map(y => (
+                  {[1, 2, 3].map((y) => (
                     <button
                       key={y}
                       className={`fm-btn ${offerYears === y ? 'fm-btn--primary' : ''}`}
@@ -309,7 +326,7 @@ export function ContractView() {
                 취소
               </button>
               <button className="fm-btn fm-btn--primary" onClick={handleSubmitRenewal}>
-                갱신 제안
+                재계약 제안
               </button>
             </div>
           </div>

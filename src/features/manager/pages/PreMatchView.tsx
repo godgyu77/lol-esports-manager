@@ -1,11 +1,16 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getPlayersByTeamId, getStandings } from '../../../db/queries';
+import { generateOpponentReport } from '../../../engine/analysis/matchAnalysisEngine';
+import { buildCompetitiveOperationBrief, type CompetitiveOperationBrief } from '../../../engine/manager/competitiveIdentityEngine';
 import { getManagerIdentity, getManagerIdentitySummaryLine } from '../../../engine/manager/managerIdentityEngine';
 import { getActiveInterventionEffects } from '../../../engine/manager/managerInterventionEngine';
+import { getBudgetPressureSnapshot, getPrepRecommendationRecords } from '../../../engine/manager/systemDepthEngine';
+import { getInternationalExpectationSnapshot } from '../../../engine/manager/releaseDepthEngine';
 import { generateStaffRecommendations } from '../../../engine/staff/staffEngine';
 import { useGameStore } from '../../../stores/gameStore';
 import type { Player } from '../../../types/player';
+import type { BudgetPressureSnapshot, InternationalExpectationSnapshot, PrepRecommendationRecord } from '../../../types/systemDepth';
 import { POSITION_LABELS_SHORT as POSITION_LABELS } from '../../../utils/constants';
 
 const POSITION_ORDER = ['top', 'jungle', 'mid', 'adc', 'support'] as const;
@@ -56,6 +61,11 @@ export function PreMatchView() {
   const [userPlayers, setUserPlayers] = useState<(Player & { division: string })[]>([]);
   const [opponentStanding, setOpponentStanding] = useState<{ wins: number; losses: number; rank: number } | null>(null);
   const [impactCards, setImpactCards] = useState<MatchImpactCard[]>([]);
+  const [budgetPressure, setBudgetPressure] = useState<BudgetPressureSnapshot | null>(null);
+  const [prepRecords, setPrepRecords] = useState<PrepRecommendationRecord[]>([]);
+  const [opponentReportSummary, setOpponentReportSummary] = useState<string | null>(null);
+  const [operationBrief, setOperationBrief] = useState<CompetitiveOperationBrief | null>(null);
+  const [internationalSnapshot, setInternationalSnapshot] = useState<InternationalExpectationSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
 
   const userTeamId = save?.userTeamId ?? '';
@@ -75,19 +85,33 @@ export function PreMatchView() {
     const load = async () => {
       setLoading(true);
       try {
-        const [oppPlayers, myPlayers, standings, identity, interventions, recommendations] = await Promise.all([
+        const [oppPlayers, myPlayers, standings, identity, interventions, recommendations, pressure, recentPrep, opponentReport, intlSnapshot] = await Promise.all([
           getPlayersByTeamId(opponentTeamId),
           getPlayersByTeamId(userTeamId),
           getStandings(season.id),
           save ? getManagerIdentity(save.id).catch(() => null) : Promise.resolve(null),
           getActiveInterventionEffects(season.currentDate).catch(() => new Map()),
           generateStaffRecommendations(userTeam.id, season.id).catch(() => []),
+          getBudgetPressureSnapshot(userTeam.id, season.id).catch(() => null),
+          getPrepRecommendationRecords(userTeam.id, season.id, 3).catch(() => []),
+          generateOpponentReport(userTeam.id, opponentTeamId, season.currentDate).catch(() => null),
+          getInternationalExpectationSnapshot(userTeam.id, season.id, pendingMatch?.matchType ?? null, save?.id).catch(() => null),
         ]);
 
         if (cancelled) return;
 
         setOpponentPlayers(oppPlayers);
         setUserPlayers(myPlayers);
+        setBudgetPressure(pressure);
+        setPrepRecords(recentPrep);
+        setOpponentReportSummary(
+          opponentReport
+            ? opponentReport.weakPosition
+              ? `Weak lane to pressure: ${opponentReport.weakPosition}. Analysis accuracy ${opponentReport.accuracy}.`
+              : `Scouting confidence ${opponentReport.accuracy}. Recommended bans: ${opponentReport.recommendedBans.slice(0, 3).join(', ') || 'none'}.`
+            : null,
+        );
+        setInternationalSnapshot(intlSnapshot);
 
         const sorted = [...standings].sort((a, b) => {
           if (b.wins !== a.wins) return b.wins - a.wins;
@@ -98,6 +122,27 @@ export function PreMatchView() {
         const standing = sorted[standingIndex];
         if (standing) {
           setOpponentStanding({ wins: standing.wins, losses: standing.losses, rank: standingIndex + 1 });
+        }
+
+        if (pendingMatch && opponentTeam) {
+          const brief = await buildCompetitiveOperationBrief({
+            seasonId: season.id,
+            currentDate: season.currentDate,
+            pendingMatch,
+            userTeam,
+            opponentTeam,
+            userPlayers: myPlayers,
+            opponentPlayers: oppPlayers,
+            recommendedBans,
+            prepRecords: recentPrep,
+            staffRecommendations: recommendations,
+            budgetPressure: pressure,
+          }).catch(() => null);
+          if (!cancelled) {
+            setOperationBrief(brief);
+          }
+        } else {
+          setOperationBrief(null);
         }
 
         const interventionPlayers = userTeam.roster
@@ -156,7 +201,7 @@ export function PreMatchView() {
     return () => {
       cancelled = true;
     };
-  }, [opponentTeamId, recommendedBans.length, save, season, userTeam, userTeamId]);
+  }, [opponentTeam, opponentTeamId, pendingMatch, recommendedBans, save, season, userTeam, userTeamId]);
 
   if (!pendingMatch) {
     return (
@@ -194,6 +239,7 @@ export function PreMatchView() {
     : 0;
 
   const pressureTag = opponentStanding && opponentStanding.rank <= 3 ? '강한 상대' : '관리 가능한 상대';
+  const latestPrepRecord = prepRecords[0] ?? null;
   const focusCards = [
     {
       title: '훈련 마무리',
@@ -269,6 +315,133 @@ export function PreMatchView() {
           </div>
         </div>
       </div>
+
+      {(opponentReportSummary || latestPrepRecord || budgetPressure || internationalSnapshot) && (
+        <div className="fm-grid fm-grid--3 fm-mb-md" style={{ gap: '12px' }}>
+          {opponentReportSummary && (
+            <div className="fm-card fm-flex-col fm-gap-sm">
+              <div className="fm-flex fm-items-center fm-justify-between fm-gap-sm">
+                <span className="fm-text-sm fm-text-muted">상대 분석</span>
+                <span className="fm-badge fm-badge--info">scouting</span>
+              </div>
+              <strong className="fm-text-primary">오늘의 공략 포인트</strong>
+              <p className="fm-text-sm fm-text-secondary" style={{ margin: 0 }}>{opponentReportSummary}</p>
+            </div>
+          )}
+          {latestPrepRecord && (
+            <div className="fm-card fm-flex-col fm-gap-sm">
+              <div className="fm-flex fm-items-center fm-justify-between fm-gap-sm">
+                <span className="fm-text-sm fm-text-muted">준비 추적</span>
+                <span className="fm-badge fm-badge--default">{latestPrepRecord.status}</span>
+              </div>
+              <strong className="fm-text-primary">{latestPrepRecord.title}</strong>
+              <p className="fm-text-sm fm-text-secondary" style={{ margin: 0 }}>
+                {latestPrepRecord.impactSummary ?? latestPrepRecord.summary}
+              </p>
+            </div>
+          )}
+          {budgetPressure && (
+            <div className="fm-card fm-flex-col fm-gap-sm">
+              <div className="fm-flex fm-items-center fm-justify-between fm-gap-sm">
+                <span className="fm-text-sm fm-text-muted">보드 압박</span>
+                <span className={`fm-badge ${budgetPressure.pressureLevel === 'critical' ? 'fm-badge--danger' : budgetPressure.pressureLevel === 'watch' ? 'fm-badge--warning' : 'fm-badge--success'}`}>
+                  {budgetPressure.pressureLevel}
+                </span>
+              </div>
+              <strong className="fm-text-primary">지출 여유 체크</strong>
+              <p className="fm-text-sm fm-text-secondary" style={{ margin: 0 }}>{budgetPressure.topDrivers[0]}</p>
+            </div>
+          )}
+          {internationalSnapshot && (
+            <div className="fm-card fm-flex-col fm-gap-sm">
+              <div className="fm-flex fm-items-center fm-justify-between fm-gap-sm">
+                <span className="fm-text-sm fm-text-muted">international desk</span>
+                <span className={`fm-badge ${internationalSnapshot.level === 'must_deliver' ? 'fm-badge--danger' : internationalSnapshot.level === 'contender' ? 'fm-badge--warning' : 'fm-badge--default'}`}>
+                  {internationalSnapshot.level}
+                </span>
+              </div>
+              <strong className="fm-text-primary">{internationalSnapshot.summary}</strong>
+              <p className="fm-text-sm fm-text-secondary" style={{ margin: 0 }}>{internationalSnapshot.styleClash}</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {operationBrief && (
+        <div className="fm-panel fm-mb-md">
+          <div className="fm-panel__header">
+            <span className="fm-panel__title">LoL 운영 브리프</span>
+          </div>
+          <div className="fm-panel__body">
+            <div className="fm-card fm-flex-col fm-gap-sm fm-mb-md">
+              <div className="fm-flex fm-items-center fm-justify-between fm-gap-sm">
+                <span className="fm-text-sm fm-text-muted">Desk opener</span>
+                <span className="fm-badge fm-badge--info">{operationBrief.storyPulse.tags[0]}</span>
+              </div>
+              <strong className="fm-text-primary">{operationBrief.deskHeadline}</strong>
+              <p className="fm-text-sm fm-text-secondary" style={{ margin: 0 }}>{operationBrief.deskSummary}</p>
+            </div>
+
+            <div className="fm-grid fm-grid--2" style={{ gap: '12px' }}>
+              <div className="fm-card fm-flex-col fm-gap-sm">
+                <div className="fm-flex fm-items-center fm-justify-between fm-gap-sm">
+                  <span className="fm-text-sm fm-text-muted">{operationBrief.patchPulse.label}</span>
+                  <span className="fm-badge fm-badge--default">meta</span>
+                </div>
+                <strong className="fm-text-primary">패치 메타</strong>
+                <p className="fm-text-sm fm-text-secondary" style={{ margin: 0 }}>{operationBrief.patchPulse.summary}</p>
+                {operationBrief.patchPulse.shifts.length > 0 && (
+                  <ul className="fm-text-sm fm-text-secondary" style={{ margin: 0, paddingLeft: '18px' }}>
+                    {operationBrief.patchPulse.shifts.map((shift) => <li key={shift}>{shift}</li>)}
+                  </ul>
+                )}
+              </div>
+
+              <div className="fm-card fm-flex-col fm-gap-sm">
+                <div className="fm-flex fm-items-center fm-justify-between fm-gap-sm">
+                  <span className="fm-text-sm fm-text-muted">{operationBrief.scrimPulse.label}</span>
+                  <span className="fm-badge fm-badge--success">scrim</span>
+                </div>
+                <strong className="fm-text-primary">스크림 포인트</strong>
+                <p className="fm-text-sm fm-text-secondary" style={{ margin: 0 }}>{operationBrief.scrimPulse.summary}</p>
+                <p className="fm-text-sm fm-text-secondary" style={{ margin: 0 }}>{operationBrief.scrimPulse.takeaway}</p>
+              </div>
+
+              <div className="fm-card fm-flex-col fm-gap-sm">
+                <div className="fm-flex fm-items-center fm-justify-between fm-gap-sm">
+                  <span className="fm-text-sm fm-text-muted">{operationBrief.draftPulse.label}</span>
+                  <span className="fm-badge fm-badge--warning">draft</span>
+                </div>
+                <strong className="fm-text-primary">밴픽 운영</strong>
+                <p className="fm-text-sm fm-text-secondary" style={{ margin: 0 }}>{operationBrief.draftPulse.summary}</p>
+                {operationBrief.draftPulse.bans.length > 0 && (
+                  <p className="fm-text-sm fm-text-secondary" style={{ margin: 0 }}>
+                    추천 밴: {operationBrief.draftPulse.bans.join(', ')}
+                  </p>
+                )}
+                {operationBrief.draftPulse.watchPoints.length > 0 && (
+                  <ul className="fm-text-sm fm-text-secondary" style={{ margin: 0, paddingLeft: '18px' }}>
+                    {operationBrief.draftPulse.watchPoints.map((watchPoint) => <li key={watchPoint}>{watchPoint}</li>)}
+                  </ul>
+                )}
+              </div>
+
+              <div className="fm-card fm-flex-col fm-gap-sm">
+                <div className="fm-flex fm-items-center fm-justify-between fm-gap-sm">
+                  <span className="fm-text-sm fm-text-muted">{operationBrief.coachPulse.label}</span>
+                  <span className="fm-badge fm-badge--info">briefing</span>
+                </div>
+                <strong className="fm-text-primary">{operationBrief.storyPulse.label}</strong>
+                <p className="fm-text-sm fm-text-secondary" style={{ margin: 0 }}>{operationBrief.coachPulse.summary}</p>
+                <ul className="fm-text-sm fm-text-secondary" style={{ margin: 0, paddingLeft: '18px' }}>
+                  {operationBrief.coachPulse.directives.map((directive) => <li key={directive}>{directive}</li>)}
+                </ul>
+                <p className="fm-text-sm fm-text-secondary" style={{ margin: 0 }}>{operationBrief.storyPulse.broadcastAngle}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="fm-panel fm-mb-md">
         <div className="fm-panel__header">

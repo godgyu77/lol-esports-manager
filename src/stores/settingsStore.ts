@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { StateCreator } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { soundManager } from '../audio/soundManager';
 import { Client, Stronghold } from '@tauri-apps/plugin-stronghold';
@@ -89,7 +90,7 @@ async function deleteApiKeyFromVault(provider: AiProvider): Promise<void> {
   }
 }
 
-interface SettingsState {
+export interface SettingsState {
   defaultSpeed: number;
   aiEnabled: boolean;
   aiModel: string;
@@ -127,9 +128,7 @@ interface SettingsState {
   initApiKeyStatus: (provider?: AiProvider) => Promise<void>;
 }
 
-export const useSettingsStore = create<SettingsState>()(
-  persist(
-    (set) => ({
+const createSettingsState: StateCreator<SettingsState, [], [], SettingsState> = (set) => ({
       defaultSpeed: 0.75,
       aiEnabled: true,
       aiModel: '',
@@ -188,7 +187,11 @@ export const useSettingsStore = create<SettingsState>()(
         const key = await getApiKeyFromVault(provider);
         set({ hasApiKey: !!key });
       },
-    }),
+    });
+
+export const useSettingsStore = create<SettingsState>()(
+  persist<SettingsState, [], [], Partial<SettingsState>>(
+    createSettingsState,
     {
       name: 'lol-esports-settings',
       partialize: (state) => ({

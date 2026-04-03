@@ -26,6 +26,14 @@ vi.mock('../../../engine/news/newsEngine', () => ({
   markAllAsRead: mockMarkAllAsRead,
   markAsRead: mockMarkAsRead,
   getArticleSummary: mockGetArticleSummary,
+  inferNarrativeTags: vi.fn((title: string, content: string) => {
+    const haystack = `${title} ${content}`.toLowerCase();
+    const tags: string[] = [];
+    if (haystack.includes('왕조') || haystack.includes('legacy')) tags.push('legacy');
+    if (haystack.includes('국제전') || haystack.includes('international')) tags.push('international');
+    if (haystack.includes('위기') || haystack.includes('압박') || haystack.includes('pressure')) tags.push('pressure');
+    return tags;
+  }),
 }));
 
 const briefingArticle: NewsArticle = {
@@ -33,14 +41,15 @@ const briefingArticle: NewsArticle = {
   seasonId: 1,
   articleDate: '2026-03-01',
   category: 'coach_briefing',
-  title: '코치 브리핑',
-  content: '코치가 최근 훈련과 전술 방향을 정리했습니다.',
+  title: 'Coach briefing',
+  content: 'Coaches summarized the current training direction and opponent prep.',
   importance: 2,
   isRead: false,
   relatedTeamId: 'lck_T1',
   relatedPlayerId: null,
   presentation: 'briefing',
   isDismissible: true,
+  narrativeTags: [],
 };
 
 const featureArticle: NewsArticle = {
@@ -48,14 +57,63 @@ const featureArticle: NewsArticle = {
   seasonId: 1,
   articleDate: '2026-03-01',
   category: 'match_result',
-  title: 'T1 승리',
-  content: 'T1이 개막전에서 강한 운영으로 승리했습니다.\n\n라인전과 교전에서 우위를 유지했습니다.',
+  title: 'T1 secure a clean win',
+  content: 'T1 controlled lanes well and converted that lead into a stable win.',
   importance: 3,
   isRead: false,
   relatedTeamId: 'lck_T1',
   relatedPlayerId: null,
   presentation: 'feature',
   isDismissible: false,
+  narrativeTags: [],
+};
+
+const legacyArticle: NewsArticle = {
+  id: 3,
+  seasonId: 1,
+  articleDate: '2026-03-02',
+  category: 'team_analysis',
+  title: 'Team outlook update',
+  content: '왕조 서사가 커지고 국제전 압박도 함께 높아지고 있다.',
+  importance: 2,
+  isRead: true,
+  relatedTeamId: 'lck_T1',
+  relatedPlayerId: null,
+  presentation: 'feature',
+  isDismissible: false,
+  narrativeTags: [],
+};
+
+const pressureArticle: NewsArticle = {
+  id: 4,
+  seasonId: 1,
+  articleDate: '2026-03-03',
+  category: 'team_analysis',
+  title: 'Locker room watch',
+  content: '재건 국면에서 위기와 압박이 동시에 커지고 있다.',
+  importance: 1,
+  isRead: true,
+  relatedTeamId: 'lck_T1',
+  relatedPlayerId: null,
+  presentation: 'feature',
+  isDismissible: false,
+  narrativeTags: [],
+};
+
+const taggedArticle: NewsArticle = {
+  id: 5,
+  seasonId: 1,
+  articleDate: '2026-03-03',
+  category: 'team_analysis',
+  title: 'Franchise desk memo',
+  content: 'Stored tags should surface even when the copy is otherwise neutral.',
+  importance: 2,
+  isRead: true,
+  relatedTeamId: 'lck_T1',
+  relatedPlayerId: null,
+  presentation: 'feature',
+  isDismissible: false,
+  narrativeTags: ['legacy', 'international'],
 };
 
 describe('NewsFeedView', () => {
@@ -65,7 +123,7 @@ describe('NewsFeedView', () => {
     mockGetUnreadBriefings.mockResolvedValue([briefingArticle]);
     mockGetRecentNews.mockImplementation(async (_seasonId: number, _limit: number, _offset: number, category?: string) => {
       if (category === 'coach_briefing') return [briefingArticle];
-      return [featureArticle];
+      return [featureArticle, legacyArticle, pressureArticle, taggedArticle];
     });
     mockGetUnreadCount.mockResolvedValue(1);
     mockMarkAllAsRead.mockResolvedValue(undefined);
@@ -81,21 +139,23 @@ describe('NewsFeedView', () => {
           split: 'spring',
           currentDate: '2026-03-01',
           currentWeek: 1,
+          startDate: '2026-01-01',
           endDate: '2026-06-01',
+          isActive: true,
         },
       },
     });
 
-    expect(await screen.findByText('뉴스 피드')).toBeInTheDocument();
-    expect(await screen.findByRole('button', { name: '뉴스 기사 열기: T1 승리' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1 })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /뉴스 기사 열기: T1 secure a clean win/i })).toBeInTheDocument();
 
     await act(async () => {
-      screen.getByRole('button', { name: '뉴스 기사 열기: T1 승리' }).click();
+      screen.getByRole('button', { name: /뉴스 기사 열기: T1 secure a clean win/i }).click();
     });
 
     await waitFor(() => {
       expect(mockMarkAsRead).toHaveBeenCalledWith(2);
-      expect(screen.getByRole('button', { name: '뉴스 기사 열기: T1 승리' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /뉴스 기사 열기: T1 secure a clean win/i })).toBeInTheDocument();
     });
   });
 
@@ -108,36 +168,38 @@ describe('NewsFeedView', () => {
           split: 'spring',
           currentDate: '2026-03-01',
           currentWeek: 1,
+          startDate: '2026-01-01',
           endDate: '2026-06-01',
+          isActive: true,
         },
       },
     });
 
-    await screen.findByText('뉴스 피드');
+    await screen.findByRole('heading', { level: 1 });
+
+    const tabs = within(screen.getByRole('tablist')).getAllByRole('tab');
 
     await act(async () => {
-      screen.getByRole('tab', { name: '미확인 브리핑' }).click();
+      tabs[1].click();
     });
 
-    expect(await screen.findByRole('button', { name: '뉴스 기사 열기: 코치 브리핑' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /뉴스 기사 열기: Coach briefing/i })).toBeInTheDocument();
 
     await act(async () => {
-      screen.getByRole('button', { name: '뉴스 기사 열기: 코치 브리핑' }).click();
+      screen.getByRole('button', { name: /뉴스 기사 열기: Coach briefing/i }).click();
     });
 
     mockGetUnreadBriefings.mockResolvedValue([]);
 
     await act(async () => {
-      screen.getByRole('tab', { name: '전체 기사' }).click();
+      tabs[0].click();
     });
 
     await act(async () => {
-      screen.getByRole('tab', { name: '미확인 브리핑' }).click();
+      tabs[1].click();
     });
 
-    await waitFor(() => {
-      expect(screen.getByText('읽지 않은 브리핑이 없습니다.')).toBeInTheDocument();
-    });
+    expect(await screen.findByText('읽지 않은 브리핑이 없습니다.')).toBeInTheDocument();
   });
 
   it('supports keyboard navigation across news filters', async () => {
@@ -149,7 +211,9 @@ describe('NewsFeedView', () => {
           split: 'spring',
           currentDate: '2026-03-01',
           currentWeek: 1,
+          startDate: '2026-01-01',
           endDate: '2026-06-01',
+          isActive: true,
         },
       },
     });
@@ -166,5 +230,82 @@ describe('NewsFeedView', () => {
       expect(buttons[1]).toHaveFocus();
       expect(buttons[1]).toHaveClass('fm-tab--active');
     });
+  });
+
+  it('surfaces narrative badges for legacy and international articles', async () => {
+    renderWithProviders(<NewsFeedView />, {
+      gameState: {
+        season: {
+          id: 1,
+          year: 2026,
+          split: 'spring',
+          currentDate: '2026-03-01',
+          currentWeek: 1,
+          startDate: '2026-01-01',
+          endDate: '2026-06-01',
+          isActive: true,
+        },
+      },
+    });
+
+    await screen.findByRole('heading', { level: 1 });
+
+    await act(async () => {
+      screen.getByRole('button', { name: /뉴스 기사 열기: Team outlook update/i }).click();
+    });
+
+    expect((await screen.findAllByText('legacy')).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('international').length).toBeGreaterThan(0);
+  });
+
+  it('detects pressure badges from Korean narrative copy', async () => {
+    renderWithProviders(<NewsFeedView />, {
+      gameState: {
+        season: {
+          id: 1,
+          year: 2026,
+          split: 'spring',
+          currentDate: '2026-03-01',
+          currentWeek: 1,
+          startDate: '2026-01-01',
+          endDate: '2026-06-01',
+          isActive: true,
+        },
+      },
+    });
+
+    await screen.findByRole('heading', { level: 1 });
+
+    await act(async () => {
+      screen.getByRole('button', { name: /뉴스 기사 열기: Locker room watch/i }).click();
+    });
+
+    expect((await screen.findAllByText('pressure')).length).toBeGreaterThan(0);
+  });
+
+  it('prefers stored narrative tags when articles already carry metadata', async () => {
+    renderWithProviders(<NewsFeedView />, {
+      gameState: {
+        season: {
+          id: 1,
+          year: 2026,
+          split: 'spring',
+          currentDate: '2026-03-01',
+          currentWeek: 1,
+          startDate: '2026-01-01',
+          endDate: '2026-06-01',
+          isActive: true,
+        },
+      },
+    });
+
+    await screen.findByRole('heading', { level: 1 });
+
+    await act(async () => {
+      screen.getByRole('button', { name: /뉴스 기사 열기: Franchise desk memo/i }).click();
+    });
+
+    expect((await screen.findAllByText('legacy')).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('international').length).toBeGreaterThan(0);
   });
 });

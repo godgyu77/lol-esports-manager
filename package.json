@@ -10,6 +10,7 @@
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --config vitest.run.mjs",
+    "test:ea": "vitest run --config vitest.run.mjs src/engine/match/balanceSimulation.test.ts src/engine/match/seasonSoak.release.test.ts src/engine/save/saveEngine.release.test.ts src/engine/save/longSaveWorkflow.release.test.ts src/engine/season/offseasonEngine.release.test.ts src/engine/season/seasonEnd.release.test.ts src/engine/manager/releaseDepthEngine.release.test.ts src/engine/board/boardEngine.test.ts src/engine/retirement/retirementEngine.test.ts src/engine/economy/transferEngine.relationship.test.ts src/features/manager/pages/PreMatchView.test.tsx src/features/manager/pages/ManagerCareerView.test.tsx src/features/manager/pages/TeamHistoryView.test.tsx src/features/match/LiveMatchView.test.tsx",
     "test:watch": "vitest --config vitest.run.mjs",
     "preview": "vite preview",
     "tauri": "tauri",

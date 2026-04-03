@@ -190,6 +190,23 @@ export async function updateTransferOfferStatus(
   );
 }
 
+export async function updateTransferOfferTerms(
+  offerId: number,
+  transferFee: number,
+  offeredSalary: number,
+  contractYears: number,
+): Promise<void> {
+  const db = await getDatabase();
+  await db.execute(
+    `UPDATE transfer_offers
+     SET transfer_fee = $1,
+         offered_salary = $2,
+         contract_years = $3
+     WHERE id = $4`,
+    [transferFee, offeredSalary, contractYears, offerId],
+  );
+}
+
 /** 특정 시즌의 이적 제안 조회 */
 export async function getTransferOffers(
   seasonId: number,

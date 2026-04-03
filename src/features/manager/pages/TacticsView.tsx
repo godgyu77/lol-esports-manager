@@ -29,7 +29,9 @@ import {
 } from '../../../types/tactics';
 import { generateTacticalSuggestion, type TacticalSuggestion } from '../../../ai/advancedAiService';
 import { applyCoachTacticsRecommendation, generateInitialCoachRecommendations } from '../../../engine/manager/managerSetupEngine';
+import { getPrepRecommendationRecords, recordPrepRecommendation } from '../../../engine/manager/systemDepthEngine';
 import type { CoachSetupRecommendation } from '../../../types/managerSetup';
+import type { PrepRecommendationRecord } from '../../../types/systemDepth';
 import { MainLoopPanel } from '../components/MainLoopPanel';
 
 const EARLY_STRATEGIES: EarlyStrategy[] = ['standard', 'lane_swap', 'invade', 'safe_farm'];
@@ -37,8 +39,16 @@ const MID_STRATEGIES: MidStrategy[] = ['balanced', 'pick_comp', 'split_push', 'o
 const LATE_STRATEGIES: LateStrategy[] = ['teamfight', 'split_push', 'siege', 'pick'];
 const WARD_PRIORITIES: WardPriority[] = ['aggressive', 'balanced', 'defensive'];
 
+function getPrepOutcomeTone(record: PrepRecommendationRecord | null): 'success' | 'info' | 'danger' {
+  if (!record) return 'info';
+  if (record.observedOutcome === 'positive') return 'success';
+  if (record.status === 'observed') return 'danger';
+  return 'info';
+}
+
 export function TacticsView() {
   const save = useGameStore((s) => s.save);
+  const season = useGameStore((s) => s.season);
   const teams = useGameStore((s) => s.teams);
   const pendingMatch = useGameStore((s) => s.pendingUserMatch);
   const navigate = useNavigate();
@@ -49,6 +59,7 @@ export function TacticsView() {
   const [aiSuggestion, setAiSuggestion] = useState<TacticalSuggestion | null>(null);
   const [aiSuggestionLoading, setAiSuggestionLoading] = useState(false);
   const [coachRecommendation, setCoachRecommendation] = useState<CoachSetupRecommendation | null>(null);
+  const [prepRecords, setPrepRecords] = useState<PrepRecommendationRecord[]>([]);
 
   const userTeamId = save?.userTeamId ?? '';
 
@@ -56,14 +67,16 @@ export function TacticsView() {
     if (!save) return;
     setIsLoading(true);
     try {
-      const [data, setupRecommendations] = await Promise.all([
+      const [data, setupRecommendations, recentPrep] = await Promise.all([
         getTeamTactics(userTeamId),
         generateInitialCoachRecommendations(userTeamId, save.currentSeasonId).catch(() => []),
+        getPrepRecommendationRecords(userTeamId, save.currentSeasonId, 3).catch(() => []),
       ]);
       setTacticsState(data ?? createDefaultTactics(userTeamId));
       setCoachRecommendation(
         setupRecommendations.find((recommendation) => recommendation.kind === 'tactics') ?? null,
       );
+      setPrepRecords(recentPrep.filter((record) => record.focusArea === 'tactics'));
     } catch (err) {
       console.error('전술 데이터 로딩 실패:', err);
     } finally {
@@ -129,6 +142,7 @@ export function TacticsView() {
   const nextOpponent = pendingMatch
     ? teams.find((team) => team.id === (pendingMatch.teamHomeId === userTeamId ? pendingMatch.teamAwayId : pendingMatch.teamHomeId))?.name ?? '상대 대기'
     : null;
+  const latestPrepRecord = prepRecords[0] ?? null;
 
   return (
     <div>
@@ -176,6 +190,23 @@ export function TacticsView() {
               try {
                 const { teamId: _, ...rest } = updated;
                 await setTeamTactics(userTeamId, rest);
+                await recordPrepRecommendation({
+                  teamId: userTeamId,
+                  seasonId: save.currentSeasonId,
+                  source: 'opponent_analysis',
+                  focusArea: 'tactics',
+                  title: 'AI tactical adjustment',
+                  summary: aiSuggestion.reason,
+                  recommendedChanges: [aiSuggestion.suggestion, aiSuggestion.expectedEffect],
+                  appliedChanges: [
+                    `Early: ${EARLY_STRATEGY_LABELS[updated.earlyStrategy]}`,
+                    `Mid: ${MID_STRATEGY_LABELS[updated.midStrategy]}`,
+                    `Late: ${LATE_STRATEGY_LABELS[updated.lateStrategy]}`,
+                  ],
+                  targetMatchId: pendingMatch?.id ?? null,
+                  targetDate: pendingMatch?.matchDate ?? season?.currentDate ?? null,
+                  gameDate: season?.currentDate ?? pendingMatch?.matchDate ?? '2000-01-01',
+                });
                 setMessage({ text: 'AI 추천 전술이 적용되었습니다.', type: 'success' });
               } catch {
                 setMessage({ text: '전술 적용에 실패했습니다.', type: 'error' });
@@ -206,6 +237,19 @@ export function TacticsView() {
             onClick={async () => {
               try {
                 await applyCoachTacticsRecommendation(userTeamId, coachRecommendation);
+                await recordPrepRecommendation({
+                  teamId: userTeamId,
+                  seasonId: save.currentSeasonId,
+                  source: 'coach_briefing',
+                  focusArea: 'tactics',
+                  title: coachRecommendation.headline,
+                  summary: coachRecommendation.summary,
+                  recommendedChanges: coachRecommendation.reasons,
+                  appliedChanges: coachRecommendation.reasons,
+                  targetMatchId: pendingMatch?.id ?? null,
+                  targetDate: pendingMatch?.matchDate ?? season?.currentDate ?? null,
+                  gameDate: season?.currentDate ?? pendingMatch?.matchDate ?? '2000-01-01',
+                });
                 const refreshed = await getTeamTactics(userTeamId);
                 setTacticsState(refreshed ?? createDefaultTactics(userTeamId));
                 setMessage({ text: '코치 추천 전술안을 적용했습니다.', type: 'success' });
@@ -264,6 +308,24 @@ export function TacticsView() {
         ]}
         note={`현재 전술 보정치는 공격 ${bonus.offense}, 수비 ${bonus.defense}, 운영 ${bonus.objective}입니다.`}
       />
+
+      {latestPrepRecord && (
+        <div className={`fm-alert fm-alert--${getPrepOutcomeTone(latestPrepRecord)} fm-mb-md`} style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '6px' }}>
+          <div className="fm-flex fm-items-center fm-justify-between" style={{ width: '100%' }}>
+            <span className="fm-text-sm fm-font-semibold">준비 추적</span>
+            <span className="fm-badge fm-badge--default">{latestPrepRecord.status}</span>
+          </div>
+          <span className="fm-text-md fm-font-semibold fm-text-primary">{latestPrepRecord.title}</span>
+          <p className="fm-text-xs fm-text-secondary" style={{ margin: 0 }}>
+            {latestPrepRecord.impactSummary ?? latestPrepRecord.summary}
+          </p>
+          <div className="fm-flex fm-gap-xs fm-flex-wrap">
+            {latestPrepRecord.appliedChanges.slice(0, 3).map((change) => (
+              <span key={change} className="fm-badge fm-badge--info">{change}</span>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="fm-panel fm-mb-lg">
         <div className="fm-panel__header">

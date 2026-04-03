@@ -13,6 +13,12 @@ import {
   getCareerSummary,
 } from '../../../engine/manager/managerCareerEngine';
 import type { ManagerCareerRecord, ManagerFameEligibility, CareerSummary } from '../../../engine/manager/managerCareerEngine';
+import {
+  buildCareerNarrativeReport,
+  type CareerNarrativeReport,
+} from '../../../engine/manager/franchiseNarrativeEngine';
+import { getCareerArcEvents } from '../../../engine/manager/releaseDepthEngine';
+import type { CareerArcEvent } from '../../../types/systemDepth';
 
 export function ManagerCareerView() {
   const save = useGameStore((s) => s.save);
@@ -20,6 +26,8 @@ export function ManagerCareerView() {
   const [career, setCareer] = useState<ManagerCareerRecord[]>([]);
   const [summary, setSummary] = useState<CareerSummary | null>(null);
   const [fame, setFame] = useState<ManagerFameEligibility | null>(null);
+  const [narrative, setNarrative] = useState<CareerNarrativeReport | null>(null);
+  const [arcEvents, setArcEvents] = useState<CareerArcEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -29,15 +37,18 @@ export function ManagerCareerView() {
 
     const load = async () => {
       setIsLoading(true);
-      const [careerData, summaryData, fameData] = await Promise.all([
+      const [careerData, summaryData, fameData, arcData] = await Promise.all([
         getManagerCareer(save.id),
         getCareerSummary(save.id),
         checkManagerFameEligibility(save.id),
+        getCareerArcEvents(save.id, save.userTeamId, 6).catch(() => []),
       ]);
       if (!cancelled) {
         setCareer(careerData);
         setSummary(summaryData);
         setFame(fameData);
+        setNarrative(buildCareerNarrativeReport(summaryData, careerData));
+        setArcEvents(arcData);
         setIsLoading(false);
       }
     };
@@ -93,6 +104,58 @@ export function ManagerCareerView() {
       )}
 
       {/* 커리어 요약 */}
+      {narrative && (
+        <div className="fm-panel">
+          <div className="fm-panel__header">
+            <span className="fm-panel__title">Legacy Arc</span>
+          </div>
+          <div className="fm-panel__body fm-flex-col fm-gap-md">
+            <div className="fm-card fm-card--highlight">
+              <div className="fm-flex-col fm-gap-xs">
+                <span className="fm-text-xs fm-font-semibold fm-text-accent">Career Identity</span>
+                <strong className="fm-text-lg fm-text-primary">{narrative.identity}</strong>
+                <span className="fm-text-sm fm-text-secondary">{narrative.outlook}</span>
+              </div>
+            </div>
+            <div className="fm-grid fm-grid--3">
+              {narrative.pillars.map((pillar) => (
+                <div key={pillar} className="fm-card">
+                  <p className="fm-text-sm fm-text-secondary">{pillar}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {arcEvents.length > 0 && (
+        <div className="fm-panel">
+          <div className="fm-panel__header">
+            <span className="fm-panel__title">Franchise Arc Timeline</span>
+          </div>
+          <div className="fm-panel__body fm-flex-col fm-gap-sm">
+            {arcEvents.map((event) => (
+              <div key={event.id} className="fm-card">
+                <div className="fm-flex fm-justify-between fm-items-center fm-mb-xs">
+                  <strong className="fm-text-primary">{event.headline}</strong>
+                  <span className="fm-badge fm-badge--default">{event.stage}</span>
+                </div>
+                <p className="fm-text-sm fm-text-secondary fm-mb-sm">{event.summary}</p>
+                {event.consequences.length > 0 && (
+                  <div className="fm-flex fm-gap-xs fm-flex-wrap">
+                    {event.consequences.map((consequence) => (
+                      <span key={`${event.id}-${consequence}`} className="fm-badge fm-badge--info">
+                        {consequence}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {summary && (
         <div className="fm-panel">
           <div className="fm-panel__header">

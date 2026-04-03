@@ -258,9 +258,6 @@ export class LiveMatchEngine {
   private matchup: MatchupResult;
   private rand: () => number;
   private gameMode: 'manager' | 'player';
-  private userPosition?: Position;
-  private homeLineup: Lineup;
-  private awayLineup: Lineup;
   private homePlayStyle: PlayStyle;
   private awayPlayStyle: PlayStyle;
   private playerInstructions = new Map<string, PlayerInstructionType>();
@@ -295,8 +292,6 @@ export class LiveMatchEngine {
     homeExtraBonus?: number;
     awayExtraBonus?: number;
   }) {
-    this.homeLineup = params.homeLineup;
-    this.awayLineup = params.awayLineup;
     this.homePlayStyle = params.homePlayStyle ?? 'controlled';
     this.awayPlayStyle = params.awayPlayStyle ?? 'controlled';
     this.matchup = evaluateMatchup(
@@ -323,8 +318,6 @@ export class LiveMatchEngine {
 
     this.rand = createRng(params.seed);
     this.gameMode = params.gameMode;
-    this.userPosition = params.userPosition;
-
     const ratingDiff = Math.abs(this.matchup.homeRating.overall - this.matchup.awayRating.overall);
     const baseDuration = params.durationMinutes ?? Math.round(
       MATCH_CONSTANTS.gameDuration.max - ratingDiff * 0.18 + (this.rand() - 0.5) * 6,

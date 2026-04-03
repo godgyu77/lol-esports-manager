@@ -6,6 +6,7 @@ import { useBgm } from '../../hooks/useBgm';
 import { LiveMatchEngine, type Decision, type LiveGameState } from '../../engine/match/liveMatch';
 import { conductTeamTalk } from '../../engine/teamTalk/teamTalkEngine';
 import { buildLineup } from '../../engine/match/teamRating';
+import { buildBroadcastNarrativeBrief } from '../../engine/manager/competitiveIdentityEngine';
 import { getFormByTeamId, getPlayersByTeamId, getTeamPlayStyle, getTraitsByTeamId } from '../../db/queries';
 import { calculateChemistryBonus } from '../../engine/chemistry/chemistryEngine';
 import { calculateTeamSoloRankBonus } from '../../engine/soloRank/soloRankEngine';
@@ -480,6 +481,27 @@ export function LiveMatchView() {
     };
   }, [gameState]);
 
+  const broadcastNarrative = useMemo(() => {
+    if (!pendingMatch || !gameState) return null;
+    return buildBroadcastNarrativeBrief({
+      pendingMatch,
+      homeTeam,
+      awayTeam,
+      goldDiff: gameState.goldHome - gameState.goldAway,
+      phase: gameState.phase,
+      dragonStacksHome: gameState.dragonSoul.homeStacks,
+      dragonStacksAway: gameState.dragonSoul.awayStacks,
+      nextObjective: objectiveCountdown
+        ? {
+            key: objectiveCountdown.key,
+            tick: Number.parseInt(objectiveCountdown.time, 10),
+            zone: objectiveCountdown.zone,
+          }
+        : null,
+      lastMajorEventDescription: lastMajorEvent?.description ?? null,
+    });
+  }, [awayTeam, gameState, homeTeam, lastMajorEvent?.description, objectiveCountdown, pendingMatch]);
+
   const momentumWindows = useMemo(() => {
     if (!gameState) return [];
     const recent = gameState.goldHistory.slice(-6);
@@ -580,6 +602,17 @@ export function LiveMatchView() {
           </div>
 
           <div className="broadcast-stage-notes">
+            {broadcastNarrative ? (
+              <div className="broadcast-stage-note">
+                <h3 className="broadcast-stage-note__title">Broadcast Story</h3>
+                <div className="broadcast-stage-note__metric-row">
+                  <span className="broadcast-stage-note__metric">{broadcastNarrative.storyTag}</span>
+                  <span className="broadcast-stage-note__metric-label">LoL desk angle</span>
+                </div>
+                <p className="broadcast-stage-note__copy">{broadcastNarrative.openingLine}</p>
+                <p className="broadcast-stage-note__copy">{broadcastNarrative.castingLine}</p>
+              </div>
+            ) : null}
             <div className="broadcast-stage-note">
               <h3 className="broadcast-stage-note__title">Current Focus</h3>
               <p className="broadcast-stage-note__copy">{currentFocusSummary}</p>
@@ -599,6 +632,9 @@ export function LiveMatchView() {
                 </div>
               ) : null}
               <p className="broadcast-stage-note__copy">{goldTrendSummary}</p>
+              {broadcastNarrative ? (
+                <p className="broadcast-stage-note__copy">{broadcastNarrative.tacticalLens}</p>
+              ) : null}
             </div>
             <div className="broadcast-stage-note">
               <h3 className="broadcast-stage-note__title">Objective Pressure</h3>
@@ -609,6 +645,9 @@ export function LiveMatchView() {
                 </div>
               ) : null}
               <p className="broadcast-stage-note__copy">{objectivePressureSummary}</p>
+              {broadcastNarrative ? (
+                <p className="broadcast-stage-note__copy">{broadcastNarrative.objectiveCall}</p>
+              ) : null}
             </div>
           </div>
 

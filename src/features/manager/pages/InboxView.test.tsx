@@ -64,10 +64,16 @@ describe('InboxView', () => {
       gameState: {
         save: {
           id: 1,
+          metadataId: 1,
+          mode: 'manager',
           userTeamId: 'lck_T1',
           currentSeasonId: 1,
-          currentTeamId: 'lck_T1',
-          gameMode: 'manager',
+          dbFilename: 'test.db',
+          createdAt: '2026-03-01',
+          updatedAt: '2026-03-01',
+          slotNumber: 1,
+          saveName: 'Test Save',
+          playTimeMinutes: 0,
         },
       },
     });
@@ -89,10 +95,16 @@ describe('InboxView', () => {
       gameState: {
         save: {
           id: 1,
+          metadataId: 1,
+          mode: 'manager',
           userTeamId: 'lck_T1',
           currentSeasonId: 1,
-          currentTeamId: 'lck_T1',
-          gameMode: 'manager',
+          dbFilename: 'test.db',
+          createdAt: '2026-03-01',
+          updatedAt: '2026-03-01',
+          slotNumber: 1,
+          saveName: 'Test Save',
+          playTimeMinutes: 0,
         },
       },
     });
@@ -117,10 +129,16 @@ describe('InboxView', () => {
       gameState: {
         save: {
           id: 1,
+          metadataId: 1,
+          mode: 'manager',
           userTeamId: 'lck_T1',
           currentSeasonId: 1,
-          currentTeamId: 'lck_T1',
-          gameMode: 'manager',
+          dbFilename: 'test.db',
+          createdAt: '2026-03-01',
+          updatedAt: '2026-03-01',
+          slotNumber: 1,
+          saveName: 'Test Save',
+          playTimeMinutes: 0,
         },
       },
     });

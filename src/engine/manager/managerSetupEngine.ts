@@ -90,7 +90,7 @@ function buildTrainingRecommendationPayload(teamId: string, players: PlayerProfi
   const avgAggression = average(players.map((player) => player.aggression));
 
   let trainingType: TrainingType = 'general';
-  let intensity: TrainingIntensity = 'normal';
+  let intensity: TrainingIntensity | undefined = avgPotential > 95 ? 'light' : 'normal';
   const reasons: string[] = [];
   let headline = '초기 운영 훈련안을 준비했습니다.';
 
@@ -131,7 +131,7 @@ function buildTrainingRecommendationPayload(teamId: string, players: PlayerProfi
     headline,
     summary: `${headline} ${intensity === 'intense' ? '강도는 높게' : intensity === 'light' ? '강도는 가볍게' : '강도는 표준으로'} 시작하는 안입니다.`,
     reasons: reasons.slice(0, 3),
-    payload: buildTrainingSchedule(trainingType, intensity).map((entry) => ({ ...entry, teamId })),
+    payload: buildTrainingSchedule(trainingType, intensity ?? 'normal').map((entry) => ({ ...entry, teamId })),
   };
 }
 

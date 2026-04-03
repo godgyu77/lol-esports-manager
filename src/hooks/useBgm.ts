@@ -4,11 +4,11 @@
  */
 import { useEffect } from 'react';
 import { bgmManager, type BgmScene } from '../audio/bgmManager';
-import { useSettingsStore } from '../stores/settingsStore';
+import { useSettingsStore, type SettingsState } from '../stores/settingsStore';
 
 export function useBgm(scene: BgmScene): void {
-  const soundEnabled = useSettingsStore((s) => s.soundEnabled);
-  const soundVolume = useSettingsStore((s) => s.soundVolume);
+  const soundEnabled = useSettingsStore((s: SettingsState) => s.soundEnabled);
+  const soundVolume = useSettingsStore((s: SettingsState) => s.soundVolume);
 
   useEffect(() => {
     bgmManager.setEnabled(soundEnabled);

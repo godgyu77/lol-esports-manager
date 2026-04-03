@@ -1,358 +1,48 @@
-/**
- * 계약 갱신 엔진
- * - 갱신 제안 연봉/기간 계산
- * - 선수 요구 연봉 범위 산출
- * - 갱신 시도 (수락/거절 판정)
- * - 만료 임박 선수 조회
- * - 양방향 계약 협상 (감독↔선수)
- * - 선수 의사결정 팩터 (돈, 우승, 출전, 충성도, 명성)
- */
-
-import { FINANCIAL_CONSTANTS } from '../../data/systemPrompt';
+import { getDatabase } from '../../db/database';
 import {
   getExpiringContracts,
-  getTeamTotalSalary,
+  getPlayerById,
   updatePlayerContract,
 } from '../../db/queries';
-import {
-  calculateFairSalary,
-} from './transferEngine';
 import { agentNegotiate } from '../agent/agentEngine';
+import { evaluatePayrollImpact, getTeamPayrollSnapshot } from './payrollEngine';
+import { calculateFairSalary } from './transferEngine';
 import type { Player } from '../../types/player';
 import { getPlayerOverall } from '../../utils/playerUtils';
 import type {
-  ContractNegotiation,
   ContractDecisionFactors,
+  ContractNegotiation,
+  NegotiationInitiator,
   NegotiationMessage,
   NegotiationStatus,
-  NegotiationInitiator,
   TeamEvaluation,
 } from '../../types/contract';
-
-// ─────────────────────────────────────────
-// 상수
-// ─────────────────────────────────────────
-
-/** 연봉 상한 (억 원 → 만 원) */
-const SALARY_CAP = FINANCIAL_CONSTANTS.salaryCap * 10000;
-
-// ─────────────────────────────────────────
-// 갱신 제안 계산
-// ─────────────────────────────────────────
-
-/**
- * 팀에서 선수에게 제안할 연봉/기간 계산
- * OVR, 나이, 잠재력 기반
- */
-export function calculateRenewalOffer(player: Player): {
-  suggestedSalary: number;
-  suggestedYears: number;
-} {
-  const fairSalary = calculateFairSalary(player);
-  const ovr = getPlayerOverall(player);
-  const potential = player.potential;
-
-  // 잠재력 높고 젊으면 더 긴 계약 제안
-  let suggestedYears = 2;
-  if (player.age <= 22 && potential >= 70) {
-    suggestedYears = 2; // 젊은 선수 장기 락인 방지 (최대 2년)
-  } else if (player.age >= 28 || potential < 40) {
-    suggestedYears = 1;
-  }
-
-  // OVR 높을수록 적정 연봉 대비 약간 프리미엄
-  let salaryMultiplier = 1.0;
-  if (ovr >= 80) salaryMultiplier = 1.1;
-  else if (ovr >= 70) salaryMultiplier = 1.05;
-  else if (ovr < 55) salaryMultiplier = 0.9;
-
-  const suggestedSalary = Math.round(fairSalary * salaryMultiplier);
-
-  return { suggestedSalary, suggestedYears };
-}
-
-// ─────────────────────────────────────────
-// 선수 요구 연봉
-// ─────────────────────────────────────────
-
-/**
- * 선수가 원하는 연봉 범위 (현재 연봉 대비 ±20%, 성적 좋으면 더 높게)
- */
-export function evaluatePlayerDemand(player: Player): {
-  minSalary: number;
-  maxSalary: number;
-  idealSalary: number;
-} {
-  const currentSalary = player.contract.salary;
-  const fairSalary = calculateFairSalary(player);
-  const ovr = getPlayerOverall(player);
-
-  // 기준: 현재 연봉과 적정 연봉 중 높은 쪽
-  const baseSalary = Math.max(currentSalary, fairSalary);
-
-  // 성적(OVR)에 따라 요구 범위 조정
-  let demandFactor = 1.0;
-  if (ovr >= 80) demandFactor = 1.2;       // 스타급: +20%
-  else if (ovr >= 70) demandFactor = 1.1;  // 준수: +10%
-  else if (ovr < 55) demandFactor = 0.9;   // 하위: -10%
-
-  const idealSalary = Math.round(baseSalary * demandFactor);
-  const minSalary = Math.round(idealSalary * 0.8);  // 이상적 연봉의 80%
-  const maxSalary = Math.round(idealSalary * 1.2);   // 이상적 연봉의 120%
-
-  return { minSalary, maxSalary, idealSalary };
-}
-
-// ─────────────────────────────────────────
-// 갱신 시도
-// ─────────────────────────────────────────
 
 export interface RenewalResult {
   success: boolean;
   reason: string;
 }
 
-/**
- * 계약 갱신 시도 → 수락/거절 판정
- * - 수락 조건: 제안 연봉 >= 선수 요구의 90%, 팀 사기 높으면 보너스
- * - 연봉 상한 초과 시 거절
- */
-export async function attemptRenewal(
-  player: Player,
-  teamId: string,
-  offeredSalary: number,
-  years: number,
-  currentSeasonId: number,
-  teamMorale?: number,
-  signingBonus?: number,
-): Promise<RenewalResult> {
-  // 1. 연봉 상한 확인
-  const currentTotalSalary = await getTeamTotalSalary(teamId);
-  // 기존 선수 연봉은 빠지고 새 연봉이 들어가므로 차이만큼 체크
-  const salaryCost = offeredSalary - player.contract.salary;
-  if (currentTotalSalary + salaryCost > SALARY_CAP) {
-    return {
-      success: false,
-      reason: `연봉 상한 초과: 현재 ${currentTotalSalary.toLocaleString()}만 + 증가분 ${salaryCost.toLocaleString()}만 > 상한 ${SALARY_CAP.toLocaleString()}만`,
-    };
-  }
-
-  // 2. 에이전트 협상
-  const fairSalary = calculateFairSalary(player);
-  const agentResult = await agentNegotiate(player.id, offeredSalary, fairSalary);
-
-  if (!agentResult.accepted) {
-    return {
-      success: false,
-      reason: `에이전트 거절: ${agentResult.message} (요구 연봉: ${agentResult.counterOffer.toLocaleString()}만)`,
-    };
-  }
-
-  // 3. 선수 요구 연봉 평가 (에이전트 통과 후 선수 본인 판단)
-  const demand = evaluatePlayerDemand(player);
-
-  // 기본 수락 기준: 이상적 연봉의 90%
-  let acceptThreshold = demand.idealSalary * 0.9;
-
-  // 팀 사기(morale) 보너스: 높을수록 낮은 연봉도 수락
-  if (teamMorale !== undefined) {
-    // morale 0~100, 50이 기준
-    // morale 80이면 기준 -10%, morale 30이면 기준 +10%
-    const moraleBonus = (teamMorale - 50) / 50 * 0.1;
-    acceptThreshold = acceptThreshold * (1 - moraleBonus);
-  }
-
-  acceptThreshold = Math.round(acceptThreshold);
-
-  if (offeredSalary < acceptThreshold) {
-    return {
-      success: false,
-      reason: `연봉 부족: 제안 ${offeredSalary.toLocaleString()}만 < 최소 요구 ${acceptThreshold.toLocaleString()}만 (희망 ${demand.idealSalary.toLocaleString()}만)`,
-    };
-  }
-
-  // 4. [C11] 수락 → DB 업데이트 (1년 = 2스플릿이므로 years * 2)
-  const contractEndSeason = currentSeasonId + (years * 2);
-  await updatePlayerContract(player.id, offeredSalary, contractEndSeason);
-
-  // 5. 계약 보너스 처리 (일시불)
-  if (signingBonus && signingBonus > 0) {
-    const db = await (await import('../../db/database')).getDatabase();
-    await db.execute('UPDATE teams SET budget = budget - $1 WHERE id = $2', [signingBonus, teamId]);
-
-    // 계약 보너스 조항 기록
-    const { addClause } = await import('./clauseEngine');
-    await addClause(player.id, 'signing_bonus', signingBonus, `시즌 ${currentSeasonId} 계약 보너스`);
-  }
-
-  const bonusText = signingBonus ? ` + 계약 보너스 ${signingBonus.toLocaleString()}만` : '';
-  return {
-    success: true,
-    reason: `계약 갱신 완료: ${offeredSalary.toLocaleString()}만/년, ${years}년 (시즌 ${contractEndSeason}까지)${bonusText}`,
-  };
-}
-
-// ─────────────────────────────────────────
-// 만료 임박 선수 조회
-// ─────────────────────────────────────────
-
-/**
- * 팀의 만료 임박 선수 목록
- * (현재 시즌 또는 다음 시즌에 만료되는 선수)
- */
-export async function getTeamExpiringContracts(
-  teamId: string,
-  currentSeasonId: number,
-): Promise<(Player & { division: string })[]> {
-  // 현재 시즌 + 1까지 만료 대상 조회
-  const expiring = await getExpiringContracts(currentSeasonId + 1);
-  return expiring.filter(p => p.teamId === teamId);
-}
-
-// ─────────────────────────────────────────
-// 갱신 난이도 계산
-// ─────────────────────────────────────────
-
 export interface RenewalDifficulty {
-  salaryMultiplier: number;   // 연봉 요구 배수
-  rejectProbability: number;  // 거절 확률 (0~1)
-  reason: string[];           // 요인 설명
+  salaryMultiplier: number;
+  rejectProbability: number;
+  reason: string[];
 }
-
-/**
- * 계약 갱신 난이도 계산
- * - OVR 80+ → 연봉 요구 1.3배, 거절 확률 30%
- * - 팀 reputation 낮으면 → 거절 확률 +20%
- * - 최근 폼 70+ → 연봉 요구 1.2배
- * - 다른 팀의 관심(reputation 기반) → 거절 확률 +10%
- */
-export function calculateRenewalDifficulty(
-  player: Player,
-  teamReputation: number,
-  recentForm?: number,
-): RenewalDifficulty {
-  const ovr = getPlayerOverall(player);
-  let salaryMultiplier = 1.0;
-  let rejectProbability = 0.1; // 기본 거절 확률 10%
-  const reasons: string[] = [];
-
-  // OVR 80+ → 연봉 요구 1.3배, 거절 확률 30%
-  if (ovr >= 80) {
-    salaryMultiplier = Math.max(salaryMultiplier, 1.3);
-    rejectProbability = 0.3;
-    reasons.push(`스타급 선수 (OVR ${Math.round(ovr)}): 연봉 1.3배, 거절 30%`);
-  }
-
-  // 팀 reputation 낮으면 (50 미만) → 거절 확률 +20%
-  if (teamReputation < 50) {
-    rejectProbability += 0.2;
-    reasons.push(`팀 명성 부족 (${teamReputation}): 거절 확률 +20%`);
-  }
-
-  // 최근 폼 70+ → 연봉 요구 1.2배
-  if (recentForm !== undefined && recentForm >= 70) {
-    salaryMultiplier = Math.max(salaryMultiplier, salaryMultiplier * 1.2);
-    reasons.push(`최근 폼 우수 (${recentForm}): 연봉 1.2배`);
-  }
-
-  // 다른 팀의 관심 (reputation 기반: 선수 OVR이 높고 팀 reputation이 낮으면)
-  if (ovr >= 70 && teamReputation < 60) {
-    rejectProbability += 0.1;
-    reasons.push('다른 팀의 관심: 거절 확률 +10%');
-  }
-
-  // 거절 확률 상한 클램프
-  rejectProbability = Math.min(rejectProbability, 0.9);
-
-  return { salaryMultiplier, rejectProbability, reason: reasons };
-}
-
-// ─────────────────────────────────────────
-// 카운터 오퍼 시스템
-// ─────────────────────────────────────────
 
 export interface CounterOfferState {
-  attempt: number;           // 현재 시도 횟수 (1~3)
-  maxAttempts: number;       // 최대 시도 횟수 (3)
-  lastOfferedSalary: number; // 마지막 제안 연봉
+  attempt: number;
+  maxAttempts: number;
+  lastOfferedSalary: number;
   difficulty: RenewalDifficulty;
 }
-
-/**
- * 카운터 오퍼로 재시도
- * - 첫 제안 거절 → 더 높은 연봉으로 재제안 가능 (최대 3회)
- * - 매 시도마다 거절 확률이 10%씩 감소 (연봉 인상에 대한 선수 반응)
- */
-export async function attemptRenewalWithCounter(
-  player: Player,
-  teamId: string,
-  offeredSalary: number,
-  years: number,
-  currentSeasonId: number,
-  teamMorale: number | undefined,
-  counterState: CounterOfferState | null,
-): Promise<RenewalResult & { counterState: CounterOfferState | null }> {
-  const attempt = counterState ? counterState.attempt + 1 : 1;
-  const maxAttempts = 3;
-
-  // 연봉이 이전 제안보다 높아야 함 (재시도 시)
-  if (counterState && offeredSalary <= counterState.lastOfferedSalary) {
-    return {
-      success: false,
-      reason: `이전 제안(${counterState.lastOfferedSalary.toLocaleString()}만)보다 높은 연봉을 제시해야 합니다.`,
-      counterState: { ...counterState, attempt },
-    };
-  }
-
-  // 기본 갱신 시도
-  const result = await attemptRenewal(player, teamId, offeredSalary, years, currentSeasonId, teamMorale);
-
-  if (result.success) {
-    return { ...result, counterState: null };
-  }
-
-  // 실패 시: 최대 시도 횟수 확인
-  if (attempt >= maxAttempts) {
-    return {
-      success: false,
-      reason: `${result.reason} (최대 ${maxAttempts}회 제안 완료 — 더 이상 재제안 불가)`,
-      counterState: null,
-    };
-  }
-
-  // 카운터 오퍼 상태 반환 (재시도 가능)
-  const teamRows = await (await import('../../db/database')).getDatabase()
-    .then(db => db.select<{ reputation: number }[]>('SELECT reputation FROM teams WHERE id = $1', [teamId]));
-  const teamReputation = teamRows[0]?.reputation ?? 50;
-  const difficulty = calculateRenewalDifficulty(player, teamReputation);
-
-  return {
-    success: false,
-    reason: `${result.reason} (${attempt}/${maxAttempts}회 시도 — 더 높은 연봉으로 재제안 가능)`,
-    counterState: {
-      attempt,
-      maxAttempts,
-      lastOfferedSalary: offeredSalary,
-      difficulty,
-    },
-  };
-}
-
-// ═════════════════════════════════════════
-// 양방향 계약 협상 시스템
-// ═════════════════════════════════════════
-
-// ─────────────────────────────────────────
-// DB Row 매핑
-// ─────────────────────────────────────────
 
 interface NegotiationRow {
   id: number;
   season_id: number;
   player_id: string;
   team_id: string;
-  initiator: string;
-  status: string;
+  initiator: NegotiationInitiator;
+  status: NegotiationStatus;
   current_round: number;
   team_salary: number;
   team_years: number;
@@ -371,17 +61,23 @@ interface NegotiationRow {
   messages: string;
 }
 
-function mapRowToNegotiation(row: NegotiationRow): ContractNegotiation {
-  let messages: NegotiationMessage[] = [];
-  try { messages = JSON.parse(row.messages); } catch { /* empty */ }
+function parseMessages(value: string): NegotiationMessage[] {
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
 
+function mapRowToNegotiation(row: NegotiationRow): ContractNegotiation {
   return {
     id: row.id,
     seasonId: row.season_id,
     playerId: row.player_id,
     teamId: row.team_id,
-    initiator: row.initiator as NegotiationInitiator,
-    status: row.status as NegotiationStatus,
+    initiator: row.initiator,
+    status: row.status,
     currentRound: row.current_round,
     teamSalary: row.team_salary,
     teamYears: row.team_years,
@@ -399,77 +95,238 @@ function mapRowToNegotiation(row: NegotiationRow): ContractNegotiation {
     finalSalary: row.final_salary,
     finalYears: row.final_years,
     finalSigningBonus: row.final_signing_bonus,
-    messages,
+    messages: parseMessages(row.messages),
   };
 }
 
-// ─────────────────────────────────────────
-// 선수 의사결정 팩터 생성
-// ─────────────────────────────────────────
+async function canAbsorbPayroll(teamId: string, nextPayroll: number): Promise<{
+  allowed: boolean;
+  salaryCap: number;
+  luxuryTax: number;
+  pressureBand: 'safe' | 'taxed' | 'warning' | 'hard_stop';
+}> {
+  const snapshot = await getTeamPayrollSnapshot(teamId);
+  const impact = evaluatePayrollImpact({
+    totalPayroll: nextPayroll,
+    salaryCap: snapshot.salaryCap,
+  });
+  return {
+    allowed: impact.pressureBand !== 'hard_stop',
+    salaryCap: snapshot.salaryCap,
+    luxuryTax: impact.luxuryTax,
+    pressureBand: impact.pressureBand,
+  };
+}
 
-/**
- * 선수의 계약 의사결정 성향을 생성한다.
- * 롤 선수 특성 반영:
- * - 젊은 선수: 출전 기회 + 성장 중시
- * - 스타급: 돈 + 우승 중시
- * - 베테랑: 우승 + 충성도 중시
- */
+export function calculateRenewalOffer(player: Player): {
+  suggestedSalary: number;
+  suggestedYears: number;
+} {
+  const fairSalary = calculateFairSalary(player);
+  const ovr = getPlayerOverall(player);
+
+  let suggestedYears = 2;
+  if (player.age >= 28 || player.potential < 40) suggestedYears = 1;
+
+  let multiplier = 1;
+  if (ovr >= 80) multiplier = 1.1;
+  else if (ovr >= 70) multiplier = 1.05;
+  else if (ovr < 55) multiplier = 0.9;
+
+  return {
+    suggestedSalary: Math.round(fairSalary * multiplier),
+    suggestedYears,
+  };
+}
+
+export function evaluatePlayerDemand(player: Player): {
+  minSalary: number;
+  maxSalary: number;
+  idealSalary: number;
+} {
+  const fairSalary = calculateFairSalary(player);
+  const currentSalary = player.contract.salary;
+  const ovr = getPlayerOverall(player);
+  const baseSalary = Math.max(currentSalary, fairSalary);
+
+  let factor = 1;
+  if (ovr >= 80) factor = 1.2;
+  else if (ovr >= 70) factor = 1.1;
+  else if (ovr < 55) factor = 0.9;
+
+  const idealSalary = Math.round(baseSalary * factor);
+  return {
+    minSalary: Math.round(idealSalary * 0.8),
+    maxSalary: Math.round(idealSalary * 1.2),
+    idealSalary,
+  };
+}
+
+export async function attemptRenewal(
+  player: Player,
+  teamId: string,
+  offeredSalary: number,
+  years: number,
+  currentSeasonId: number,
+  teamMorale?: number,
+  signingBonus?: number,
+): Promise<RenewalResult> {
+  const projectedPayroll = (await getTeamPayrollSnapshot(teamId)).totalPayroll - player.contract.salary + offeredSalary;
+  const payrollCheck = await canAbsorbPayroll(teamId, projectedPayroll);
+  if (!payrollCheck.allowed) {
+    return {
+      success: false,
+      reason: `샐러리캡 초과 폭이 너무 큽니다. 예상 payroll ${projectedPayroll.toLocaleString()} / cap ${payrollCheck.salaryCap.toLocaleString()}`,
+    };
+  }
+
+  const fairSalary = calculateFairSalary(player);
+  const agentResult = await agentNegotiate(player.id, offeredSalary, fairSalary);
+  if (!agentResult.accepted) {
+    return {
+      success: false,
+      reason: `에이전트가 거절했습니다. 요구 연봉 ${agentResult.counterOffer.toLocaleString()}`,
+    };
+  }
+
+  const demand = evaluatePlayerDemand(player);
+  let acceptThreshold = demand.idealSalary * 0.9;
+  if (typeof teamMorale === 'number') {
+    const moraleModifier = ((teamMorale - 50) / 50) * 0.1;
+    acceptThreshold *= 1 - moraleModifier;
+  }
+
+  if (offeredSalary < Math.round(acceptThreshold)) {
+    return {
+      success: false,
+      reason: `선수 요구치가 더 높습니다. 제안 ${offeredSalary.toLocaleString()} / 최소 ${Math.round(acceptThreshold).toLocaleString()}`,
+    };
+  }
+
+  const contractEndSeason = currentSeasonId + years * 2;
+  await updatePlayerContract(player.id, offeredSalary, contractEndSeason);
+
+  if (signingBonus && signingBonus > 0) {
+    const db = await getDatabase();
+    await db.execute('UPDATE teams SET budget = budget - $1 WHERE id = $2', [signingBonus, teamId]);
+    const { addClause } = await import('./clauseEngine');
+    await addClause(player.id, 'signing_bonus', signingBonus, `Season ${currentSeasonId} signing bonus`);
+  }
+
+  const payrollNote = payrollCheck.pressureBand === 'safe'
+    ? ''
+    : ` (${payrollCheck.pressureBand} band, luxury tax ${payrollCheck.luxuryTax.toLocaleString()})`;
+
+  return {
+    success: true,
+    reason: `재계약 완료: ${offeredSalary.toLocaleString()} / ${years}년${payrollNote}`,
+  };
+}
+
+export async function getTeamExpiringContracts(
+  teamId: string,
+  currentSeasonId: number,
+): Promise<(Player & { division: string })[]> {
+  const expiring = await getExpiringContracts(currentSeasonId + 1);
+  return expiring.filter((p) => p.teamId === teamId);
+}
+
+export function calculateRenewalDifficulty(
+  player: Player,
+  teamReputation: number,
+  recentForm?: number,
+): RenewalDifficulty {
+  const ovr = getPlayerOverall(player);
+  let salaryMultiplier = 1;
+  let rejectProbability = 0.1;
+  const reason: string[] = [];
+
+  if (ovr >= 80) {
+    salaryMultiplier = 1.3;
+    rejectProbability += 0.2;
+    reason.push('Star player premium');
+  }
+  if (teamReputation < 50) {
+    rejectProbability += 0.2;
+    reason.push('Low team reputation');
+  }
+  if (typeof recentForm === 'number' && recentForm >= 70) {
+    salaryMultiplier *= 1.15;
+    reason.push('Strong recent form');
+  }
+
+  return {
+    salaryMultiplier,
+    rejectProbability: Math.min(0.9, rejectProbability),
+    reason,
+  };
+}
+
+export async function attemptRenewalWithCounter(
+  player: Player,
+  teamId: string,
+  offeredSalary: number,
+  years: number,
+  currentSeasonId: number,
+  teamMorale?: number,
+  counterState: CounterOfferState | null = null,
+): Promise<RenewalResult & { counterState: CounterOfferState | null }> {
+  const attempt = (counterState?.attempt ?? 0) + 1;
+  const result = await attemptRenewal(player, teamId, offeredSalary, years, currentSeasonId, teamMorale);
+
+  if (result.success) {
+    return { ...result, counterState: null };
+  }
+
+  if (attempt >= 3) {
+    return { ...result, counterState: null };
+  }
+
+  return {
+    ...result,
+    counterState: {
+      attempt,
+      maxAttempts: 3,
+      lastOfferedSalary: offeredSalary,
+      difficulty: calculateRenewalDifficulty(player, 50),
+    },
+  };
+}
+
 export function generateDecisionFactors(player: Player): ContractDecisionFactors {
   const ovr = getPlayerOverall(player);
   const age = player.age;
+  const clamp = (value: number) => Math.max(0, Math.min(100, value));
 
-  // 기본값 (각각 30~70 범위에서 시작)
   let money = 50;
   let winning = 50;
   let playtime = 50;
   let loyalty = 50;
   let reputation = 50;
 
-  // 나이별 성향
   if (age <= 20) {
-    // 신인: 출전 기회 > 성장 > 돈
     playtime += 25;
     winning += 10;
     money -= 10;
-    loyalty -= 10;
-  } else if (age <= 23) {
-    // 성장기: 돈 + 우승 균형
-    money += 15;
-    winning += 15;
-    playtime += 10;
-  } else if (age <= 26) {
-    // 전성기: 돈 + 우승 최우선
-    money += 20;
+  } else if (age >= 27) {
     winning += 20;
-    reputation += 10;
+    loyalty += 15;
+    playtime -= 10;
   } else {
-    // 베테랑: 우승 >> 충성도 > 돈
-    winning += 25;
-    loyalty += 20;
-    money += 5;
-    playtime -= 15;
+    money += 10;
+    winning += 10;
   }
 
-  // OVR별 보정
   if (ovr >= 80) {
-    // 스타급: 돈 + 명성 중시
     money += 15;
     reputation += 15;
-    playtime -= 10; // 이미 주전 확보
   } else if (ovr < 60) {
-    // 하위: 출전 기회 절실
-    playtime += 20;
-    money -= 10;
-    reputation -= 10;
+    playtime += 15;
   }
 
-  // 성격 기반 약간의 랜덤성 (mental 활용)
   const mentalOffset = (player.mental.mental - 50) / 10;
   loyalty += Math.round(mentalOffset * 3);
   winning += Math.round(mentalOffset * 2);
-
-  // 클램프 0~100
-  const clamp = (v: number) => Math.max(0, Math.min(100, v));
 
   return {
     money: clamp(money),
@@ -480,98 +337,46 @@ export function generateDecisionFactors(player: Player): ContractDecisionFactors
   };
 }
 
-// ─────────────────────────────────────────
-// 팀 평가 (선수 시점)
-// ─────────────────────────────────────────
-
-/**
- * 선수가 팀을 평가한다.
- * 돈, 우승 가능성, 출전 기회, 충성도, 명성을 종합 평가.
- */
 export function evaluateTeam(
   player: Player,
   factors: ContractDecisionFactors,
   teamInfo: {
-    reputation: number;          // 0~100
-    recentWinRate: number;       // 0~1
-    rosterStrength: number;      // 팀 평균 OVR
+    reputation: number;
+    recentWinRate: number;
+    rosterStrength: number;
     isCurrentTeam: boolean;
-    positionCompetitorOvr: number; // 같은 포지션 경쟁자 OVR (0이면 경쟁 없음)
+    positionCompetitorOvr: number;
   },
   offeredSalary: number,
 ): TeamEvaluation {
-  const ovr = getPlayerOverall(player);
   const fairSalary = calculateFairSalary(player);
   const reasons: string[] = [];
 
-  // 1. 연봉 만족도 (제안 vs 적정연봉)
   const salaryRatio = offeredSalary / Math.max(fairSalary, 1);
-  let salaryScore: number;
-  if (salaryRatio >= 1.3) { salaryScore = 95; reasons.push('파격적인 연봉 제안'); }
-  else if (salaryRatio >= 1.1) { salaryScore = 80; reasons.push('시장가 이상의 좋은 연봉'); }
-  else if (salaryRatio >= 0.9) { salaryScore = 60; reasons.push('적정 수준의 연봉'); }
-  else if (salaryRatio >= 0.7) { salaryScore = 35; reasons.push('기대 이하의 연봉'); }
-  else { salaryScore = 15; reasons.push('매우 낮은 연봉 — 불만족'); }
+  const salaryScore = salaryRatio >= 1.2 ? 90 : salaryRatio >= 1 ? 70 : salaryRatio >= 0.85 ? 50 : 25;
+  const winningScore = teamInfo.recentWinRate >= 0.65 ? 85 : teamInfo.recentWinRate >= 0.5 ? 65 : 35;
+  const playtimeScore = teamInfo.positionCompetitorOvr <= 0
+    ? 95
+    : getPlayerOverall(player) >= teamInfo.positionCompetitorOvr
+      ? 75
+      : 35;
+  const loyaltyScore = teamInfo.isCurrentTeam ? 70 + Math.round(player.mental.morale * 0.2) : 35;
+  const reputationScore = teamInfo.reputation >= 80 ? 90 : teamInfo.reputation >= 60 ? 70 : teamInfo.reputation >= 40 ? 50 : 25;
 
-  // 2. 우승 가능성
-  let winningScore: number;
-  if (teamInfo.recentWinRate >= 0.7 && teamInfo.rosterStrength >= 75) {
-    winningScore = 90; reasons.push('우승 후보팀');
-  } else if (teamInfo.recentWinRate >= 0.5 && teamInfo.rosterStrength >= 68) {
-    winningScore = 65; reasons.push('플레이오프 진출 가능');
-  } else if (teamInfo.rosterStrength >= 60) {
-    winningScore = 40; reasons.push('중위권 팀');
-  } else {
-    winningScore = 20; reasons.push('하위권 팀 — 우승 가능성 낮음');
-  }
+  if (salaryScore >= 70) reasons.push('Competitive salary');
+  if (winningScore >= 65) reasons.push('Strong chance to win');
+  if (playtimeScore >= 70) reasons.push('Path to playtime');
+  if (teamInfo.isCurrentTeam) reasons.push('Familiar environment');
+  if (reputationScore >= 70) reasons.push('Brand and reputation');
 
-  // 3. 출전 기회
-  let playtimeScore: number;
-  if (teamInfo.positionCompetitorOvr === 0) {
-    playtimeScore = 95; reasons.push('해당 포지션 유일한 선수');
-  } else if (ovr > teamInfo.positionCompetitorOvr + 5) {
-    playtimeScore = 85; reasons.push('주전 확보 가능');
-  } else if (ovr >= teamInfo.positionCompetitorOvr - 3) {
-    playtimeScore = 50; reasons.push('주전 경쟁 필요');
-  } else {
-    playtimeScore = 20; reasons.push('벤치 가능성 높음');
-  }
-
-  // 4. 충성도 (현재 팀이면 보너스)
-  let loyaltyScore = 40;
-  if (teamInfo.isCurrentTeam) {
-    loyaltyScore = 60 + Math.round(player.mental.morale * 0.3);
-    reasons.push('현재 소속팀 — 팀 환경에 익숙');
-  } else {
-    loyaltyScore = 30;
-    reasons.push('새 팀 — 적응 필요');
-  }
-
-  // 5. 팀 명성
-  let reputationScore: number;
-  if (teamInfo.reputation >= 80) {
-    reputationScore = 90; reasons.push('명문팀');
-  } else if (teamInfo.reputation >= 60) {
-    reputationScore = 65; reasons.push('인지도 있는 팀');
-  } else if (teamInfo.reputation >= 40) {
-    reputationScore = 40; reasons.push('보통 수준의 팀');
-  } else {
-    reputationScore = 20; reasons.push('명성 낮은 팀');
-  }
-
-  // 가중 평균 (팩터 비중 반영)
-  const totalWeight = factors.money + factors.winning + factors.playtime
-    + factors.loyalty + factors.reputation;
-
-  const overall = totalWeight > 0
-    ? Math.round(
-        (salaryScore * factors.money
-        + winningScore * factors.winning
-        + playtimeScore * factors.playtime
-        + loyaltyScore * factors.loyalty
-        + reputationScore * factors.reputation) / totalWeight,
-      )
-    : 50;
+  const totalWeight = factors.money + factors.winning + factors.playtime + factors.loyalty + factors.reputation;
+  const overall = Math.round(
+    (salaryScore * factors.money +
+      winningScore * factors.winning +
+      playtimeScore * factors.playtime +
+      loyaltyScore * factors.loyalty +
+      reputationScore * factors.reputation) / Math.max(1, totalWeight),
+  );
 
   return {
     overall,
@@ -584,14 +389,6 @@ export function evaluateTeam(
   };
 }
 
-// ─────────────────────────────────────────
-// 선수의 역제안 계산
-// ─────────────────────────────────────────
-
-/**
- * 선수가 팀 제안에 대한 역제안을 생성한다.
- * 롤 특성: 1~3년 계약, 대부분 1년
- */
 export function generatePlayerCounterOffer(
   player: Player,
   factors: ContractDecisionFactors,
@@ -599,59 +396,31 @@ export function generatePlayerCounterOffer(
   evaluation: TeamEvaluation,
 ): { salary: number; years: number; signingBonus: number; message: string } {
   const demand = evaluatePlayerDemand(player);
+  let salary = demand.idealSalary;
+  if (evaluation.overall >= 75) salary = Math.round(salary * 0.92);
+  else if (evaluation.overall < 45) salary = Math.round(salary * 1.1);
 
-  // 기본 역제안 연봉: 선수 이상적 연봉
-  let counterSalary = demand.idealSalary;
+  salary = Math.max(salary, teamOffer.salary);
+  const years = player.age >= 27 ? 1 : Math.min(2, Math.max(1, teamOffer.years));
+  const signingBonus = factors.money >= 60 ? Math.round(salary * 0.1) : 0;
+  const message = evaluation.overall >= 70
+    ? '좋은 프로젝트지만 조건을 조금 더 올려주길 바랍니다.'
+    : '현재 제안만으로는 부족합니다. 조건 개선이 필요합니다.';
 
-  // 팀 평가 높으면 양보 가능
-  if (evaluation.overall >= 80) {
-    counterSalary = Math.round(counterSalary * 0.9);
-  } else if (evaluation.overall >= 60) {
-    counterSalary = Math.round(counterSalary * 0.95);
-  } else if (evaluation.overall < 40) {
-    // 팀 매력도 낮으면 더 높은 연봉 요구
-    counterSalary = Math.round(counterSalary * 1.15);
-  }
-
-  // 최소한 팀 제안 이상
-  counterSalary = Math.max(counterSalary, teamOffer.salary);
-
-  // 계약 기간: 롤은 1~3년, 대부분 1년 선호
-  let counterYears: number;
-  if (player.age >= 26) {
-    counterYears = 1; // 베테랑은 1년 선호
-  } else if (evaluation.overall >= 75) {
-    counterYears = Math.min(teamOffer.years, 2); // 좋은 팀이면 2년까지
-  } else {
-    counterYears = 1; // 기본 1년 (자유도 유지)
-  }
-
-  // 계약 보너스: 돈 중시 성향이면 요구
-  let counterBonus = 0;
-  if (factors.money >= 60) {
-    counterBonus = Math.round(counterSalary * 0.1); // 연봉의 10%
-  }
-
-  // 메시지 생성
-  let message: string;
-  if (evaluation.overall >= 75) {
-    message = '팀의 비전에 공감합니다. 조건만 맞으면 잔류하고 싶습니다.';
-  } else if (evaluation.overall >= 50) {
-    message = '나쁘지 않은 제안이지만, 좀 더 나은 조건을 기대합니다.';
-  } else {
-    message = '솔직히 이 조건으로는 계약하기 어렵습니다. 다시 고려해주세요.';
-  }
-
-  return { salary: counterSalary, years: counterYears, signingBonus: counterBonus, message };
+  return { salary, years, signingBonus, message };
 }
 
-// ─────────────────────────────────────────
-// 협상 DB 조작
-// ─────────────────────────────────────────
+async function appendNegotiationMessage(
+  negotiationId: number,
+  messages: NegotiationMessage[],
+): Promise<void> {
+  const db = await getDatabase();
+  await db.execute(
+    'UPDATE contract_negotiations SET messages = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+    [JSON.stringify(messages), negotiationId],
+  );
+}
 
-/**
- * 새 협상을 생성한다.
- */
 export async function createNegotiation(params: {
   seasonId: number;
   playerId: string;
@@ -662,293 +431,192 @@ export async function createNegotiation(params: {
   teamSigningBonus?: number;
   factors: ContractDecisionFactors;
 }): Promise<ContractNegotiation> {
-  const db = await (await import('../../db/database')).getDatabase();
-
-  // 기존 진행중인 협상 확인
-  const existing = await db.select<{ id: number }[]>(
-    `SELECT id FROM contract_negotiations
-     WHERE player_id = $1 AND team_id = $2 AND status IN ('pending', 'in_progress')`,
+  const db = await getDatabase();
+  const existing = await db.select<NegotiationRow[]>(
+    `SELECT *
+     FROM contract_negotiations
+     WHERE player_id = $1 AND team_id = $2 AND status IN ('pending', 'in_progress')
+     ORDER BY id DESC
+     LIMIT 1`,
     [params.playerId, params.teamId],
   );
+  if (existing[0]) return mapRowToNegotiation(existing[0]);
 
-  if (existing.length > 0) {
-    // 기존 협상이 있으면 가져오기
-    const rows = await db.select<NegotiationRow[]>(
-      'SELECT * FROM contract_negotiations WHERE id = $1',
-      [existing[0].id],
-    );
-    return mapRowToNegotiation(rows[0]);
-  }
-
-  const initialMessage: NegotiationMessage = {
+  const firstMessage: NegotiationMessage = {
     round: 1,
     from: params.initiator === 'team_to_player' ? 'team' : 'player',
-    text: params.initiator === 'team_to_player'
-      ? `연봉 ${params.teamSalary.toLocaleString()}만, ${params.teamYears}년 계약을 제안합니다.`
-      : '재계약 협상을 요청합니다.',
+    text: `Opening proposal: ${params.teamSalary.toLocaleString()} / ${params.teamYears}y`,
     salary: params.teamSalary,
     years: params.teamYears,
-    signingBonus: params.teamSigningBonus,
+    signingBonus: params.teamSigningBonus ?? 0,
     timestamp: new Date().toISOString(),
   };
 
   const result = await db.execute(
-    `INSERT INTO contract_negotiations
-     (season_id, player_id, team_id, initiator, status, current_round,
+    `INSERT INTO contract_negotiations (
+      season_id, player_id, team_id, initiator, status, current_round,
       team_salary, team_years, team_signing_bonus,
       factor_money, factor_winning, factor_playtime, factor_loyalty, factor_reputation,
-      messages)
-     VALUES ($1, $2, $3, $4, 'in_progress', 1,
-             $5, $6, $7,
-             $8, $9, $10, $11, $12,
-             $13)`,
+      messages
+    ) VALUES ($1, $2, $3, $4, 'in_progress', 1, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
     [
-      params.seasonId, params.playerId, params.teamId, params.initiator,
-      params.teamSalary, params.teamYears, params.teamSigningBonus ?? 0,
-      params.factors.money, params.factors.winning, params.factors.playtime,
-      params.factors.loyalty, params.factors.reputation,
-      JSON.stringify([initialMessage]),
+      params.seasonId,
+      params.playerId,
+      params.teamId,
+      params.initiator,
+      params.teamSalary,
+      params.teamYears,
+      params.teamSigningBonus ?? 0,
+      params.factors.money,
+      params.factors.winning,
+      params.factors.playtime,
+      params.factors.loyalty,
+      params.factors.reputation,
+      JSON.stringify([firstMessage]),
     ],
   );
 
-  return {
-    id: result.lastInsertId ?? 0,
-    seasonId: params.seasonId,
-    playerId: params.playerId,
-    teamId: params.teamId,
-    initiator: params.initiator,
-    status: 'in_progress',
-    currentRound: 1,
-    teamSalary: params.teamSalary,
-    teamYears: params.teamYears,
-    teamSigningBonus: params.teamSigningBonus ?? 0,
-    playerSalary: null,
-    playerYears: null,
-    playerSigningBonus: null,
-    factors: params.factors,
-    finalSalary: null,
-    finalYears: null,
-    finalSigningBonus: null,
-    messages: [initialMessage],
-  };
+  const rows = await db.select<NegotiationRow[]>('SELECT * FROM contract_negotiations WHERE id = $1', [result.lastInsertId]);
+  return mapRowToNegotiation(rows[0]);
 }
 
-/**
- * 협상에 응답한다 (역제안 또는 수락/거절).
- */
 export async function respondToNegotiation(
   negotiationId: number,
   response: 'accept' | 'reject' | 'counter',
   counterOffer?: { salary: number; years: number; signingBonus?: number },
   message?: string,
 ): Promise<ContractNegotiation> {
-  const db = await (await import('../../db/database')).getDatabase();
+  const db = await getDatabase();
+  const rows = await db.select<NegotiationRow[]>('SELECT * FROM contract_negotiations WHERE id = $1', [negotiationId]);
+  if (!rows[0]) throw new Error('Negotiation not found');
 
-  const rows = await db.select<NegotiationRow[]>(
-    'SELECT * FROM contract_negotiations WHERE id = $1',
-    [negotiationId],
-  );
-
-  if (rows.length === 0) throw new Error('협상을 찾을 수 없습니다.');
-
-  const neg = mapRowToNegotiation(rows[0]);
-
-  if (neg.status !== 'in_progress') {
-    throw new Error(`이미 종료된 협상입니다 (상태: ${neg.status})`);
-  }
-
-  const newMessages = [...neg.messages];
+  const negotiation = mapRowToNegotiation(rows[0]);
+  const messages = [...negotiation.messages];
 
   if (response === 'accept') {
-    // 수락 — 최종 조건 확정
-    const finalSalary = counterOffer?.salary ?? neg.teamSalary;
-    const finalYears = counterOffer?.years ?? neg.teamYears;
-    const finalBonus = counterOffer?.signingBonus ?? neg.teamSigningBonus;
-
-    newMessages.push({
-      round: neg.currentRound,
-      from: neg.initiator === 'team_to_player' ? 'player' : 'team',
-      text: message ?? '계약 조건에 동의합니다.',
+    const finalSalary = counterOffer?.salary ?? negotiation.teamSalary;
+    const finalYears = counterOffer?.years ?? negotiation.teamYears;
+    const finalSigningBonus = counterOffer?.signingBonus ?? negotiation.teamSigningBonus;
+    messages.push({
+      round: negotiation.currentRound,
+      from: negotiation.initiator === 'team_to_player' ? 'player' : 'team',
+      text: message ?? 'Accepted.',
       salary: finalSalary,
       years: finalYears,
-      signingBonus: finalBonus,
+      signingBonus: finalSigningBonus,
       timestamp: new Date().toISOString(),
     });
-
     await db.execute(
-      `UPDATE contract_negotiations SET
-        status = 'accepted',
-        final_salary = $1, final_years = $2, final_signing_bonus = $3,
-        messages = $4, updated_at = CURRENT_TIMESTAMP
+      `UPDATE contract_negotiations
+       SET status = 'accepted',
+           final_salary = $1,
+           final_years = $2,
+           final_signing_bonus = $3,
+           messages = $4,
+           updated_at = CURRENT_TIMESTAMP
        WHERE id = $5`,
-      [finalSalary, finalYears, finalBonus, JSON.stringify(newMessages), negotiationId],
+      [finalSalary, finalYears, finalSigningBonus, JSON.stringify(messages), negotiationId],
     );
-
-    return { ...neg, status: 'accepted', finalSalary, finalYears, finalSigningBonus: finalBonus, messages: newMessages };
-  }
-
-  if (response === 'reject') {
-    newMessages.push({
-      round: neg.currentRound,
-      from: neg.initiator === 'team_to_player' ? 'player' : 'team',
-      text: message ?? '제안을 거절합니다.',
+  } else if (response === 'reject') {
+    messages.push({
+      round: negotiation.currentRound,
+      from: negotiation.initiator === 'team_to_player' ? 'player' : 'team',
+      text: message ?? 'Rejected.',
       timestamp: new Date().toISOString(),
     });
-
     await db.execute(
-      `UPDATE contract_negotiations SET
-        status = 'rejected', messages = $1, updated_at = CURRENT_TIMESTAMP
+      `UPDATE contract_negotiations
+       SET status = 'rejected',
+           messages = $1,
+           updated_at = CURRENT_TIMESTAMP
        WHERE id = $2`,
-      [JSON.stringify(newMessages), negotiationId],
-    );
-
-    return { ...neg, status: 'rejected', messages: newMessages };
-  }
-
-  // counter — 역제안
-  if (!counterOffer) throw new Error('역제안 시 조건을 제시해야 합니다.');
-
-  if (neg.currentRound >= 3) {
-    // 3라운드 초과 시 자동 거절
-    newMessages.push({
-      round: neg.currentRound,
-      from: neg.initiator === 'team_to_player' ? 'player' : 'team',
-      text: '더 이상 협상을 진행할 수 없습니다.',
-      timestamp: new Date().toISOString(),
-    });
-
-    await db.execute(
-      `UPDATE contract_negotiations SET
-        status = 'rejected', messages = $1, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $2`,
-      [JSON.stringify(newMessages), negotiationId],
-    );
-
-    return { ...neg, status: 'rejected', messages: newMessages };
-  }
-
-  const nextRound = neg.currentRound + 1;
-  // 누가 역제안하는지 결정
-  const isPlayerResponding = neg.initiator === 'team_to_player';
-
-  newMessages.push({
-    round: nextRound,
-    from: isPlayerResponding ? 'player' : 'team',
-    text: message ?? `연봉 ${counterOffer.salary.toLocaleString()}만, ${counterOffer.years}년을 제안합니다.`,
-    salary: counterOffer.salary,
-    years: counterOffer.years,
-    signingBonus: counterOffer.signingBonus,
-    timestamp: new Date().toISOString(),
-  });
-
-  if (isPlayerResponding) {
-    await db.execute(
-      `UPDATE contract_negotiations SET
-        current_round = $1, player_salary = $2, player_years = $3, player_signing_bonus = $4,
-        messages = $5, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $6`,
-      [nextRound, counterOffer.salary, counterOffer.years, counterOffer.signingBonus ?? 0,
-       JSON.stringify(newMessages), negotiationId],
+      [JSON.stringify(messages), negotiationId],
     );
   } else {
+    if (!counterOffer) throw new Error('Counter offer required');
+    const nextRound = negotiation.currentRound + 1;
+    messages.push({
+      round: nextRound,
+      from: negotiation.initiator === 'team_to_player' ? 'player' : 'team',
+      text: message ?? 'Counter offer submitted.',
+      salary: counterOffer.salary,
+      years: counterOffer.years,
+      signingBonus: counterOffer.signingBonus ?? 0,
+      timestamp: new Date().toISOString(),
+    });
     await db.execute(
-      `UPDATE contract_negotiations SET
-        current_round = $1, team_salary = $2, team_years = $3, team_signing_bonus = $4,
-        messages = $5, updated_at = CURRENT_TIMESTAMP
+      `UPDATE contract_negotiations
+       SET current_round = $1,
+           player_salary = $2,
+           player_years = $3,
+           player_signing_bonus = $4,
+           messages = $5,
+           updated_at = CURRENT_TIMESTAMP
        WHERE id = $6`,
-      [nextRound, counterOffer.salary, counterOffer.years, counterOffer.signingBonus ?? 0,
-       JSON.stringify(newMessages), negotiationId],
+      [nextRound, counterOffer.salary, counterOffer.years, counterOffer.signingBonus ?? 0, JSON.stringify(messages), negotiationId],
     );
   }
 
-  return {
-    ...neg,
-    currentRound: nextRound,
-    ...(isPlayerResponding
-      ? { playerSalary: counterOffer.salary, playerYears: counterOffer.years, playerSigningBonus: counterOffer.signingBonus ?? 0 }
-      : { teamSalary: counterOffer.salary, teamYears: counterOffer.years, teamSigningBonus: counterOffer.signingBonus ?? 0 }),
-    messages: newMessages,
-  };
+  await appendNegotiationMessage(negotiationId, messages);
+  const updated = await db.select<NegotiationRow[]>('SELECT * FROM contract_negotiations WHERE id = $1', [negotiationId]);
+  return mapRowToNegotiation(updated[0]);
 }
 
-/**
- * 팀의 진행중인 협상 목록을 조회한다.
- */
-export async function getTeamNegotiations(
-  teamId: string,
-  seasonId: number,
-): Promise<ContractNegotiation[]> {
-  const db = await (await import('../../db/database')).getDatabase();
+export async function getTeamNegotiations(teamId: string, seasonId: number): Promise<ContractNegotiation[]> {
+  const db = await getDatabase();
   const rows = await db.select<NegotiationRow[]>(
-    `SELECT * FROM contract_negotiations
-     WHERE team_id = $1 AND season_id = $2
-     ORDER BY updated_at DESC`,
+    'SELECT * FROM contract_negotiations WHERE team_id = $1 AND season_id = $2 ORDER BY updated_at DESC, id DESC',
     [teamId, seasonId],
   );
   return rows.map(mapRowToNegotiation);
 }
 
-/**
- * 선수의 진행중인 협상 목록을 조회한다.
- */
-export async function getPlayerNegotiations(
-  playerId: string,
-  seasonId: number,
-): Promise<ContractNegotiation[]> {
-  const db = await (await import('../../db/database')).getDatabase();
+export async function getPlayerNegotiations(playerId: string, seasonId: number): Promise<ContractNegotiation[]> {
+  const db = await getDatabase();
   const rows = await db.select<NegotiationRow[]>(
-    `SELECT * FROM contract_negotiations
-     WHERE player_id = $1 AND season_id = $2
-     ORDER BY updated_at DESC`,
+    'SELECT * FROM contract_negotiations WHERE player_id = $1 AND season_id = $2 ORDER BY updated_at DESC, id DESC',
     [playerId, seasonId],
   );
   return rows.map(mapRowToNegotiation);
 }
 
-/**
- * 협상 수락 후 실제 계약을 체결한다.
- */
 export async function finalizeNegotiation(
   negotiation: ContractNegotiation,
   currentSeasonId: number,
 ): Promise<RenewalResult> {
   if (negotiation.status !== 'accepted' || !negotiation.finalSalary || !negotiation.finalYears) {
-    return { success: false, reason: '수락된 협상이 아닙니다.' };
+    return { success: false, reason: 'Accepted negotiation required.' };
   }
 
-  // 연봉 상한 체크
-  const currentTotalSalary = await getTeamTotalSalary(negotiation.teamId);
-  if (currentTotalSalary + negotiation.finalSalary > SALARY_CAP) {
-    return { success: false, reason: '연봉 상한을 초과합니다.' };
+  const existingPlayer = await getPlayerById(negotiation.playerId);
+  const currentSalary = existingPlayer?.contract.salary ?? 0;
+  const snapshot = await getTeamPayrollSnapshot(negotiation.teamId);
+  const projectedPayroll = snapshot.totalPayroll - currentSalary + negotiation.finalSalary;
+  const payrollCheck = await canAbsorbPayroll(negotiation.teamId, projectedPayroll);
+
+  if (!payrollCheck.allowed) {
+    return { success: false, reason: '샐러리캡 초과 폭이 너무 커서 보드가 승인을 거부합니다.' };
   }
 
-  // [C11] 계약 업데이트 (1년 = 2스플릿이므로 years * 2)
-  const contractEndSeason = currentSeasonId + (negotiation.finalYears * 2);
+  const contractEndSeason = currentSeasonId + negotiation.finalYears * 2;
   await updatePlayerContract(negotiation.playerId, negotiation.finalSalary, contractEndSeason);
 
-  // 계약 보너스 처리
   if (negotiation.finalSigningBonus && negotiation.finalSigningBonus > 0) {
-    const db = await (await import('../../db/database')).getDatabase();
-    await db.execute('UPDATE teams SET budget = budget - $1 WHERE id = $2', [negotiation.finalSigningBonus, negotiation.teamId]);
-
+    const db = await getDatabase();
+    await db.execute('UPDATE teams SET budget = budget - $1 WHERE id = $2', [
+      negotiation.finalSigningBonus,
+      negotiation.teamId,
+    ]);
     const { addClause } = await import('./clauseEngine');
-    await addClause(negotiation.playerId, 'signing_bonus', negotiation.finalSigningBonus, `시즌 ${currentSeasonId} 계약 보너스`);
+    await addClause(negotiation.playerId, 'signing_bonus', negotiation.finalSigningBonus, `Season ${currentSeasonId} signing bonus`);
   }
 
   return {
     success: true,
-    reason: `계약 체결: ${negotiation.finalSalary.toLocaleString()}만/년, ${negotiation.finalYears}년 (시즌 ${contractEndSeason}까지)`,
+    reason: `계약 체결: ${negotiation.finalSalary.toLocaleString()} / ${negotiation.finalYears}년`,
   };
 }
 
-// ─────────────────────────────────────────
-// AI 선수 자동 응답 (감독 모드용)
-// ─────────────────────────────────────────
-
-/**
- * AI 선수가 팀 제안에 자동 응답한다.
- * 감독 모드에서 소속 선수에게 재계약 제안 시 호출.
- */
 export async function aiPlayerRespondToOffer(
   negotiation: ContractNegotiation,
   player: Player,
@@ -959,36 +627,38 @@ export async function aiPlayerRespondToOffer(
     positionCompetitorOvr: number;
   },
 ): Promise<ContractNegotiation> {
-  const evaluation = evaluateTeam(player, negotiation.factors, {
-    ...teamInfo,
-    isCurrentTeam: true,
-  }, negotiation.teamSalary);
+  const evaluation = evaluateTeam(
+    player,
+    negotiation.factors,
+    { ...teamInfo, isCurrentTeam: true },
+    negotiation.teamSalary,
+  );
 
-  // 수락 기준: 종합 평가 65 이상이면 수락
   if (evaluation.overall >= 65) {
     return respondToNegotiation(
       negotiation.id,
       'accept',
-      { salary: negotiation.teamSalary, years: negotiation.teamYears, signingBonus: negotiation.teamSigningBonus },
-      `${evaluation.reasons.slice(0, 2).join('. ')}. 좋은 조건입니다, 수락하겠습니다.`,
+      {
+        salary: negotiation.teamSalary,
+        years: negotiation.teamYears,
+        signingBonus: negotiation.teamSigningBonus,
+      },
+      'The player accepts the current terms.',
     );
   }
 
-  // 거절 기준: 종합 평가 30 미만이면 거절
-  if (evaluation.overall < 30) {
-    return respondToNegotiation(
-      negotiation.id,
-      'reject',
-      undefined,
-      `${evaluation.reasons.slice(0, 2).join('. ')}. 이 조건으로는 계약할 수 없습니다.`,
-    );
+  if (evaluation.overall < 35) {
+    return respondToNegotiation(negotiation.id, 'reject', undefined, 'The player rejects the current terms.');
   }
 
-  // 역제안
   const counter = generatePlayerCounterOffer(
     player,
     negotiation.factors,
-    { salary: negotiation.teamSalary, years: negotiation.teamYears, signingBonus: negotiation.teamSigningBonus },
+    {
+      salary: negotiation.teamSalary,
+      years: negotiation.teamYears,
+      signingBonus: negotiation.teamSigningBonus,
+    },
     evaluation,
   );
 
@@ -1000,13 +670,6 @@ export async function aiPlayerRespondToOffer(
   );
 }
 
-// ─────────────────────────────────────────
-// 선수 모드: 팀에 계약 요청
-// ─────────────────────────────────────────
-
-/**
- * 선수 모드에서 팀에 재계약/연봉 인상을 요청한다.
- */
 export async function playerRequestContract(params: {
   seasonId: number;
   playerId: string;
@@ -1014,10 +677,10 @@ export async function playerRequestContract(params: {
   requestedSalary: number;
   requestedYears: number;
 }): Promise<ContractNegotiation> {
-  const player = await (await import('../../db/queries')).getPlayerById(params.playerId);
-  const factors = player ? generateDecisionFactors(player) : {
-    money: 50, winning: 50, playtime: 50, loyalty: 50, reputation: 50,
-  };
+  const player = await getPlayerById(params.playerId);
+  const factors = player
+    ? generateDecisionFactors(player)
+    : { money: 50, winning: 50, playtime: 50, loyalty: 50, reputation: 50 };
 
   return createNegotiation({
     seasonId: params.seasonId,
@@ -1030,63 +693,49 @@ export async function playerRequestContract(params: {
   });
 }
 
-/**
- * AI 감독이 선수의 계약 요청에 자동 응답한다.
- * 선수 모드에서 팀에 계약 요청 시 호출.
- */
 export async function aiTeamRespondToRequest(
   negotiation: ContractNegotiation,
   player: Player,
 ): Promise<ContractNegotiation> {
-  const ovr = getPlayerOverall(player);
   const fairSalary = calculateFairSalary(player);
+  const snapshot = await getTeamPayrollSnapshot(negotiation.teamId);
+  const projectedPayroll = snapshot.totalPayroll + negotiation.teamSalary;
+  const payrollCheck = await canAbsorbPayroll(negotiation.teamId, projectedPayroll);
 
-  // 팀 예산 확인
-  const currentTotalSalary = await getTeamTotalSalary(negotiation.teamId);
-  const canAfford = currentTotalSalary + negotiation.teamSalary <= SALARY_CAP;
-
-  if (!canAfford) {
+  if (!payrollCheck.allowed) {
     return respondToNegotiation(
       negotiation.id,
       'reject',
       undefined,
-      '연봉 상한으로 인해 이 조건을 수용할 수 없습니다.',
+      '샐러리캡 초과 폭이 너무 커서 이 조건은 수용할 수 없습니다.',
     );
   }
 
-  // 선수 가치 대비 요구 연봉 평가
-  const salaryRatio = negotiation.teamSalary / Math.max(fairSalary, 1);
-
-  if (salaryRatio <= 1.0 && ovr >= 65) {
-    // 적정 연봉 이하 + 주전급이면 수락
+  if (negotiation.teamSalary <= fairSalary * 1.05) {
     return respondToNegotiation(
       negotiation.id,
       'accept',
-      { salary: negotiation.teamSalary, years: negotiation.teamYears },
-      '좋은 제안입니다. 계약 조건에 동의합니다.',
+      {
+        salary: negotiation.teamSalary,
+        years: negotiation.teamYears,
+        signingBonus: negotiation.teamSigningBonus,
+      },
+      'The team accepts the player request.',
     );
   }
 
-  if (salaryRatio > 1.3 || ovr < 55) {
-    // 요구가 너무 높거나 실력 부족이면 거절
-    return respondToNegotiation(
-      negotiation.id,
-      'reject',
-      undefined,
-      ovr < 55
-        ? '현재 로스터 상황에서 그 조건은 어렵습니다.'
-        : '요구 연봉이 너무 높습니다. 다시 제안해주세요.',
-    );
+  if (negotiation.teamSalary > fairSalary * 1.3) {
+    return respondToNegotiation(negotiation.id, 'reject', undefined, 'The requested salary is too high.');
   }
-
-  // 역제안: 적정 연봉 수준으로
-  const counterSalary = Math.round(fairSalary * (ovr >= 75 ? 1.1 : 1.0));
-  const counterYears = Math.min(negotiation.teamYears, 2);
 
   return respondToNegotiation(
     negotiation.id,
     'counter',
-    { salary: counterSalary, years: counterYears },
-    `연봉 ${counterSalary.toLocaleString()}만, ${counterYears}년을 제안합니다.`,
+    {
+      salary: Math.round(fairSalary * 1.05),
+      years: Math.min(2, negotiation.teamYears),
+      signingBonus: 0,
+    },
+    'The team responds with a lower contract offer.',
   );
 }

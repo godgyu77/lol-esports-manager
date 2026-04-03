@@ -411,7 +411,7 @@ export function InboxView() {
                   <div id={`inbox-message-${msg.id}`} className="fm-mt-sm" style={{ paddingTop: '10px', borderTop: '1px solid var(--border-subtle)' }}>
                     <p className="fm-text-md fm-text-secondary" style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{msg.content}</p>
                     {msg.actionRoute && (
-                      <button className="fm-btn fm-btn--primary fm-btn--sm fm-mt-sm" onClick={(e) => { e.stopPropagation(); navigate(msg.actionRoute); }}>
+                      <button className="fm-btn fm-btn--primary fm-btn--sm fm-mt-sm" onClick={(e) => { e.stopPropagation(); if (msg.actionRoute) void navigate(msg.actionRoute); }}>
                         이동 &rarr;
                       </button>
                     )}

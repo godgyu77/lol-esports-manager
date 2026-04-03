@@ -34,7 +34,7 @@ export type DayPhase =
   | 'result'         // 경기 결과 확인
   ;
 
-interface GameState {
+export interface GameState {
   // 게임 메타
   mode: GameMode | null;
   save: GameSave | null;

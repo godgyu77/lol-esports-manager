@@ -36,6 +36,13 @@ function getSaveResumeSummary(save: GameSave): { headline: string; subline: stri
   };
 }
 
+const EXPERIENCE_PILLARS = [
+  'Patch-driven team building',
+  'Coach room and roster politics',
+  'Draft, scrim, and broadcast storylines',
+  'Long-form esports career arcs',
+] as const;
+
 export function MainMenu() {
   const navigate = useNavigate();
   const [ollamaStatus, setOllamaStatus] = useState<boolean | null>(null);
@@ -102,6 +109,11 @@ export function MainMenu() {
               <br />
               내 시즌을 직접 이끄는 e스포츠 매니지먼트 경험입니다.
             </p>
+            <div className="launcher__pillar-row" aria-label="Experience pillars">
+              {EXPERIENCE_PILLARS.map((pillar) => (
+                <span key={pillar} className="launcher__pillar-chip">{pillar}</span>
+              ))}
+            </div>
           </div>
 
           <div className="launcher__story-grid">
@@ -172,6 +184,14 @@ export function MainMenu() {
                 </button>
               </>
             )}
+          </div>
+
+          <div className="launcher__identity-card">
+            <span className="launcher__continue-label">BRAND NOTE</span>
+            <strong>Built as a LoL esports operations game, not a football reskin.</strong>
+            <p>
+              Patch reads, staff trust, player chemistry, broadcast pressure, and long career identity now sit inside one loop.
+            </p>
           </div>
 
           <div className="launcher__menu-grid">

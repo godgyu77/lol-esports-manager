@@ -71,6 +71,33 @@ function getImportanceLabel(importance: number) {
   return '일반 기사';
 }
 
+function inferNarrativeBadges(article: NewsArticle): string[] {
+  const haystack = `${article.title} ${article.content}`.toLowerCase();
+  const badges: string[] = [];
+  const includesAny = (keywords: string[]) => keywords.some((keyword) => haystack.includes(keyword));
+
+  if (includesAny(['dynasty', 'franchise arc', 'legacy', '왕조', '계보', '프랜차이즈', '레거시'])) {
+    badges.push('legacy');
+  }
+  if (includesAny(['international', 'cross-region', 'broadcast desk', 'worlds', 'msi', '국제전', '국제', '지역 대항'])) {
+    badges.push('international');
+  }
+  if (includesAny(['rival', 'rivalry', 'head-to-head', '라이벌', '맞대결', '숙적'])) {
+    badges.push('rivalry');
+  }
+  if (includesAny(['rebuild', 'collapse', 'pressure', '압박', '붕괴', '재건', '위기'])) {
+    badges.push('pressure');
+  }
+
+  return badges.slice(0, 2);
+}
+
+function getNarrativeBadges(article: NewsArticle): string[] {
+  return (article.narrativeTags.length > 0
+    ? article.narrativeTags
+    : inferNarrativeBadges(article)).slice(0, 2);
+}
+
 function ImportanceBadge({ importance }: { importance: number }) {
   if (importance <= 1) return null;
   const badgeClass = importance >= 3 ? 'fm-badge--danger' : 'fm-badge--warning';
@@ -195,6 +222,7 @@ export function NewsFeedView() {
   const splitLabel = getSplitLabel(season.split);
   const articleParagraphs = selectedArticle ? buildArticleParagraphs(selectedArticle.content) : [];
   const selectedConfig = selectedArticle ? CATEGORY_CONFIG[selectedArticle.category] : null;
+  const selectedNarrativeBadges = selectedArticle ? getNarrativeBadges(selectedArticle) : [];
 
   return (
     <div className="newsfeed-layout">
@@ -327,7 +355,6 @@ export function NewsFeedView() {
                   {dayArticles.map((article) => {
                     const config = CATEGORY_CONFIG[article.category];
                     const isSelected = selectedArticleId === article.id;
-
                     return (
                       <button
                         key={article.id}
@@ -367,6 +394,11 @@ export function NewsFeedView() {
                                 {article.presentation === 'briefing' ? '브리핑' : '기사'}
                               </span>
                               <ImportanceBadge importance={article.importance} />
+                              {getNarrativeBadges(article).map((badge) => (
+                                <span key={`list-${article.id}-${badge}`} className="fm-badge fm-badge--info">
+                                  {badge}
+                                </span>
+                              ))}
                               {getPresentation(article) === 'alert' && <span className="fm-badge fm-badge--danger">긴급</span>}
                               {!article.isRead && <span className="newsfeed-unread-dot" title="읽지 않음" />}
                             </div>
@@ -429,6 +461,11 @@ export function NewsFeedView() {
                     {selectedArticle.presentation === 'briefing' ? '브리핑' : '아카이브 기사'}
                   </span>
                   <ImportanceBadge importance={selectedArticle.importance} />
+                  {selectedNarrativeBadges.map((badge) => (
+                    <span key={`reader-${selectedArticle.id}-${badge}`} className="fm-badge fm-badge--info">
+                      {badge}
+                    </span>
+                  ))}
                 </div>
 
                 <h2 className="newsfeed-reader-title">{selectedArticle.title}</h2>

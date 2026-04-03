@@ -22,6 +22,13 @@ import { calculateMaintenanceCost, processFacilityDecay } from '../facility/faci
 import { generatePatch } from '../champion/patchEngine';
 import { buildAchievementContext, checkAndUnlockAchievements } from '../achievement/achievementEngine';
 import { checkGoalAchievement } from '../playerGoal/playerGoalEngine';
+import {
+  applyBudgetPressureToBoard,
+  expireOldConsequences,
+  processReleaseDepthWeeklyState,
+  processSystemDepthDailyState,
+  resolvePrepRecommendations,
+} from '../manager/systemDepthEngine';
 
 export async function processNonMatchDay(
   dayType: DayType,
@@ -94,6 +101,20 @@ export async function processNonMatchDay(
     console.warn('[dayAdvancer] generateDailyNews failed:', e);
   }
 
+  try {
+    await expireOldConsequences(currentDate);
+    const depthEvents = await processSystemDepthDailyState(userTeamId, seasonId, currentDate);
+    events.push(...depthEvents);
+  } catch (e) {
+    console.warn('[dayAdvancer] processSystemDepthDailyState failed:', e);
+  }
+
+  try {
+    await resolvePrepRecommendations(userTeamId, seasonId);
+  } catch (e) {
+    console.warn('[dayAdvancer] resolvePrepRecommendations failed:', e);
+  }
+
   return { events };
 }
 
@@ -109,6 +130,13 @@ export async function processWeeklyTasks(
   await db.execute('UPDATE seasons SET current_week = current_week + 1 WHERE id = $1', [seasonId]);
   await processWeeklyFinances(seasonId, currentDate);
   events.push('주간 재정 처리 완료');
+
+  try {
+    const boardPressureEvent = await applyBudgetPressureToBoard(userTeamId, seasonId);
+    if (boardPressureEvent) events.push(boardPressureEvent);
+  } catch (e) {
+    console.warn('[dayAdvancer] applyBudgetPressureToBoard failed:', e);
+  }
 
   try {
     const complaints = await checkForComplaints(userTeamId, seasonId, currentDate, saveId);
@@ -141,7 +169,7 @@ export async function processWeeklyTasks(
   }
 
   try {
-    await processWeeklySatisfaction(userTeamId, seasonId, currentDate);
+    await processWeeklySatisfaction(userTeamId, seasonId, currentDate, saveId);
     events.push('주간 만족도 점검 완료');
   } catch (e) {
     console.warn('[dayAdvancer] processWeeklySatisfaction failed:', e);
@@ -217,6 +245,21 @@ export async function processWeeklyTasks(
     events.push(`패치 ${patchNumber} 적용 (${patchResult.entries.length}건 변경)`);
     await insertDailyEvent(seasonId, currentDate, 'patch', undefined, patchResult.patchNote);
     await generatePatchNotesNews(seasonId, currentDate, patchNumber, patchResult.entries.length, patchResult.patchNote);
+  }
+
+  try {
+    await resolvePrepRecommendations(userTeamId, seasonId);
+  } catch (e) {
+    console.warn('[dayAdvancer] resolvePrepRecommendations failed:', e);
+  }
+
+  if (saveId != null) {
+    try {
+      const releaseDepthEvents = await processReleaseDepthWeeklyState(saveId, userTeamId, seasonId, currentDate);
+      events.push(...releaseDepthEvents);
+    } catch (e) {
+      console.warn('[dayAdvancer] processReleaseDepthWeeklyState failed:', e);
+    }
   }
 
   return { events };

@@ -1,8 +1,8 @@
 import { useEffect } from 'react';
-import { useSettingsStore } from '../stores/settingsStore';
+import { useSettingsStore, type SettingsState } from '../stores/settingsStore';
 
 export function useTheme() {
-  const theme = useSettingsStore((s) => s.theme);
+  const theme = useSettingsStore((s: SettingsState) => s.theme);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);

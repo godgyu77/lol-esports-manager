@@ -65,7 +65,7 @@ function buildSwapTags(player: Player | undefined, championId: string): string[]
   return tags;
 }
 
-function buildSwapSummary(player: Player | undefined, championId: string): string {
+export function buildSwapSummary(player: Player | undefined, championId: string): string {
   if (!player) return '선수 배치가 아직 확정되지 않았습니다.';
 
   const comfortPick = [...player.championPool]

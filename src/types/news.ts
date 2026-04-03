@@ -28,6 +28,7 @@ export interface NewsArticle {
   isRead: boolean;
   presentation: NewsPresentation;
   isDismissible: boolean;
+  narrativeTags: string[];
 }
 
 export const NEWS_CATEGORY_LABELS: Record<NewsCategory, string> = {

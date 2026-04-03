@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { useSettingsStore } from '../stores/settingsStore';
+import type { SettingsState } from '../stores/settingsStore';
 import './AiSetupWizard.css';
 
 interface DownloadProgress {
@@ -33,12 +34,12 @@ export function AiSetupWizard({ onComplete }: { onComplete: () => void }) {
     completed: 0,
   });
 
-  const setAiModel = useSettingsStore((s) => s.setAiModel);
-  const setAiEnabled = useSettingsStore((s) => s.setAiEnabled);
-  const setAiProvider = useSettingsStore((s) => s.setAiProvider);
-  const setAiSetupCompleted = useSettingsStore((s) => s.setAiSetupCompleted);
-  const setAiSetupSkipped = useSettingsStore((s) => s.setAiSetupSkipped);
-  const existingSetupCompleted = useSettingsStore((s) => s.aiSetupCompleted);
+  const setAiModel = useSettingsStore((s: SettingsState) => s.setAiModel);
+  const setAiEnabled = useSettingsStore((s: SettingsState) => s.setAiEnabled);
+  const setAiProvider = useSettingsStore((s: SettingsState) => s.setAiProvider);
+  const setAiSetupCompleted = useSettingsStore((s: SettingsState) => s.setAiSetupCompleted);
+  const setAiSetupSkipped = useSettingsStore((s: SettingsState) => s.setAiSetupSkipped);
+  const existingSetupCompleted = useSettingsStore((s: SettingsState) => s.aiSetupCompleted);
 
   const modelReady = useMemo(
     () => installedModels.includes(RECOMMENDED_MODEL),
@@ -127,7 +128,7 @@ export function AiSetupWizard({ onComplete }: { onComplete: () => void }) {
         throw new Error(detail.message);
       }
 
-      const models = await invoke<string[]>('list_models').catch(() => []);
+      const models = await invoke<string[]>('list_models').catch(() => [] as string[]);
       setInstalledModels(models);
 
       if (models.includes(RECOMMENDED_MODEL)) {

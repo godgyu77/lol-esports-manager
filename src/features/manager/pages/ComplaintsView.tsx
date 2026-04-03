@@ -119,7 +119,7 @@ export function ComplaintsView() {
       await resolveComplaint(
         complaint.id,
         'talk',
-        currentDate ?? new Date().toISOString().slice(0, 10),
+        currentDate ?? '',
         save?.id,
       );
       await loadData();
@@ -141,7 +141,7 @@ export function ComplaintsView() {
     try {
       await allowTransfer(
         complaint.id,
-        currentDate ?? new Date().toISOString().slice(0, 10),
+        currentDate ?? '',
         save?.id,
       );
       await loadData();
@@ -163,7 +163,7 @@ export function ComplaintsView() {
     try {
       const success = await persuadeTransfer(
         complaint.id,
-        currentDate ?? new Date().toISOString().slice(0, 10),
+        currentDate ?? '',
         save?.id,
       );
       setPersuadeResult({ complaintId: complaint.id, success });

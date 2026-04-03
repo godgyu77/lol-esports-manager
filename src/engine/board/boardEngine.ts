@@ -2,6 +2,7 @@ import type { BoardExpectation, FanReaction } from '../../types/board';
 import { getDatabase } from '../../db/database';
 import { clamp } from '../../utils/mathUtils';
 import { getManagerIdentity, getManagerIdentityEffects } from '../manager/managerIdentityEngine';
+import { getInternationalExpectationSnapshot } from '../manager/releaseDepthEngine';
 
 interface BoardExpectationRow {
   id: number;
@@ -142,7 +143,10 @@ export async function updateBoardSatisfaction(
   const expectations = await getBoardExpectations(teamId, seasonId);
   if (!expectations) return null;
 
-  const managerContext = await getBoardManagerContext(saveId);
+  const [managerContext, internationalSnapshot] = await Promise.all([
+    getBoardManagerContext(saveId),
+    getInternationalExpectationSnapshot(teamId, seasonId, null, saveId).catch(() => null),
+  ]);
   const totalGames = wins + losses;
   if (totalGames === 0) return expectations;
 
@@ -158,6 +162,12 @@ export async function updateBoardSatisfaction(
 
   if (winRate >= 0.7) satisfactionDelta += 5;
   else if (winRate <= 0.3) satisfactionDelta -= 5;
+
+  if (internationalSnapshot?.level === 'contender') {
+    satisfactionDelta += winRate >= 0.65 ? 2 : -2;
+  } else if (internationalSnapshot?.level === 'must_deliver') {
+    satisfactionDelta += winRate >= 0.65 ? 4 : -4;
+  }
 
   satisfactionDelta -= managerContext.boardPressure;
 
@@ -176,19 +186,31 @@ export async function processMatchResult(
   seasonId: number,
   isWin: boolean,
   isUserMatch: boolean,
+  currentDate: string,
   saveId?: number,
 ): Promise<BoardExpectation | null> {
   const expectations = await getBoardExpectations(teamId, seasonId);
   if (!expectations) return null;
 
   const db = await getDatabase();
-  const managerContext = await getBoardManagerContext(saveId);
+  const [managerContext, internationalSnapshot] = await Promise.all([
+    getBoardManagerContext(saveId),
+    getInternationalExpectationSnapshot(teamId, seasonId, null, saveId).catch(() => null),
+  ]);
 
   let satisfactionDelta = isWin ? 4 : -3;
   let fanDelta = isWin ? 5 : -3;
 
   if (isUserMatch) {
     fanDelta = isWin ? 8 : -6;
+  }
+
+  if (internationalSnapshot?.level === 'contender') {
+    satisfactionDelta += isWin ? 2 : -3;
+    fanDelta += isWin ? 2 : -2;
+  } else if (internationalSnapshot?.level === 'must_deliver') {
+    satisfactionDelta += isWin ? 3 : -5;
+    fanDelta += isWin ? 3 : -3;
   }
 
   satisfactionDelta += isWin ? managerContext.boardPressure : -managerContext.boardPressure;
@@ -206,7 +228,7 @@ export async function processMatchResult(
           const teamRows = await db.select<{ name: string }[]>('SELECT name FROM teams WHERE id = $1', [teamId]);
           await generateFanReactionNews(
             seasonId,
-            new Date().toISOString().slice(0, 10),
+            currentDate,
             teamRows[0]?.name ?? teamId,
             'lose_streak',
             'negative',
@@ -226,7 +248,7 @@ export async function processMatchResult(
         const teamRows = await db.select<{ name: string }[]>('SELECT name FROM teams WHERE id = $1', [teamId]);
         await generateFanReactionNews(
           seasonId,
-          new Date().toISOString().slice(0, 10),
+          currentDate,
           teamRows[0]?.name ?? teamId,
           'win_streak',
           'positive',
@@ -256,13 +278,14 @@ export async function processMatchResult(
       ? 'Fans are reacting sharply because the results-first tone is raising expectations.'
       : 'Fans are frustrated by the loss.';
 
-  await processFanReaction(teamId, new Date().toISOString().slice(0, 10), eventType, fanDelta, message);
+  await processFanReaction(teamId, currentDate, eventType, fanDelta, message);
   return { ...expectations, satisfaction: newSatisfaction, fanHappiness: newFanHappiness };
 }
 
 export async function checkFiringRisk(
   teamId: string,
   seasonId: number,
+  currentDate: string,
   saveId?: number,
 ): Promise<'safe' | 'warning' | 'fired'> {
   const expectations = await getBoardExpectations(teamId, seasonId);
@@ -277,7 +300,7 @@ export async function checkFiringRisk(
       `UPDATE board_expectations SET is_fired = 1 WHERE team_id = $1 AND season_id = $2`,
       [teamId, seasonId],
     );
-    await processFanReaction(teamId, new Date().toISOString().slice(0, 10), 'fired', -20, 'The board has dismissed the manager.');
+    await processFanReaction(teamId, currentDate, 'fired', -20, 'The board has dismissed the manager.');
     return 'fired';
   }
 
@@ -287,7 +310,7 @@ export async function checkFiringRisk(
       `UPDATE board_expectations SET warning_count = $1 WHERE team_id = $2 AND season_id = $3`,
       [newWarningCount, teamId, seasonId],
     );
-    await processFanReaction(teamId, new Date().toISOString().slice(0, 10), 'warning', -5, `The board has issued warning #${newWarningCount}.`);
+    await processFanReaction(teamId, currentDate, 'warning', -5, `The board has issued warning #${newWarningCount}.`);
     return 'warning';
   }
 

@@ -10,8 +10,13 @@ const {
   mockGetPlayerManagementInsights,
   mockGetSatisfactionReport,
   mockGenerateStaffRecommendations,
+  mockGetStaffFitSummary,
   mockGetUnreadCount,
   mockGenerateDailyBriefing,
+  mockGetBudgetPressureSnapshot,
+  mockGetActiveConsequences,
+  mockGetPrepRecommendationRecords,
+  mockGetMainLoopRiskItems,
 } = vi.hoisted(() => ({
   mockGetMatchesByTeam: vi.fn(),
   mockGetTeamTotalSalary: vi.fn(),
@@ -21,8 +26,13 @@ const {
   mockGetPlayerManagementInsights: vi.fn(),
   mockGetSatisfactionReport: vi.fn(),
   mockGenerateStaffRecommendations: vi.fn(),
+  mockGetStaffFitSummary: vi.fn(),
   mockGetUnreadCount: vi.fn(),
   mockGenerateDailyBriefing: vi.fn(),
+  mockGetBudgetPressureSnapshot: vi.fn(),
+  mockGetActiveConsequences: vi.fn(),
+  mockGetPrepRecommendationRecords: vi.fn(),
+  mockGetMainLoopRiskItems: vi.fn(),
 }));
 
 vi.mock('../../../hooks/useBgm', () => ({
@@ -86,6 +96,14 @@ vi.mock('../../../engine/satisfaction/playerSatisfactionEngine', () => ({
 
 vi.mock('../../../engine/staff/staffEngine', () => ({
   generateStaffRecommendations: mockGenerateStaffRecommendations,
+  getStaffFitSummary: mockGetStaffFitSummary,
+}));
+
+vi.mock('../../../engine/manager/systemDepthEngine', () => ({
+  getBudgetPressureSnapshot: mockGetBudgetPressureSnapshot,
+  getActiveConsequences: mockGetActiveConsequences,
+  getPrepRecommendationRecords: mockGetPrepRecommendationRecords,
+  getMainLoopRiskItems: mockGetMainLoopRiskItems,
 }));
 
 describe('ManagerHome', () => {
@@ -115,12 +133,28 @@ describe('ManagerHome', () => {
     mockGetPlayerManagementInsights.mockResolvedValue([]);
     mockGetSatisfactionReport.mockResolvedValue([]);
     mockGenerateStaffRecommendations.mockResolvedValue([]);
+    mockGetStaffFitSummary.mockResolvedValue([]);
     mockGetUnreadCount.mockResolvedValue(2);
     mockGenerateDailyBriefing.mockResolvedValue({
       briefing: '오늘은 다음 경기 준비가 핵심입니다.',
       alerts: ['읽지 않은 뉴스가 있습니다.'],
       advice: ['훈련 방향을 먼저 확인하세요.'],
     });
+    mockGetBudgetPressureSnapshot.mockResolvedValue({
+      currentBudget: 500000,
+      weeklyRecurringExpenses: 20000,
+      monthlyRecurringExpenses: 80000,
+      recentNegotiationCosts: 2500,
+      boardRisk: 12,
+      pressureScore: 45,
+      pressureLevel: 'watch',
+      topDrivers: ['Recent failed talks already burned 2,500.'],
+    });
+    mockGetActiveConsequences.mockResolvedValue([]);
+    mockGetPrepRecommendationRecords.mockResolvedValue([]);
+    mockGetMainLoopRiskItems.mockResolvedValue([
+      { title: 'Budget pressure', summary: 'Recent failed talks already burned 2,500.', tone: 'neutral' },
+    ]);
   });
 
   it('surfaces the main loop summary and primary actions on one screen', async () => {
@@ -128,10 +162,16 @@ describe('ManagerHome', () => {
       gameState: {
         save: {
           id: 1,
+          metadataId: 1,
+          mode: 'manager',
           userTeamId: 'lck_T1',
           currentSeasonId: 1,
-          currentTeamId: 'lck_T1',
-          gameMode: 'manager',
+          dbFilename: 'test.db',
+          createdAt: '2026-03-01',
+          updatedAt: '2026-03-01',
+          slotNumber: 1,
+          saveName: 'Test Save',
+          playTimeMinutes: 0,
         },
         season: {
           id: 1,
@@ -139,7 +179,9 @@ describe('ManagerHome', () => {
           split: 'spring',
           currentDate: '2026-03-01',
           currentWeek: 1,
+          startDate: '2026-01-01',
           endDate: '2026-06-01',
+          isActive: true,
         },
         teams: [
           {
@@ -148,8 +190,10 @@ describe('ManagerHome', () => {
             shortName: 'T1',
             region: 'LCK',
             budget: 500000,
+            salaryCap: 400000,
             reputation: 85,
             roster: [],
+            playStyle: 'controlled',
           },
           {
             id: 'lck_GEN',
@@ -157,8 +201,10 @@ describe('ManagerHome', () => {
             shortName: 'GEN',
             region: 'LCK',
             budget: 450000,
+            salaryCap: 400000,
             reputation: 84,
             roster: [],
+            playStyle: 'controlled',
           },
         ],
       },
@@ -172,6 +218,7 @@ describe('ManagerHome', () => {
     expect(screen.getAllByRole('button', { name: '훈련 보기' }).length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByRole('button', { name: '전술 보기' }).length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByRole('button', { name: '뉴스 확인' }).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText(/2026-03-03/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('Budget pressure')).toBeInTheDocument();
+    expect(screen.getByText(/Recent failed talks already burned 2,500/)).toBeInTheDocument();
   });
 });

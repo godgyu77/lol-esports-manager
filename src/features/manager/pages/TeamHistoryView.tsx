@@ -9,6 +9,9 @@
 import { useEffect, useState } from 'react';
 import { useGameStore } from '../../../stores/gameStore';
 import { getDatabase } from '../../../db/database';
+import { buildTeamLegacyReport } from '../../../engine/manager/franchiseNarrativeEngine';
+import { getTeamHistoryLedger } from '../../../engine/manager/releaseDepthEngine';
+import type { TeamHistoryLedger } from '../../../types/systemDepth';
 
 // ─────────────────────────────────────────
 // 타입
@@ -75,6 +78,7 @@ export function TeamHistoryView() {
   const [history, setHistory] = useState<SeasonHistoryRecord[]>([]);
   const [awards, setAwards] = useState<AwardRecord[]>([]);
   const [legends, setLegends] = useState<LegendPlayer[]>([]);
+  const [ledger, setLedger] = useState<TeamHistoryLedger[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const userTeam = teams.find((t) => t.id === save?.userTeamId);
@@ -145,6 +149,10 @@ export function TeamHistoryView() {
             totalGames: r.total_games,
             totalKills: r.total_kills,
           })));
+          const releaseLedger = await getTeamHistoryLedger(userTeam.id, undefined, 24).catch(() => []);
+          if (!cancelled) {
+            setLedger(releaseLedger);
+          }
         }
       } catch (err) {
         console.warn('[TeamHistoryView] load failed:', err);
@@ -171,6 +179,9 @@ export function TeamHistoryView() {
   const totalLosses = history.reduce((s, h) => s + h.losses, 0);
   const totalGames = totalWins + totalLosses;
   const winRate = totalGames > 0 ? ((totalWins / totalGames) * 100).toFixed(1) : '0.0';
+  const legacyReport = buildTeamLegacyReport({ team: userTeam, history, legends });
+  const rivalryLedger = ledger.filter((entry) => entry.ledgerType === 'rivalry_record').slice(0, 4);
+  const lineageLedger = ledger.filter((entry) => entry.ledgerType !== 'rivalry_record').slice(0, 6);
 
   const positionLabel: Record<string, string> = {
     top: '탑',
@@ -239,6 +250,76 @@ export function TeamHistoryView() {
       </div>
 
       {/* 트로피 캐비닛 */}
+      <div className="fm-panel">
+        <div className="fm-panel__header">
+          <span className="fm-panel__title">Franchise Identity</span>
+        </div>
+        <div className="fm-panel__body fm-flex-col fm-gap-md">
+          <div className="fm-card fm-card--highlight">
+            <div className="fm-flex-col fm-gap-xs">
+              <span className="fm-text-xs fm-font-semibold fm-text-accent">Club Arc</span>
+              <strong className="fm-text-lg fm-text-primary">{legacyReport.identity}</strong>
+              <span className="fm-text-sm fm-text-secondary">{legacyReport.internationalPosture}</span>
+            </div>
+          </div>
+          <div className="fm-grid fm-grid--3">
+            <div className="fm-card">
+              <span className="fm-text-xs fm-font-semibold fm-text-accent">Timeline Hook</span>
+              <p className="fm-text-sm fm-text-secondary fm-mt-sm">{legacyReport.timelineHook}</p>
+            </div>
+            {legacyReport.replayHooks.map((hook) => (
+              <div key={hook} className="fm-card">
+                <span className="fm-text-xs fm-font-semibold fm-text-accent">Replay Value</span>
+                <p className="fm-text-sm fm-text-secondary fm-mt-sm">{hook}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {(rivalryLedger.length > 0 || lineageLedger.length > 0) && (
+        <div className="fm-panel">
+          <div className="fm-panel__header">
+            <span className="fm-panel__title">History Ledger</span>
+          </div>
+          <div className="fm-panel__body fm-flex-col fm-gap-md">
+            {rivalryLedger.length > 0 && (
+              <div className="fm-grid fm-grid--2">
+                {rivalryLedger.map((entry) => (
+                  <div key={entry.id} className="fm-card">
+                    <span className="fm-text-xs fm-font-semibold fm-text-accent">Regional Rivalry</span>
+                    <p className="fm-text-sm fm-text-primary fm-mt-sm">{entry.subjectName}</p>
+                    <p className="fm-text-sm fm-text-secondary">
+                      Series record: {entry.statValue}W - {entry.secondaryValue}L
+                    </p>
+                    <p className="fm-text-xs fm-text-muted">Updated {entry.updatedAt}</p>
+                    {entry.note && <p className="fm-text-xs fm-text-muted">{entry.note}</p>}
+                  </div>
+                ))}
+              </div>
+            )}
+            {lineageLedger.length > 0 && (
+              <div className="fm-grid fm-grid--3">
+                {lineageLedger.map((entry) => (
+                  <div key={entry.id} className="fm-card">
+                    <span className="fm-text-xs fm-font-semibold fm-text-accent">{entry.ledgerType.replace('_', ' ')}</span>
+                    <p className="fm-text-sm fm-text-primary fm-mt-sm">{entry.subjectName}</p>
+                    {entry.note && <p className="fm-text-sm fm-text-secondary">{entry.note}</p>}
+                    {entry.extra.length > 0 && (
+                      <div className="fm-flex fm-gap-xs fm-flex-wrap">
+                        {entry.extra.map((tag) => (
+                          <span key={`${entry.id}-${tag}`} className="fm-badge fm-badge--default">{tag}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {totalTrophies > 0 && (
         <div className="fm-panel">
           <div className="fm-panel__header">
