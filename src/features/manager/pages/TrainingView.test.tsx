@@ -116,7 +116,7 @@ describe('TrainingView', () => {
       },
     });
 
-    expect(await screen.findByText('Training Loop')).toBeInTheDocument();
+    expect(await screen.findByText('훈련 루프')).toBeInTheDocument();
 
     const toolbar = screen.getByRole('tablist');
     const buttons = within(toolbar).getAllByRole('tab');

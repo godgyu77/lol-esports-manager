@@ -97,7 +97,7 @@ describe('TacticsView', () => {
       },
     });
 
-    expect(await screen.findByText('Tactics Loop')).toBeInTheDocument();
+    expect(await screen.findByText('전술 루프')).toBeInTheDocument();
     expect(screen.getByText(/2026-03-03 vs Gen\.G/)).toBeInTheDocument();
   });
 });

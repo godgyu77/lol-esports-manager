@@ -137,7 +137,7 @@ describe('ManagerHome', () => {
     mockGetUnreadCount.mockResolvedValue(2);
     mockGenerateDailyBriefing.mockResolvedValue({
       briefing: '오늘은 다음 경기 준비가 핵심입니다.',
-      alerts: ['읽지 않은 뉴스가 있습니다.'],
+      alerts: ['읽지 않은 인박스가 있습니다.'],
       advice: ['훈련 방향을 먼저 확인하세요.'],
     });
     mockGetBudgetPressureSnapshot.mockResolvedValue({
@@ -148,12 +148,12 @@ describe('ManagerHome', () => {
       boardRisk: 12,
       pressureScore: 45,
       pressureLevel: 'watch',
-      topDrivers: ['Recent failed talks already burned 2,500.'],
+      topDrivers: ['최근 실패한 협상으로 이미 2,500이 소모됐습니다.'],
     });
     mockGetActiveConsequences.mockResolvedValue([]);
     mockGetPrepRecommendationRecords.mockResolvedValue([]);
     mockGetMainLoopRiskItems.mockResolvedValue([
-      { title: 'Budget pressure', summary: 'Recent failed talks already burned 2,500.', tone: 'neutral' },
+      { title: '재정 압박', summary: '최근 실패한 협상으로 이미 2,500이 소모됐습니다.', tone: 'neutral' },
     ]);
   });
 
@@ -213,12 +213,12 @@ describe('ManagerHome', () => {
       },
     });
 
-    expect(await screen.findByText('Manager Loop')).toBeInTheDocument();
+    expect(await screen.findByText('매니저 루프')).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: '시즌 진행' }).length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByRole('button', { name: '훈련 보기' }).length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByRole('button', { name: '전술 보기' }).length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByRole('button', { name: '뉴스 확인' }).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText('Budget pressure')).toBeInTheDocument();
-    expect(screen.getByText(/Recent failed talks already burned 2,500/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Payroll 0만 \/ cap 0만/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByRole('button', { name: '읽지 않은 뉴스 2건이 있습니다.' })).toBeInTheDocument();
   });
 });
