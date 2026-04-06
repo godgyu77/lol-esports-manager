@@ -7,6 +7,25 @@ import type {
 } from '../../engine/match/liveMatch';
 import type { MatchEventType, MatchZone } from '../../types/match';
 
+function zoneLabel(zone: string): string {
+  const labels: Record<string, string> = {
+    home_base: '블루 본진',
+    away_base: '레드 본진',
+    top_lane: '탑 라인',
+    mid_lane: '미드 라인',
+    bot_lane: '봇 라인',
+    top_river: '상단 강가',
+    mid_river: '중앙 강가',
+    bot_river: '하단 강가',
+    home_jungle: '블루 정글',
+    away_jungle: '레드 정글',
+    dragon_pit: '드래곤 둥지',
+    baron_pit: '바론 둥지',
+    center: '중앙',
+  };
+  return labels[zone] ?? zone.replace(/_/g, ' ');
+}
+
 export interface BattlefieldCameraModel {
   x: number;
   y: number;
@@ -288,7 +307,7 @@ export function buildBattlefieldFrame(gameState: LiveGameState): BattlefieldFram
             : 1.02,
     zone: focusZone,
     intensity: focusIntensity,
-    emphasisLabel: gameState.focusEvent?.label ?? `Tracking ${focusZone.replace(/_/g, ' ')}`,
+    emphasisLabel: gameState.focusEvent?.label ?? `${zoneLabel(focusZone)} 추적`,
   };
 
   return {
@@ -313,6 +332,6 @@ export function buildReplayCamera(frame: BattlefieldFrameModel, replayEffect?: B
     zoom: Math.max(frame.camera.zoom, replayEffect.visual === 'spotlight' ? 1.28 : 1.22),
     zone: frame.camera.zone,
     intensity: 'clash',
-    emphasisLabel: `Replay: ${replayEffect.label}`,
+    emphasisLabel: `리플레이: ${replayEffect.label}`,
   };
 }

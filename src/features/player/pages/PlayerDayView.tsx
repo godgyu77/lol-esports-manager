@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 선수 모드 시즌 진행 뷰
  * - 감독 모드 DayView를 참고하되 선수 관점으로 단순화
  * - "다음 날로" 버튼으로 시즌 진행
@@ -196,14 +196,14 @@ export function PlayerDayView() {
           onClick={handleNextDay}
           disabled={isProcessing}
         >
-          {isProcessing ? '진행 중...' : '다음 날 →'}
+          {isProcessing ? '진행 중...' : '다음 날 진행'}
         </button>
         <button
           className="fm-btn fm-btn--lg"
           onClick={handleSkipToMatch}
           disabled={isProcessing}
         >
-          {isProcessing ? '스킵 중...' : '경기일까지 스킵 ⏩'}
+          {isProcessing ? '스킵 중...' : '경기일까지 스킵'}
         </button>
       </div>
 

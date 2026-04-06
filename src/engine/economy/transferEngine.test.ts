@@ -8,7 +8,9 @@ import { describe, it, expect } from 'vitest';
 import {
   advanceCulturalAdaptation,
   assessInternationalTransfer,
+  calculateContactCost,
   calculateFairSalary,
+  calculateFailureCost,
   calculatePlayerValue,
 } from './transferEngine';
 import { calculateAgentFee, findWeakestPosition } from './transferValuation';
@@ -153,6 +155,15 @@ describe('calculateFairSalary', () => {
 });
 
 describe('transfer valuation helpers', () => {
+  it('contact cost scales aggressively enough to make failed talks hurt', () => {
+    expect(calculateContactCost(10000, 4000)).toBeGreaterThanOrEqual(470);
+  });
+
+  it('failure cost preserves most of the sunk contact cost', () => {
+    expect(calculateFailureCost(500)).toBe(425);
+    expect(calculateFailureCost(100)).toBe(200);
+  });
+
   it('agent fee has a minimum floor', () => {
     expect(calculateAgentFee(100)).toBe(500);
   });

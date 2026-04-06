@@ -1,4 +1,4 @@
-import { useId } from 'react';
+﻿import { useId } from 'react';
 import './MainLoopPanel.css';
 
 type InsightTone = 'neutral' | 'accent' | 'danger' | 'success';
@@ -17,6 +17,7 @@ export interface MainLoopAction {
   variant?: ActionVariant;
   disabled?: boolean;
   ariaLabel?: string;
+  testId?: string;
 }
 
 interface MainLoopPanelProps {
@@ -81,7 +82,7 @@ export function MainLoopPanel({ eyebrow, title, subtitle, insights, actions = []
         {(actions.length > 0 || note) && (
           <div className="manager-loop__footer">
             {actions.length > 0 && (
-              <div className="manager-loop__actions" aria-label="핵심 루프 바로가기">
+              <div className="manager-loop__actions" aria-label="운영 루프 바로가기">
                 {actions.map((action) => (
                   <button
                     key={action.label}
@@ -90,6 +91,7 @@ export function MainLoopPanel({ eyebrow, title, subtitle, insights, actions = []
                     onClick={action.onClick}
                     disabled={action.disabled}
                     aria-label={action.ariaLabel ?? action.label}
+                    data-testid={action.testId}
                   >
                     {action.label}
                   </button>

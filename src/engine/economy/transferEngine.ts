@@ -77,12 +77,12 @@ function roundOfferAmount(value: number): number {
   return Math.max(0, Math.round(value / 100) * 100);
 }
 
-function calculateContactCost(transferFee: number, offeredSalary: number): number {
-  return Math.max(100, Math.round(offeredSalary * 0.05 + transferFee * 0.01));
+export function calculateContactCost(transferFee: number, offeredSalary: number): number {
+  return Math.max(250, Math.round(offeredSalary * 0.08 + transferFee * 0.015));
 }
 
-function calculateFailureCost(contactCost: number): number {
-  return Math.max(75, Math.round(contactCost * 0.65));
+export function calculateFailureCost(contactCost: number): number {
+  return Math.max(200, Math.round(contactCost * 0.85));
 }
 
 type SellingClubStance = 'closed' | 'reluctant' | 'open';

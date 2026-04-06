@@ -1,4 +1,4 @@
-import { renderWithProviders, screen, waitFor, resetStores } from '../../../test/testUtils';
+﻿import { renderWithProviders, screen, waitFor, resetStores } from '../../../test/testUtils';
 import { DayView } from './DayView';
 import { useGameStore } from '../../../stores/gameStore';
 import { useMatchStore } from '../../../stores/matchStore';
@@ -11,12 +11,22 @@ const {
   mockSkipToNextMatchDay,
   mockGetManagerSetupStatus,
   mockGenerateInitialCoachRecommendations,
+  mockGetBudgetPressureSnapshot,
+  mockGetActiveConsequences,
+  mockGetPrepRecommendationRecords,
+  mockGetCareerArcEvents,
+  mockGetDatabase,
 } = vi.hoisted(() => ({
   mockNavigate: vi.fn(),
   mockAdvanceDay: vi.fn(),
   mockSkipToNextMatchDay: vi.fn(),
   mockGetManagerSetupStatus: vi.fn(),
   mockGenerateInitialCoachRecommendations: vi.fn(),
+  mockGetBudgetPressureSnapshot: vi.fn(),
+  mockGetActiveConsequences: vi.fn(),
+  mockGetPrepRecommendationRecords: vi.fn(),
+  mockGetCareerArcEvents: vi.fn(),
+  mockGetDatabase: vi.fn(),
 }));
 
 vi.mock('react-router-dom', async () => {
@@ -34,6 +44,10 @@ vi.mock('../../../engine/season/dayAdvancer', () => ({
 
 vi.mock('../../../db/queries', () => ({
   getActiveSeason: vi.fn().mockResolvedValue(null),
+}));
+
+vi.mock('../../../db/database', () => ({
+  getDatabase: mockGetDatabase,
 }));
 
 vi.mock('../../../engine/manager/managerIdentityEngine', () => ({
@@ -59,6 +73,16 @@ vi.mock('../../../engine/manager/managerSetupEngine', () => ({
   },
 }));
 
+vi.mock('../../../engine/manager/systemDepthEngine', () => ({
+  getBudgetPressureSnapshot: mockGetBudgetPressureSnapshot,
+  getActiveConsequences: mockGetActiveConsequences,
+  getPrepRecommendationRecords: mockGetPrepRecommendationRecords,
+}));
+
+vi.mock('../../../engine/manager/releaseDepthEngine', () => ({
+  getCareerArcEvents: mockGetCareerArcEvents,
+}));
+
 vi.mock('../../../engine/staff/staffEngine', () => ({
   generateStaffRecommendations: vi.fn().mockResolvedValue([]),
 }));
@@ -72,11 +96,11 @@ vi.mock('../../../hooks/useKeyboardShortcuts', () => ({
 }));
 
 const mockSave = {
-  id: 'save-1',
+  id: 1,
   userTeamId: 'team-user',
   seasonId: 'season-1',
   currentDate: '2025-01-15',
-  managerName: '테스트 감독',
+  managerName: '?뚯뒪??媛먮룆',
   mode: 'manager',
   currentSeasonId: 1,
 } as unknown as GameSave;
@@ -113,6 +137,29 @@ const userMatch = {
   hardFearlessSeries: true,
 };
 
+const stableBudgetPressure = {
+  currentBudget: 50000,
+  weeklyRecurringExpenses: 5000,
+  monthlyRecurringExpenses: 20000,
+  recentNegotiationCosts: 0,
+  failedNegotiations: 0,
+  playerSalaryTotal: 10000,
+  staffSalaryTotal: 5000,
+  effectiveStaffPayroll: 2500,
+  salaryCap: 40000,
+  totalPayroll: 12500,
+  capRoom: 27500,
+  luxuryTax: 0,
+  runwayWeeks: 10,
+  pressureBand: 'safe',
+  boardSatisfaction: 70,
+  boardRisk: 8,
+  pressureScore: 16,
+  pressureLevel: 'stable',
+  boardPressureNote: 'Budget is stable.',
+  topDrivers: ['Recurring costs are still within a manageable range.'],
+} as const;
+
 describe('DayView', () => {
   beforeEach(() => {
     resetStores();
@@ -124,6 +171,13 @@ describe('DayView', () => {
       blockingReasons: [],
     });
     mockGenerateInitialCoachRecommendations.mockResolvedValue([]);
+    mockGetBudgetPressureSnapshot.mockResolvedValue(stableBudgetPressure);
+    mockGetActiveConsequences.mockResolvedValue([]);
+    mockGetPrepRecommendationRecords.mockResolvedValue([]);
+    mockGetCareerArcEvents.mockResolvedValue([]);
+    mockGetDatabase.mockResolvedValue({
+      select: vi.fn().mockResolvedValue([]),
+    });
   });
 
   it('moves to pre-match when advancing reaches a user match', async () => {
@@ -141,7 +195,7 @@ describe('DayView', () => {
       gameState: { save: mockSave, season: mockSeason, teams: [mockTeam] },
     });
 
-    const advanceButton = await screen.findByRole('button', { name: '하루 진행' });
+    const advanceButton = await screen.findByTestId('dayview-primary-advance');
     await waitFor(() => expect(advanceButton).toBeEnabled());
     advanceButton.click();
 
@@ -180,7 +234,7 @@ describe('DayView', () => {
       gameState: { save: mockSave, season: mockSeason, teams: [mockTeam] },
     });
 
-    const skipButton = await screen.findByRole('button', { name: '다음 경기까지 건너뛰기' });
+    const skipButton = await screen.findByTestId('dayview-skip-action');
     await waitFor(() => expect(skipButton).toBeEnabled());
     skipButton.click();
 
@@ -194,12 +248,32 @@ describe('DayView', () => {
     });
   });
 
-  it('shows the coach briefing and disables progression when setup is incomplete', async () => {
+  it('prioritizes budget pressure ahead of routine progression', async () => {
+    mockGetBudgetPressureSnapshot.mockResolvedValue({
+      ...stableBudgetPressure,
+      pressureScore: 58,
+      pressureLevel: 'watch',
+      runwayWeeks: 5.5,
+      recentNegotiationCosts: 4200,
+      failedNegotiations: 2,
+      boardPressureNote: 'Board is watching spending closely.',
+      topDrivers: ['Cash runway is down to about 5 weeks.'],
+    });
+
+    renderWithProviders(<DayView />, {
+      gameState: { save: mockSave, season: mockSeason, teams: [mockTeam] },
+    });
+
+    expect(await screen.findByTestId('dayview-primary-budget')).toBeInTheDocument();
+    expect(screen.getByTestId('dayview-primary-budget')).toHaveTextContent('재정 압박 점검');
+  });
+
+  it('shows the coach briefing priority when setup is incomplete', async () => {
     mockGetManagerSetupStatus.mockResolvedValue({
       isTrainingConfigured: false,
       isTacticsConfigured: false,
       isReadyToAdvance: false,
-      blockingReasons: ['훈련 계획이 없습니다.', '전술 설정이 없습니다.'],
+      blockingReasons: ['?덈젴 怨꾪쉷???놁뒿?덈떎.', '?꾩닠 ?ㅼ젙???놁뒿?덈떎.'],
     });
     mockGenerateInitialCoachRecommendations.mockResolvedValue([
       {
@@ -208,29 +282,10 @@ describe('DayView', () => {
         authorStaffId: 1,
         authorName: '김 코치',
         authorRole: 'coach',
-        headline: '훈련안을 먼저 잡아야 합니다.',
-        summary: '라인전 보완이 우선입니다.',
+        headline: '훈련 설정을 먼저 마무리하세요.',
+        summary: '주간 준비 루틴을 보완해야 합니다.',
         reasons: ['훈련 계획이 없습니다.'],
         payload: [],
-      },
-      {
-        id: 'tactics-team-user',
-        kind: 'tactics',
-        authorStaffId: 2,
-        authorName: '박 분석관',
-        authorRole: 'analyst',
-        headline: '기본 전술을 먼저 확정해 주세요.',
-        summary: '오브젝트 운영 중심 전술입니다.',
-        reasons: ['전술 설정이 없습니다.'],
-        payload: {
-          earlyStrategy: 'standard',
-          midStrategy: 'balanced',
-          lateStrategy: 'teamfight',
-          wardPriority: 'balanced',
-          dragonPriority: 5,
-          baronPriority: 5,
-          aggressionLevel: 5,
-        },
       },
     ]);
 
@@ -238,10 +293,7 @@ describe('DayView', () => {
       gameState: { save: mockSave, season: mockSeason, teams: [mockTeam] },
     });
 
-    expect(await screen.findByText('코치 브리핑: 진행 전 필수 세팅')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '훈련 추천 적용' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '전술 추천 적용' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '하루 진행' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: '다음 경기까지 건너뛰기' })).toBeDisabled();
+    expect(await screen.findByTestId('dayview-primary-setup-training')).toBeInTheDocument();
+    expect(screen.getByTestId('dayview-skip-action')).toBeDisabled();
   });
 });

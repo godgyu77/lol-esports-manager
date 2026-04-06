@@ -30,7 +30,7 @@ export function ChampionGrid({
     <div className="draft-champ-grid fm-card">
       <div className="draft-champ-grid-header">
         <div>
-          <span className="draft-grid-kicker">Champion Pool</span>
+          <span className="draft-grid-kicker">챔피언 풀</span>
           <h3 className="draft-grid-title">선픽 후보</h3>
         </div>
         <span className="draft-grid-count">{filteredChampions.length}명 선택 가능</span>

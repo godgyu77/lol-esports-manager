@@ -72,7 +72,7 @@ export function Scoreboard({
         <span className="sb-series-team">{homeTeamShortName}</span>
         <span className="sb-series-score">{seriesScore.home} - {seriesScore.away}</span>
         <span className="sb-series-team">{awayTeamShortName}</span>
-        <span className="sb-game-num">SET {currentGameNum}</span>
+        <span className="sb-game-num">{currentGameNum}세트</span>
       </div>
 
       <div className="sb-board">

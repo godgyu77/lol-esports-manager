@@ -107,12 +107,12 @@ export function ManagerCareerView() {
       {narrative && (
         <div className="fm-panel">
           <div className="fm-panel__header">
-            <span className="fm-panel__title">Legacy Arc</span>
+            <span className="fm-panel__title">레거시 아크</span>
           </div>
           <div className="fm-panel__body fm-flex-col fm-gap-md">
             <div className="fm-card fm-card--highlight">
               <div className="fm-flex-col fm-gap-xs">
-                <span className="fm-text-xs fm-font-semibold fm-text-accent">Career Identity</span>
+                <span className="fm-text-xs fm-font-semibold fm-text-accent">커리어 정체성</span>
                 <strong className="fm-text-lg fm-text-primary">{narrative.identity}</strong>
                 <span className="fm-text-sm fm-text-secondary">{narrative.outlook}</span>
               </div>
@@ -131,7 +131,7 @@ export function ManagerCareerView() {
       {arcEvents.length > 0 && (
         <div className="fm-panel">
           <div className="fm-panel__header">
-            <span className="fm-panel__title">Franchise Arc Timeline</span>
+            <span className="fm-panel__title">프랜차이즈 아크 타임라인</span>
           </div>
           <div className="fm-panel__body fm-flex-col fm-gap-sm">
             {arcEvents.map((event) => (

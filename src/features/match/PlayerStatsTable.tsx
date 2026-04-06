@@ -1,11 +1,11 @@
 import type { LivePlayerStat } from '../../engine/match/liveMatch';
 
 const POS_LABELS: Record<string, string> = {
-  top: 'TOP',
-  jungle: 'JGL',
-  mid: 'MID',
-  adc: 'ADC',
-  support: 'SUP',
+  top: '탑',
+  jungle: '정글',
+  mid: '미드',
+  adc: '원딜',
+  support: '서폿',
 };
 
 function formatGold(gold: number): string {
@@ -14,7 +14,7 @@ function formatGold(gold: number): string {
 }
 
 function formatKda(k: number, d: number, a: number): string {
-  if (d === 0) return 'Perfect';
+  if (d === 0) return '퍼펙트';
   return ((k + a) / d).toFixed(1);
 }
 
@@ -73,8 +73,8 @@ export function PlayerStatsTable({
           <thead>
             <tr>
               <th>포지션</th>
-              <th>K/D/A</th>
-              <th>KDA</th>
+              <th>킬/데스/어시</th>
+              <th>평점</th>
               <th>킬관여</th>
               <th>CS</th>
               <th>골드</th>
@@ -93,8 +93,8 @@ export function PlayerStatsTable({
           <thead>
             <tr>
               <th>포지션</th>
-              <th>K/D/A</th>
-              <th>KDA</th>
+              <th>킬/데스/어시</th>
+              <th>평점</th>
               <th>킬관여</th>
               <th>CS</th>
               <th>골드</th>

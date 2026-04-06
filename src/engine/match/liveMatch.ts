@@ -226,7 +226,49 @@ function getDraftChampionId(
 }
 
 function zoneName(zone: MatchZone): string {
-  return zone.replace(/_/g, ' ');
+  const labels: Record<MatchZone, string> = {
+    home_base: '블루 본진',
+    away_base: '레드 본진',
+    top_lane: '탑 라인',
+    mid_lane: '미드 라인',
+    bot_lane: '봇 라인',
+    top_river: '상단 강가',
+    mid_river: '중앙 강가',
+    bot_river: '하단 강가',
+    home_jungle: '블루 정글',
+    away_jungle: '레드 정글',
+    dragon_pit: '드래곤 둥지',
+    baron_pit: '바론 둥지',
+    center: '중앙',
+  };
+  return labels[zone];
+}
+
+function playStyleLabel(style: InGamePlayStyle): string {
+  const labels: Record<InGamePlayStyle, string> = {
+    aggressive: '공격적',
+    controlled: '안정',
+    split: '스플릿',
+  };
+  return labels[style];
+}
+
+function objectivePriorityLabel(priority: ObjectivePriority): string {
+  const labels: Record<ObjectivePriority, string> = {
+    dragon: '드래곤 중시',
+    baron: '바론 중시',
+    balanced: '균형',
+  };
+  return labels[priority];
+}
+
+function teamfightAggressionLabel(aggression: TeamfightAggression): string {
+  const labels: Record<TeamfightAggression, string> = {
+    engage: '적극 교전',
+    avoid: '교전 회피',
+    situational: '상황 대응',
+  };
+  return labels[aggression];
 }
 
 function eventTypeLabel(type: MatchEventType): string {
@@ -444,7 +486,11 @@ export class LiveMatchEngine {
     const styleDelta = playStyle === 'aggressive' ? 0.015 : playStyle === 'split' ? 0.01 : 0;
     const objectiveDelta = objectivePriority === 'dragon' ? 0.005 : objectivePriority === 'baron' ? 0.008 : 0;
     this.state.currentWinRate = Math.max(0.15, Math.min(0.85, this.state.currentWinRate + styleDelta + objectiveDelta));
-    this.addCommentary(this.state.currentTick, `전술 변경: ${playStyle}, ${objectivePriority}, ${teamfightAggression}.`, 'decision');
+    this.addCommentary(
+      this.state.currentTick,
+      `전술 변경: ${playStyleLabel(playStyle)}, ${objectivePriorityLabel(objectivePriority)}, ${teamfightAggressionLabel(teamfightAggression)}.`,
+      'decision',
+    );
     this.syncSpatialState();
     return true;
   }
@@ -601,7 +647,7 @@ export class LiveMatchEngine {
 
     if (this.heraldSchedule.includes(tick)) {
       this.resolveObjective('rift_herald', 'top_river', 350, 0.02);
-      this.destroyTower(this.pickWinner(0.03), 'top_lane', 'Herald crashes for first tower pressure.');
+      this.destroyTower(this.pickWinner(0.03), 'top_lane', '전령 돌진으로 첫 포탑 압박이 시작됩니다.');
     }
 
     if (this.baronSchedule.includes(tick)) {

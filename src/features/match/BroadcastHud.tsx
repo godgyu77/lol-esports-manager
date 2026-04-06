@@ -61,41 +61,41 @@ export function BroadcastHud({
     <section className="broadcast-hud">
       <div className="broadcast-hud__team broadcast-hud__team--home">
         <div className="broadcast-hud__team-head">
-          <span className="broadcast-hud__badge">BLUE</span>
+          <span className="broadcast-hud__badge">블루</span>
           <strong>{homeTeamShortName}</strong>
           <span className="broadcast-hud__series">{seriesScore.home}</span>
         </div>
         <div className="broadcast-hud__stats">
           <span>{Math.round(gameState.goldHome / 100) / 10}k</span>
-          <span>{gameState.killsHome} K</span>
-          <span>{gameState.towersHome} T</span>
-          <span>{gameState.dragonsHome} D</span>
+          <span>{gameState.killsHome}킬</span>
+          <span>{gameState.towersHome}타워</span>
+          <span>{gameState.dragonsHome}드래곤</span>
         </div>
         <div className="broadcast-hud__buffs">
-          {gameState.baronHome ? <span className="broadcast-hud__buff">BARON</span> : null}
-          {gameState.dragonSoul.soulTeam === 'home' ? <span className="broadcast-hud__buff">SOUL</span> : null}
-          {gameState.grubsHome > 0 ? <span className="broadcast-hud__buff">GRUBS {gameState.grubsHome}</span> : null}
+          {gameState.baronHome ? <span className="broadcast-hud__buff">바론</span> : null}
+          {gameState.dragonSoul.soulTeam === 'home' ? <span className="broadcast-hud__buff">소울</span> : null}
+          {gameState.grubsHome > 0 ? <span className="broadcast-hud__buff">유충 {gameState.grubsHome}</span> : null}
         </div>
         <DragonPips count={gameState.dragonSoul.homeStacks} soulType={gameState.dragonSoul.soulTeam === 'home' ? gameState.dragonSoul.soulType : undefined} />
       </div>
 
       <div className="broadcast-hud__center">
         <div className="broadcast-hud__series-strip">
-          <span>SET {currentGameNum}</span>
+          <span>{currentGameNum}세트</span>
           <span>{phaseLabels[gameState.phase]}</span>
           <span>{gameState.currentTick}:00</span>
-          {replayMode ? <span className="broadcast-hud__replay-badge">Replay Mode</span> : null}
+          {replayMode ? <span className="broadcast-hud__replay-badge">리플레이 모드</span> : null}
         </div>
         <div className="broadcast-hud__scoreline">
           <span className="broadcast-hud__kills">{gameState.killsHome}</span>
-          <span className="broadcast-hud__sep">VS</span>
+          <span className="broadcast-hud__sep">대</span>
           <span className="broadcast-hud__kills">{gameState.killsAway}</span>
         </div>
         <div className="broadcast-hud__meta">
           <span>{goldDiff >= 0 ? homeTeamShortName : awayTeamShortName} +{Math.abs(Math.round(goldDiff / 100)) / 10}k</span>
-          <span>DR {objectiveTimer(dragonObjective?.nextSpawnTick)}</span>
-          <span>HD {objectiveTimer(heraldObjective?.nextSpawnTick)}</span>
-          <span>BR {objectiveTimer(baronObjective?.nextSpawnTick)}</span>
+          <span>드래곤 {objectiveTimer(dragonObjective?.nextSpawnTick)}</span>
+          <span>전령 {objectiveTimer(heraldObjective?.nextSpawnTick)}</span>
+          <span>바론 {objectiveTimer(baronObjective?.nextSpawnTick)}</span>
         </div>
         <div className="broadcast-hud__winrate">
           <div className="broadcast-hud__winrate-bar">
@@ -107,12 +107,12 @@ export function BroadcastHud({
           </div>
         </div>
         <div className="broadcast-hud__pulse">
-          <span>{activeFightCount >= 4 ? 'LIVE FIGHT' : 'MAP RESET'}</span>
-          <span>{activeFightCount} engaged</span>
-          <span>{resetCount} basing</span>
+          <span>{activeFightCount >= 4 ? '실시간 교전' : '맵 재정비'}</span>
+          <span>{activeFightCount}명 교전 중</span>
+          <span>{resetCount}명 귀환 중</span>
         </div>
         <div className="broadcast-hud__focus">
-          {gameState.focusEvent ? `${gameState.focusEvent.label}: ${gameState.focusEvent.detail}` : 'Camera sweeping for the next decisive setup.'}
+          {gameState.focusEvent ? `${gameState.focusEvent.label}: ${gameState.focusEvent.detail}` : '카메라가 다음 결정적 장면을 찾고 있습니다.'}
         </div>
       </div>
 
@@ -120,18 +120,18 @@ export function BroadcastHud({
         <div className="broadcast-hud__team-head">
           <span className="broadcast-hud__series">{seriesScore.away}</span>
           <strong>{awayTeamShortName}</strong>
-          <span className="broadcast-hud__badge">RED</span>
+          <span className="broadcast-hud__badge">레드</span>
         </div>
         <div className="broadcast-hud__stats">
           <span>{Math.round(gameState.goldAway / 100) / 10}k</span>
-          <span>{gameState.killsAway} K</span>
-          <span>{gameState.towersAway} T</span>
-          <span>{gameState.dragonsAway} D</span>
+          <span>{gameState.killsAway}킬</span>
+          <span>{gameState.towersAway}타워</span>
+          <span>{gameState.dragonsAway}드래곤</span>
         </div>
         <div className="broadcast-hud__buffs">
-          {gameState.baronAway ? <span className="broadcast-hud__buff">BARON</span> : null}
-          {gameState.dragonSoul.soulTeam === 'away' ? <span className="broadcast-hud__buff">SOUL</span> : null}
-          {gameState.grubsAway > 0 ? <span className="broadcast-hud__buff">GRUBS {gameState.grubsAway}</span> : null}
+          {gameState.baronAway ? <span className="broadcast-hud__buff">바론</span> : null}
+          {gameState.dragonSoul.soulTeam === 'away' ? <span className="broadcast-hud__buff">소울</span> : null}
+          {gameState.grubsAway > 0 ? <span className="broadcast-hud__buff">유충 {gameState.grubsAway}</span> : null}
         </div>
         <DragonPips count={gameState.dragonSoul.awayStacks} soulType={gameState.dragonSoul.soulTeam === 'away' ? gameState.dragonSoul.soulType : undefined} />
       </div>

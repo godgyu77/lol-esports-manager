@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+﻿import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { GameSave, SaveSlot } from '../../types/game';
 import { useGameStore } from '../../stores/gameStore';
@@ -204,10 +204,10 @@ export function SaveLoadView() {
       <div className="intro-shell" style={{ maxWidth: 860 }}>
         <header className="fm-panel intro-hero intro-panel-soft">
           <div className="fm-panel__body" style={{ padding: 28 }}>
-            <div className="fm-text-xs fm-font-semibold fm-text-accent fm-text-upper fm-mb-sm">Career Resume</div>
+            <div className="fm-text-xs fm-font-semibold fm-text-accent fm-text-upper fm-mb-sm">커리어 복귀</div>
             <h1 className="fm-text-2xl fm-font-bold fm-text-primary" style={{ margin: 0 }}>세이브 및 복귀 관리</h1>
             <p className="fm-text-md fm-text-muted fm-mt-sm" style={{ lineHeight: 1.7 }}>
-              각 슬롯은 서로 다른 DB 파일을 사용합니다. 수동 저장은 현재 커리어의 상태를 복사하고,
+              각 슬롯은 서로 다른 저장 파일을 사용합니다. 수동 저장은 현재 커리어의 상태를 복사하고,
               불러오기는 해당 슬롯의 커리어를 그대로 복원합니다.
             </p>
           </div>

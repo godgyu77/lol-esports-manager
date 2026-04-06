@@ -1,17 +1,17 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+﻿import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { ErrorBoundary } from '../../../components/ErrorBoundary';
 import { useAutoSave } from '../../../hooks/useAutoSave';
 
 const NAV_GROUPS = [
   {
-    title: 'Home',
+    title: '홈',
     items: [
       { to: '/player', label: '대시보드', icon: 'H', end: true },
       { to: '/player/day', label: '시즌 진행', icon: '\u25B6' },
     ],
   },
   {
-    title: 'Growth',
+    title: '성장',
     items: [
       { to: '/player/training', label: '훈련', icon: 'TR' },
       { to: '/player/solorank', label: '솔로랭크', icon: 'SR' },
@@ -19,7 +19,7 @@ const NAV_GROUPS = [
     ],
   },
   {
-    title: 'Team',
+    title: '팀',
     items: [
       { to: '/player/relations', label: '팀원 관계', icon: 'RL' },
       { to: '/player/schedule', label: '일정', icon: 'S' },
@@ -27,7 +27,7 @@ const NAV_GROUPS = [
     ],
   },
   {
-    title: 'Career',
+    title: '커리어',
     items: [
       { to: '/player/media', label: '미디어', icon: 'MD' },
       { to: '/player/career', label: '커리어', icon: 'CR' },
@@ -47,7 +47,7 @@ export function PlayerDashboard() {
           <div className="fm-sidebar__team-logo">PL</div>
           <div>
             <div className="fm-sidebar__team-name">선수 모드</div>
-            <div className="fm-sidebar__team-sub">Player Career</div>
+            <div className="fm-sidebar__team-sub">선수 커리어</div>
           </div>
         </div>
 

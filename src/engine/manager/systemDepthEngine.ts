@@ -45,8 +45,8 @@ function fromJson(value: string | null | undefined): string[] {
 }
 
 function pressureLevel(score: number): BudgetPressureSnapshot['pressureLevel'] {
-  if (score >= 70) return 'critical';
-  if (score >= 40) return 'watch';
+  if (score >= 65) return 'critical';
+  if (score >= 32) return 'watch';
   return 'stable';
 }
 
@@ -60,7 +60,7 @@ export function getRecurringExpenseSnapshot(playerSalaryTotal: number, staffSala
     {
       category: 'staff',
       amount: Math.round(staffSalaryTotal / 4),
-      label: 'Coaching and support payroll',
+      label: '코칭 및 지원 인건비',
     },
     {
       category: 'facility',
@@ -106,41 +106,71 @@ export async function getBudgetPressureSnapshot(
     )
     .slice(0, 12)
     .reduce((sum, log) => sum + log.amount, 0);
+  const failedNegotiations = financeSummary.logs
+    .filter((log) => log.type === 'expense' && log.category === 'failed_negotiation')
+    .slice(0, 12).length;
 
   const runwayWeeks =
     weeklyRecurringExpenses > 0 ? currentBudget / Math.max(weeklyRecurringExpenses, 1) : 12;
-  const budgetRisk = currentBudget < 0 ? 45 : runwayWeeks < 4 ? 32 : runwayWeeks < 8 ? 18 : 5;
-  const negotiationRisk = recentNegotiationCosts > 4000 ? 18 : recentNegotiationCosts > 2000 ? 10 : 0;
+  const budgetRisk =
+    currentBudget < 0
+      ? 60
+      : runwayWeeks < 3
+        ? 48
+        : runwayWeeks < 6
+          ? 34
+          : runwayWeeks < 10
+            ? 20
+            : 8;
+  const negotiationRisk =
+    recentNegotiationCosts > 8000
+      ? 24
+      : recentNegotiationCosts > 4000
+        ? 16
+        : recentNegotiationCosts > 1500
+          ? 8
+          : 0;
+  const negotiationCountRisk = failedNegotiations >= 4 ? 12 : failedNegotiations >= 2 ? 6 : 0;
   const payrollRisk =
     payrollSnapshot.pressureBand === 'hard_stop'
-      ? 24
+      ? 30
       : payrollSnapshot.pressureBand === 'warning'
-        ? 14
+        ? 20
         : payrollSnapshot.pressureBand === 'taxed'
-          ? 7
+          ? 10
           : 0;
-  const boardRisk = board ? Math.max(0, 60 - board.satisfaction) : 10;
+  const boardRisk = board ? Math.max(8, 72 - board.satisfaction) : 12;
   const pressureScore = Math.max(
     0,
-    Math.min(100, Math.round(budgetRisk + negotiationRisk + payrollRisk + boardRisk)),
+    Math.min(100, Math.round(budgetRisk + negotiationRisk + negotiationCountRisk + payrollRisk + boardRisk)),
   );
 
   const topDrivers: string[] = [];
-  if (runwayWeeks < 8) topDrivers.push(`Cash runway is down to about ${Math.max(1, Math.floor(runwayWeeks))} weeks.`);
-  if (recentNegotiationCosts > 0) topDrivers.push(`Recent failed talks already burned ${recentNegotiationCosts.toLocaleString()}.`);
+  if (runwayWeeks < 10) topDrivers.push(`현금 활주로가 약 ${Math.max(1, Math.floor(runwayWeeks))}주 수준까지 줄었습니다.`);
+  if (recentNegotiationCosts > 0) topDrivers.push(`최근 협상 실패와 접촉 비용으로 이미 ${recentNegotiationCosts.toLocaleString()}를 소진했습니다.`);
+  if (failedNegotiations > 0) topDrivers.push(`최근 협상 ${failedNegotiations}건이 계약 없이 끝나며 매몰 비용만 남겼습니다.`);
   if (payrollSnapshot.overage > 0) {
     topDrivers.push(
-      `Payroll is over the cap by ${payrollSnapshot.overage.toLocaleString()} and triggers ${payrollSnapshot.luxuryTax.toLocaleString()} in tax.`,
+      `연봉 총액이 상한을 ${payrollSnapshot.overage.toLocaleString()} 초과했고, 사치세 ${payrollSnapshot.luxuryTax.toLocaleString()}가 발생 중입니다.`,
     );
   }
-  if (board && board.satisfaction <= 45) topDrivers.push('Board patience is thinning because spending pressure is visible.');
+  if (board && board.satisfaction <= 45) topDrivers.push('지출 압박이 뚜렷해지면서 보드의 인내심도 빠르게 줄고 있습니다.');
   if (topDrivers.length === 0) topDrivers.push('Recurring costs are still within a manageable range.');
+  const boardPressureNote =
+    !board
+      ? '보드의 가시성은 제한적이지만 재정 압박은 계속 쌓이고 있습니다.'
+      : pressureScore >= 65
+        ? '보드는 더 공격적인 움직임 전에 즉각적인 비용 통제를 기대하고 있습니다.'
+        : pressureScore >= 32
+          ? '보드는 현재 지출을 면밀히 주시하고 있으며 추가 협상 실패에도 반응할 것입니다.'
+          : '보드는 예산을 아직 안정적으로 보지만, 허술한 협상은 신뢰를 빠르게 깎아먹습니다.';
 
   return {
     currentBudget,
     weeklyRecurringExpenses,
     monthlyRecurringExpenses,
     recentNegotiationCosts,
+    failedNegotiations,
     playerSalaryTotal: payrollSnapshot.playerSalaryTotal,
     staffSalaryTotal: payrollSnapshot.staffSalaryTotal,
     effectiveStaffPayroll: payrollSnapshot.effectiveStaffPayroll,
@@ -148,10 +178,13 @@ export async function getBudgetPressureSnapshot(
     totalPayroll: payrollSnapshot.totalPayroll,
     capRoom: payrollSnapshot.capRoom,
     luxuryTax: payrollSnapshot.luxuryTax,
+    runwayWeeks,
     pressureBand: payrollSnapshot.pressureBand,
+    boardSatisfaction: board?.satisfaction ?? null,
     boardRisk,
     pressureScore,
     pressureLevel: pressureLevel(pressureScore),
+    boardPressureNote,
     topDrivers,
   };
 }
@@ -173,8 +206,8 @@ export async function applyBudgetPressureToBoard(
   );
 
   return pressure.pressureLevel === 'critical'
-    ? 'The board is reacting to an obvious budget squeeze.'
-    : 'The board is starting to notice tighter spending conditions.';
+    ? '보드는 분명한 예산 압박에 즉각 반응하고 있습니다.'
+    : '보드는 점점 빡빡해지는 지출 상황을 감지하기 시작했습니다.';
 }
 
 export async function recordNegotiationExpense(params: {
@@ -546,15 +579,15 @@ export async function processSystemDepthDailyState(
       seasonId,
       consequenceType: 'budget',
       source: 'finance',
-      title: 'Budget squeeze',
-      summary: 'Recurring costs are eating into the runway and every new negotiation now carries real board pressure.',
+      title: '예산 압박 심화',
+      summary: '고정 지출이 활주로를 갉아먹고 있어, 새로운 협상 하나하나가 실제 보드 압박으로 이어지고 있습니다.',
       severity: 'high',
       startedDate: currentDate,
       expiresDate: addDaysIso(currentDate, 10),
       statKey: 'budget_pressure',
       statDelta: 8,
     });
-    created.push('Budget pressure is now a live issue.');
+    created.push('예산 압박이 이제 실제 운영 이슈로 번졌습니다.');
   }
 
   if (complaints.some((complaint) => complaint.severity >= 3)) {

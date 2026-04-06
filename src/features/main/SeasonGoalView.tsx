@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGameStore } from '../../stores/gameStore';
 import { LCK_TEAMS, LCS_TEAMS, LEC_TEAMS, LPL_TEAMS } from '../../data/rosterDb';
@@ -204,7 +204,7 @@ export function SeasonGoalView() {
       <div className="intro-shell" style={{ maxWidth: 1120 }}>
         <header className="fm-panel intro-hero intro-panel-soft">
           <div className="fm-panel__body" style={{ padding: 28 }}>
-            <div className="fm-text-xs fm-font-semibold fm-text-accent fm-text-upper fm-mb-sm">Arrival Briefing</div>
+            <div className="fm-text-xs fm-font-semibold fm-text-accent fm-text-upper fm-mb-sm">부임 브리핑</div>
             <h1 className="fm-text-2xl fm-font-bold fm-text-primary" style={{ margin: 0 }}>2026 시즌 부임 브리핑</h1>
             <p className="fm-text-md fm-text-muted fm-mt-sm" style={{ lineHeight: 1.7 }}>
               이제 팀과 시즌 목표가 정해집니다. 이 화면은 계약 확인이 아니라 어떤 압박 속에서 시즌을 시작하는지 보여주는 첫 브리핑입니다.

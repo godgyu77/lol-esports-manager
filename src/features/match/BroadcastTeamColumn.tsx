@@ -23,8 +23,50 @@ function getItemSlots(player: LivePlayerStat) {
 }
 
 function getChampionLabel(championId?: string) {
-  if (!championId) return 'Draft';
+  if (!championId) return '드래프트';
   return CHAMPION_DB.find((champion) => champion.id === championId)?.nameKo ?? championId;
+}
+
+function getZoneLabel(zone: string) {
+  const labels: Record<string, string> = {
+    home_base: '블루 본진',
+    away_base: '레드 본진',
+    top_lane: '탑 라인',
+    mid_lane: '미드 라인',
+    bot_lane: '봇 라인',
+    top_river: '상단 강가',
+    mid_river: '중앙 강가',
+    bot_river: '하단 강가',
+    home_jungle: '블루 정글',
+    away_jungle: '레드 정글',
+    dragon_pit: '드래곤 둥지',
+    baron_pit: '바론 둥지',
+    center: '중앙',
+  };
+  return labels[zone] ?? zone.replace(/_/g, ' ');
+}
+
+function getActivityLabel(activity: string) {
+  const labels: Record<string, string> = {
+    laning: '라인전',
+    rotating: '합류 중',
+    farming: '파밍',
+    objective: '오브젝트 압박',
+    teamfight: '한타 교전',
+    reset: '재정비',
+  };
+  return labels[activity] ?? activity;
+}
+
+function getPositionLabel(position: string) {
+  const labels: Record<string, string> = {
+    top: '탑',
+    jungle: '정글',
+    mid: '미드',
+    adc: '원딜',
+    support: '서폿',
+  };
+  return labels[position] ?? position.toUpperCase();
 }
 
 export function BroadcastTeamColumn({
@@ -41,7 +83,7 @@ export function BroadcastTeamColumn({
       <header className="broadcast-team-column__header">
         <div>
           <h3>{title}</h3>
-          <p>{Math.round(teamGold / 100) / 10}k team gold</p>
+          <p>팀 골드 {Math.round(teamGold / 100) / 10}k</p>
         </div>
         <span className={`broadcast-team-column__lead ${teamGold >= enemyGold ? 'is-leading' : ''}`}>
           {teamGold >= enemyGold ? `+${Math.round((teamGold - enemyGold) / 100) / 10}k` : `${Math.round((teamGold - enemyGold) / 100) / 10}k`}
@@ -68,7 +110,7 @@ export function BroadcastTeamColumn({
                 </div>
                 <div className="broadcast-player-card__meta">
                   <div className="broadcast-player-card__topline">
-                    <span className="broadcast-player-card__position">{player.position.toUpperCase()}</span>
+                    <span className="broadcast-player-card__position">{getPositionLabel(player.position)}</span>
                     <span className="broadcast-player-card__champion">{getChampionLabel(player.championId)}</span>
                   </div>
                   <strong className="broadcast-player-card__name">{player.playerName}</strong>
@@ -82,7 +124,7 @@ export function BroadcastTeamColumn({
                 <div className="broadcast-player-card__bar">
                   <div className="broadcast-player-card__bar-fill" style={{ width: `${momentum}%` }} />
                 </div>
-                <span>{mapState ? `${mapState.zone.replace(/_/g, ' ')} · ${mapState.activity}` : 'Tracking lane state'}</span>
+                <span>{mapState ? `${getZoneLabel(mapState.zone)} · ${getActivityLabel(mapState.activity)}` : '라인 상태 추적 중'}</span>
               </div>
 
               <div className="broadcast-player-card__footer">

@@ -228,7 +228,7 @@ export function NewsFeedView() {
     <div className="newsfeed-layout">
       <div className="newsfeed-hero fm-card">
         <div>
-          <span className="newsfeed-hero-kicker">Esports Newsroom</span>
+          <span className="newsfeed-hero-kicker">e스포츠 뉴스룸</span>
           <h1 className="fm-page-title">뉴스 피드</h1>
           <p className="fm-page-subtitle">
             {season.year}년 {splitLabel} 시즌의 기사와 코치 브리핑을 한곳에서 정리합니다.
@@ -266,7 +266,7 @@ export function NewsFeedView() {
       </div>
 
       <MainLoopPanel
-        eyebrow="Newsroom Rules"
+        eyebrow="뉴스룸 규칙"
         title="기사, 브리핑, 알림을 같은 목록 안에서 역할별로 구분합니다"
         subtitle="읽음 처리는 미확인 배지만 정리하고, 목록은 유지합니다. 코치 메모는 브리핑, 긴급 이슈는 알림, 시즌 맥락은 기사로 분리했습니다."
         insights={[

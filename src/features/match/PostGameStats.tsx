@@ -71,7 +71,7 @@ export function PostGameStats({
       <div className="pgs-header">
         <div className={`pgs-team-name ${isHomeWin ? '' : 'pgs-team-name--loss'}`}>{homeTeamName}</div>
         <div className="pgs-score-center">
-          <span className="pgs-game-label">SET {gameNumber}</span>
+          <span className="pgs-game-label">{gameNumber}세트</span>
           <span className="pgs-game-time">
             {gameResult.durationMinutes}:{((gameResult.durationMinutes * 7) % 60).toString().padStart(2, '0')}
           </span>

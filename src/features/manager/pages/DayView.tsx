@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { advanceDay, skipToNextMatchDay, type DayResult } from '../../../engine/season/dayAdvancer';
 import type { DayType } from '../../../engine/season/calendar';
@@ -18,6 +18,7 @@ import {
   getBudgetPressureSnapshot,
   getPrepRecommendationRecords,
 } from '../../../engine/manager/systemDepthEngine';
+import { getCareerArcEvents } from '../../../engine/manager/releaseDepthEngine';
 import { generateStaffRecommendations } from '../../../engine/staff/staffEngine';
 import { getTrainingSchedule } from '../../../engine/training/trainingEngine';
 import { useKeyboardShortcuts } from '../../../hooks/useKeyboardShortcuts';
@@ -27,9 +28,8 @@ import { usePlayerStore } from '../../../stores/playerStore';
 import { useSettingsStore } from '../../../stores/settingsStore';
 import { useTeamStore } from '../../../stores/teamStore';
 import type { CoachSetupRecommendation, ManagerSetupStatus } from '../../../types/managerSetup';
-import type { BudgetPressureSnapshot, OngoingConsequence, PrepRecommendationRecord } from '../../../types/systemDepth';
+import type { BudgetPressureSnapshot, CareerArcEvent, OngoingConsequence, PrepRecommendationRecord } from '../../../types/systemDepth';
 import { TRAINING_ACTIVITY_LABELS, TRAINING_TYPE_LABELS, type TrainingScheduleEntry } from '../../../types/training';
-import { MainLoopPanel } from '../components/MainLoopPanel';
 import './DayView.css';
 
 type ImpactTone = 'positive' | 'risk' | 'neutral';
@@ -46,31 +46,26 @@ interface NextMatchSummary {
   opponentName: string;
 }
 
+interface LoopPriorityAction {
+  label: string;
+  detail: string;
+  tone: 'accent' | 'danger' | 'success';
+  onClick: () => void;
+  testId: string;
+}
+
 const DAY_NAMES = ['일', '월', '화', '수', '목', '금', '토'];
 
 const DAY_TYPE_LABELS: Record<DayType, string> = {
   match_day: '경기일',
-  training: '훈련일',
+  training: '훈련',
   scrim: '스크림',
-  rest: '휴식일',
+  rest: '휴식',
   event: '이벤트',
 };
 
 function getAutoActivity(entry: TrainingScheduleEntry | null): 'training' | 'scrim' | 'rest' {
   return entry?.activityType ?? 'training';
-}
-
-function getDecisionImpact(activity: DayType, training: TrainingScheduleEntry | null): string {
-  if (activity === 'rest') return '회복과 사기 안정이 우선입니다. 무리한 변동보다 다음 경기 컨디션 확보에 가깝습니다.';
-  if (activity === 'scrim') {
-    return training
-      ? `${TRAINING_TYPE_LABELS[training.trainingType]} 준비를 실제 스크림 결과로 바로 확인하는 날입니다.`
-      : '스크림 피드백으로 현재 약점이 빠르게 드러날 수 있습니다.';
-  }
-  if (activity === 'match_day') return '최근 준비의 결과가 실제 경기력으로 드러나는 날입니다.';
-  return training
-    ? `${TRAINING_TYPE_LABELS[training.trainingType]} 중심의 하루입니다.`
-    : '기본 훈련 루틴으로 팀 리듬을 유지하는 흐름입니다.';
 }
 
 function getResultHighlights(result: DayResult, training: TrainingScheduleEntry | null): string[] {
@@ -80,13 +75,13 @@ function getResultHighlights(result: DayResult, training: TrainingScheduleEntry 
     highlights.push(`진행 유형: ${DAY_TYPE_LABELS[result.dayType]}`);
   }
   if (training && result.dayType !== 'rest' && result.dayType !== 'match_day') {
-    highlights.push(`훈련 포커스: ${TRAINING_TYPE_LABELS[training.trainingType]} / 강도 ${training.intensity}`);
+    highlights.push(`훈련 초점: ${TRAINING_TYPE_LABELS[training.trainingType]} / 강도 ${training.intensity}`);
   }
   if (result.events.length > 0) {
-    highlights.push(`핵심 변화: ${result.events[0]}`);
+    highlights.push(`오늘 변화: ${result.events[0]}`);
   }
   if (highlights.length === 0) {
-    highlights.push('큰 변수 없이 계획된 일정대로 하루가 진행됐습니다.');
+    highlights.push('큰 변수 없이 계획한 일정대로 하루가 진행됐습니다.');
   }
 
   return highlights;
@@ -135,6 +130,7 @@ export function DayView() {
   const [budgetPressure, setBudgetPressure] = useState<BudgetPressureSnapshot | null>(null);
   const [consequences, setConsequences] = useState<OngoingConsequence[]>([]);
   const [prepRecords, setPrepRecords] = useState<PrepRecommendationRecord[]>([]);
+  const [recentCareerArc, setRecentCareerArc] = useState<CareerArcEvent | null>(null);
   const [setupStatus, setSetupStatus] = useState<ManagerSetupStatus | null>(null);
   const [setupRecommendations, setSetupRecommendations] = useState<CoachSetupRecommendation[]>([]);
   const [setupMessage, setSetupMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
@@ -250,13 +246,14 @@ export function DayView() {
     let cancelled = false;
     const loadImpactSummary = async () => {
       try {
-        const [identity, interventions, recommendations, pressure, activeConsequences, recentPrep] = await Promise.all([
+        const [identity, interventions, recommendations, pressure, activeConsequences, recentPrep, careerArcs] = await Promise.all([
           getManagerIdentity(save.id).catch(() => null),
           getActiveInterventionEffects(season.currentDate).catch(() => new Map()),
           generateStaffRecommendations(userTeam.id, season.id).catch(() => []),
           getBudgetPressureSnapshot(userTeam.id, season.id).catch(() => null),
           getActiveConsequences(userTeam.id, season.id, season.currentDate).catch(() => []),
           getPrepRecommendationRecords(userTeam.id, season.id, 2).catch(() => []),
+          getCareerArcEvents(Number(save.id), userTeam.id, 1).catch(() => []),
         ]);
 
         if (cancelled) return;
@@ -264,6 +261,7 @@ export function DayView() {
         setBudgetPressure(pressure);
         setConsequences(activeConsequences);
         setPrepRecords(recentPrep);
+        setRecentCareerArc(careerArcs[0] ?? null);
 
         const items: ImpactSummaryItem[] = [];
 
@@ -285,7 +283,7 @@ export function DayView() {
               ((left.effect?.moraleBonus ?? 0) + (left.effect?.formBonus ?? 0)),
           )[0];
           items.push({
-            title: '오늘의 기대 효과',
+            title: '오늘의 긍정 효과',
             detail: `${strongest.player.name}에게 추가 보정이 들어갑니다. 사기 ${strongest.effect?.moraleBonus ?? 0}, 폼 ${strongest.effect?.formBonus ?? 0}.`,
             tone: 'positive',
           });
@@ -315,6 +313,7 @@ export function DayView() {
           setBudgetPressure(null);
           setConsequences([]);
           setPrepRecords([]);
+          setRecentCareerArc(null);
         }
       }
     };
@@ -548,6 +547,87 @@ export function DayView() {
   const coachAdvice = trainingRecommendation ?? tacticsRecommendation ?? null;
   const topConsequence = consequences[0] ?? null;
   const latestPrepRecord = prepRecords[0] ?? null;
+  const budgetIsUrgent = budgetPressure?.pressureLevel === 'critical' || budgetPressure?.pressureLevel === 'watch';
+
+  const primaryLoopAction = useMemo<LoopPriorityAction>(() => {
+    if (!isSetupReady) {
+      if (!setupStatus?.isTrainingConfigured) {
+        return {
+          label: '훈련 세팅 마무리',
+          detail: '오늘 루프를 진행하기 전에 이번 주 훈련 계획부터 확정해야 합니다.',
+          tone: 'danger',
+          onClick: () => navigate('/manager/training'),
+          testId: 'dayview-primary-setup-training',
+        };
+      }
+      if (!setupStatus?.isTacticsConfigured) {
+        return {
+          label: '전술 세팅 마무리',
+          detail: '전술이 비어 있으면 오늘 준비와 다음 경기 메시지가 흔들립니다.',
+          tone: 'danger',
+          onClick: () => navigate('/manager/tactics'),
+          testId: 'dayview-primary-setup-tactics',
+        };
+      }
+    }
+
+    if (budgetPressure && budgetIsUrgent) {
+      return {
+        label: '재정 압박 점검',
+        detail: budgetPressure.boardPressureNote,
+        tone: 'danger',
+        onClick: () => navigate('/manager/finance'),
+        testId: 'dayview-primary-budget',
+      };
+    }
+
+    if (topConsequence) {
+      return {
+        label: topConsequence.consequenceType === 'budget' ? '후폭풍 관리' : '운영 후폭풍 확인',
+        detail: topConsequence.summary,
+        tone: topConsequence.severity === 'high' ? 'danger' : 'accent',
+        onClick: () => navigate(topConsequence.consequenceType === 'budget' ? '/manager/finance' : '/manager/news'),
+        testId: 'dayview-primary-consequence',
+      };
+    }
+
+    if (latestPrepRecord && nextMatch) {
+      return {
+        label: latestPrepRecord.focusArea === 'tactics' ? '다음 경기 전술 점검' : '다음 경기 준비 점검',
+        detail: latestPrepRecord.impactSummary ?? latestPrepRecord.summary,
+        tone: latestPrepRecord.observedOutcome === 'positive' ? 'success' : 'accent',
+        onClick: () => navigate(latestPrepRecord.focusArea === 'tactics' ? '/manager/tactics' : '/manager/training'),
+        testId: 'dayview-primary-prep',
+      };
+    }
+
+    return {
+      label: '오늘 일정 진행',
+      detail: '당장 리스크가 정리됐으면 오늘 일정을 진행해 다음 경기와 결과를 확인합니다.',
+      tone: 'success',
+      onClick: () => void handleAdvance(),
+      testId: 'dayview-primary-advance',
+    };
+  }, [budgetIsUrgent, budgetPressure, handleAdvance, isSetupReady, latestPrepRecord, navigate, nextMatch, setupStatus, topConsequence]);
+
+  const loopWarning = useMemo(() => {
+    if (!isSetupReady) {
+      return '세팅이 비어 있는 상태에서 하루를 넘기면 준비 완성도가 크게 떨어집니다.';
+    }
+    if (budgetPressure?.pressureLevel === 'critical') {
+      return `지금은 예산 활주로가 ${budgetPressure.runwayWeeks.toFixed(1)}주 수준이라 추가 지출이 바로 시즌 운영 압박으로 이어집니다.`;
+    }
+    if (budgetPressure?.pressureLevel === 'watch') {
+      return '협상 비용과 고정 지출이 누적되고 있습니다. 보드는 현재 지출 패턴을 주시하고 있습니다.';
+    }
+    if (topConsequence) {
+      return `${topConsequence.title}: ${topConsequence.summary}`;
+    }
+    if (latestPrepRecord) {
+      return latestPrepRecord.impactSummary ?? latestPrepRecord.summary;
+    }
+    return '큰 경고는 없지만, 지금 내린 작은 결정들이 다음 경기와 시즌 흐름을 바꿀 수 있습니다.';
+  }, [budgetPressure, isSetupReady, latestPrepRecord, topConsequence]);
 
   if (!season || !save || !userTeam) {
     return <p className="fm-text-muted fm-text-md">시즌 데이터를 불러오는 중입니다...</p>;
@@ -560,7 +640,7 @@ export function DayView() {
           <div className="fm-modal" style={{ width: 360 }}>
             <div className="fm-modal__body fm-text-center">
               <h2 className="fm-text-xl fm-mb-sm">일정을 처리하는 중입니다</h2>
-              <p className="fm-text-muted">하루 일정과 경기 결과를 반영하고 있습니다. 잠시만 기다려주세요.</p>
+              <p className="fm-text-muted">하루 일정과 경기 결과를 반영하고 있습니다. 잠시만 기다려 주세요.</p>
             </div>
           </div>
         </div>
@@ -573,7 +653,7 @@ export function DayView() {
       {setupStatus && (
         <div className="fm-panel fm-mb-lg">
           <div className="fm-panel__header">
-            <span className="fm-panel__title">{isSetupReady ? '이번 주 코치 브리핑' : '코치 브리핑: 진행 전 필수 세팅'}</span>
+            <span className="fm-panel__title">{isSetupReady ? '이번 주 코치 브리핑' : '코치 브리핑 진행 전 필수 세팅'}</span>
           </div>
           <div className="fm-panel__body fm-flex-col fm-gap-sm">
             {setupMessage && (
@@ -585,7 +665,7 @@ export function DayView() {
             {!isSetupReady && (
               <div className="fm-alert fm-alert--warning">
                 <span className="fm-alert__text">
-                  {setupStatus.blockingReasons.join(' ')} 훈련과 전술이 확정되기 전에는 일정 진행이 잠깁니다.
+                  {setupStatus.blockingReasons.join(' ')} 훈련과 전술을 확정하기 전에는 일정 진행이 제한됩니다.
                 </span>
               </div>
             )}
@@ -651,162 +731,83 @@ export function DayView() {
       </div>
 
       <div className="fm-grid fm-grid--2 fm-mb-lg">
-        <MainLoopPanel
-          eyebrow="Core Loop"
-          title="오늘 해야 할 일과 다음 경기 준비를 한 번에 정리합니다"
-          subtitle={isSetupReady ? '핵심 판단이 끝났으면 날짜를 넘기고, 아니라면 훈련과 전술 세팅부터 마무리하는 흐름입니다.' : '지금은 진행보다 세팅을 먼저 끝내야 합니다. 코치 제안과 직접 설정을 같은 흐름으로 묶었습니다.'}
-          insights={[
-            {
-              label: '오늘 해야 할 일',
-              value: TRAINING_ACTIVITY_LABELS[autoActivity],
-              detail: todayTraining ? `${TRAINING_TYPE_LABELS[todayTraining.trainingType]} / 강도 ${todayTraining.intensity}` : '기본 훈련 루틴이 자동 반영됩니다.',
-              tone: autoActivity === 'rest' ? 'neutral' : 'accent',
-            },
-            {
-              label: '가장 큰 리스크',
-              value: primaryRisk ? getToneLabel(primaryRisk.tone) : '안정',
-              detail: primaryRisk?.detail ?? '즉시 조치가 필요한 큰 리스크는 없습니다.',
-              tone: primaryRisk?.tone === 'risk' ? 'danger' : primaryRisk?.tone === 'positive' ? 'success' : 'accent',
-            },
-            {
-              label: '다음 경기',
-              value: nextMatch ? `${nextMatch.daysUntil}일 남음` : '미정',
-              detail: nextMatch ? `${nextMatch.date} ${nextMatch.opponentName}전` : '아직 확정된 다음 경기가 없습니다.',
-              tone: 'accent',
-            },
-            {
-              label: '코치 조언',
-              value: coachAdvice?.authorName ?? (isSetupReady ? '준비 완료' : '세팅 필요'),
-              detail: coachAdvice?.headline ?? (isSetupReady ? '기본 준비가 끝났습니다. 이제 리스크를 확인한 뒤 날짜를 넘겨도 됩니다.' : '훈련과 전술 세팅이 끝나야 일정 진행이 열립니다.'),
-              tone: isSetupReady ? 'success' : 'danger',
-            },
-          ]}
-          actions={[
-            {
-              label: '루프에서 하루 진행',
-              onClick: () => void handleAdvance(),
-              variant: 'primary',
-              disabled: isProcessing || !isSetupReady,
-            },
-            {
-              label: '루프에서 다음 경기까지',
-              onClick: () => void handleSkip(),
-              variant: 'info',
-              disabled: isProcessing || !isSetupReady,
-              ariaLabel: '다음 경기까지 자동 진행',
-            },
-            {
-              label: '주간 계획 수정',
-              onClick: () => navigate('/manager/training'),
-              disabled: isProcessing,
-            },
-            {
-              label: '전술 정리',
-              onClick: () => navigate('/manager/tactics'),
-              disabled: isProcessing,
-            },
-          ]}
-          note={getDecisionImpact(autoActivity, todayTraining)}
-        />
-
-        {(budgetPressure || topConsequence || latestPrepRecord) && (
-          <div className="fm-grid fm-grid--3 fm-mb-md" style={{ gap: '12px' }}>
-            {budgetPressure && (
-              <div className="fm-card fm-flex-col fm-gap-sm">
-                <div className="fm-flex fm-items-center fm-justify-between fm-gap-sm">
-                  <span className="fm-text-sm fm-text-muted">예산 압박</span>
-                  <span className={`fm-badge ${budgetPressure.pressureLevel === 'critical' ? 'fm-badge--danger' : budgetPressure.pressureLevel === 'watch' ? 'fm-badge--warning' : 'fm-badge--success'}`}>
-                    {budgetPressure.pressureLevel}
-                  </span>
-                </div>
-                <strong className="fm-text-primary">이번 주 고정 지출</strong>
-                <p className="fm-text-sm fm-text-secondary" style={{ margin: 0 }}>
-                  {budgetPressure.weeklyRecurringExpenses.toLocaleString()} / 실패 협상 {budgetPressure.recentNegotiationCosts.toLocaleString()}
-                </p>
+        {recentCareerArc && (
+          <div className="fm-panel" data-testid="dayview-career-arc-card">
+            <div className="fm-panel__header">
+              <span className="fm-panel__title">시즌 서사</span>
+            </div>
+            <div className="fm-panel__body fm-flex-col fm-gap-sm">
+              <div className="fm-flex fm-items-center fm-justify-between fm-gap-sm">
+                <strong className="fm-text-primary">{recentCareerArc.headline}</strong>
+                <span className="fm-badge fm-badge--info">{recentCareerArc.stage}</span>
               </div>
-            )}
-            {topConsequence && (
-              <div className="fm-card fm-flex-col fm-gap-sm">
-                <div className="fm-flex fm-items-center fm-justify-between fm-gap-sm">
-                  <span className="fm-text-sm fm-text-muted">지속 중인 후폭풍</span>
-                  <span className={`fm-badge ${topConsequence.severity === 'high' ? 'fm-badge--danger' : topConsequence.severity === 'medium' ? 'fm-badge--warning' : 'fm-badge--default'}`}>
-                    {topConsequence.severity}
-                  </span>
-                </div>
-                <strong className="fm-text-primary">{topConsequence.title}</strong>
-                <p className="fm-text-sm fm-text-secondary" style={{ margin: 0 }}>{topConsequence.summary}</p>
-              </div>
-            )}
-            {latestPrepRecord && (
-              <div className="fm-card fm-flex-col fm-gap-sm">
-                <div className="fm-flex fm-items-center fm-justify-between fm-gap-sm">
-                  <span className="fm-text-sm fm-text-muted">준비 추적</span>
-                  <span className="fm-badge fm-badge--info">{latestPrepRecord.status}</span>
-                </div>
-                <strong className="fm-text-primary">{latestPrepRecord.title}</strong>
-                <p className="fm-text-sm fm-text-secondary" style={{ margin: 0 }}>
-                  {latestPrepRecord.impactSummary ?? latestPrepRecord.summary}
-                </p>
-              </div>
-            )}
+              <p className="fm-text-secondary" style={{ margin: 0 }}>{recentCareerArc.summary}</p>
+            </div>
           </div>
         )}
 
         <div className="fm-panel">
           <div className="fm-panel__header">
-            <span className="fm-panel__title">오늘 진행 판단</span>
+            <span className="fm-panel__title">운영 우선순위</span>
           </div>
           <div className="fm-panel__body fm-flex-col fm-gap-sm">
             <div className="dv-focus-grid">
               <div className="dv-focus-card">
-                <span className="dv-focus-card__title">오늘의 핵심 일정</span>
-                <span className="dv-focus-card__value">{TRAINING_ACTIVITY_LABELS[autoActivity]}</span>
-                <p className="dv-focus-card__detail">
-                  {todayTraining ? `${TRAINING_TYPE_LABELS[todayTraining.trainingType]} / 강도 ${todayTraining.intensity}` : '기본 훈련 루틴이 적용됩니다.'}
-                </p>
+                <span className="dv-focus-card__title">1순위 액션</span>
+                <span className={`dv-focus-card__value ${primaryLoopAction.tone === 'danger' ? 'fm-text-danger' : primaryLoopAction.tone === 'success' ? 'fm-text-success' : 'fm-text-accent'}`}>
+                  {primaryLoopAction.label}
+                </span>
+                <p className="dv-focus-card__detail">{primaryLoopAction.detail}</p>
               </div>
               <div className="dv-focus-card">
                 <span className="dv-focus-card__title">가장 큰 리스크</span>
-                <span className={`dv-focus-card__value ${primaryRisk ? getToneClass(primaryRisk.tone) : 'fm-text-accent'}`}>
-                  {primaryRisk ? getToneLabel(primaryRisk.tone) : '안정'}
-                </span>
-                <p className="dv-focus-card__detail">{primaryRisk?.detail ?? '즉시 조치가 필요한 큰 리스크는 없습니다.'}</p>
-              </div>
-              <div className="dv-focus-card">
-                <span className="dv-focus-card__title">다음 경기까지</span>
-                <span className="dv-focus-card__value">
-                  {nextMatch ? `${nextMatch.daysUntil}일` : '미정'}
+                <span className={`dv-focus-card__value ${budgetIsUrgent || topConsequence?.severity === 'high' ? 'fm-text-danger' : 'fm-text-accent'}`}>
+                  {budgetIsUrgent ? '재정 압박' : topConsequence?.title ?? '안정'}
                 </span>
                 <p className="dv-focus-card__detail">
-                  {nextMatch ? `${nextMatch.date} ${nextMatch.opponentName}전` : '아직 확정된 다음 경기가 없습니다.'}
+                  {budgetIsUrgent ? `${budgetPressure?.topDrivers[0] ?? ''} ${budgetPressure?.boardPressureNote ?? ''}`.trim() : topConsequence?.summary ?? (primaryRisk?.detail ?? '즉시 개입이 필요한 리스크는 아직 보이지 않습니다.')}
+                </p>
+              </div>
+              <div className="dv-focus-card">
+                <span className="dv-focus-card__title">지금 팀 서사</span>
+                <span className={`dv-focus-card__value ${recentCareerArc?.arcType === 'collapse' ? 'fm-text-danger' : recentCareerArc?.arcType === 'dynasty' ? 'fm-text-success' : 'fm-text-accent'}`}>
+                  {recentCareerArc?.headline ?? '이번 시즌 축 형성 중'}
+                </span>
+                <p className="dv-focus-card__detail">
+                  {recentCareerArc?.summary ?? (coachAdvice?.headline ?? '경기 결과와 운영 선택이 하나의 시즌 이야기로 연결되기 시작합니다.')}
                 </p>
               </div>
             </div>
 
-            <p className="fm-text-muted">{getDecisionImpact(autoActivity, todayTraining)}</p>
-
             <div className="fm-flex fm-gap-sm fm-flex-wrap">
-              <button className="fm-btn fm-btn--primary" onClick={() => void handleAdvance()} disabled={isProcessing || !isSetupReady}>
-                하루 진행
+              <button
+                className="fm-btn fm-btn--primary"
+                onClick={primaryLoopAction.onClick}
+                disabled={isProcessing}
+                data-testid={primaryLoopAction.testId}
+              >
+                {primaryLoopAction.label}
               </button>
               <button
                 className="fm-btn fm-btn--info"
                 onClick={() => void handleSkip()}
                 disabled={isProcessing || !isSetupReady}
-                aria-label="다음 경기까지 건너뛰기"
+                aria-label="다음 경기까지 자동 진행"
+                data-testid="dayview-skip-action"
               >
                 다음 경기까지 자동 진행
               </button>
               <button className="fm-btn" onClick={() => navigate('/manager/training')} disabled={isProcessing}>
-                주간 계획 수정
+                주간 훈련 수정
               </button>
             </div>
 
             <div className="fm-alert fm-alert--warning">
-              <span className="fm-alert__text">자동 진행은 편하지만 중간 이벤트를 놓칠 수 있습니다. 급한 조정이 있으면 먼저 확인하고 넘기는 편이 안전합니다.</span>
+              <span className="fm-alert__text">{loopWarning}</span>
             </div>
           </div>
         </div>
+
 
         <div className="fm-panel">
           <div className="fm-panel__header">
@@ -879,7 +880,7 @@ export function DayView() {
             ) : null}
 
             {dayResult.events.length === 0 ? (
-              <p className="fm-text-muted">오늘 기록할 만한 큰 이벤트는 없었습니다.</p>
+              <p className="fm-text-muted">오늘 기록할 만한 별도 이벤트는 없었습니다.</p>
             ) : (
               <div className="fm-flex-col fm-gap-sm">
                 {dayResult.events.map((event, index) => (

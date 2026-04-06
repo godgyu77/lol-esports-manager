@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+﻿import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { ManagerBackground, ManagerStats } from '../../types/manager';
 import {
@@ -159,7 +159,7 @@ export function ManagerCreate() {
       <div className="intro-shell" style={{ maxWidth: 980 }}>
         <header className="fm-panel intro-hero intro-panel-soft" style={{ overflow: 'hidden' }}>
           <div className="fm-panel__body" style={{ padding: 28 }}>
-            <div className="fm-text-xs fm-font-semibold fm-text-accent fm-text-upper fm-mb-sm">Manager Identity</div>
+            <div className="fm-text-xs fm-font-semibold fm-text-accent fm-text-upper fm-mb-sm">감독 정체성</div>
             <h1 className="fm-text-2xl fm-font-bold fm-text-primary" style={{ margin: 0 }}>감독 정체성을 설계하세요</h1>
             <p className="fm-text-md fm-text-muted fm-mt-sm" style={{ lineHeight: 1.7 }}>
               이름과 배경만 정하는 화면이 아닙니다. 앞으로 어떤 판단을 내리고, 어떤 방식으로 팀을 다루는 감독인지 정하는 단계입니다.
@@ -182,7 +182,7 @@ export function ManagerCreate() {
                     type="text"
                     value={name}
                     onChange={(event) => setName(event.target.value)}
-                    placeholder="예: Kim Min-seok"
+                    placeholder="예: 김민석"
                     style={{ padding: '10px 14px', fontSize: 14 }}
                   />
                 </div>

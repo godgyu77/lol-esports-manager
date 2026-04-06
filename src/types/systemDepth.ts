@@ -9,6 +9,7 @@ export interface BudgetPressureSnapshot {
   weeklyRecurringExpenses: number;
   monthlyRecurringExpenses: number;
   recentNegotiationCosts: number;
+  failedNegotiations: number;
   playerSalaryTotal: number;
   staffSalaryTotal: number;
   effectiveStaffPayroll: number;
@@ -16,10 +17,13 @@ export interface BudgetPressureSnapshot {
   totalPayroll: number;
   capRoom: number;
   luxuryTax: number;
+  runwayWeeks: number;
   pressureBand: 'safe' | 'taxed' | 'warning' | 'hard_stop';
+  boardSatisfaction: number | null;
   boardRisk: number;
   pressureScore: number;
   pressureLevel: 'stable' | 'watch' | 'critical';
+  boardPressureNote: string;
   topDrivers: string[];
 }
 

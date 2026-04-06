@@ -1,4 +1,4 @@
-import { renderWithProviders, screen, resetStores, waitFor } from '../../test/testUtils';
+﻿import { renderWithProviders, screen, resetStores, waitFor } from '../../test/testUtils';
 import { SeasonGoalView } from './SeasonGoalView';
 import { initializeNewGame } from '../../db/initGame';
 
@@ -43,7 +43,7 @@ describe('SeasonGoalView', () => {
       gameState: managerState,
     });
 
-    expect(screen.getByText('Arrival Briefing')).toBeInTheDocument();
+    expect(screen.getByText('부임 브리핑')).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: '시즌 목표 수락' })).toBeInTheDocument();
   });
 

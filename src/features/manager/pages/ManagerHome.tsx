@@ -511,7 +511,7 @@ export function ManagerHome() {
       )}
 
       <MainLoopPanel
-        eyebrow="Manager Loop"
+        eyebrow="매니저 루프"
         title="지금 가장 먼저 볼 것과 오늘의 다음 행동을 먼저 정리합니다"
         subtitle="대시보드는 정보를 많이 보여주는 대신, 오늘 할 일과 리스크를 가장 먼저 읽히는 쪽으로 다시 배치했습니다."
         insights={[

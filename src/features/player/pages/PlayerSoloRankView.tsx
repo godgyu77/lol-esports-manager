@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 선수 모드 솔로랭크 페이지
  * - 솔로랭크 상태 (티어, LP, 승률, 랭킹)
  * - 챔피언 연습 선택
@@ -427,7 +427,7 @@ export function PlayerSoloRankView() {
       {leaderboard.length > 0 && (
         <div className="fm-panel">
           <div className="fm-panel__header">
-            <span className="fm-panel__title">솔로랭크 리더보드</span>
+            <span className="fm-panel__title">솔로 랭크 리더보드</span>
           </div>
           <div className="fm-panel__body--flush">
             <table className="fm-table fm-table--striped">
@@ -466,11 +466,11 @@ export function PlayerSoloRankView() {
         </div>
       )}
 
-      {/* 최근 일간 기록 */}
+      {/* 최근 솔랭 기록 */}
       {dailyLogs.length > 0 && (
         <div className="fm-panel">
           <div className="fm-panel__header">
-            <span className="fm-panel__title">최근 일간 기록</span>
+            <span className="fm-panel__title">최근 솔랭 기록</span>
           </div>
           <div className="fm-panel__body--flush">
             <table className="fm-table fm-table--striped">

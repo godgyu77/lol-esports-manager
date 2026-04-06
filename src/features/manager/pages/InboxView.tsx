@@ -224,7 +224,7 @@ export function InboxView() {
       </div>
 
       <MainLoopPanel
-        eyebrow="Inbox Rules"
+        eyebrow="인박스 규칙"
         title="읽음 상태는 강조만 지우고, 목록은 유지합니다"
         subtitle="알림은 우선순위를 높게 유지하고, 브리핑은 맥락을 남겨 두며, 작업형 메시지는 실행 버튼으로 바로 이어지게 정리했습니다."
         insights={[

@@ -1,9 +1,9 @@
 /**
- * 구단 관리 페이지
- * - 구단주 목표 (순위/플레이오프/국제대회)
- * - 만족도 & 팬 행복도 게이지
- * - 경고 횟수
- * - 최근 팬 반응 목록
+ * 보드 및 팬 반응 화면
+ * - 시즌 목표
+ * - 보드 만족도 / 팬 행복도
+ * - 경고 상태
+ * - 최근 반응 로그
  */
 
 import { useEffect, useState, useCallback } from 'react';
@@ -16,14 +16,13 @@ import {
 import { getTeamWithRoster } from '../../../db/queries';
 import type { BoardExpectation, FanReaction } from '../../../types/board';
 
-/** 이벤트 타입 → 한국어 라벨 */
 const EVENT_TYPE_LABELS: Record<string, string> = {
   match_win: '경기 승리',
   match_loss: '경기 패배',
   warning: '경고',
   fired: '해고',
   playoff_qualify: '플레이오프 진출',
-  international_qualify: '국제대회 진출',
+  international_qualify: '국제 대회 진출',
   season_start: '시즌 시작',
 };
 
@@ -50,7 +49,7 @@ export function BoardView() {
     try {
       let board = await getBoardExpectations(userTeamId, season.id);
 
-      // 아직 초기화되지 않았으면 자동 초기화
+      // 아직 생성되지 않았다면 팀 명성 기준으로 자동 초기화합니다.
       if (!board) {
         const team = await getTeamWithRoster(userTeamId);
         const reputation = team?.reputation ?? 50;
@@ -62,15 +61,15 @@ export function BoardView() {
       setExpectations(board);
       setReactions(fanReactions);
     } catch (err) {
-      console.error('구단 데이터 로딩 실패:', err);
-      setError('구단 데이터를 불러오는 중 오류가 발생했습니다.');
+      console.error('보드 데이터 로딩 실패:', err);
+      setError('보드 데이터를 불러오는 중 오류가 발생했습니다.');
     } finally {
       setIsLoading(false);
     }
   }, [season, save, userTeamId]);
 
   useEffect(() => {
-    loadData();
+    void loadData();
   }, [loadData]);
 
   if (isLoading) {
@@ -82,19 +81,18 @@ export function BoardView() {
   }
 
   if (!expectations) {
-    return <div className="fm-text-muted fm-text-center fm-p-lg">구단 정보가 없습니다.</div>;
+    return <div className="fm-text-muted fm-text-center fm-p-lg">보드 정보가 없습니다.</div>;
   }
 
   return (
     <div>
       <div className="fm-page-header">
-        <h1 className="fm-page-title">구단 관리</h1>
+        <h1 className="fm-page-title">보드 관리</h1>
       </div>
 
-      {/* 구단주 목표 */}
       <div className="fm-panel fm-mb-md">
         <div className="fm-panel__header">
-          <span className="fm-panel__title">구단주 목표</span>
+          <span className="fm-panel__title">시즌 목표</span>
         </div>
         <div className="fm-panel__body">
           <div className="fm-grid fm-grid--3">
@@ -109,7 +107,7 @@ export function BoardView() {
               </span>
             </div>
             <div className="fm-card fm-flex-col fm-items-center fm-gap-sm">
-              <span className="fm-text-md fm-text-secondary">국제대회 진출</span>
+              <span className="fm-text-md fm-text-secondary">국제 대회 진출</span>
               <span className={`fm-text-xl fm-font-bold ${expectations.targetInternational ? 'fm-text-accent' : 'fm-text-muted'}`}>
                 {expectations.targetInternational ? '필수' : '선택'}
               </span>
@@ -118,7 +116,6 @@ export function BoardView() {
         </div>
       </div>
 
-      {/* 만족도 & 팬 행복도 */}
       <div className="fm-panel fm-mb-md">
         <div className="fm-panel__header">
           <span className="fm-panel__title">현황</span>
@@ -126,7 +123,7 @@ export function BoardView() {
         <div className="fm-panel__body">
           <div className="fm-flex-col fm-gap-md fm-mb-lg">
             <GaugeBar
-              label="구단주 만족도"
+              label="보드 만족도"
               value={expectations.satisfaction}
               color={getGaugeColor(expectations.satisfaction)}
             />
@@ -137,9 +134,10 @@ export function BoardView() {
             />
           </div>
 
-          {/* 경고 */}
           <div className="fm-flex fm-items-center fm-gap-md">
-            <span className="fm-text-lg fm-text-secondary fm-flex-shrink-0" style={{ width: 120 }}>경고 횟수</span>
+            <span className="fm-text-lg fm-text-secondary fm-flex-shrink-0" style={{ width: 120 }}>
+              경고 횟수
+            </span>
             <div className="fm-flex fm-gap-sm">
               {[0, 1, 2].map((i) => (
                 <span
@@ -156,9 +154,7 @@ export function BoardView() {
             </div>
             {expectations.warningCount > 0 && (
               <span className="fm-text-md fm-font-semibold fm-text-danger">
-                {expectations.warningCount >= 3
-                  ? '해고 위기!'
-                  : `${expectations.warningCount}회 경고`}
+                {expectations.warningCount >= 3 ? '해고 위기!' : `${expectations.warningCount}회 경고`}
               </span>
             )}
           </div>
@@ -166,14 +162,13 @@ export function BoardView() {
           {expectations.isFired && (
             <div className="fm-alert fm-alert--danger fm-mt-md">
               <span className="fm-alert__text fm-font-bold fm-text-center" style={{ width: '100%' }}>
-                구단주에 의해 해고되었습니다.
+                보드 결정으로 해고되었습니다.
               </span>
             </div>
           )}
         </div>
       </div>
 
-      {/* 최근 팬 반응 */}
       <div className="fm-panel">
         <div className="fm-panel__header">
           <span className="fm-panel__title">최근 팬 반응</span>
@@ -195,8 +190,13 @@ export function BoardView() {
                     {reaction.message && (
                       <span className="fm-text-md fm-text-secondary">{reaction.message}</span>
                     )}
-                    <span className={`fm-text-lg fm-font-bold fm-flex-shrink-0 ${reaction.happinessChange >= 0 ? 'fm-text-success' : 'fm-text-danger'}`}>
-                      {reaction.happinessChange >= 0 ? '+' : ''}{reaction.happinessChange}
+                    <span
+                      className={`fm-text-lg fm-font-bold fm-flex-shrink-0 ${
+                        reaction.happinessChange >= 0 ? 'fm-text-success' : 'fm-text-danger'
+                      }`}
+                    >
+                      {reaction.happinessChange >= 0 ? '+' : ''}
+                      {reaction.happinessChange}
                     </span>
                   </div>
                 </li>
@@ -209,21 +209,18 @@ export function BoardView() {
   );
 }
 
-// ─────────────────────────────────────────
-// 게이지 바 컴포넌트
-// ─────────────────────────────────────────
-
 function GaugeBar({ label, value, color }: { label: string; value: number; color: string }) {
   return (
     <div className="fm-flex fm-items-center fm-gap-md">
-      <span className="fm-text-lg fm-text-secondary fm-flex-shrink-0" style={{ width: 120 }}>{label}</span>
+      <span className="fm-text-lg fm-text-secondary fm-flex-shrink-0" style={{ width: 120 }}>
+        {label}
+      </span>
       <div className="fm-bar__track fm-flex-1" style={{ height: 12, border: '1px solid var(--border)' }}>
-        <div
-          className="fm-bar__fill"
-          style={{ width: `${value}%`, background: color }}
-        />
+        <div className="fm-bar__fill" style={{ width: `${value}%`, background: color }} />
       </div>
-      <span className="fm-text-xl fm-font-bold fm-text-right" style={{ color, width: 36 }}>{value}</span>
+      <span className="fm-text-xl fm-font-bold fm-text-right" style={{ color, width: 36 }}>
+        {value}
+      </span>
     </div>
   );
 }

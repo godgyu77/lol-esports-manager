@@ -65,7 +65,7 @@ function buildSwapTags(player: Player | undefined, championId: string): string[]
   return tags;
 }
 
-export function buildSwapSummary(player: Player | undefined, championId: string): string {
+function _buildSwapSummary(player: Player | undefined, championId: string): string {
   if (!player) return '선수 배치가 아직 확정되지 않았습니다.';
 
   const comfortPick = [...player.championPool]
@@ -305,7 +305,7 @@ export function DraftView() {
       <div className="draft-stage-shell">
         <header className="draft-stage-hero fm-card">
           <div>
-            <span className="draft-stage-kicker">Draft Room</span>
+            <span className="draft-stage-kicker">드래프트 룸</span>
             <h1 className="draft-stage-title">세트 {currentGameNum} 밴픽</h1>
             <p className="draft-stage-copy">
               포지션에 먼저 묶이지 않고 좋은 챔피언부터 선점한 뒤, 마지막 스왑에서 우리 선수에게 가장 어울리는 구도로 정리합니다.

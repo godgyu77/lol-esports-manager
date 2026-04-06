@@ -240,7 +240,7 @@ export function PatchMetaView() {
             </div>
             <div className="fm-stat">
               <span className="fm-stat__label">최신 패치 주차</span>
-              <span className="fm-stat__value">Week {latestWeek || '-'}</span>
+              <span className="fm-stat__value">{latestWeek || '-'}주차</span>
             </div>
             {metaModifiers && (
               <div className="fm-stat">

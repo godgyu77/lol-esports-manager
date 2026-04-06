@@ -1,37 +1,37 @@
-/**
+﻿/**
  * 전술 관리 페이지
- * - 초반/중반/후반 전략 선택
- * - 와드 우선도, 드래곤/바론 우선도, 공격성 레벨 슬라이더
+ * - 초반/중반/후반 운영 전략 선택
+ * - 시야 운용과 오브젝트 우선순위 조정
  * - 현재 전술 보정 효과 미리보기
  */
 
-import { useEffect, useState, useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useGameStore } from '../../../stores/gameStore';
+import { generateTacticalSuggestion, type TacticalSuggestion } from '../../../ai/advancedAiService';
+import { applyCoachTacticsRecommendation, generateInitialCoachRecommendations } from '../../../engine/manager/managerSetupEngine';
+import { getPrepRecommendationRecords, recordPrepRecommendation } from '../../../engine/manager/systemDepthEngine';
 import {
+  calculateTacticsBonus,
+  createDefaultTactics,
   getTeamTactics,
   setTeamTactics,
-  createDefaultTactics,
-  calculateTacticsBonus,
 } from '../../../engine/tactics/tacticsEngine';
+import { useGameStore } from '../../../stores/gameStore';
+import type { CoachSetupRecommendation } from '../../../types/managerSetup';
+import type { PrepRecommendationRecord } from '../../../types/systemDepth';
 import type {
-  TeamTactics,
   EarlyStrategy,
-  MidStrategy,
   LateStrategy,
+  MidStrategy,
+  TeamTactics,
   WardPriority,
 } from '../../../types/tactics';
 import {
   EARLY_STRATEGY_LABELS,
-  MID_STRATEGY_LABELS,
   LATE_STRATEGY_LABELS,
+  MID_STRATEGY_LABELS,
   WARD_PRIORITY_LABELS,
 } from '../../../types/tactics';
-import { generateTacticalSuggestion, type TacticalSuggestion } from '../../../ai/advancedAiService';
-import { applyCoachTacticsRecommendation, generateInitialCoachRecommendations } from '../../../engine/manager/managerSetupEngine';
-import { getPrepRecommendationRecords, recordPrepRecommendation } from '../../../engine/manager/systemDepthEngine';
-import type { CoachSetupRecommendation } from '../../../types/managerSetup';
-import type { PrepRecommendationRecord } from '../../../types/systemDepth';
 import { MainLoopPanel } from '../components/MainLoopPanel';
 
 const EARLY_STRATEGIES: EarlyStrategy[] = ['standard', 'lane_swap', 'invade', 'safe_farm'];
@@ -84,7 +84,9 @@ export function TacticsView() {
     }
   }, [save, userTeamId]);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
 
   const handleChange = async <K extends keyof Omit<TeamTactics, 'teamId'>>(
     field: K,
@@ -96,9 +98,9 @@ export function TacticsView() {
     setTacticsState(updated);
 
     try {
-      const { teamId: _, ...rest } = updated;
+      const { teamId: _teamId, ...rest } = updated;
       await setTeamTactics(userTeamId, rest);
-      setMessage({ text: '전술이 변경되었습니다.', type: 'success' });
+      setMessage({ text: '전술을 변경했습니다.', type: 'success' });
     } catch (err) {
       console.error('전술 저장 실패:', err);
       setMessage({ text: '전술 저장에 실패했습니다.', type: 'error' });
@@ -110,9 +112,11 @@ export function TacticsView() {
     setAiSuggestionLoading(true);
     setAiSuggestion(null);
 
-    const userTeam = teams.find(t => t.id === userTeamId);
+    const userTeam = teams.find((team) => team.id === userTeamId);
     const opponentTeam = pendingMatch
-      ? teams.find(t => t.id === (pendingMatch.teamHomeId === userTeamId ? pendingMatch.teamAwayId : pendingMatch.teamHomeId))
+      ? teams.find((team) => team.id === (
+        pendingMatch.teamHomeId === userTeamId ? pendingMatch.teamAwayId : pendingMatch.teamHomeId
+      ))
       : null;
 
     try {
@@ -128,7 +132,7 @@ export function TacticsView() {
       });
       setAiSuggestion(result);
     } catch {
-      // AI 실패 시 무시
+      // AI 제안 실패는 조용히 무시한다.
     } finally {
       setAiSuggestionLoading(false);
     }
@@ -140,7 +144,9 @@ export function TacticsView() {
 
   const bonus = calculateTacticsBonus(tactics);
   const nextOpponent = pendingMatch
-    ? teams.find((team) => team.id === (pendingMatch.teamHomeId === userTeamId ? pendingMatch.teamAwayId : pendingMatch.teamHomeId))?.name ?? '상대 대기'
+    ? teams.find((team) => team.id === (
+      pendingMatch.teamHomeId === userTeamId ? pendingMatch.teamAwayId : pendingMatch.teamHomeId
+    ))?.name ?? '상대 팀 미정'
     : null;
   const latestPrepRecord = prepRecords[0] ?? null;
 
@@ -157,7 +163,6 @@ export function TacticsView() {
         </button>
       </div>
 
-      {/* AI 전술 조언 카드 */}
       {aiSuggestion && (
         <div className="fm-alert fm-alert--info fm-flex-col fm-gap-xs fm-mb-md" style={{ alignItems: 'flex-start' }}>
           <span className="fm-text-xs fm-font-bold fm-text-accent">AI 코치 조언</span>
@@ -168,49 +173,62 @@ export function TacticsView() {
             className="fm-btn fm-btn--primary fm-btn--sm fm-mt-sm"
             onClick={async () => {
               if (!tactics) return;
-              const s = aiSuggestion.suggestion;
+
+              const suggestion = aiSuggestion.suggestion;
               const updated = { ...tactics };
-              if (s.includes('어그로') || s.includes('공격')) {
+
+              if (suggestion.includes('공격') || suggestion.includes('초반 압박')) {
                 updated.earlyStrategy = 'invade';
                 updated.aggressionLevel = Math.min(10, (updated.aggressionLevel ?? 5) + 2);
-              } else if (s.includes('스플릿')) {
+              } else if (suggestion.includes('스플릿')) {
                 updated.midStrategy = 'split_push';
                 updated.lateStrategy = 'split_push';
-              } else if (s.includes('오브젝트') || s.includes('드래곤') || s.includes('바론')) {
+              } else if (
+                suggestion.includes('오브젝트')
+                || suggestion.includes('드래곤')
+                || suggestion.includes('바론')
+              ) {
                 updated.midStrategy = 'objective_control';
-              } else if (s.includes('후반') || s.includes('스케일링') || s.includes('파밍')) {
+              } else if (
+                suggestion.includes('후반')
+                || suggestion.includes('안정')
+                || suggestion.includes('수비')
+              ) {
                 updated.earlyStrategy = 'safe_farm';
                 updated.lateStrategy = 'teamfight';
-              } else if (s.includes('비전') || s.includes('시야')) {
+              } else if (suggestion.includes('비전') || suggestion.includes('시야')) {
                 updated.wardPriority = 'aggressive';
-              } else if (s.includes('로밍')) {
+              } else if (suggestion.includes('로밍')) {
                 updated.midStrategy = 'pick_comp';
               }
+
               setTacticsState(updated);
+
               try {
-                const { teamId: _, ...rest } = updated;
+                const { teamId: _teamId, ...rest } = updated;
                 await setTeamTactics(userTeamId, rest);
                 await recordPrepRecommendation({
                   teamId: userTeamId,
                   seasonId: save.currentSeasonId,
                   source: 'opponent_analysis',
                   focusArea: 'tactics',
-                  title: 'AI tactical adjustment',
+                  title: 'AI 전술 조정',
                   summary: aiSuggestion.reason,
                   recommendedChanges: [aiSuggestion.suggestion, aiSuggestion.expectedEffect],
                   appliedChanges: [
-                    `Early: ${EARLY_STRATEGY_LABELS[updated.earlyStrategy]}`,
-                    `Mid: ${MID_STRATEGY_LABELS[updated.midStrategy]}`,
-                    `Late: ${LATE_STRATEGY_LABELS[updated.lateStrategy]}`,
+                    `초반: ${EARLY_STRATEGY_LABELS[updated.earlyStrategy]}`,
+                    `중반: ${MID_STRATEGY_LABELS[updated.midStrategy]}`,
+                    `후반: ${LATE_STRATEGY_LABELS[updated.lateStrategy]}`,
                   ],
                   targetMatchId: pendingMatch?.id ?? null,
                   targetDate: pendingMatch?.matchDate ?? season?.currentDate ?? null,
                   gameDate: season?.currentDate ?? pendingMatch?.matchDate ?? '2000-01-01',
                 });
-                setMessage({ text: 'AI 추천 전술이 적용되었습니다.', type: 'success' });
+                setMessage({ text: 'AI 추천 전술을 적용했습니다.', type: 'success' });
               } catch {
                 setMessage({ text: '전술 적용에 실패했습니다.', type: 'error' });
               }
+
               setAiSuggestion(null);
             }}
           >
@@ -252,10 +270,10 @@ export function TacticsView() {
                 });
                 const refreshed = await getTeamTactics(userTeamId);
                 setTacticsState(refreshed ?? createDefaultTactics(userTeamId));
-                setMessage({ text: '코치 추천 전술안을 적용했습니다.', type: 'success' });
+                setMessage({ text: '코치 추천 전술을 적용했습니다.', type: 'success' });
               } catch (error) {
                 console.error('코치 전술 추천 적용 실패:', error);
-                setMessage({ text: '코치 추천 전술안 적용에 실패했습니다.', type: 'error' });
+                setMessage({ text: '코치 추천 전술 적용에 실패했습니다.', type: 'error' });
               }
             }}
           >
@@ -270,14 +288,13 @@ export function TacticsView() {
         </div>
       )}
 
-      {/* 전략 선택 섹션 */}
       <MainLoopPanel
-        eyebrow="Tactics Loop"
-        title="전술 조정도 다음 경기 준비 흐름 안에서 바로 읽히게 정리했습니다"
-        subtitle="세부 수치보다 먼저, 지금 전술이 무엇을 노리고 있고 어떤 리스크를 안고 있는지 한 화면에서 파악할 수 있게 상단 요약을 추가했습니다."
+        eyebrow="전술 루프"
+        title="전술 조정을 다음 경기 준비 흐름 안에서 바로 읽히게 정리했습니다"
+        subtitle="세부 수치를 보기 전에, 지금 전술이 무엇을 밀고 있고 어떤 리스크를 안고 있는지 먼저 파악할 수 있게 상단 요약을 추가했습니다."
         insights={[
           {
-            label: '오늘 해야 할 일',
+            label: '오늘의 핵심 전술',
             value: `${EARLY_STRATEGY_LABELS[tactics.earlyStrategy]} / ${MID_STRATEGY_LABELS[tactics.midStrategy]}`,
             detail: `후반 운영은 ${LATE_STRATEGY_LABELS[tactics.lateStrategy]}, 시야 우선순위는 ${WARD_PRIORITY_LABELS[tactics.wardPriority]}입니다.`,
             tone: 'accent',
@@ -291,13 +308,15 @@ export function TacticsView() {
           {
             label: '다음 경기',
             value: pendingMatch ? `${pendingMatch.matchDate ?? '일정'} vs ${nextOpponent}` : '경기 일정 대기',
-            detail: pendingMatch ? '밴픽과 오브젝트 우선순위 판단을 미리 맞춰 두면 경기 당일 판단이 훨씬 빨라집니다.' : '경기 일정이 가까워지면 이 화면의 결정이 DayView와 프리매치 준비에 바로 연결됩니다.',
+            detail: pendingMatch
+              ? '밴픽과 오브젝트 우선순위를 미리 맞추면 경기 판단도 훨씬 빨라집니다.'
+              : '경기 일정이 가까워지면 여기서 정한 방향이 DayView와 프리매치 준비로 바로 연결됩니다.',
             tone: 'accent',
           },
           {
             label: '코치 조언',
             value: coachRecommendation?.authorName ?? (aiSuggestion ? 'AI 코치' : '준비 완료'),
-            detail: coachRecommendation?.headline ?? aiSuggestion?.suggestion ?? '현재 전술 보정치와 운영 축이 안정권입니다. 다음 상대가 잡히면 세부 조정을 이어가면 됩니다.',
+            detail: coachRecommendation?.headline ?? aiSuggestion?.suggestion ?? '현재 전술 보정치는 운영 축이 안정권입니다. 다음 상대가 잡히면 세부 조정을 이어가면 됩니다.',
             tone: 'success',
           },
         ]}
@@ -333,66 +352,78 @@ export function TacticsView() {
         </div>
         <div className="fm-panel__body">
           <div className="fm-grid fm-grid--auto">
-            {/* 초반 전략 */}
             <div className="fm-card">
-              <label className="fm-text-base fm-font-semibold fm-text-primary fm-mb-sm" style={{ display: 'block' }}>초반 전략</label>
-              <p className="fm-text-xs fm-text-muted fm-mb-sm" style={{ marginTop: 0 }}>라인전 ~ 1차 오브젝트</p>
+              <label className="fm-text-base fm-font-semibold fm-text-primary fm-mb-sm" style={{ display: 'block' }}>
+                초반 전략
+              </label>
+              <p className="fm-text-xs fm-text-muted fm-mb-sm" style={{ marginTop: 0 }}>
+                라인전부터 첫 오브젝트까지의 운영 기조를 정합니다.
+              </p>
               <select
                 className="fm-select"
                 style={{ width: '100%' }}
                 value={tactics.earlyStrategy}
                 onChange={e => handleChange('earlyStrategy', e.target.value as EarlyStrategy)}
               >
-                {EARLY_STRATEGIES.map(s => (
-                  <option key={s} value={s}>{EARLY_STRATEGY_LABELS[s]}</option>
+                {EARLY_STRATEGIES.map((strategy) => (
+                  <option key={strategy} value={strategy}>{EARLY_STRATEGY_LABELS[strategy]}</option>
                 ))}
               </select>
             </div>
 
-            {/* 중반 전략 */}
             <div className="fm-card">
-              <label className="fm-text-base fm-font-semibold fm-text-primary fm-mb-sm" style={{ display: 'block' }}>중반 전략</label>
-              <p className="fm-text-xs fm-text-muted fm-mb-sm" style={{ marginTop: 0 }}>오브젝트 쟁탈 ~ 타워 압박</p>
+              <label className="fm-text-base fm-font-semibold fm-text-primary fm-mb-sm" style={{ display: 'block' }}>
+                중반 전략
+              </label>
+              <p className="fm-text-xs fm-text-muted fm-mb-sm" style={{ marginTop: 0 }}>
+                오브젝트 교환과 시야 압박 구간의 운영 성향을 조정합니다.
+              </p>
               <select
                 className="fm-select"
                 style={{ width: '100%' }}
                 value={tactics.midStrategy}
                 onChange={e => handleChange('midStrategy', e.target.value as MidStrategy)}
               >
-                {MID_STRATEGIES.map(s => (
-                  <option key={s} value={s}>{MID_STRATEGY_LABELS[s]}</option>
+                {MID_STRATEGIES.map((strategy) => (
+                  <option key={strategy} value={strategy}>{MID_STRATEGY_LABELS[strategy]}</option>
                 ))}
               </select>
             </div>
 
-            {/* 후반 전략 */}
             <div className="fm-card">
-              <label className="fm-text-base fm-font-semibold fm-text-primary fm-mb-sm" style={{ display: 'block' }}>후반 전략</label>
-              <p className="fm-text-xs fm-text-muted fm-mb-sm" style={{ marginTop: 0 }}>바론 이후 ~ 넥서스 공략</p>
+              <label className="fm-text-base fm-font-semibold fm-text-primary fm-mb-sm" style={{ display: 'block' }}>
+                후반 전략
+              </label>
+              <p className="fm-text-xs fm-text-muted fm-mb-sm" style={{ marginTop: 0 }}>
+                바론 이후 한타와 마무리 단계의 집중 방향을 정합니다.
+              </p>
               <select
                 className="fm-select"
                 style={{ width: '100%' }}
                 value={tactics.lateStrategy}
                 onChange={e => handleChange('lateStrategy', e.target.value as LateStrategy)}
               >
-                {LATE_STRATEGIES.map(s => (
-                  <option key={s} value={s}>{LATE_STRATEGY_LABELS[s]}</option>
+                {LATE_STRATEGIES.map((strategy) => (
+                  <option key={strategy} value={strategy}>{LATE_STRATEGY_LABELS[strategy]}</option>
                 ))}
               </select>
             </div>
 
-            {/* 와드 우선도 */}
             <div className="fm-card">
-              <label className="fm-text-base fm-font-semibold fm-text-primary fm-mb-sm" style={{ display: 'block' }}>와드 운용</label>
-              <p className="fm-text-xs fm-text-muted fm-mb-sm" style={{ marginTop: 0 }}>시야 장악 성향</p>
+              <label className="fm-text-base fm-font-semibold fm-text-primary fm-mb-sm" style={{ display: 'block' }}>
+                시야 운용
+              </label>
+              <p className="fm-text-xs fm-text-muted fm-mb-sm" style={{ marginTop: 0 }}>
+                와드 투자와 맵 장악 우선순위를 조절합니다.
+              </p>
               <select
                 className="fm-select"
                 style={{ width: '100%' }}
                 value={tactics.wardPriority}
                 onChange={e => handleChange('wardPriority', e.target.value as WardPriority)}
               >
-                {WARD_PRIORITIES.map(w => (
-                  <option key={w} value={w}>{WARD_PRIORITY_LABELS[w]}</option>
+                {WARD_PRIORITIES.map((priority) => (
+                  <option key={priority} value={priority}>{WARD_PRIORITY_LABELS[priority]}</option>
                 ))}
               </select>
             </div>
@@ -400,17 +431,15 @@ export function TacticsView() {
         </div>
       </div>
 
-      {/* 슬라이더 섹션 */}
       <div className="fm-panel fm-mb-lg">
         <div className="fm-panel__header">
           <span className="fm-panel__title">세부 수치 조정</span>
         </div>
         <div className="fm-panel__body">
           <div className="fm-flex-col fm-gap-md">
-            {/* 드래곤 우선도 */}
             <div className="fm-card">
               <div className="fm-flex fm-items-center fm-justify-between fm-mb-sm">
-                <label className="fm-text-base fm-font-semibold fm-text-primary">드래곤 우선도</label>
+                <label className="fm-text-base fm-font-semibold fm-text-primary">드래곤 우선순위</label>
                 <span className="fm-text-xl fm-font-bold fm-text-accent">{tactics.dragonPriority}</span>
               </div>
               <div className="fm-flex fm-items-center fm-gap-sm">
@@ -427,10 +456,9 @@ export function TacticsView() {
               </div>
             </div>
 
-            {/* 바론 우선도 */}
             <div className="fm-card">
               <div className="fm-flex fm-items-center fm-justify-between fm-mb-sm">
-                <label className="fm-text-base fm-font-semibold fm-text-primary">바론 우선도</label>
+                <label className="fm-text-base fm-font-semibold fm-text-primary">바론 우선순위</label>
                 <span className="fm-text-xl fm-font-bold fm-text-accent">{tactics.baronPriority}</span>
               </div>
               <div className="fm-flex fm-items-center fm-gap-sm">
@@ -447,7 +475,6 @@ export function TacticsView() {
               </div>
             </div>
 
-            {/* 공격성 레벨 */}
             <div className="fm-card">
               <div className="fm-flex fm-items-center fm-justify-between fm-mb-sm">
                 <label className="fm-text-base fm-font-semibold fm-text-primary">공격성 레벨</label>
@@ -470,7 +497,6 @@ export function TacticsView() {
         </div>
       </div>
 
-      {/* 전술 효과 미리보기 */}
       <div className="fm-panel">
         <div className="fm-panel__header">
           <span className="fm-panel__title">전술 보정 효과</span>
@@ -488,10 +514,10 @@ export function TacticsView() {
           <div className="fm-card">
             <h3 className="fm-text-lg fm-font-semibold fm-text-accent fm-mb-sm">전술 효과 설명</h3>
             <div className="fm-flex-col fm-gap-xs fm-text-xs fm-text-secondary">
-              <div><strong style={{ color: '#4ecdc4' }}>초반 보정:</strong> 라인전 및 초반 교전 승률에 영향</div>
-              <div><strong style={{ color: 'var(--accent)' }}>중반 보정:</strong> 중반 운영 및 로밍 효율에 영향</div>
-              <div><strong style={{ color: '#9b59b6' }}>후반 보정:</strong> 후반 한타 및 마무리 능력에 영향</div>
-              <div><strong style={{ color: '#e67e22' }}>오브젝트 보정:</strong> 드래곤/바론 확보율에 영향</div>
+              <div><strong style={{ color: '#4ecdc4' }}>초반 보정:</strong> 라인전과 초반 교전 승률에 영향</div>
+              <div><strong style={{ color: 'var(--accent)' }}>중반 보정:</strong> 중반 운영과 로밍 효율에 영향</div>
+              <div><strong style={{ color: '#9b59b6' }}>후반 보정:</strong> 후반 한타와 마무리 능력에 영향</div>
+              <div><strong style={{ color: '#e67e22' }}>오브젝트 보정:</strong> 드래곤과 바론 장악력에 영향</div>
             </div>
           </div>
         </div>

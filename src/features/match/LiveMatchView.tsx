@@ -33,17 +33,17 @@ const BroadcastBattlefield = lazy(() => import('./BroadcastBattlefield').then((m
 const BroadcastMiniMap = lazy(() => import('./BroadcastMiniMap').then((module) => ({ default: module.BroadcastMiniMap })));
 
 const SPEED_PRESETS: Array<{ key: MatchSpeedPreset; label: string }> = [
-  { key: 'focus', label: 'Focus' },
-  { key: 'standard', label: 'Standard' },
-  { key: 'fast', label: 'Fast' },
+  { key: 'focus', label: '집중' },
+  { key: 'standard', label: '기본' },
+  { key: 'fast', label: '고속' },
 ];
 
 const PHASE_LABELS: Record<string, string> = {
-  loading: 'Loading',
-  laning: 'Laning',
-  mid_game: 'Mid Game',
-  late_game: 'Late Game',
-  finished: 'Finished',
+  loading: '로딩',
+  laning: '라인전',
+  mid_game: '중반',
+  late_game: '후반',
+  finished: '종료',
 };
 
 const CHAT_TYPE_COLORS: Record<string, string> = {
@@ -59,11 +59,59 @@ function getTickInterval(speed: number) {
 }
 
 function formatZone(zone: string) {
-  return zone.replace(/_/g, ' ');
+  const labels: Record<string, string> = {
+    home_base: '블루 본진',
+    away_base: '레드 본진',
+    top_lane: '탑 라인',
+    mid_lane: '미드 라인',
+    bot_lane: '봇 라인',
+    top_river: '상단 강가',
+    mid_river: '중앙 강가',
+    bot_river: '하단 강가',
+    home_jungle: '블루 정글',
+    away_jungle: '레드 정글',
+    dragon_pit: '드래곤 둥지',
+    baron_pit: '바론 둥지',
+    center: '중앙',
+  };
+  return labels[zone] ?? zone.replace(/_/g, ' ');
+}
+
+function formatObjectiveKey(key: string) {
+  const labels: Record<string, string> = {
+    dragon: '드래곤',
+    herald: '전령',
+    baron: '바론',
+  };
+  return labels[key] ?? key;
+}
+
+function formatEventType(type: string) {
+  const labels: Record<string, string> = {
+    kill: '킬',
+    tower_destroy: '포탑 파괴',
+    dragon: '드래곤',
+    baron: '바론',
+    teamfight: '한타',
+    gank: '갱킹',
+    lane_swap: '라인 스왑',
+    solo_kill: '솔로킬',
+    dive: '다이브',
+    invade: '인베이드',
+    elder_dragon: '장로 드래곤',
+    rift_herald: '전령',
+    void_grub: '공허 유충',
+    ace: '에이스',
+    base_race: '넥서스 레이스',
+    backdoor: '백도어',
+    steal: '스틸',
+    pentakill: '펜타킬',
+  };
+  return labels[type] ?? type;
 }
 
 function formatGoldDiff(diff: number) {
-  const leader = diff >= 0 ? 'Blue side' : 'Red side';
+  const leader = diff >= 0 ? '블루 진영' : '레드 진영';
   return `${leader} +${Math.abs(Math.round(diff / 100)) / 10}k`;
 }
 
@@ -433,29 +481,29 @@ export function LiveMatchView() {
   }, [gameState]);
 
   const goldTrendSummary = useMemo(() => {
-    if (!gameState || gameState.goldHistory.length < 2) return 'Gold flow is still forming. Early lanes are testing for priority.';
+    if (!gameState || gameState.goldHistory.length < 2) return '골드 흐름이 아직 형성되는 중입니다. 초반 라인전에서 주도권을 탐색하고 있습니다.';
     const recent = gameState.goldHistory.slice(-5);
     const start = recent[0]?.diff ?? 0;
     const end = recent[recent.length - 1]?.diff ?? 0;
     const swing = end - start;
-    if (Math.abs(swing) < 400) return `The map remains relatively even. Current edge: ${formatGoldDiff(end)}.`;
-    const momentum = swing > 0 ? 'Blue side has taken the recent tempo.' : 'Red side has taken the recent tempo.';
-    return `${momentum} The last swing was ${Math.abs(Math.round(swing / 100)) / 10}k.`;
+    if (Math.abs(swing) < 400) return `맵 흐름은 아직 팽팽합니다. 현재 우세는 ${formatGoldDiff(end)}입니다.`;
+    const momentum = swing > 0 ? '최근 템포는 블루 진영이 가져갔습니다.' : '최근 템포는 레드 진영이 가져갔습니다.';
+    return `${momentum} 직전 흔들림은 ${Math.abs(Math.round(swing / 100)) / 10}k 규모였습니다.`;
   }, [gameState]);
 
   const objectivePressureSummary = useMemo(() => {
-    if (!gameState) return 'Major neutral objectives are not active yet.';
+    if (!gameState) return '주요 중립 오브젝트가 아직 활성화되지 않았습니다.';
     const nextObjective = [...gameState.objectiveStates]
       .filter((objective) => objective.nextSpawnTick !== undefined)
       .sort((left, right) => (left.nextSpawnTick ?? Number.MAX_SAFE_INTEGER) - (right.nextSpawnTick ?? Number.MAX_SAFE_INTEGER))[0];
-    if (!nextObjective) return 'No contested neutral objective is currently scheduled.';
-    return `${nextObjective.key} is the next flashpoint at ${nextObjective.nextSpawnTick}:00 near ${formatZone(nextObjective.zone)}.`;
+    if (!nextObjective) return '당장 충돌할 중립 오브젝트 일정은 없습니다.';
+    return `${nextObjective.key} 전투가 ${nextObjective.nextSpawnTick}:00, ${formatZone(nextObjective.zone)} 인근에서 예정되어 있습니다.`;
   }, [gameState]);
 
   const currentFocusSummary = useMemo(() => {
-    if (!gameState) return 'Camera is waiting for the next meaningful shift on the map.';
-    if (!gameState.focusEvent) return `Camera is hovering around ${formatZone(gameState.cameraZone)} to track the next rotation.`;
-    return `${gameState.focusEvent.eventType} is pulling attention toward ${formatZone(gameState.focusEvent.zone)}.`;
+    if (!gameState) return '카메라는 다음 의미 있는 장면을 기다리고 있습니다.';
+    if (!gameState.focusEvent) return `카메라는 ${formatZone(gameState.cameraZone)} 주변에서 다음 합류 동선을 추적 중입니다.`;
+    return `${formatEventType(gameState.focusEvent.eventType)} 장면이 ${formatZone(gameState.focusEvent.zone)} 쪽으로 시선을 끌고 있습니다.`;
   }, [gameState]);
 
   const winrateSummary = useMemo(() => {
@@ -548,7 +596,7 @@ export function LiveMatchView() {
   }
 
   if (!pendingMatch || !gameState) {
-    return <p className="fm-text-muted fm-text-md">Loading live match...</p>;
+    return <p className="fm-text-muted fm-text-md">실시간 경기를 불러오는 중...</p>;
   }
 
   return (
@@ -566,7 +614,7 @@ export function LiveMatchView() {
       {!gameState.isFinished && (
         <div className="match-control-bar">
           <button className={`fm-btn ${isRunning ? 'fm-btn--danger' : 'fm-btn--success'}`} onClick={() => setIsRunning((previous) => !previous)}>
-            {isRunning ? 'Pause' : 'Start'}
+            {isRunning ? '일시정지' : '시작'}
           </button>
           <div className="match-speed-row">
             {SPEED_PRESETS.map((preset) => (
@@ -591,7 +639,7 @@ export function LiveMatchView() {
 
         <div className="broadcast-layout__center">
           <div className="broadcast-focus-strip">
-            <span className="broadcast-focus-strip__eyebrow">Director Focus</span>
+            <span className="broadcast-focus-strip__eyebrow">중계 포커스</span>
             <span className="broadcast-focus-strip__copy">{focusSummary}</span>
           </div>
 
@@ -604,31 +652,31 @@ export function LiveMatchView() {
           <div className="broadcast-stage-notes">
             {broadcastNarrative ? (
               <div className="broadcast-stage-note">
-                <h3 className="broadcast-stage-note__title">Broadcast Story</h3>
+                <h3 className="broadcast-stage-note__title">중계 서사</h3>
                 <div className="broadcast-stage-note__metric-row">
                   <span className="broadcast-stage-note__metric">{broadcastNarrative.storyTag}</span>
-                  <span className="broadcast-stage-note__metric-label">LoL desk angle</span>
+                  <span className="broadcast-stage-note__metric-label">분석 데스크 포인트</span>
                 </div>
                 <p className="broadcast-stage-note__copy">{broadcastNarrative.openingLine}</p>
                 <p className="broadcast-stage-note__copy">{broadcastNarrative.castingLine}</p>
               </div>
             ) : null}
             <div className="broadcast-stage-note">
-              <h3 className="broadcast-stage-note__title">Current Focus</h3>
+              <h3 className="broadcast-stage-note__title">현재 포커스</h3>
               <p className="broadcast-stage-note__copy">{currentFocusSummary}</p>
             </div>
             <div className="broadcast-stage-note">
-              <h3 className="broadcast-stage-note__title">Latest Highlight</h3>
+              <h3 className="broadcast-stage-note__title">방금 나온 하이라이트</h3>
               <p className="broadcast-stage-note__copy">
-                {lastMajorEvent ? `${lastMajorEvent.tick}:00 ${formatZone(lastMajorEvent.zone ?? 'center')} - ${lastMajorEvent.type}. ${lastMajorEvent.description}` : 'Waiting for the next major fight.'}
+                {lastMajorEvent ? `${lastMajorEvent.tick}:00 ${formatZone(lastMajorEvent.zone ?? 'center')} - ${formatEventType(lastMajorEvent.type)}. ${lastMajorEvent.description}` : '다음 대형 교전을 기다리는 중입니다.'}
               </p>
             </div>
             <div className="broadcast-stage-note">
-              <h3 className="broadcast-stage-note__title">Gold Trend</h3>
+              <h3 className="broadcast-stage-note__title">골드 흐름</h3>
               {winrateSummary ? (
                 <div className="broadcast-stage-note__metric-row">
                   <span className="broadcast-stage-note__metric">{winrateSummary.homePct}% / {winrateSummary.awayPct}%</span>
-                  <span className="broadcast-stage-note__metric-label">{winrateSummary.leader} favored</span>
+                  <span className="broadcast-stage-note__metric-label">{winrateSummary.leader} 우세</span>
                 </div>
               ) : null}
               <p className="broadcast-stage-note__copy">{goldTrendSummary}</p>
@@ -637,10 +685,10 @@ export function LiveMatchView() {
               ) : null}
             </div>
             <div className="broadcast-stage-note">
-              <h3 className="broadcast-stage-note__title">Objective Pressure</h3>
+              <h3 className="broadcast-stage-note__title">오브젝트 압박</h3>
               {objectiveCountdown ? (
                 <div className="broadcast-stage-note__metric-row">
-                  <span className="broadcast-stage-note__metric">{objectiveCountdown.key}</span>
+                  <span className="broadcast-stage-note__metric">{formatObjectiveKey(objectiveCountdown.key)}</span>
                   <span className="broadcast-stage-note__metric-label">{objectiveCountdown.time} / {objectiveCountdown.zone}</span>
                 </div>
               ) : null}
@@ -664,7 +712,7 @@ export function LiveMatchView() {
                   </div>
                 </div>
               )) : (
-                <span className="broadcast-momentum-strip__empty">Momentum rail is waiting for more gold snapshots.</span>
+                <span className="broadcast-momentum-strip__empty">모멘텀 그래프가 더 많은 골드 기록을 기다리고 있습니다.</span>
               )}
             </div>
             <div className="broadcast-momentum-strip__events">
@@ -679,8 +727,8 @@ export function LiveMatchView() {
           {replayHighlights.length > 0 ? (
             <div className="broadcast-highlight-reel">
               <div className="broadcast-highlight-reel__header">
-                <h3>Highlight Reel</h3>
-                <span>Director queue</span>
+                <h3>하이라이트 리플레이</h3>
+                <span>중계 큐</span>
               </div>
               <div className="broadcast-highlight-reel__list">
                 {replayHighlights.map((highlight) => (
@@ -705,8 +753,8 @@ export function LiveMatchView() {
           <div className="broadcast-support-rail">
             <CommentaryPanel commentary={gameState.commentary} panelRef={commentaryRef} />
             <div className="match-chat-panel" ref={chatRef}>
-              <h3 className="match-chat-title">Live Chat</h3>
-              {liveChatMessages.length === 0 ? <p className="match-chat-empty">Audience reactions will appear after major moments.</p> : liveChatMessages.map((message, index) => (
+              <h3 className="match-chat-title">실시간 채팅</h3>
+              {liveChatMessages.length === 0 ? <p className="match-chat-empty">큰 장면이 나오면 관중 반응이 표시됩니다.</p> : liveChatMessages.map((message, index) => (
                 <div key={`${message.username}-${index}`} className="match-chat-item">
                   <span className="match-chat-username" style={{ color: CHAT_TYPE_COLORS[message.type] ?? '#8a8a9a' }}>{message.username}</span>
                   <span className="match-chat-message">{message.message}</span>
@@ -723,7 +771,7 @@ export function LiveMatchView() {
       {gameState.isFinished && !betweenGames && !seriesComplete ? (
         <div className="match-end-cta">
           <button className="fm-btn fm-btn--primary fm-btn--lg" onClick={() => void handleGameEnd()}>
-            {pendingMatch.boFormat === 'Bo1' ? 'Open Match Summary' : `Wrap Up Game ${currentGameNum}`}
+            {pendingMatch.boFormat === 'Bo1' ? '경기 요약 보기' : `${currentGameNum}세트 정리하기`}
           </button>
         </div>
       ) : null}
@@ -731,7 +779,7 @@ export function LiveMatchView() {
       {betweenGames ? (
         <div className="fm-overlay">
           <div className="match-between-modal">
-            <h2 className="match-between-title">Between Games</h2>
+            <h2 className="match-between-title">세트 사이 브리핑</h2>
             {gameResults.length > 0 ? (
               <PostGameStats
                 gameResult={gameResults[gameResults.length - 1]}
@@ -742,22 +790,22 @@ export function LiveMatchView() {
               />
             ) : null}
             <div className="match-between-series-score">
-              <span className="match-between-series-label">Series Score</span>
+              <span className="match-between-series-label">시리즈 스코어</span>
               <span className="match-between-series-value">{seriesScore.home} - {seriesScore.away}</span>
             </div>
             {mode === 'manager' ? (
               <div className="match-between-talk-section">
-                <span className="match-between-talk-label">Team Talk</span>
+                <span className="match-between-talk-label">팀 토크</span>
                 {!teamTalkDone ? (
                   <div className="match-between-talk-btns">
-                    <button className="fm-btn fm-btn--success" onClick={() => void handleBetweenGamesTalk('motivate')}>Motivate</button>
-                    <button className="fm-btn fm-btn--info" onClick={() => void handleBetweenGamesTalk('calm')}>Calm</button>
-                    <button className="fm-btn fm-btn--warning" onClick={() => void handleBetweenGamesTalk('warn')}>Warn</button>
+                    <button className="fm-btn fm-btn--success" onClick={() => void handleBetweenGamesTalk('motivate')}>격려</button>
+                    <button className="fm-btn fm-btn--info" onClick={() => void handleBetweenGamesTalk('calm')}>진정</button>
+                    <button className="fm-btn fm-btn--warning" onClick={() => void handleBetweenGamesTalk('warn')}>경고</button>
                   </div>
                 ) : <p className="match-between-talk-result">{teamTalkResult}</p>}
               </div>
             ) : null}
-            <button className="fm-btn fm-btn--primary fm-btn--lg" onClick={handleProceedToNextGame}>Go To Next Draft</button>
+            <button className="fm-btn fm-btn--primary fm-btn--lg" onClick={handleProceedToNextGame}>다음 드래프트로 이동</button>
           </div>
         </div>
       ) : null}

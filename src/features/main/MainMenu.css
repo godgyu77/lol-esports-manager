@@ -368,3 +368,116 @@
     bottom: 16px;
   }
 }
+
+/* UX polish */
+.launcher__hero {
+  gap: 34px;
+}
+
+.launcher__hub {
+  gap: 18px;
+}
+
+@media (min-width: 981px) {
+  .launcher__hub {
+    position: sticky;
+    top: 28px;
+    align-self: start;
+  }
+}
+
+.launcher__story-card,
+.launcher__continue-card,
+.launcher__menu-card,
+.launcher__identity-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.launcher__story-card::before,
+.launcher__continue-card::before,
+.launcher__identity-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(209, 168, 76, 0), rgba(209, 168, 76, 0.7), rgba(209, 168, 76, 0));
+  opacity: 0.85;
+}
+
+.launcher__story-card,
+.launcher__identity-card {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02)),
+    rgba(9, 14, 26, 0.78);
+}
+
+.launcher__story-card {
+  min-height: 188px;
+  transition: transform 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease;
+}
+
+.launcher__story-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(209, 168, 76, 0.24);
+  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.22);
+}
+
+.launcher__story-card strong {
+  line-height: 1.28;
+}
+
+.launcher__continue-card {
+  border-color: rgba(209, 168, 76, 0.22);
+  background:
+    radial-gradient(circle at top right, rgba(209, 168, 76, 0.16), transparent 34%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02)),
+    rgba(9, 14, 26, 0.82);
+}
+
+.launcher__continue-title {
+  margin-top: 8px;
+  max-width: 13ch;
+  text-wrap: balance;
+}
+
+.launcher__continue-meta span,
+.launcher__footer-pill {
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.launcher__primary-cta {
+  box-shadow: 0 18px 36px rgba(143, 108, 30, 0.28);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
+}
+
+.launcher__primary-cta:hover {
+  box-shadow: 0 22px 42px rgba(143, 108, 30, 0.34);
+  filter: saturate(1.08);
+}
+
+.launcher__menu-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 18px;
+  border-color: rgba(255, 255, 255, 0.07);
+}
+
+.launcher__menu-card strong {
+  line-height: 1.3;
+}
+
+.launcher__menu-card p {
+  margin-top: auto;
+}
+
+.launcher__menu-card:hover {
+  box-shadow: 0 18px 34px rgba(0, 0, 0, 0.2);
+}
+
+.launcher__menu-card--danger {
+  background:
+    linear-gradient(180deg, rgba(255, 90, 90, 0.06), rgba(255, 255, 255, 0.02)),
+    rgba(9, 14, 26, 0.78);
+}

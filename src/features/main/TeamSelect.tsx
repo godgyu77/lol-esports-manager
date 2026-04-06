@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+﻿import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGameStore } from '../../stores/gameStore';
 import { LCK_TEAMS, LCS_TEAMS, LEC_TEAMS, LPL_TEAMS } from '../../data/rosterDb';
@@ -122,7 +122,7 @@ export function TeamSelect() {
       <div className="intro-shell">
         <header className="fm-panel intro-hero intro-panel-soft">
           <div className="fm-panel__body" style={{ padding: 28 }}>
-            <div className="fm-text-xs fm-font-semibold fm-text-accent fm-text-upper fm-mb-sm">Club Entry</div>
+            <div className="fm-text-xs fm-font-semibold fm-text-accent fm-text-upper fm-mb-sm">팀 입단 브리핑</div>
             <h1 className="fm-text-2xl fm-font-bold fm-text-primary" style={{ margin: 0 }}>첫 시즌을 맡을 팀을 선택하세요</h1>
             <p className="fm-text-md fm-text-muted fm-mt-sm" style={{ lineHeight: 1.7 }}>
               {mode === 'manager'

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { checkOllamaStatus } from '../../ai/provider';
 import { getSaveSlots, loadSave } from '../../engine/save/saveEngine';
@@ -37,10 +37,10 @@ function getSaveResumeSummary(save: GameSave): { headline: string; subline: stri
 }
 
 const EXPERIENCE_PILLARS = [
-  'Patch-driven team building',
-  'Coach room and roster politics',
-  'Draft, scrim, and broadcast storylines',
-  'Long-form esports career arcs',
+  '패치 변화에 맞춰 팀을 설계하는 운영',
+  '코치진 운영과 로스터 정치',
+  '드래프트, 스크림, 중계 서사가 이어지는 시즌',
+  '오래 기억되는 e스포츠 커리어 아크',
 ] as const;
 
 export function MainMenu() {
@@ -97,19 +97,19 @@ export function MainMenu() {
             <div className="launcher__logo-icon">
               <img
                 src="/icons/icon.png"
-                alt="LoL ESM"
+                alt="LoL e스포츠 매니저"
                 className="launcher__logo-img"
                 onError={(event) => { (event.target as HTMLImageElement).style.display = 'none'; }}
               />
             </div>
-            <div className="launcher__eyebrow">LEAGUE FRONT OFFICE SIM</div>
-            <h1 className="launcher__title">LoL Esports Manager</h1>
+            <div className="launcher__eyebrow">리그 프런트 오피스 시뮬레이션</div>
+            <h1 className="launcher__title">LoL e스포츠 매니저</h1>
             <p className="launcher__subtitle">
               밴픽부터 로스터 운영, 시즌 목표와 국제전 기대감까지.
               <br />
               내 시즌을 직접 이끄는 e스포츠 매니지먼트 경험입니다.
             </p>
-            <div className="launcher__pillar-row" aria-label="Experience pillars">
+            <div className="launcher__pillar-row" aria-label="핵심 경험 요소">
               {EXPERIENCE_PILLARS.map((pillar) => (
                 <span key={pillar} className="launcher__pillar-chip">{pillar}</span>
               ))}
@@ -187,31 +187,31 @@ export function MainMenu() {
           </div>
 
           <div className="launcher__identity-card">
-            <span className="launcher__continue-label">BRAND NOTE</span>
-            <strong>Built as a LoL esports operations game, not a football reskin.</strong>
+            <span className="launcher__continue-label">브랜드 노트</span>
+            <strong>축구 게임의 스킨이 아니라 LoL e스포츠 운영 게임으로 설계했습니다.</strong>
             <p>
-              Patch reads, staff trust, player chemistry, broadcast pressure, and long career identity now sit inside one loop.
+              패치 해석, 스태프 신뢰, 선수 케미, 방송 압박, 장기 커리어 정체성이 하나의 루프 안에 묶여 있습니다.
             </p>
           </div>
 
           <div className="launcher__menu-grid">
             <button className="launcher__menu-card" onClick={() => navigate('/mode-select')}>
-              <span className="launcher__menu-kicker">NEW RUN</span>
+              <span className="launcher__menu-kicker">새 시작</span>
               <strong>새 커리어</strong>
               <p>감독 또는 선수로 새 시즌에 들어가 첫 선택부터 시작합니다.</p>
             </button>
             <button className="launcher__menu-card" onClick={() => navigate('/save-load')}>
-              <span className="launcher__menu-kicker">RESUME</span>
+              <span className="launcher__menu-kicker">이어하기</span>
               <strong>세이브 관리</strong>
               <p>자동 저장과 수동 저장을 확인하고, 원하는 지점으로 정확히 복귀합니다.</p>
             </button>
             <button className="launcher__menu-card" onClick={() => navigate('/settings')}>
-              <span className="launcher__menu-kicker">SETUP</span>
+              <span className="launcher__menu-kicker">설정</span>
               <strong>환경 설정</strong>
               <p>로컬 AI, 사운드 볼륨, 자동 저장 옵션을 플레이 스타일에 맞춰 조정합니다.</p>
             </button>
             <button className="launcher__menu-card launcher__menu-card--danger" onClick={() => void exitApp()}>
-              <span className="launcher__menu-kicker">EXIT</span>
+              <span className="launcher__menu-kicker">종료</span>
               <strong>게임 종료</strong>
               <p>현재 설정과 세이브 상태를 유지한 채 프로그램을 종료합니다.</p>
             </button>

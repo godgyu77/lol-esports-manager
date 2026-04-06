@@ -1,14 +1,15 @@
-/**
- * 훈련 관리 페이지
- * - 탭 1: 주간 훈련 스케줄 설정
- * - 탭 2: 선수 개별 훈련 배정
- * - 탭 3: 훈련 이력
- * - 탭 4: 멘토링
+﻿/**
+ * ?덈젴 愿由??섏씠吏
+ * - ??1: 二쇨컙 ?덈젴 ?ㅼ?以??ㅼ젙
+ * - ??2: ?좎닔 媛쒕퀎 ?덈젴 諛곗젙
+ * - ??3: ?덈젴 ?대젰
+ * - ??4: 硫섑넗留?
  */
 
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGameStore } from '../../../stores/gameStore';
+import { MainLoopPanel } from '../components/MainLoopPanel';
 import {
   getTrainingSchedule,
   setTrainingSchedule,
@@ -44,9 +45,8 @@ import { POSITION_LABELS_SHORT as POSITION_LABELS } from '../../../utils/constan
 import { applyCoachTrainingRecommendation, generateInitialCoachRecommendations } from '../../../engine/manager/managerSetupEngine';
 import { getPrepRecommendationRecords, recordPrepRecommendation } from '../../../engine/manager/systemDepthEngine';
 import type { CoachSetupRecommendation } from '../../../types/managerSetup';
-import { MainLoopPanel } from '../components/MainLoopPanel';
-import { useToolbarNavigation } from '../hooks/useToolbarNavigation';
 import type { PrepRecommendationRecord } from '../../../types/systemDepth';
+import { useToolbarNavigation } from '../hooks/useToolbarNavigation';
 
 type Tab = 'schedule' | 'individual' | 'logs' | 'mentoring';
 const TRAINING_TABS: Tab[] = ['schedule', 'individual', 'logs', 'mentoring'];
@@ -55,10 +55,18 @@ const DAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
 const ACTIVITY_OPTIONS: TrainingActivity[] = ['rest', 'training', 'scrim'];
 const TRAINING_TYPES: TrainingType[] = ['general', 'laning', 'teamfight', 'macro', 'champion_pool', 'mental', 'physical'];
 const INTENSITY_OPTIONS: TrainingIntensity[] = ['light', 'normal', 'intense'];
-const INTENSITY_LABELS: Record<TrainingIntensity, string> = { light: '가벼운', normal: '보통', intense: '강도 높은' };
+const INTENSITY_LABELS: Record<TrainingIntensity, string> = {
+  light: '가벼움',
+  normal: '보통',
+  intense: '강도 높음',
+};
 const STAT_LABELS: Record<TrainableStat, string> = {
-  mechanical: '기계적', gameSense: '판단력', teamwork: '팀워크',
-  consistency: '일관성', laning: '라인전', aggression: '공격성',
+  mechanical: '기계력',
+  gameSense: '판단력',
+  teamwork: '팀워크',
+  consistency: '안정성',
+  laning: '라인전',
+  aggression: '공격성',
 };
 const POS_CLASS: Record<string, string> = {
   top: 'fm-pos-badge--top',
@@ -89,7 +97,7 @@ export function TrainingView() {
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
-  // 멘토링 상태
+  // 硫섑넗留??곹깭
   const [mentoringPairs, setMentoringPairs] = useState<MentoringPair[]>([]);
   const [eligibleMentors, setEligibleMentors] = useState<Player[]>([]);
   const [eligibleMentees, setEligibleMentees] = useState<Player[]>([]);
@@ -135,7 +143,7 @@ export function TrainingView() {
       setEligibleMentors(mentors);
       setEligibleMentees(mentees);
 
-      // 스크림 기반 훈련 추천
+      // ?ㅽ겕由?湲곕컲 ?덈젴 異붿쿇
       try {
         const recentScrims = await getRecentScrims(userTeamId, 3);
         if (recentScrims.length > 0) {
@@ -167,8 +175,8 @@ export function TrainingView() {
       setMessage({ text: `${DAY_LABELS[dayOfWeek]}요일 일정 변경 완료`, type: 'success' });
       await loadData();
     } catch (err) {
-      console.error('스케줄 변경 실패:', err);
-      setMessage({ text: '스케줄 변경에 실패했습니다.', type: 'error' });
+      console.error('주간 일정 변경 실패:', err);
+      setMessage({ text: '주간 일정 변경에 실패했습니다.', type: 'error' });
     }
   };
 
@@ -200,7 +208,7 @@ export function TrainingView() {
   if (isLoading) return <p className="fm-text-muted">훈련 정보를 불러오는 중...</p>;
 
   const nextOpponent = pendingMatch
-    ? teams.find((team) => team.id === (pendingMatch.teamHomeId === userTeamId ? pendingMatch.teamAwayId : pendingMatch.teamHomeId))?.name ?? '상대 대기'
+    ? teams.find((team) => team.id === (pendingMatch.teamHomeId === userTeamId ? pendingMatch.teamAwayId : pendingMatch.teamHomeId))?.name ?? '상대 팀 미정'
     : null;
   const currentScheduleSummary = schedule.find((entry) => entry.activityType !== 'rest') ?? schedule[1] ?? null;
   const latestPrepRecord = prepRecords[0] ?? null;
@@ -218,12 +226,12 @@ export function TrainingView() {
       )}
 
       <MainLoopPanel
-        eyebrow="Training Loop"
-        title="훈련 화면도 메인 루프 기준으로 바로 읽히게 정리했습니다"
-        subtitle="지금 이 주간 계획이 다음 경기와 팀 컨디션에 어떤 영향을 주는지 먼저 보고, 그 아래에서 세부 조정을 이어가는 구조입니다."
+        eyebrow="훈련 루프"
+        title="훈련 화면을 메인 루프 기준으로 바로 읽히게 정리했습니다"
+        subtitle="지금 주간 계획이 다음 경기와 팀 컨디션에 어떤 영향을 주는지 먼저 보고, 그 아래에서 세부 조정을 이어가는 구조입니다."
         insights={[
           {
-            label: '오늘 해야 할 일',
+            label: '오늘의 핵심 일정',
             value: tab === 'schedule' ? '주간 스케줄 점검' : tab === 'individual' ? '개별 훈련 조정' : tab === 'logs' ? '훈련 결과 확인' : '멘토링 조정',
             detail: currentScheduleSummary
               ? `${TRAINING_ACTIVITY_LABELS[currentScheduleSummary.activityType]} / ${TRAINING_TYPE_LABELS[currentScheduleSummary.trainingType]} / 강도 ${currentScheduleSummary.intensity}`
@@ -239,13 +247,13 @@ export function TrainingView() {
           {
             label: '다음 경기',
             value: pendingMatch ? `${pendingMatch.matchDate ?? season?.currentDate ?? '일정'} vs ${nextOpponent}` : 'DayView에서 일정 확인',
-            detail: pendingMatch ? '경기 전까지 훈련 강도와 방향을 맞춰 두면 당일 의사결정이 훨씬 단순해집니다.' : '가까운 경기 일정이 잡히면 이 화면의 설정이 바로 준비 루프로 이어집니다.',
+            detail: pendingMatch ? '경기 전까지 훈련 강도와 방향을 맞추면 선수 기세 결정에도 직접 영향을 줍니다.' : '가까운 경기 일정이 잡히면 이 화면 설정이 바로 준비 루프로 이어집니다.',
             tone: 'accent',
           },
           {
             label: '코치 조언',
-            value: coachRecommendation?.authorName ?? '데이터 브리핑',
-            detail: coachRecommendation?.headline ?? scrimRecommendation?.reason ?? '훈련 로그와 스크림 피드백을 보고 다음 조정을 선택하세요.',
+            value: coachRecommendation?.authorName ?? '데일리 브리핑',
+            detail: coachRecommendation?.headline ?? scrimRecommendation?.reason ?? '훈련 로그와 스크림 피드백을 보고 다음 조정 방향을 선택하세요.',
             tone: 'success',
           },
         ]}
@@ -254,7 +262,7 @@ export function TrainingView() {
           { label: '전술 정리', onClick: () => navigate('/manager/tactics') },
           { label: '뉴스 브리핑 보기', onClick: () => navigate('/manager/news'), variant: 'info' },
         ]}
-        note="훈련은 별도 하위 화면이 아니라 메인 루프의 준비 단계라는 점이 바로 읽히도록 상단 요약을 추가했습니다."
+        note="훈련은 별도 하위 화면이 아니라 메인 루프 준비 단계라는 점이 바로 읽히도록 상단 요약을 추가했습니다."
       />
 
       <div className="fm-tabs" role="tablist" aria-label="훈련 화면 섹션" aria-orientation="horizontal">
@@ -362,13 +370,13 @@ export function TrainingView() {
           <button
             className="fm-btn fm-btn--primary fm-btn--sm"
             onClick={async () => {
-              // 게임 내 날짜 기준 요일 계산 (1=월 ~ 6=토)
+              // 게임 날짜 기준 요일 계산
               const gameDate = season?.currentDate ?? pendingMatch?.matchDate ?? '2000-01-01';
               const gameDateObj = new Date(gameDate + 'T00:00:00');
               const dayOfWeek = gameDateObj.getDay(); // 0=일 ~ 6=토
-              // 다음 훈련 가능 요일 (일요일/경기일 제외)
-              let targetDay = dayOfWeek === 0 ? 1 : dayOfWeek; // 일요일이면 월요일
-              if (targetDay === 7) targetDay = 1; // 안전장치
+              // 다음 훈련 배치 요일 계산
+              let targetDay = dayOfWeek === 0 ? 1 : dayOfWeek;
+              if (targetDay === 7) targetDay = 1;
               try {
                 await setTrainingSchedule(
                   userTeamId,
@@ -381,9 +389,9 @@ export function TrainingView() {
                   save.currentSeasonId,
                   gameDate,
                   userTeamId,
-                  coachRecommendation?.authorName ?? '수석',
-                  '최근 스크림',
-                  `${TRAINING_TYPE_LABELS[scrimRecommendation.trainingType as TrainingType] ?? scrimRecommendation.trainingType} 훈련과 ${INTENSITY_LABELS[scrimRecommendation.intensity]} 강도를 추천합니다.`,
+                  coachRecommendation?.authorName ?? '분석' ,
+                  '최근 스크림', 
+                  `${TRAINING_TYPE_LABELS[scrimRecommendation.trainingType as TrainingType] ?? scrimRecommendation.trainingType} 훈련과 ${INTENSITY_LABELS[scrimRecommendation.intensity]} 강도를 추천합니다.`, 
                   [scrimRecommendation.reason],
                 );
                 await recordPrepRecommendation({
@@ -391,21 +399,21 @@ export function TrainingView() {
                   seasonId: save.currentSeasonId,
                   source: 'coach_briefing',
                   focusArea: 'training',
-                  title: '스크림 기반 훈련 조정',
+                  title: '스크림 기반 훈련 조정', 
                   summary: scrimRecommendation.reason,
                   recommendedChanges: [
-                    `${TRAINING_TYPE_LABELS[scrimRecommendation.trainingType as TrainingType] ?? scrimRecommendation.trainingType} 훈련`,
-                    `${INTENSITY_LABELS[scrimRecommendation.intensity]} 강도`,
+                    `${TRAINING_TYPE_LABELS[scrimRecommendation.trainingType as TrainingType] ?? scrimRecommendation.trainingType} 훈련`, 
+                    `${INTENSITY_LABELS[scrimRecommendation.intensity]} 강도`, 
                   ],
                   appliedChanges: [
-                    `${DAY_LABELS[targetDay]}요일에 스크림 편성`,
-                    `${TRAINING_TYPE_LABELS[scrimRecommendation.trainingType as TrainingType] ?? scrimRecommendation.trainingType} 훈련`,
+                    `${DAY_LABELS[targetDay]}요일에 스크림 편성`, 
+                    `${TRAINING_TYPE_LABELS[scrimRecommendation.trainingType as TrainingType] ?? scrimRecommendation.trainingType} 훈련`, 
                   ],
                   targetMatchId: pendingMatch?.id ?? null,
                   targetDate: pendingMatch?.matchDate ?? season?.currentDate ?? null,
                   gameDate,
                 });
-                setMessage({ text: `${DAY_LABELS[targetDay]}요일 스케줄에 추천 훈련을 적용했습니다.`, type: 'success' });
+                setMessage({ text: `${DAY_LABELS[targetDay]}요일 일정에 추천 훈련을 적용했습니다.`, type: 'success' });
                 await loadData();
               } catch {
                 setMessage({ text: '추천 훈련 적용에 실패했습니다.', type: 'error' });
@@ -437,10 +445,10 @@ export function TrainingView() {
         </div>
       )}
 
-      {/* 탭 1: 주간 스케줄 */}
+      {/* 주간 스케줄 */}
       {tab === 'schedule' && (
         <div>
-          <p className="fm-text-md fm-text-secondary fm-mb-md">시즌 진행 시 이 주간 설정이 자동 적용됩니다. 경기일만 별도로 경기 일정이 우선됩니다.</p>
+          <p className="fm-text-md fm-text-secondary fm-mb-md">시즌 진행 동안 주간 설정이 자동 적용됩니다. 경기일만 별도 일정으로 우선 처리됩니다.</p>
           <div className="fm-panel">
             <div className="fm-panel__body--flush fm-table-wrap">
               <table className="fm-table fm-table--striped">
@@ -509,19 +517,19 @@ export function TrainingView() {
             </div>
             <div className="fm-panel__body">
               <div className="fm-flex-col fm-gap-xs fm-text-xs fm-text-secondary">
-                <div><strong style={{ color: '#4ecdc4' }}>가벼운:</strong> 스탯 성장 x0.5 / 스태미나 -4 / 폼 +2</div>
-                <div><strong style={{ color: 'var(--accent)' }}>보통:</strong> 스탯 성장 x1.0 / 스태미나 -8 / 폼 +5</div>
-                <div><strong style={{ color: 'var(--danger)' }}>강도 높은:</strong> 스탯 성장 x1.5 / 스태미나 -15 / 폼 +8</div>
+                <div><strong style={{ color: '#4ecdc4' }}>가벼움:</strong> 스킬 성장 x0.5 / 스태미나 -4 / 사기 +2</div>
+                <div><strong style={{ color: 'var(--accent)' }}>보통:</strong> 스킬 성장 x1.0 / 스태미나 -8 / 사기 +5</div>
+                <div><strong style={{ color: 'var(--danger)' }}>강도 높음:</strong> 스킬 성장 x1.5 / 스태미나 -15 / 사기 +8</div>
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* 탭 2: 개별 훈련 */}
+      {/* 개별 훈련 */}
       {tab === 'individual' && (
         <div>
-          <p className="fm-text-md fm-text-secondary fm-mb-md">선수별 특화 훈련을 배정합니다. 미배정 시 팀 스케줄을 따릅니다.</p>
+          <p className="fm-text-md fm-text-secondary fm-mb-md">선수별로 특화 훈련을 배정합니다. 미선택 상태면 팀 주간 루틴을 따릅니다.</p>
           <div className="fm-panel">
             <div className="fm-panel__body--flush fm-table-wrap">
               <table className="fm-table fm-table--striped">
@@ -586,7 +594,7 @@ export function TrainingView() {
         </div>
       )}
 
-      {/* 탭 3: 훈련 이력 */}
+      {/* 훈련 이력 */}
       {tab === 'logs' && (
         <div>
           {logs.length === 0 ? (
@@ -600,7 +608,7 @@ export function TrainingView() {
                       <th>날짜</th>
                       <th>선수</th>
                       <th>훈련</th>
-                      <th>변화 스탯</th>
+                      <th>변경 스탯</th>
                       <th>변화량</th>
                     </tr>
                   </thead>
@@ -630,15 +638,15 @@ export function TrainingView() {
         </div>
       )}
 
-      {/* 탭 4: 멘토링 */}
+      {/* 멘토링 */}
       {tab === 'mentoring' && (
         <div>
           <p className="fm-text-md fm-text-secondary fm-mb-md">
-            시니어 선수(25세+)가 주니어 선수(22세-)를 멘토링합니다. 같은 포지션만 가능합니다.
-            멘티는 멘토의 최고 스탯이 매일 +0.05 성장하고, 멘토의 팀워크가 +0.02 성장합니다.
+            시니어 선수(25세 이상)가 주니어 선수(22세 이하)를 멘토링합니다. 같은 포지션끼리만 가능합니다.
+            멘티는 멘토의 최고 스탯을 매일 +0.05 성장하고, 멘토는 팀워크가 +0.02 성장합니다.
           </p>
 
-          {/* 현재 멘토링 쌍 */}
+          {/* 현재 멘토링 */}
           <div className="fm-panel fm-mb-md">
             <div className="fm-panel__header">
               <span className="fm-panel__title">현재 멘토링</span>
@@ -674,7 +682,7 @@ export function TrainingView() {
                               className="fm-btn fm-btn--sm fm-btn--danger"
                               onClick={async () => {
                                 await removeMentor(pair.menteeId);
-                                setMessage({ text: '멘토링이 해제되었습니다.', type: 'success' });
+                                setMessage({ text: '멘토링을 해제했습니다.', type: 'success' });
                                 await loadData();
                               }}
                             >
@@ -690,7 +698,7 @@ export function TrainingView() {
             </div>
           </div>
 
-          {/* 새 멘토링 배정 */}
+          {/* 멘토링 배정 */}
           <div className="fm-panel fm-mb-md">
             <div className="fm-panel__header">
               <span className="fm-panel__title">멘토 배정</span>
@@ -698,7 +706,7 @@ export function TrainingView() {
             <div className="fm-panel__body">
               <div className="fm-flex fm-gap-md fm-items-center fm-flex-wrap" style={{ alignItems: 'flex-end' }}>
                 <div className="fm-flex-col fm-gap-xs fm-flex-1" style={{ minWidth: '180px' }}>
-                  <label className="fm-text-xs fm-font-medium fm-text-secondary">멘토 (25세+)</label>
+                  <label className="fm-text-xs fm-font-medium fm-text-secondary">멘토 (25세 이상)</label>
                   <select
                     className="fm-select"
                     value={selectedMentorId}
@@ -707,13 +715,13 @@ export function TrainingView() {
                     <option value="">선택...</option>
                     {eligibleMentors.map(p => (
                       <option key={p.id} value={p.id}>
-                        {p.name} ({POSITION_LABELS[p.position]}, {p.age}세)
+                          {p.name} ({POSITION_LABELS[p.position]}, {p.age}세)
                       </option>
                     ))}
                   </select>
                 </div>
                 <div className="fm-flex-col fm-gap-xs fm-flex-1" style={{ minWidth: '180px' }}>
-                  <label className="fm-text-xs fm-font-medium fm-text-secondary">멘티 (22세-)</label>
+                  <label className="fm-text-xs fm-font-medium fm-text-secondary">멘티 (22세 이하)</label>
                   <select
                     className="fm-select"
                     value={selectedMenteeId}
@@ -763,7 +771,7 @@ export function TrainingView() {
               <div className="fm-flex-col fm-gap-xs fm-text-xs fm-text-secondary">
                 <div><strong className="fm-text-success">멘티:</strong> 멘토의 최고 스탯 +0.05/일 성장</div>
                 <div><strong className="fm-text-info">멘토:</strong> 팀워크 +0.02/일 성장</div>
-                <div><strong className="fm-text-muted">조건:</strong> 멘토 25세+, 멘티 22세-, 같은 포지션</div>
+                <div><strong className="fm-text-muted">조건:</strong> 멘토 25세 이상, 멘티 22세 이하, 같은 포지션</div>
               </div>
             </div>
           </div>

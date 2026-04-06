@@ -1,4 +1,4 @@
-import type { DraftState } from '../../engine/draft/draftEngine';
+﻿import type { DraftState } from '../../engine/draft/draftEngine';
 import type { Champion } from '../../types/champion';
 import './draft.css';
 
@@ -35,7 +35,7 @@ export function DraftCenterPanel({
           <span className="draft-phase-complete">밴픽 완료</span>
         ) : (
           <>
-            <span className="draft-phase-label">{draft.currentActionType === 'ban' ? 'BAN' : 'PICK'}</span>
+            <span className="draft-phase-label">{draft.currentActionType === 'ban' ? '밴' : '픽'}</span>
             <span className={`draft-turn-label ${draft.currentSide === 'blue' ? 'draft-turn-label--blue' : 'draft-turn-label--red'}`}>
               {draft.currentSide === 'blue' ? '블루 차례' : '레드 차례'}
             </span>

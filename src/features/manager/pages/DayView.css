@@ -237,3 +237,76 @@
     flex-wrap: wrap;
   }
 }
+
+/* UX polish */
+.dv-date-card {
+  position: relative;
+  overflow: hidden;
+  padding: 24px 26px;
+  margin-bottom: 16px;
+  box-shadow: 0 18px 34px rgba(0, 0, 0, 0.14);
+}
+
+.dv-date-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at top right, rgba(200, 155, 60, 0.14), transparent 34%);
+  pointer-events: none;
+}
+
+.dv-focus-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.dv-focus-card {
+  position: relative;
+  min-height: 148px;
+  justify-content: space-between;
+  padding: 16px;
+  border-color: rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015)),
+    rgba(7, 10, 15, 0.32);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.dv-focus-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--accent), rgba(255, 255, 255, 0));
+  opacity: 0.82;
+}
+
+.dv-focus-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--accent-border);
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.16);
+}
+
+.dv-focus-card__title {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.dv-focus-card__value {
+  font-size: 17px;
+  line-height: 1.35;
+  text-wrap: balance;
+}
+
+.dv-focus-card__detail {
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.dv-training-link {
+  font-weight: 600;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}

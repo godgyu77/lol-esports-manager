@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 선수 모드 커리어 페이지
  * - 커리어 타임라인 (팀, 시즌, 업적)
  * - 트로피 캐비닛
@@ -328,7 +328,7 @@ export function PlayerCareerView() {
             {trophies.length === 0 ? (
               <div className="fm-text-center fm-p-lg">
                 <p className="fm-text-secondary fm-text-xl">아직 수상 경력이 없습니다.</p>
-                <p className="fm-text-muted fm-text-md fm-mt-sm">시즌 성과를 통해 트로피를 획득하세요!</p>
+                <p className="fm-text-muted fm-text-md fm-mt-sm">시즌 성과를 통해 트로피를 획득해보세요.</p>
               </div>
             ) : (
               <div className="fm-grid fm-grid--2">

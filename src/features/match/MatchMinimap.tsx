@@ -45,6 +45,17 @@ function toPixel(point: { x: number; y: number }, mapSize: number) {
   };
 }
 
+function zoneLabel(zone: string): string {
+  const labels: Record<string, string> = {
+    top_lane: '탑 라인',
+    mid_lane: '미드 라인',
+    bot_lane: '봇 라인',
+    dragon_pit: '드래곤 둥지',
+    baron_pit: '바론 둥지',
+  };
+  return labels[zone] ?? zone.replace('_', ' ');
+}
+
 export function MatchMinimap({ gameState, width = DEFAULT_SIZE, height = DEFAULT_SIZE }: MatchMinimapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const appRef = useRef<Application | null>(null);
@@ -215,18 +226,18 @@ function drawLabels(graphics: Graphics, gameState: LiveGameState, width: number,
 
   ['top_lane', 'mid_lane', 'bot_lane', 'dragon_pit', 'baron_pit'].forEach((zone) => {
     const point = toPixel(ZONE_POINTS[zone as MatchZone], width);
-    const label = new Text({ text: zone.replace('_', ' ').toUpperCase(), style: muted });
+    const label = new Text({ text: zoneLabel(zone), style: muted });
     label.x = point.x - label.width / 2;
     label.y = point.y - 24;
     graphics.addChild(label);
   });
 
-  const home = new Text({ text: `BLUE ${gameState.killsHome}K ${gameState.goldHome / 1000}k`, style: small });
+  const home = new Text({ text: `블루 ${gameState.killsHome}킬 ${gameState.goldHome / 1000}k`, style: small });
   home.x = 10;
   home.y = height - 18;
   graphics.addChild(home);
 
-  const away = new Text({ text: `RED ${gameState.killsAway}K ${gameState.goldAway / 1000}k`, style: small });
+  const away = new Text({ text: `레드 ${gameState.killsAway}킬 ${gameState.goldAway / 1000}k`, style: small });
   away.x = width - away.width - 10;
   away.y = 8;
   graphics.addChild(away);

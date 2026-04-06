@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 선수 모드 통계 페이지
  * - 커리어 통계 (킬, 데스, 어시스트, 총 게임 수)
  * - 시즌별 성과 평점
@@ -300,7 +300,7 @@ export function PlayerStatsView() {
 
   const overallKda = career && career.totalDeaths > 0
     ? ((career.totalKills + career.totalAssists) / career.totalDeaths).toFixed(2)
-    : career ? 'Perfect' : '-';
+    : career ? '퍼펙트' : '-';
 
   return (
     <div>
@@ -402,7 +402,7 @@ export function PlayerStatsView() {
                 </thead>
                 <tbody>
                   {recentGames.map((game, i) => {
-                    const kda = game.deaths === 0 ? 'Perfect' : ((game.kills + game.assists) / game.deaths).toFixed(2);
+                    const kda = game.deaths === 0 ? '퍼펙트' : ((game.kills + game.assists) / game.deaths).toFixed(2);
                     return (
                       <tr key={`${game.matchId}-${i}`}>
                         <td className="fm-cell--name">
@@ -411,7 +411,7 @@ export function PlayerStatsView() {
                         <td className="text-center">
                           {game.kills}/{game.deaths}/{game.assists}
                         </td>
-                        <td className={`text-center ${Number(kda) >= 4 || kda === 'Perfect' ? 'fm-cell--gold' : ''}`}>
+                        <td className={`text-center ${Number(kda) >= 4 || kda === '퍼펙트' ? 'fm-cell--gold' : ''}`}>
                           {kda}
                         </td>
                         <td className="text-center">{game.cs}</td>

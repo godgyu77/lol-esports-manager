@@ -18,6 +18,12 @@ function getBannerTheme(effectType: string) {
   return 'standard';
 }
 
+function getStatusTagLabel(statusTag: string) {
+  if (statusTag === 'objective') return '오브젝트 압박';
+  if (statusTag === 'skirmishing') return '교전 중';
+  return '주목 장면';
+}
+
 export function BroadcastBattlefield({
   gameState,
   width = 920,
@@ -62,9 +68,9 @@ export function BroadcastBattlefield({
           <span className="broadcast-stage-banner__tag">{bannerEffect.label}</span>
           <strong className="broadcast-stage-banner__headline">{bannerEffect.detail}</strong>
           <div className="broadcast-stage-banner__meta">
-            <span>{frame.phase.replace(/_/g, ' ')}</span>
+            <span>{frame.phase === 'loading' ? '로딩' : frame.phase === 'laning' ? '라인전' : frame.phase === 'mid_game' ? '중반' : frame.phase === 'late_game' ? '후반' : '종료'}</span>
             <span>{frame.tick}:00</span>
-            <span>{Math.round(frame.homePressure)} / {Math.round(frame.awayPressure)} pressure</span>
+            <span>압박 {Math.round(frame.homePressure)} / {Math.round(frame.awayPressure)}</span>
           </div>
         </div>
       ) : null}
@@ -73,7 +79,7 @@ export function BroadcastBattlefield({
           {effectiveCamera.emphasisLabel}
         </span>
         <span className="broadcast-stage-chip">
-          Zoom x{effectiveCamera.zoom.toFixed(2)}
+          줌 x{effectiveCamera.zoom.toFixed(2)}
         </span>
       </div>
       {tickerEffects.length > 0 ? (
@@ -89,7 +95,7 @@ export function BroadcastBattlefield({
         <div className="broadcast-stage-cutin">
           {activePlayers.slice(0, 4).map((player) => (
             <span key={player.id} className={`broadcast-stage-cutin__pill broadcast-stage-cutin__pill--${player.side}`}>
-              {player.name} {player.statusTag === 'objective' ? 'on objective' : player.statusTag === 'skirmishing' ? 'in fight' : 'spotlight'}
+              {player.name} {getStatusTagLabel(player.statusTag)}
             </span>
           ))}
         </div>
@@ -97,7 +103,7 @@ export function BroadcastBattlefield({
       {activeReplay ? (
         <div className="broadcast-stage-replay">
           <div className="broadcast-stage-replay__header">
-            <span>Replay Queue</span>
+            <span>리플레이 큐</span>
             <span>{normalizedReplayIndex + 1} / {replayQueue.length}</span>
           </div>
           <div className={`broadcast-stage-replay__hero broadcast-stage-replay__hero--${activeReplay.side}`}>
@@ -108,7 +114,7 @@ export function BroadcastBattlefield({
             </div>
           </div>
           <div className="broadcast-stage-replay__camera">
-            <span>Replay Focus</span>
+            <span>리플레이 포커스</span>
             <span>{Math.round(activeReplay.x * 100)} / {Math.round(activeReplay.y * 100)}</span>
             <span>{effectiveCamera.zoom.toFixed(2)}x</span>
           </div>
@@ -119,7 +125,7 @@ export function BroadcastBattlefield({
                 type="button"
                 className={`broadcast-stage-replay__dot ${index === normalizedReplayIndex ? 'is-active' : ''}`}
                 onClick={() => setActiveReplayIndex(index)}
-                aria-label={`Show replay clip ${index + 1}`}
+                aria-label={`리플레이 클립 ${index + 1} 보기`}
               />
             ))}
           </div>
@@ -140,7 +146,7 @@ export function BroadcastBattlefield({
         </div>
       ) : null}
       <div className="broadcast-stage-pressure">
-        <span className="broadcast-stage-pressure__label">Blue Pressure</span>
+        <span className="broadcast-stage-pressure__label">블루 압박</span>
         <div className="broadcast-stage-pressure__bar">
           <div
             className="broadcast-stage-pressure__fill"
