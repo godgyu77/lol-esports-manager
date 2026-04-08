@@ -35,7 +35,9 @@ export interface PlayerRow {
   secondary_position: string | null;
 }
 
-export function mapRowToPlayer(row: PlayerRow): Player & { division: string } {
+export type PlayerWithDivision = Player & { division: string };
+
+export function mapRowToPlayer(row: PlayerRow): PlayerWithDivision {
   const stats: PlayerStats = {
     mechanical: row.mechanical,
     gameSense: row.game_sense,
@@ -67,6 +69,7 @@ export function mapRowToPlayer(row: PlayerRow): Player & { division: string } {
     stats,
     mental,
     contract,
+    traits: [],
     championPool: [],
     potential: row.potential,
     peakAge: row.peak_age,
@@ -77,6 +80,80 @@ export function mapRowToPlayer(row: PlayerRow): Player & { division: string } {
     formHistory: [],
     division: row.division,
   };
+}
+
+async function attachChampionPools(
+  db: Awaited<ReturnType<typeof getDatabase>>,
+  players: PlayerWithDivision[],
+): Promise<void> {
+  if (players.length === 0) return;
+
+  const playerIds = players.map((player) => player.id);
+  const placeholders = playerIds.map((_, i) => `$${i + 1}`).join(',');
+  const profRows = await db.select<{
+    player_id: string;
+    champion_id: string;
+    proficiency: number;
+    games_played: number;
+  }[]>(
+    `SELECT player_id, champion_id, proficiency, games_played
+     FROM champion_proficiency
+     WHERE player_id IN (${placeholders})`,
+    playerIds,
+  );
+
+  const poolMap = new Map<string, ChampionProficiency[]>();
+  for (const row of profRows) {
+    const list = poolMap.get(row.player_id) ?? [];
+    list.push({
+      championId: row.champion_id,
+      proficiency: row.proficiency,
+      gamesPlayed: row.games_played,
+    });
+    poolMap.set(row.player_id, list);
+  }
+
+  for (const player of players) {
+    player.championPool = poolMap.get(player.id) ?? [];
+  }
+}
+
+async function attachTraits(
+  db: Awaited<ReturnType<typeof getDatabase>>,
+  players: PlayerWithDivision[],
+): Promise<void> {
+  if (players.length === 0) return;
+
+  const playerIds = players.map((player) => player.id);
+  const placeholders = playerIds.map((_, i) => `$${i + 1}`).join(',');
+  const traitRows = await db.select<{ player_id: string; trait_id: string }[]>(
+    `SELECT player_id, trait_id
+     FROM player_traits
+     WHERE player_id IN (${placeholders})`,
+    playerIds,
+  );
+
+  const traitMap = new Map<string, string[]>();
+  for (const row of traitRows) {
+    const list = traitMap.get(row.player_id) ?? [];
+    list.push(row.trait_id);
+    traitMap.set(row.player_id, list);
+  }
+
+  for (const player of players) {
+    player.traits = traitMap.get(player.id) ?? [];
+  }
+}
+
+export async function hydratePlayers(
+  db: Awaited<ReturnType<typeof getDatabase>>,
+  players: PlayerWithDivision[],
+): Promise<PlayerWithDivision[]> {
+  await Promise.all([
+    attachChampionPools(db, players),
+    attachTraits(db, players),
+  ]);
+  return players;
 }
 
 // ─────────────────────────────────────────
@@ -155,13 +232,13 @@ export async function insertPlayer(player: {
 
 export async function getPlayersByTeamId(
   teamId: string,
-): Promise<(Player & { division: string })[]> {
+): Promise<PlayerWithDivision[]> {
   const db = await getDatabase();
   const rows = await db.select<PlayerRow[]>(
     'SELECT * FROM players WHERE team_id = $1',
     [teamId],
   );
-  const players = rows.map(mapRowToPlayer);
+  const players = await hydratePlayers(db, rows.map(mapRowToPlayer));
 
   // 챔피언 숙련도 일괄 로딩 (N+1 방지)
   if (players.length > 0) {
@@ -200,10 +277,11 @@ export async function getPlayersByTeamId(
 }
 
 /** 전체 선수를 한번에 조회 (팀별 그룹핑용) */
-export async function getAllPlayersGroupedByTeam(): Promise<Map<string, (Player & { division: string })[]>> {
+export async function getAllPlayersGroupedByTeam(): Promise<Map<string, PlayerWithDivision[]>> {
   const db = await getDatabase();
   const rows = await db.select<PlayerRow[]>('SELECT * FROM players WHERE team_id IS NOT NULL');
   const players = rows.map(mapRowToPlayer);
+  await attachTraits(db, players);
 
   // 챔피언 숙련도 일괄 로딩
   const profRows = await db.select<{
@@ -224,7 +302,7 @@ export async function getAllPlayersGroupedByTeam(): Promise<Map<string, (Player 
     poolMap.set(row.player_id, list);
   }
 
-  const result = new Map<string, (Player & { division: string })[]>();
+  const result = new Map<string, PlayerWithDivision[]>();
   for (const player of players) {
     player.championPool = poolMap.get(player.id) ?? [];
     const teamId = player.teamId ?? '';
@@ -236,18 +314,20 @@ export async function getAllPlayersGroupedByTeam(): Promise<Map<string, (Player 
   return result;
 }
 
-export async function getPlayerById(id: string): Promise<(Player & { division: string }) | null> {
+export async function getPlayerById(id: string): Promise<PlayerWithDivision | null> {
   const db = await getDatabase();
   const rows = await db.select<PlayerRow[]>('SELECT * FROM players WHERE id = $1', [id]);
   if (rows.length === 0) return null;
-  return mapRowToPlayer(rows[0]);
+  const player = mapRowToPlayer(rows[0]);
+  await hydratePlayers(db, [player]);
+  return player;
 }
 
 /** 모든 선수 조회 (성장 계산용) */
 export async function getAllPlayers(): Promise<Player[]> {
   const db = await getDatabase();
   const rows = await db.select<PlayerRow[]>('SELECT * FROM players WHERE team_id IS NOT NULL');
-  return rows.map(r => mapRowToPlayer(r));
+  return hydratePlayers(db, rows.map(r => mapRowToPlayer(r)));
 }
 
 /** 선수의 시즌 평균 폼 조회 */
@@ -261,20 +341,20 @@ export async function getPlayerAverageForm(playerId: string): Promise<number> {
 }
 
 /** 자유계약 선수 조회 (team_id IS NULL) */
-export async function getFreeAgents(): Promise<(Player & { division: string })[]> {
+export async function getFreeAgents(): Promise<PlayerWithDivision[]> {
   const db = await getDatabase();
   const rows = await db.select<PlayerRow[]>('SELECT * FROM players WHERE team_id IS NULL');
-  return rows.map(mapRowToPlayer);
+  return hydratePlayers(db, rows.map(mapRowToPlayer));
 }
 
 /** 계약 만료 선수 조회 (특정 시즌에 만료되는 선수) */
-export async function getExpiringContracts(endSeason: number): Promise<(Player & { division: string })[]> {
+export async function getExpiringContracts(endSeason: number): Promise<PlayerWithDivision[]> {
   const db = await getDatabase();
   const rows = await db.select<PlayerRow[]>(
     'SELECT * FROM players WHERE contract_end_season <= $1 AND team_id IS NOT NULL',
     [endSeason],
   );
-  return rows.map(mapRowToPlayer);
+  return hydratePlayers(db, rows.map(mapRowToPlayer));
 }
 
 /** 팀 총 연봉 조회 */

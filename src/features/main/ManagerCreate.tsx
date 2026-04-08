@@ -162,8 +162,7 @@ export function ManagerCreate() {
             <div className="fm-text-xs fm-font-semibold fm-text-accent fm-text-upper fm-mb-sm">감독 정체성</div>
             <h1 className="fm-text-2xl fm-font-bold fm-text-primary" style={{ margin: 0 }}>감독 정체성을 설계하세요</h1>
             <p className="fm-text-md fm-text-muted fm-mt-sm" style={{ lineHeight: 1.7 }}>
-              이름과 배경만 정하는 화면이 아닙니다. 앞으로 어떤 판단을 내리고, 어떤 방식으로 팀을 다루는 감독인지 정하는 단계입니다.
-              배경을 바꾸면 언론 평가와 추천 운영 스타일도 함께 달라집니다.
+              먼저 기본 정보와 배경을 정하고, 그다음 능력치 5포인트만 배분하면 됩니다.
             </p>
           </div>
         </header>
@@ -320,46 +319,41 @@ export function ManagerCreate() {
               <div className="fm-panel__header">
                 <span className="fm-panel__title">현재 감독 이미지</span>
               </div>
-              <div className="fm-panel__body fm-flex-col fm-gap-md">
+              <div className="fm-panel__body">
                 <div className="fm-card">
-                  <div className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">언론 첫 평가</div>
+                  <div className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">요약</div>
                   <div className="fm-text-md fm-text-primary" style={{ lineHeight: 1.7 }}>
                     {BACKGROUND_HEADLINES[background].press}
                   </div>
-                </div>
-                <div className="fm-card">
-                  <div className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">추천 플레이 스타일</div>
-                  <div className="fm-text-md fm-text-primary" style={{ lineHeight: 1.7 }}>
+                  <div className="fm-text-sm fm-text-muted fm-mt-sm" style={{ lineHeight: 1.7 }}>
                     {BACKGROUND_HEADLINES[background].style}
                   </div>
-                </div>
-                <div className="fm-card">
-                  <div className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">주요 성향</div>
-                  <div className="fm-flex fm-gap-sm" style={{ flexWrap: 'wrap' }}>
+                  <div className="fm-flex fm-gap-sm fm-mt-md" style={{ flexWrap: 'wrap' }}>
                     {(baseTraits.length > 0 ? baseTraits : ['균형 있는 운영']).map((trait) => (
                       <span key={trait} className="fm-badge fm-badge--accent">{trait}</span>
                     ))}
                   </div>
-                  <div className="fm-text-sm fm-text-muted fm-mt-sm">현재 운영 초점: {focus}</div>
+                  <div className="fm-text-sm fm-text-muted fm-mt-sm">운영 초점: {focus}</div>
                 </div>
               </div>
             </section>
 
-            {remainingPoints > 0 && (
-              <div className="fm-alert fm-alert--warning">
-                <span className="fm-alert__text">
-                  남은 포인트를 모두 배분해야 다음 단계로 넘어갈 수 있습니다.
-                </span>
+            <div className="fm-panel">
+              <div className="fm-panel__body fm-flex-col fm-gap-sm">
+                <button
+                  className="fm-btn fm-btn--primary fm-btn--lg intro-cta"
+                  onClick={handleCreate}
+                  disabled={!name.trim() || remainingPoints > 0}
+                >
+                  팀 선택으로 이동
+                </button>
+                <div className="intro-inline-note">
+                  {remainingPoints > 0
+                    ? '남은 포인트를 모두 배분해야 다음 단계로 넘어갈 수 있습니다.'
+                    : '기본 정보와 능력치 배분이 끝났습니다.'}
+                </div>
               </div>
-            )}
-
-            <button
-              className="fm-btn fm-btn--primary fm-btn--lg intro-cta"
-              onClick={handleCreate}
-              disabled={!name.trim() || remainingPoints > 0}
-            >
-              팀 선택으로 이동
-            </button>
+            </div>
           </aside>
         </div>
       </div>

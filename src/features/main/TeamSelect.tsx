@@ -126,11 +126,6 @@ export function TeamSelect() {
                 ? '어떤 팀을 맡느냐에 따라 시즌 압박, 팬 기대, 보드 목표가 모두 달라집니다.'
                 : '어떤 팀에서 커리어를 시작하느냐에 따라 성장 속도와 경쟁 환경이 크게 달라집니다.'}
             </p>
-            <div className="fm-flex fm-gap-sm fm-mt-md" style={{ flexWrap: 'wrap' }}>
-              <span className="fm-badge fm-badge--accent">LCK 기본 표시</span>
-              <span className="fm-badge fm-badge--default">목록 먼저, 상세는 선택 후</span>
-              <span className="fm-badge fm-badge--default">감독 부임 규칙 명시</span>
-            </div>
           </div>
         </header>
 
@@ -182,22 +177,24 @@ export function TeamSelect() {
                   <span className="fm-badge fm-badge--accent">{selectedTeam.region}</span>
                 </div>
 
-                  <div className="fm-panel__body fm-flex-col fm-gap-md">
+                <div className="fm-panel__body fm-flex-col fm-gap-md">
                   <div className="fm-flex fm-gap-sm" style={{ flexWrap: 'wrap' }}>
                     <span className="fm-badge fm-badge--accent">{teamMeta.playstyleTag}</span>
-                    <span className="fm-badge fm-badge--default">재정 티어 {teamData.financialTier}</span>
                     <span className="fm-badge fm-badge--default">평균 OVR {avgOvr}</span>
                   </div>
 
                   <div className="fm-card">
-                    <div className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">팀 선택 브리핑</div>
-                    <div className="fm-info-row">
-                      <span className="fm-info-row__label">팬 기대</span>
-                      <span className="fm-info-row__value">{teamMeta.fanExpectation}</span>
-                    </div>
+                    <div className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">왜 이 팀인가</div>
+                    <p className="fm-text-sm fm-text-primary" style={{ lineHeight: 1.7, margin: '0 0 12px' }}>
+                      {teamMeta.openingFocus}
+                    </p>
                     <div className="fm-info-row">
                       <span className="fm-info-row__label">시즌 난이도</span>
                       <span className="fm-info-row__value">{teamMeta.seasonDifficulty}</span>
+                    </div>
+                    <div className="fm-info-row">
+                      <span className="fm-info-row__label">팬 기대</span>
+                      <span className="fm-info-row__value">{teamMeta.fanExpectation}</span>
                     </div>
                     <div className="fm-info-row">
                       <span className="fm-info-row__label">추천 유저</span>
@@ -210,17 +207,7 @@ export function TeamSelect() {
                   </div>
 
                   <div className="fm-card">
-                    <div className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">시즌 서사</div>
-                    <p className="fm-text-sm fm-text-primary" style={{ lineHeight: 1.7, margin: 0 }}>
-                      {teamMeta.boardStoryline}
-                    </p>
-                    <p className="fm-text-sm fm-text-muted fm-mt-sm" style={{ lineHeight: 1.7 }}>
-                      라이벌 구도: {teamMeta.rivalry}
-                    </p>
-                  </div>
-
-                  <div>
-                    <h3 className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">1군 로스터</h3>
+                    <div className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">주전 5인 요약</div>
                     <div className="fm-flex-col fm-gap-xs">
                       {starters.map((player) => (
                         <div
@@ -236,13 +223,28 @@ export function TeamSelect() {
                     </div>
                   </div>
 
-                  <div className="fm-card" style={{ background: 'rgba(255,255,255,0.02)' }}>
-                    <div className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">감독 합류 규칙</div>
-                    <p className="fm-text-sm fm-text-secondary" style={{ margin: 0, lineHeight: 1.6 }}>
-                      선택한 팀의 기존 감독 자리는 비워지고, 사용자가 새 감독으로 부임합니다.
-                      기존 코치와 분석 스태프는 팀에 남아 그대로 시즌 운영을 이어갑니다.
-                    </p>
-                  </div>
+                  <details className="intro-detail-disclosure">
+                    <summary>상세 브리핑 보기</summary>
+                    <div className="fm-flex-col fm-gap-md">
+                      <div className="fm-card">
+                        <div className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">보드 서사</div>
+                        <p className="fm-text-sm fm-text-primary" style={{ lineHeight: 1.7, margin: 0 }}>
+                          {teamMeta.boardStoryline}
+                        </p>
+                        <p className="fm-text-sm fm-text-muted fm-mt-sm" style={{ lineHeight: 1.7 }}>
+                          라이벌 구도: {teamMeta.rivalry}
+                        </p>
+                      </div>
+
+                      <div className="fm-card" style={{ background: 'rgba(255,255,255,0.02)' }}>
+                        <div className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">감독 합류 규칙</div>
+                        <p className="fm-text-sm fm-text-secondary" style={{ margin: 0, lineHeight: 1.6 }}>
+                          선택한 팀의 기존 감독 자리는 비워지고, 사용자가 새 감독으로 부임합니다.
+                          기존 코치와 분석 스태프는 팀에 남아 그대로 시즌 운영을 이어갑니다.
+                        </p>
+                      </div>
+                    </div>
+                  </details>
 
                   <button className="fm-btn fm-btn--primary fm-btn--lg" style={{ width: '100%' }} onClick={handleStart}>
                     이 팀으로 부임 준비
@@ -251,7 +253,7 @@ export function TeamSelect() {
               </div>
             ) : (
               <div className="fm-panel__body fm-flex fm-items-center fm-justify-center fm-text-muted fm-text-lg fm-text-center" style={{ minHeight: 300 }}>
-                <p>팀을 선택하면 시즌 압박, 로스터 개요, 추천 플레이 스타일이 함께 표시됩니다.</p>
+                <p>팀을 선택하면 난이도, 팬 기대, 주전 5인 요약만 먼저 표시됩니다.</p>
               </div>
             )}
           </aside>

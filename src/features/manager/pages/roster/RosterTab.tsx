@@ -15,6 +15,7 @@ import {
   POSITION_BADGE_MAP,
   sortByPosition,
 } from './rosterUtils';
+import { getResolvedTraits, getTraitBadgeStyle } from '../../../../utils/traitUtils';
 
 interface RosterTabProps {
   userTeam: Team;
@@ -23,6 +24,10 @@ interface RosterTabProps {
 }
 
 type RosterPlayer = Player & { division?: Division };
+
+function getRosterTraitBadges(player: Player) {
+  return getResolvedTraits(player.traits ?? []).slice(0, 3);
+}
 
 function getMainAverage(team: Team): number {
   const mainPlayers = team.roster.filter((player) => (player as RosterPlayer).division === 'main');
@@ -201,6 +206,20 @@ export function RosterTab({ userTeam, teams, setTeams }: RosterTabProps) {
                         {player.name}
                       </Link>
                     </div>
+                    {getRosterTraitBadges(player).length > 0 ? (
+                      <div className="fm-flex fm-gap-xs fm-flex-wrap" style={{ marginTop: 6 }}>
+                        {getRosterTraitBadges(player).map((trait) => (
+                          <span
+                            key={trait.id}
+                            className="fm-badge"
+                            title={trait.desc}
+                            style={{ ...getTraitBadgeStyle(trait.id), fontSize: '11px' }}
+                          >
+                            {trait.name}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
                   </td>
                   <td>{player.age}</td>
                   <td className={getOvrClass(avgOvr)}>{avgOvr}</td>

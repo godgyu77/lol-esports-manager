@@ -38,7 +38,7 @@ const teamfightOptions: { value: TeamfightAggression; label: string; desc: strin
 ];
 
 export function TacticsPanel({ engine, onTacticsChanged }: TacticsPanelProps) {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(true);
 
   const tactics = engine.getInGameTactics();
   const cooldown = engine.getTacticsCooldown();

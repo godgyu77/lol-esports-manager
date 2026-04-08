@@ -238,6 +238,21 @@ describe('calculateGrowth', () => {
     expect(result.oldStats).toEqual(player.stats);
     expect(result.playerId).toBe(player.id);
   });
+  it('prospect traits give a modest growth boost', () => {
+    const prospect = createMockPlayer({ age: 19, traits: ['GROWTH_POTENTIAL', 'SPONGE'] });
+    const base = createMockPlayer({ age: 19, id: 'base_player', traits: [] });
+
+    let prospectTotal = 0;
+    let baseTotal = 0;
+    for (let i = 0; i < 20; i++) {
+      const boosted = calculateGrowth(prospect, `trait_growth_${i}`);
+      const regular = calculateGrowth(base, `trait_growth_${i}`);
+      prospectTotal += Object.values(boosted.changes).reduce((sum, value) => sum + value, 0);
+      baseTotal += Object.values(regular.changes).reduce((sum, value) => sum + value, 0);
+    }
+
+    expect(prospectTotal / 20).toBeGreaterThan(baseTotal / 20);
+  });
 });
 
 // ─────────────────────────────────────────

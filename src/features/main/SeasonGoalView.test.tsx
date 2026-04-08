@@ -38,12 +38,15 @@ describe('SeasonGoalView', () => {
     },
   };
 
-  it('shows board briefing and accept button', async () => {
+  it('shows season goal summary and keeps detailed roster behind disclosure', async () => {
     renderWithProviders(<SeasonGoalView />, {
       gameState: managerState,
     });
 
     expect(screen.getByText('부임 브리핑')).toBeInTheDocument();
+    expect(screen.getByText('핵심 시즌 목표')).toBeInTheDocument();
+    expect(screen.getByText('상세 브리핑 보기')).toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: '포지션' })).not.toBeInTheDocument();
     expect(await screen.findByRole('button', { name: '시즌 목표 수락' })).toBeInTheDocument();
   });
 

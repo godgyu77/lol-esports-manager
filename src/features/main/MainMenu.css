@@ -28,22 +28,22 @@
   position: relative;
   z-index: 1;
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(340px, 460px);
-  gap: 28px;
-  max-width: 1240px;
+  grid-template-columns: minmax(0, 1fr) minmax(380px, 440px);
+  gap: 24px;
+  max-width: 1180px;
   margin: 0 auto;
-  padding: 48px 32px 96px;
+  padding: 42px 28px 92px;
 }
 
 .launcher__hero,
 .launcher__hub {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
 }
 
 .launcher__logo {
-  max-width: 720px;
+  max-width: 620px;
 }
 
 .launcher__logo-icon {
@@ -78,10 +78,10 @@
 
 .launcher__subtitle {
   margin: 18px 0 0;
-  max-width: 620px;
+  max-width: 540px;
   color: rgba(246, 241, 232, 0.74);
-  font-size: 17px;
-  line-height: 1.7;
+  font-size: 16px;
+  line-height: 1.65;
   text-wrap: balance;
 }
 
@@ -89,7 +89,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  margin-top: 18px;
+  margin-top: 16px;
 }
 
 .launcher__pillar-chip {
@@ -102,10 +102,30 @@
   letter-spacing: 0.03em;
 }
 
-.launcher__story-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+.launcher__hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 22px;
+}
+
+.launcher__secondary-cta {
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: #f6f1e8;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+}
+
+.launcher__secondary-cta:hover {
+  transform: translateY(-1px);
+  border-color: rgba(209, 168, 76, 0.32);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .launcher__story-card,
@@ -153,23 +173,6 @@
   padding: 24px;
   box-shadow: 0 20px 44px rgba(0, 0, 0, 0.24);
   min-height: 264px;
-}
-
-.launcher__identity-card {
-  padding: 18px 20px;
-  box-shadow: 0 16px 30px rgba(0, 0, 0, 0.18);
-}
-
-.launcher__identity-card strong {
-  display: block;
-  color: #fff4d8;
-  font-size: 18px;
-}
-
-.launcher__identity-card p {
-  margin: 12px 0 0;
-  color: rgba(246, 241, 232, 0.72);
-  line-height: 1.65;
 }
 
 .launcher__continue-head {
@@ -236,12 +239,12 @@
 .launcher__menu-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  gap: 12px;
 }
 
 .launcher__menu-card {
-  min-height: 148px;
-  padding: 18px;
+  min-height: 132px;
+  padding: 16px;
   color: inherit;
   text-align: left;
   cursor: pointer;

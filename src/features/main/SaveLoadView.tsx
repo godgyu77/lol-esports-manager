@@ -207,8 +207,7 @@ export function SaveLoadView() {
             <div className="fm-text-xs fm-font-semibold fm-text-accent fm-text-upper fm-mb-sm">커리어 복귀</div>
             <h1 className="fm-text-2xl fm-font-bold fm-text-primary" style={{ margin: 0 }}>세이브 및 복귀 관리</h1>
             <p className="fm-text-md fm-text-muted fm-mt-sm" style={{ lineHeight: 1.7 }}>
-              각 슬롯은 서로 다른 저장 파일을 사용합니다. 수동 저장은 현재 커리어의 상태를 복사하고,
-              불러오기는 해당 슬롯의 커리어를 그대로 복원합니다.
+              저장하거나 복귀할 슬롯만 선택하면 됩니다.
             </p>
           </div>
         </header>

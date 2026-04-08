@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import type React from 'react';
 import type { GameResult } from '../../engine/match/matchSimulator';
 import { MatchHighlights } from './MatchHighlights';
+import { PostGameStats } from './PostGameStats';
 import './match.css';
 
 interface SeriesResultProps {
@@ -24,6 +26,9 @@ export function SeriesResult({
   gameResults,
   onReturn,
 }: SeriesResultProps) {
+  const [viewMode, setViewMode] = useState<'highlights' | 'stats'>('highlights');
+  const [selectedGameIdx, setSelectedGameIdx] = useState(0);
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') onReturn();
   };
@@ -45,11 +50,52 @@ export function SeriesResult({
 
         {gameResults && gameResults.length > 0 ? (
           <div className="match-result-highlights">
-            <MatchHighlights
-              gameResults={gameResults}
-              homeTeamName={homeTeamShortName}
-              awayTeamName={awayTeamShortName}
-            />
+            <div className="match-result-view-toggle">
+              <button
+                className={`match-result-tab-btn ${viewMode === 'highlights' ? 'match-result-tab-btn--active' : ''}`}
+                onClick={() => setViewMode('highlights')}
+              >
+                하이라이트
+              </button>
+              <button
+                className={`match-result-tab-btn ${viewMode === 'stats' ? 'match-result-tab-btn--active' : ''}`}
+                onClick={() => setViewMode('stats')}
+              >
+                경기 통계
+              </button>
+            </div>
+
+            {viewMode === 'highlights' ? (
+              <MatchHighlights
+                gameResults={gameResults}
+                homeTeamName={homeTeamShortName}
+                awayTeamName={awayTeamShortName}
+              />
+            ) : (
+              <>
+                {gameResults.length > 1 && (
+                  <div className="match-result-game-tabs">
+                    {gameResults.map((_, i) => (
+                      <button
+                        key={i}
+                        className={`match-result-tab-btn ${selectedGameIdx === i ? 'match-result-tab-btn--active' : ''}`}
+                        onClick={() => setSelectedGameIdx(i)}
+                      >
+                        {i + 1}세트
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {gameResults[selectedGameIdx] && (
+                  <PostGameStats
+                    gameResult={gameResults[selectedGameIdx]}
+                    homeTeamName={homeTeamShortName ?? '홈'}
+                    awayTeamName={awayTeamShortName ?? '원정'}
+                    gameNumber={selectedGameIdx + 1}
+                  />
+                )}
+              </>
+            )}
           </div>
         ) : null}
 

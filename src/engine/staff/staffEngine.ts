@@ -1,5 +1,6 @@
 import { getDatabase } from '../../db/database';
 import { getActiveSeason } from '../../db/queries';
+import { TEAM_STAFF_DB, getDefaultStaffNationality } from '../../data/teamStaffDb';
 import { getManagerIdentity } from '../manager/managerIdentityEngine';
 import { getTeamRecentWinRate } from '../../db/queries/team';
 import type {
@@ -48,9 +49,9 @@ interface TeamContextRow {
   play_style: string | null;
 }
 
-const STAFF_LIMITS: Record<StaffRole, number> = {
+export const TEAM_STAFF_ROLE_LIMITS: Record<StaffRole, number> = {
   head_coach: 1,
-  coach: 2,
+  coach: 3,
   analyst: 1,
   scout_manager: 1,
   sports_psychologist: 1,
@@ -59,7 +60,7 @@ const STAFF_LIMITS: Record<StaffRole, number> = {
   data_analyst: 1,
 };
 
-export const TEAM_STAFF_LIMIT = 9;
+export const TEAM_STAFF_LIMIT = 10;
 
 const ROLE_PRIORITY: Record<StaffRole, number> = {
   head_coach: 4,
@@ -147,7 +148,7 @@ function getStaffCounts(staffList: Staff[]): Record<StaffRole, number> {
 
 export function canHireRole(staffList: Staff[], role: StaffRole): boolean {
   const counts = getStaffCounts(staffList);
-  return counts[role] < STAFF_LIMITS[role] && staffList.length < TEAM_STAFF_LIMIT;
+  return counts[role] < TEAM_STAFF_ROLE_LIMITS[role] && staffList.length < TEAM_STAFF_LIMIT;
 }
 
 const STAFF_NAMES_BY_REGION: Record<Region, Record<StaffRole, string[]>> = {
@@ -211,6 +212,22 @@ interface StaffGenerationOptions {
   isFreeAgent?: boolean;
 }
 
+interface FixedStaffGenerationOptions {
+  teamId: string;
+  region: Region;
+  hiredDate: string;
+  contractEndSeason: number;
+  entry: {
+    name: string;
+    role: StaffRole;
+    nationality?: string;
+    ability?: number;
+    specialty?: StaffSpecialty | null;
+    salary?: number;
+    philosophy?: CoachingPhilosophy | null;
+  };
+}
+
 function generateStaffProfile(options: StaffGenerationOptions): Omit<Staff, 'id'> {
   const regionNames = STAFF_NAMES_BY_REGION[options.region] ?? STAFF_NAMES_BY_REGION.LCK;
   const names = regionNames[options.role] ?? SPECIALIST_NAMES[options.role] ?? ['Staff'];
@@ -243,6 +260,49 @@ function generateStaffProfile(options: StaffGenerationOptions): Omit<Staff, 'id'
     preferredRole: options.preferredRole ?? options.role,
     roleFlexibility: options.forceRoleFlexibility ?? getDefaultRoleFlexibility(options.role),
     careerOrigin: options.careerOrigin ?? null,
+  };
+}
+
+function generateFixedStaffProfile(options: FixedStaffGenerationOptions): Omit<Staff, 'id'> {
+  const defaultAbility =
+    options.entry.role === 'head_coach'
+      ? 78
+      : options.entry.role === 'coach'
+        ? 72
+        : 67;
+
+  const ability = options.entry.ability ?? defaultAbility;
+  const specialty =
+    options.entry.specialty !== undefined
+      ? options.entry.specialty
+      : options.entry.role === 'head_coach'
+        ? 'training'
+        : options.entry.role === 'coach'
+          ? 'draft'
+          : 'draft';
+
+  const salary =
+    options.entry.salary ??
+    (options.entry.role === 'head_coach'
+      ? 5200 + Math.round(ability * 58)
+      : 3000 + Math.round(ability * 42));
+
+  return {
+    teamId: options.teamId,
+    name: options.entry.name,
+    role: options.entry.role,
+    ability,
+    specialty,
+    salary,
+    morale: 72,
+    contractEndSeason: options.contractEndSeason,
+    hiredDate: options.hiredDate,
+    isFreeAgent: false,
+    philosophy: options.entry.role === 'head_coach' ? (options.entry.philosophy ?? 'balanced') : null,
+    nationality: getDefaultStaffNationality(options.region, options.entry.nationality),
+    preferredRole: options.entry.role,
+    roleFlexibility: getDefaultRoleFlexibility(options.entry.role),
+    careerOrigin: null,
   };
 }
 
@@ -438,7 +498,6 @@ export async function hireExistingStaff(
 export async function seedInitialTeamStaff(
   teamId: string,
   seasonYear: number,
-  isUserTeamCandidate = false,
 ): Promise<void> {
   const context = await getTeamContext(teamId);
   if (!context) return;
@@ -448,29 +507,26 @@ export async function seedInitialTeamStaff(
 
   const hiredDate = `${seasonYear}-01-01`;
   const contractEndSeason = seasonYear + 1;
-  const roles: StaffRole[] = ['head_coach', 'coach', 'coach', 'analyst'];
+  const staffEntries = TEAM_STAFF_DB[teamId] ?? [];
 
-  for (const role of roles) {
-    if (role === 'analyst' && !isUserTeamCandidate && randomInt(0, 100) < 35) {
-      continue;
-    }
-
-    const profile = generateStaffProfile({
-      role,
+  for (const entry of staffEntries) {
+    const profile = generateFixedStaffProfile({
+      teamId,
       region: context.region,
       hiredDate,
       contractEndSeason,
+      entry,
     });
 
-    await insertStaffRecord({ ...profile, isFreeAgent: false }, teamId);
+    await insertStaffRecord(profile, teamId);
   }
 }
 
-export async function seedAllTeamsStaff(seasonYear: number, userTeamId?: string): Promise<void> {
+export async function seedAllTeamsStaff(seasonYear: number): Promise<void> {
   const db = await getDatabase();
   const teams = await db.select<Array<{ id: string }>>('SELECT id FROM teams');
   for (const team of teams) {
-    await seedInitialTeamStaff(team.id, seasonYear, team.id === userTeamId);
+    await seedInitialTeamStaff(team.id, seasonYear);
   }
 }
 

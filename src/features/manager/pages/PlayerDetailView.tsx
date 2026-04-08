@@ -14,6 +14,7 @@ import { getPlayerGameStatsByPlayer } from '../../../db/queries';
 import { PlayerAvatar } from '../../../components/PlayerAvatar';
 import { generatePlayerConversation, type PlayerConversation } from '../../../ai/advancedAiService';
 import { POSITION_LABELS_KR as POSITION_LABELS } from '../../../utils/constants';
+import { getResolvedTraits, getTraitBadgeStyle, getTraitsByPolarity, TRAIT_POLARITY_LABELS } from '../../../utils/traitUtils';
 
 /* ── 폼 히스토리 타입 ── */
 interface FormHistoryRow {
@@ -88,6 +89,22 @@ function formatSalary(value: number): string {
     return `${(value / 10000).toFixed(1)}억`;
   }
   return `${value.toLocaleString()}만`;
+}
+
+function renderTraitBadge(traitId: string) {
+  const trait = getResolvedTraits([traitId])[0];
+  if (!trait) return null;
+
+  return (
+    <span
+      key={traitId}
+      className="fm-badge"
+      title={`${trait.name} · ${TRAIT_POLARITY_LABELS[trait.polarity]} · ${trait.tier}\n${trait.desc}`}
+      style={getTraitBadgeStyle(traitId)}
+    >
+      {trait.name}
+    </span>
+  );
 }
 
 function StatBar({ label, value }: { label: string; value: number }) {
@@ -267,6 +284,7 @@ export function PlayerDetailView() {
   }
 
   const growth = getGrowthStage(player);
+  const groupedTraits = getTraitsByPolarity(player.traits ?? []);
   const ovr = Math.round(
     (player.stats.mechanical +
       player.stats.gameSense +
@@ -438,6 +456,30 @@ export function PlayerDetailView() {
               </span>
             </div>
           </div>
+        </div>
+      </div>
+
+      <div className="fm-panel fm-mb-md">
+        <div className="fm-panel__header">
+          <span className="fm-panel__title">특성</span>
+        </div>
+        <div className="fm-panel__body">
+          {(player.traits ?? []).length === 0 ? (
+            <p className="fm-text-muted fm-text-md">등록된 특성이 없습니다.</p>
+          ) : (
+            <div className="fm-flex-col fm-gap-md">
+              {(Object.entries(groupedTraits) as [keyof typeof groupedTraits, typeof groupedTraits[keyof typeof groupedTraits]][])
+                .filter(([, traits]) => traits.length > 0)
+                .map(([polarity, traits]) => (
+                  <div key={polarity} className="fm-flex-col fm-gap-sm">
+                    <span className="fm-text-sm fm-text-muted">{TRAIT_POLARITY_LABELS[polarity]}</span>
+                    <div className="fm-flex fm-gap-xs fm-flex-wrap">
+                      {traits.map((trait) => renderTraitBadge(trait.id))}
+                    </div>
+                  </div>
+                ))}
+            </div>
+          )}
         </div>
       </div>
 

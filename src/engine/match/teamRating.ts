@@ -9,6 +9,7 @@ import { TRAIT_LIBRARY, type TraitTier } from '../../data/traitLibrary';
 import type { Position } from '../../types/game';
 import type { Player } from '../../types/player';
 import { clamp as clampValue } from '../../utils/mathUtils';
+import { getCombinedTraitEffectProfile } from '../../utils/traitUtils';
 import type { PlayStyle } from '../../types/team';
 import type { ChampionSynergy, ChampionTag } from '../../types/champion';
 
@@ -96,15 +97,17 @@ export function calculatePlayerRating(
 }
 
 /** 선수의 라인전 특화 전력 */
-export function calculateLaningRating(player: Player): number {
+export function calculateLaningRating(player: Player, traitIds: string[] = []): number {
   const s = player.stats;
-  return s.laning * 0.35 + s.mechanical * 0.30 + s.aggression * 0.20 + s.consistency * 0.15;
+  const effect = getCombinedTraitEffectProfile(traitIds);
+  return s.laning * 0.35 + s.mechanical * 0.30 + s.aggression * 0.20 + s.consistency * 0.15 + effect.lane;
 }
 
 /** 선수의 한타 특화 전력 */
-export function calculateTeamfightRating(player: Player): number {
+export function calculateTeamfightRating(player: Player, traitIds: string[] = []): number {
   const s = player.stats;
-  return s.teamwork * 0.30 + s.gameSense * 0.25 + s.mechanical * 0.25 + s.consistency * 0.20;
+  const effect = getCombinedTraitEffectProfile(traitIds);
+  return s.teamwork * 0.30 + s.gameSense * 0.25 + s.mechanical * 0.25 + s.consistency * 0.20 + effect.teamfight + effect.shotcalling * 0.5;
 }
 
 // ─────────────────────────────────────────
@@ -156,6 +159,11 @@ export function calculateTraitBonus(traitIds: string[]): number {
   return bonus;
 }
 
+export function calculateTraitModifier(traitIds: string[]): number {
+  const effect = getCombinedTraitEffectProfile(traitIds);
+  return effect.consistency * 0.9 + effect.mental * 0.8 + effect.teamfight * 0.35 + effect.lane * 0.35 - effect.risk * 0.7;
+}
+
 // ─────────────────────────────────────────
 // 팀 전력 평가
 // ─────────────────────────────────────────
@@ -197,18 +205,19 @@ export function evaluateTeam(
     const mental = calculateMentalModifier(player);
     const traits = playerTraits[player.id] ?? [];
     const traitBonus = calculateTraitBonus(traits);
+    const traitModifier = calculateTraitModifier(traits);
 
     // 폼 보정: 50 기준, ±10 범위 (폼 100 → +10, 폼 0 → -10) — 2배 강화
     const form = playerForm[player.id] ?? 50;
     const formBonus = (form - 50) * 0.2;
 
     // 폼 기반 전투력 보정 (선형 보너스만 적용)
-    const posRating = rating + mental + traitBonus + formBonus;
+    const posRating = rating + mental + traitBonus + traitModifier + formBonus;
 
     byPosition[pos] = posRating;
     weightedSum += posRating * weights[pos];
-    laningSum += calculateLaningRating(player) * weights[pos];
-    teamfightSum += calculateTeamfightRating(player) * weights[pos];
+    laningSum += calculateLaningRating(player, traits) * weights[pos];
+    teamfightSum += calculateTeamfightRating(player, traits) * weights[pos];
     traitBonusTotal += traitBonus;
     mentalTotal += mental;
   }

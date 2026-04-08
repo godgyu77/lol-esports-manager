@@ -1233,12 +1233,63 @@
   line-height: 1.4;
 }
 
-.match-commentary-msg--kill { color: var(--danger); }
-.match-commentary-msg--objective { color: var(--warning); }
-.match-commentary-msg--teamfight { color: var(--danger); }
+.match-commentary-msg--kill { color: var(--danger); font-weight: 600; }
+.match-commentary-msg--objective { color: var(--warning); font-weight: 600; }
+.match-commentary-msg--teamfight { color: var(--danger); font-weight: 700; }
 .match-commentary-msg--decision { color: var(--accent); }
-.match-commentary-msg--highlight { color: var(--success); }
+.match-commentary-msg--highlight { color: var(--success); font-weight: 600; }
 .match-commentary-msg--default { color: var(--text-secondary); }
+
+.match-commentary-item--key {
+  background: rgba(255,255,255,0.04);
+  border-left: 2px solid var(--danger);
+  padding: 4px 0 4px 8px;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  margin: 2px 0;
+}
+
+.match-commentary-icon {
+  margin-right: 4px;
+  font-style: normal;
+}
+
+/* ─── SeriesResult view tabs ─── */
+.match-result-view-toggle {
+  display: flex;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-sm);
+  justify-content: center;
+}
+
+.match-result-tab-btn {
+  padding: 5px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.match-result-tab-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+}
+
+.match-result-tab-btn--active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg-primary);
+  font-weight: 600;
+}
+
+.match-result-game-tabs {
+  display: flex;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-sm);
+  justify-content: center;
+}
 
 /* ─── DecisionPopup ─── */
 .match-decision-box {

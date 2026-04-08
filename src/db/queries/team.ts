@@ -4,7 +4,7 @@
 import type { Region } from '../../types';
 import type { PlayStyle, Team } from '../../types/team';
 import { getDatabase } from '../database';
-import { type PlayerRow, mapRowToPlayer } from './player';
+import { hydratePlayers, type PlayerRow, mapRowToPlayer } from './player';
 
 // ─────────────────────────────────────────
 // Row → TypeScript 매핑
@@ -78,7 +78,7 @@ export async function getTeamWithRoster(teamId: string): Promise<Team | null> {
     'SELECT * FROM players WHERE team_id = $1',
     [teamId],
   );
-  team.roster = playerRows.map(mapRowToPlayer);
+  team.roster = await hydratePlayers(db, playerRows.map(mapRowToPlayer));
 
   // championPool 일괄 로딩
   const playerIds = team.roster.map(p => p.id);

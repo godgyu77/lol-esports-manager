@@ -766,21 +766,6 @@ export function DayView() {
       </div>
 
       <div className="fm-grid fm-grid--2 fm-mb-lg">
-        {recentCareerArc && (
-          <div className="fm-panel" data-testid="dayview-career-arc-card">
-            <div className="fm-panel__header">
-              <span className="fm-panel__title">시즌 서사</span>
-            </div>
-            <div className="fm-panel__body fm-flex-col fm-gap-sm">
-              <div className="fm-flex fm-items-center fm-justify-between fm-gap-sm">
-                <strong className="fm-text-primary">{recentCareerArc.headline}</strong>
-                <span className="fm-badge fm-badge--info">{recentCareerArc.stage}</span>
-              </div>
-              <p className="fm-text-secondary" style={{ margin: 0 }}>{recentCareerArc.summary}</p>
-            </div>
-          </div>
-        )}
-
         <div className="fm-panel">
           <div className="fm-panel__header">
             <span className="fm-panel__title">운영 우선순위</span>
@@ -843,7 +828,6 @@ export function DayView() {
           </div>
         </div>
 
-
         <div className="fm-panel">
           <div className="fm-panel__header">
             <span className="fm-panel__title">이번 주 영향 요약</span>
@@ -865,6 +849,58 @@ export function DayView() {
           </div>
         </div>
       </div>
+
+      {(recentCareerArc || coachAdvice || topConsequence || latestPrepRecord) ? (
+        <details className="fm-disclosure fm-mb-lg">
+          <summary>배경 메모 더 보기</summary>
+          <div className="fm-disclosure__body">
+            <div className="fm-grid fm-grid--2">
+              {recentCareerArc ? (
+                <div className="fm-panel" data-testid="dayview-career-arc-card">
+                  <div className="fm-panel__header">
+                    <span className="fm-panel__title">시즌 서사</span>
+                  </div>
+                  <div className="fm-panel__body fm-flex-col fm-gap-sm">
+                    <div className="fm-flex fm-items-center fm-justify-between fm-gap-sm">
+                      <strong className="fm-text-primary">{recentCareerArc.headline}</strong>
+                      <span className="fm-badge fm-badge--info">{recentCareerArc.stage}</span>
+                    </div>
+                    <p className="fm-text-secondary" style={{ margin: 0 }}>{recentCareerArc.summary}</p>
+                  </div>
+                </div>
+              ) : null}
+
+              {(coachAdvice || topConsequence || latestPrepRecord) ? (
+                <div className="fm-panel">
+                  <div className="fm-panel__header">
+                    <span className="fm-panel__title">세부 배경</span>
+                  </div>
+                  <div className="fm-panel__body fm-flex-col fm-gap-sm">
+                    {coachAdvice ? (
+                      <div className="fm-card">
+                        <div className="fm-text-primary fm-font-semibold fm-mb-xs">코치 메모</div>
+                        <div className="fm-text-secondary">{coachAdvice.headline}</div>
+                      </div>
+                    ) : null}
+                    {topConsequence ? (
+                      <div className="fm-card">
+                        <div className="fm-text-primary fm-font-semibold fm-mb-xs">{topConsequence.title}</div>
+                        <div className="fm-text-secondary">{topConsequence.summary}</div>
+                      </div>
+                    ) : null}
+                    {latestPrepRecord ? (
+                      <div className="fm-card">
+                        <div className="fm-text-primary fm-font-semibold fm-mb-xs">최근 준비 효과</div>
+                        <div className="fm-text-secondary">{latestPrepRecord.impactSummary ?? latestPrepRecord.summary}</div>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </details>
+      ) : null}
 
       {dayResult && (
         <div className="fm-panel fm-mb-lg">
@@ -896,11 +932,9 @@ export function DayView() {
             </div>
 
             {resultSummaryCards.length > 0 ? (
-              <div className="fm-panel fm-mb-md" style={{ background: 'rgba(255,255,255,0.02)' }}>
-                <div className="fm-panel__header">
-                  <span className="fm-panel__title">오늘 결과를 만든 배경</span>
-                </div>
-                <div className="fm-panel__body">
+              <details className="fm-disclosure fm-mb-md">
+                <summary>오늘 결과를 만든 배경 보기</summary>
+                <div className="fm-disclosure__body">
                   <div className="dv-focus-grid">
                     {resultSummaryCards.map((item) => (
                       <div key={`result-${item.title}-${item.detail}`} className="dv-focus-card">
@@ -911,7 +945,7 @@ export function DayView() {
                     ))}
                   </div>
                 </div>
-              </div>
+              </details>
             ) : null}
 
             {dayResult.events.length === 0 ? (
@@ -930,24 +964,24 @@ export function DayView() {
       )}
 
       {skipResults.length > 0 && (
-        <div className="fm-panel">
-          <div className="fm-panel__header">
-            <span className="fm-panel__title">자동 진행 요약</span>
-          </div>
-          <div className="fm-panel__body fm-flex-col fm-gap-sm">
-            {skipResults.map((result) => (
-              <div key={`${result.date}-${result.nextDate}`} className="fm-card">
-                <div className="fm-flex fm-justify-between fm-items-center fm-mb-xs">
-                  <span className="fm-text-primary fm-font-semibold">{result.date}</span>
-                  <span className="fm-badge fm-badge--default">{DAY_TYPE_LABELS[result.dayType] ?? result.dayType}</span>
+        <details className="fm-disclosure">
+          <summary>자동 진행 요약 보기</summary>
+          <div className="fm-disclosure__body">
+            <div className="fm-flex-col fm-gap-sm">
+              {skipResults.map((result) => (
+                <div key={`${result.date}-${result.nextDate}`} className="fm-card">
+                  <div className="fm-flex fm-justify-between fm-items-center fm-mb-xs">
+                    <span className="fm-text-primary fm-font-semibold">{result.date}</span>
+                    <span className="fm-badge fm-badge--default">{DAY_TYPE_LABELS[result.dayType] ?? result.dayType}</span>
+                  </div>
+                  <p className="fm-text-muted" style={{ margin: 0 }}>
+                    {result.events[0] ?? '큰 변수 없이 일정이 진행됐습니다.'}
+                  </p>
                 </div>
-                <p className="fm-text-muted" style={{ margin: 0 }}>
-                  {result.events[0] ?? '큰 변수 없이 일정이 진행됐습니다.'}
-                </p>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
+        </details>
       )}
     </div>
   );

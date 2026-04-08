@@ -121,7 +121,6 @@ export function LiveMatchView() {
   const [gameState, setGameState] = useState<LiveGameState | null>(null);
   const [currentDecision, setCurrentDecision] = useState<Decision | null>(null);
   const [isRunning, setIsRunning] = useState(false);
-  const [betweenMessage, setBetweenMessage] = useState<string | null>(null);
   const [seriesComplete, setSeriesComplete] = useState(false);
   const [postMatchComment, setPostMatchComment] = useState<PostMatchComment | null>(null);
   const [liveChatMessages, setLiveChatMessages] = useState<LiveChatMessage[]>([]);
@@ -130,6 +129,7 @@ export function LiveMatchView() {
   const commentaryRef = useRef<HTMLDivElement>(null);
   const lastEventCount = useRef(0);
   const finalizedGame = useRef<number | null>(null);
+  const userScrolled = useRef(false);
 
   const basePath = mode === 'player' ? '/player' : '/manager';
   const homeTeam = teams.find((team) => team.id === pendingMatch?.teamHomeId);
@@ -143,8 +143,19 @@ export function LiveMatchView() {
   }, [setMatchActive]);
 
   useEffect(() => {
+    if (userScrolled.current) return;
     if (commentaryRef.current) commentaryRef.current.scrollTop = commentaryRef.current.scrollHeight;
   }, [gameState?.commentary.length]);
+
+  useEffect(() => {
+    const el = commentaryRef.current;
+    if (!el) return;
+    const handleScroll = () => {
+      userScrolled.current = el.scrollTop + el.clientHeight < el.scrollHeight - 40;
+    };
+    el.addEventListener('scroll', handleScroll);
+    return () => el.removeEventListener('scroll', handleScroll);
+  }, [engine]);
 
   const initGame = useCallback(async () => {
     if (!pendingMatch || !save) return;
@@ -295,7 +306,6 @@ export function LiveMatchView() {
       const isComplete = nextScore.home >= winsNeeded() || nextScore.away >= winsNeeded();
       if (!isComplete) {
         setBetweenGames(true);
-        setBetweenMessage(`${currentGameNum}세트 종료. 다음 세트 밴픽으로 이어집니다.`);
         setCurrentGameDraftRequired(true);
         setDraftResult(null);
         setDayPhase('banpick');
@@ -398,44 +408,20 @@ export function LiveMatchView() {
     navigate(basePath);
   }, [basePath, navigate, resetSeries, setCurrentGameDraftRequired, setDayPhase, setDraftResult, setPendingUserMatch]);
 
-  const summary = useMemo(() => {
-    if (!gameState) return '경기 데이터를 계산 중입니다.';
-    const diff = gameState.goldHome - gameState.goldAway;
-    const lead = diff >= 0 ? homeTeam?.shortName ?? '블루' : awayTeam?.shortName ?? '레드';
-    const focus = gameState.focusEvent?.detail ?? '주요 장면을 수집 중입니다.';
-    return `${lead} 우세 (${Math.abs(Math.round(diff / 100)) / 10}k), ${focus}`;
-  }, [awayTeam?.shortName, gameState, homeTeam?.shortName]);
-
-  const liveStatusCards = useMemo(() => {
-    if (!gameState) return [];
-
-    const goldDiff = gameState.goldHome - gameState.goldAway;
-    const leadingTeam = goldDiff >= 0 ? homeTeam?.shortName ?? '블루' : awayTeam?.shortName ?? '레드';
-    const dragonLead =
-      gameState.dragonsHome === gameState.dragonsAway
-        ? '동률'
-        : gameState.dragonsHome > gameState.dragonsAway
-          ? `${homeTeam?.shortName ?? '블루'} 우세`
-          : `${awayTeam?.shortName ?? '레드'} 우세`;
-
-    return [
-      {
-        title: '골드 흐름',
-        value: `${leadingTeam} +${Math.abs(Math.round(goldDiff / 100)) / 10}k`,
-        detail: '현재 전투 교환과 사이드 운영이 전체 흐름을 만들고 있습니다.',
-      },
-      {
-        title: '오브젝트',
-        value: dragonLead,
-        detail: `드래곤 ${gameState.dragonsHome} : ${gameState.dragonsAway} / 타워 ${gameState.towersHome} : ${gameState.towersAway}`,
-      },
-      {
-        title: '현재 포커스',
-        value: PHASE_LABELS[gameState.phase],
-        detail: gameState.focusEvent?.detail ?? '다음 핵심 교전 장면을 기다리는 중입니다.',
-      },
-    ];
-  }, [awayTeam?.shortName, gameState, homeTeam?.shortName]);
+  const lastGameStats = useMemo(() => {
+    const lastGame = gameResults[gameResults.length - 1];
+    if (!lastGame) return null;
+    const homeKda = lastGame.playerStatsHome.reduce(
+      (acc, p) => ({ k: acc.k + p.kills, d: acc.d + p.deaths, a: acc.a + p.assists }),
+      { k: 0, d: 0, a: 0 },
+    );
+    const awayKda = lastGame.playerStatsAway.reduce(
+      (acc, p) => ({ k: acc.k + p.kills, d: acc.d + p.deaths, a: acc.a + p.assists }),
+      { k: 0, d: 0, a: 0 },
+    );
+    const goldDiff = lastGame.goldHome - lastGame.goldAway;
+    return { homeKda, awayKda, goldDiff, towersHome: lastGame.towersHome, towersAway: lastGame.towersAway };
+  }, [gameResults]);
 
   if (!pendingMatch) {
     return <p className="fm-text-muted fm-text-md">진행 중인 경기가 없습니다.</p>;
@@ -479,38 +465,28 @@ export function LiveMatchView() {
 
   return (
     <div className="match-container fm-animate-in">
-      <div className="fm-page-header">
-        <h1 className="fm-page-title">{homeTeam?.name ?? '홈 팀'} vs {awayTeam?.name ?? '원정 팀'}</h1>
-        <p className="fm-page-subtitle">{currentGameNum}세트 · {PHASE_LABELS[gameState.phase]}</p>
-      </div>
-
       <div className="fm-topbar fm-mb-md">
         <div className="fm-topbar__section">
-          <span className="fm-topbar__label">제어</span>
-          <div className="fm-flex fm-gap-xs">
-            <button
-              type="button"
-              className="fm-btn fm-btn--primary fm-btn--sm"
-              onClick={() => setIsRunning((prev) => !prev)}
-              disabled={gameState.isFinished}
-            >
-              {isRunning ? '일시 정지' : '재생'}
-            </button>
+          <button
+            type="button"
+            className="fm-btn fm-btn--primary fm-btn--sm"
+            onClick={() => setIsRunning((prev) => !prev)}
+            disabled={gameState.isFinished}
+          >
+            {isRunning ? '일시 정지' : '재생'}
+          </button>
+          <div className="match-speed-row">
             {SPEED_PRESETS.map((preset) => (
               <button
                 key={preset.key}
                 type="button"
-                className={`fm-btn fm-btn--sm ${speedPreset === preset.key ? 'fm-btn--info' : ''}`}
+                className={`match-speed-btn ${speedPreset === preset.key ? 'match-speed-btn--active' : ''}`}
                 onClick={() => setSpeedPreset(preset.key)}
               >
                 {preset.label}
               </button>
             ))}
           </div>
-        </div>
-        <div className="fm-topbar__section">
-          <span className="fm-topbar__label">요약</span>
-          <span className="fm-topbar__value">{summary}</span>
         </div>
       </div>
 
@@ -523,22 +499,8 @@ export function LiveMatchView() {
         phaseLabels={PHASE_LABELS}
       />
 
-      <div className="fm-grid fm-grid--3 fm-mt-md">
-        {liveStatusCards.map((card) => (
-          <div key={card.title} className="fm-card fm-flex-col fm-gap-xs">
-            <span className="fm-text-xs fm-text-muted">{card.title}</span>
-            <strong className="fm-text-primary">{card.value}</strong>
-            <span className="fm-text-sm fm-text-secondary">{card.detail}</span>
-          </div>
-        ))}
-      </div>
-
       <div className="fm-grid fm-grid--2 fm-mt-md">
         <div className="fm-flex-col fm-gap-md">
-          <div className="fm-card">
-            <div className="fm-text-xs fm-text-muted fm-mb-xs">현재 상황</div>
-            <div className="fm-text-secondary">{summary}</div>
-          </div>
           <Suspense fallback={<div className="fm-card fm-text-muted">전장을 준비하는 중입니다...</div>}>
             <BroadcastBattlefield gameState={gameState} />
           </Suspense>
@@ -573,7 +535,29 @@ export function LiveMatchView() {
         <div className="fm-overlay" role="dialog" aria-modal="true" aria-label="세트 종료">
           <div className="animate-scaleIn match-result-box">
             <h2 className="match-result-title">{currentGameNum}세트 종료</h2>
-            <p className="fm-text-secondary">{betweenMessage}</p>
+            <div className="match-result-score">
+              <span className="match-result-team">{homeTeam?.shortName ?? '홈'}</span>
+              <span className="match-result-final">{seriesScore.home} : {seriesScore.away}</span>
+              <span className="match-result-team">{awayTeam?.shortName ?? '원정'}</span>
+            </div>
+            {seriesScore.home === seriesScore.away && (
+              <p style={{ color: 'var(--warning)', fontWeight: 700, textAlign: 'center', margin: '4px 0 0' }}>결정전</p>
+            )}
+            {lastGameStats && (
+              <div className="match-between-result" style={{ marginTop: 12 }}>
+                <div style={{ fontSize: 13 }}>
+                  {lastGameStats.homeKda.k}/{lastGameStats.homeKda.d}/{lastGameStats.homeKda.a}
+                  <span style={{ color: 'var(--text-muted)', margin: '0 6px' }}>KDA</span>
+                  {lastGameStats.awayKda.k}/{lastGameStats.awayKda.d}/{lastGameStats.awayKda.a}
+                </div>
+                <div style={{ color: 'var(--text-muted)', fontSize: 12, marginTop: 4 }}>
+                  골드 차이 {lastGameStats.goldDiff > 0 ? '+' : ''}{(Math.round(lastGameStats.goldDiff / 100) / 10).toFixed(1)}k
+                  &nbsp;·&nbsp;
+                  타워 {lastGameStats.towersHome} vs {lastGameStats.towersAway}
+                </div>
+              </div>
+            )}
+            <p className="fm-text-secondary" style={{ marginTop: 10 }}>다음 세트 밴픽을 완료하면 경기가 이어집니다.</p>
             <button type="button" className="fm-btn fm-btn--primary fm-mt-md" onClick={() => navigate(`${basePath}/draft`)}>
               다음 세트 밴픽으로 이동
             </button>

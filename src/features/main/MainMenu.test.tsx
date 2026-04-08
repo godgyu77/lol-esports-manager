@@ -1,7 +1,14 @@
 import { renderWithProviders, screen, waitFor, resetStores } from '../../test/testUtils';
 import { MainMenu } from './MainMenu';
 
-const { mockNavigate, mockCheckOllamaStatus, mockGetSaveSlots, mockLoadSave, mockLoadGameIntoStore, mockExitApp } = vi.hoisted(() => ({
+const {
+  mockNavigate,
+  mockCheckOllamaStatus,
+  mockGetSaveSlots,
+  mockLoadSave,
+  mockLoadGameIntoStore,
+  mockExitApp,
+} = vi.hoisted(() => ({
   mockNavigate: vi.fn(),
   mockCheckOllamaStatus: vi.fn(),
   mockGetSaveSlots: vi.fn(),
@@ -52,7 +59,8 @@ describe('MainMenu', () => {
 
     renderWithProviders(<MainMenu />);
 
-    expect(await screen.findByRole('button', { name: /계속 진행|怨꾩냽/i })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: '계속 진행' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '새 커리어' })).toBeInTheDocument();
   });
 
   it('shows new career CTA when there is no save', async () => {
@@ -60,7 +68,8 @@ describe('MainMenu', () => {
 
     renderWithProviders(<MainMenu />);
 
-    await waitFor(() => expect(screen.getByRole('button', { name: /새 커리어 시작|쒖옉/i })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('button', { name: '새 커리어 시작' })).toBeInTheDocument());
+    expect(screen.queryByText('빠른 안내')).not.toBeInTheDocument();
   });
 
   it('shows a load error when continue fails', async () => {
@@ -84,13 +93,13 @@ describe('MainMenu', () => {
         },
       },
     ]);
-    mockLoadSave.mockRejectedValue(new Error('손상된 세이브 파일입니다.'));
+    mockLoadSave.mockRejectedValue(new Error('세이브 파일이 손상되었습니다.'));
 
     const { user } = renderWithProviders(<MainMenu />);
 
-    await user.click(await screen.findByRole('button', { name: /계속 진행|怨꾩냽/i }));
+    await user.click(await screen.findByRole('button', { name: '계속 진행' }));
 
-    expect(await screen.findByText('손상된 세이브 파일입니다.')).toBeInTheDocument();
+    expect(await screen.findByText('세이브 파일이 손상되었습니다.')).toBeInTheDocument();
     expect(mockLoadGameIntoStore).not.toHaveBeenCalled();
   });
 });

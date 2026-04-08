@@ -7,6 +7,16 @@ interface CommentaryPanelProps {
   panelRef: RefObject<HTMLDivElement | null>;
 }
 
+const KEY_EVENT_TYPES = new Set(['kill', 'teamfight', 'objective', 'highlight']);
+
+const EVENT_PREFIX: Partial<Record<Commentary['type'], string>> = {
+  kill: '⚔',
+  teamfight: '💥',
+  objective: '🎯',
+  highlight: '★',
+  decision: '▶',
+};
+
 function getCommentaryMsgClass(type: Commentary['type']): string {
   switch (type) {
     case 'kill': return 'match-commentary-msg match-commentary-msg--kill';
@@ -23,9 +33,10 @@ export function CommentaryPanel({ commentary, panelRef }: CommentaryPanelProps) 
     <div className="match-commentary-panel" ref={panelRef}>
       <h3 className="match-commentary-title">경기 중계</h3>
       {commentary.map((c, i) => (
-        <div key={i} className="match-commentary-item">
+        <div key={i} className={`match-commentary-item${KEY_EVENT_TYPES.has(c.type) ? ' match-commentary-item--key' : ''}`}>
           <span className="match-commentary-tick">{c.tick}분</span>
           <span className={getCommentaryMsgClass(c.type)}>
+            {EVENT_PREFIX[c.type] ? <span className="match-commentary-icon">{EVENT_PREFIX[c.type]}</span> : null}
             {c.message}
           </span>
         </div>

@@ -13,6 +13,8 @@ import {
   calculateLaningRating,
   calculateTeamfightRating,
   calculateMentalModifier,
+  calculateTraitBonus,
+  calculateTraitModifier,
   type Lineup,
 } from './teamRating';
 import type { Player } from '../../types/player';
@@ -297,6 +299,25 @@ describe('calculateMentalModifier', () => {
     });
 
     expect(calculateMentalModifier(player)).toBeLessThan(0);
+  });
+});
+
+describe('trait effects', () => {
+  it('includes newly registered traits in the generic tier bonus', () => {
+    expect(calculateTraitBonus(['PLAYMAKER'])).toBeGreaterThan(0);
+    expect(calculateTraitBonus(['CLUTCH'])).toBeGreaterThan(0);
+    expect(calculateTraitBonus(['BIG_GAME_PLAYER'])).toBeGreaterThan(0);
+  });
+
+  it('applies negative and positive trait modifiers in different directions', () => {
+    expect(calculateTraitModifier(['LANE_KINGDOM', 'PLAYMAKER'])).toBeGreaterThan(0);
+    expect(calculateTraitModifier(['THROWING', 'PASSIVE'])).toBeLessThan(0);
+  });
+
+  it('changes lane and teamfight ratings differently by trait profile', () => {
+    const player = createMockPlayer({ position: 'mid' });
+    expect(calculateLaningRating(player, ['LANE_KINGDOM'])).toBeGreaterThan(calculateLaningRating(player));
+    expect(calculateTeamfightRating(player, ['PLAYMAKER'])).toBeGreaterThan(calculateTeamfightRating(player));
   });
 });
 

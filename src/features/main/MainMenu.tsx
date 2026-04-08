@@ -39,7 +39,7 @@ function getSaveResumeSummary(save: GameSave): { headline: string; subline: stri
 const EXPERIENCE_PILLARS = [
   '패치 대응 운영',
   '드래프트와 로스터 관리',
-  '시즌 서사 중심 진행',
+  '커리어 중심 진행',
 ] as const;
 
 export function MainMenu() {
@@ -113,19 +113,14 @@ export function MainMenu() {
                 <span key={pillar} className="launcher__pillar-chip">{pillar}</span>
               ))}
             </div>
-          </div>
-
-          <div className="launcher__story-grid">
-            <article className="launcher__story-card">
-              <span className="launcher__story-label">추천 시작</span>
-              <strong>감독 모드로 첫 시즌 시작</strong>
-              <p>훈련, 전술, 밴픽, 구단 운영이 모두 열려 있어 전체 루프를 가장 자연스럽게 익힐 수 있습니다.</p>
-            </article>
-            <article className="launcher__story-card">
-              <span className="launcher__story-label">AI 상태</span>
-              <strong>{aiStatusLabel}</strong>
-              <p>로컬 AI가 없어도 템플릿과 규칙 엔진으로 뉴스, 브리핑, 시즌 흐름이 끊기지 않게 설계돼 있습니다.</p>
-            </article>
+            <div className="launcher__hero-actions">
+              <button className="launcher__secondary-cta" onClick={() => navigate('/mode-select')}>
+                새 커리어
+              </button>
+              <button className="launcher__secondary-cta" onClick={() => navigate('/save-load')}>
+                세이브 관리
+              </button>
+            </div>
           </div>
         </section>
 
@@ -178,14 +173,6 @@ export function MainMenu() {
                 </button>
               </>
             )}
-          </div>
-
-          <div className="launcher__identity-card">
-            <span className="launcher__continue-label">빠른 안내</span>
-            <strong>뉴스는 읽고, 받은편지는 처리하고, 밴픽과 경기는 몰입해서 진행하는 구조입니다.</strong>
-            <p>
-              처음 시작할 때는 새 커리어 한 번만 선택하면 됩니다. 이후에는 최근 커리어 카드에서 바로 이어서 플레이할 수 있습니다.
-            </p>
           </div>
 
           <div className="launcher__menu-grid">

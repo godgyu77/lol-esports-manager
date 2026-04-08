@@ -41,6 +41,7 @@ export interface Player {
   stats: PlayerStats;
   mental: PlayerMental;
   contract: PlayerContract;
+  traits?: string[];
   championPool: ChampionProficiency[];
   potential: number;    // 잠재력 (0-100)
   peakAge: number;      // 최적 나이

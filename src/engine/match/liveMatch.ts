@@ -483,9 +483,10 @@ export class LiveMatchEngine {
     if (this.tacticsCooldown > 0) return false;
     this.inGameTactics = { playStyle, objectivePriority, teamfightAggression };
     this.tacticsCooldown = 5;
-    const styleDelta = playStyle === 'aggressive' ? 0.015 : playStyle === 'split' ? 0.01 : 0;
-    const objectiveDelta = objectivePriority === 'dragon' ? 0.005 : objectivePriority === 'baron' ? 0.008 : 0;
-    this.state.currentWinRate = Math.max(0.15, Math.min(0.85, this.state.currentWinRate + styleDelta + objectiveDelta));
+    const styleDelta = playStyle === 'aggressive' ? 0.025 : playStyle === 'split' ? 0.015 : 0;
+    const objectiveDelta = objectivePriority === 'dragon' ? 0.012 : objectivePriority === 'baron' ? 0.015 : 0;
+    const teamfightDelta = teamfightAggression === 'engage' ? 0.02 : teamfightAggression === 'avoid' ? -0.015 : 0;
+    this.state.currentWinRate = Math.max(0.15, Math.min(0.85, this.state.currentWinRate + styleDelta + objectiveDelta + teamfightDelta));
     this.addCommentary(
       this.state.currentTick,
       `전술 변경: ${playStyleLabel(playStyle)}, ${objectivePriorityLabel(objectivePriority)}, ${teamfightAggressionLabel(teamfightAggression)}.`,
@@ -787,33 +788,99 @@ export class LiveMatchEngine {
     if (!bucket.includes(tick)) return null;
 
     this.usedCoachVoice += 1;
+
+    const goldDiff = this.state.goldHome - this.state.goldAway;
+    const isLeading = goldDiff > 800;
+    const isTrailing = goldDiff < -800;
+    const dragonSoulClose = this.state.dragonsHome >= 3 || this.state.dragonsAway >= 3;
+    const baronActive = this.state.baronHome || this.state.baronAway;
+    const goldK = (Math.abs(Math.round(goldDiff / 100)) / 10).toFixed(1);
+
+    let situation: string;
+    if (baronActive) {
+      situation = `${tick}분 — 바론 버프 활성 중. 이 순간 운영 선택이 경기를 가릅니다.`;
+    } else if (dragonSoulClose) {
+      const soulLeader = this.state.dragonsHome >= 3 ? '블루' : '레드';
+      situation = `${tick}분 — ${soulLeader} 팀이 드래곤 소울까지 한 마리. 강가 시야 싸움이 경기를 결정합니다.`;
+    } else if (isLeading) {
+      situation = `${tick}분 — 골드 ${goldK}k 리드 중. 이 우세를 오브젝트로 연결할 시점입니다.`;
+    } else if (isTrailing) {
+      situation = `${tick}분 — ${goldK}k 뒤지고 있습니다. 교전 한 번으로 판세를 뒤집어야 합니다.`;
+    } else {
+      situation = `${tick}분 — 초접전 국면입니다. 다음 운영 선택 하나가 판을 기울입니다.`;
+    }
+
+    const options: Decision['options'] = baronActive
+      ? [
+          {
+            id: 'press',
+            label: '바론 세팅 적극 활용',
+            description: '바론 버프로 포탑 2~3개를 압박합니다.',
+            effect: { winRateMod: 0.04, goldMod: 300, moraleMod: 2, riskFactor: 0.25 },
+          },
+          {
+            id: 'reset',
+            label: '안전 귀환 후 시야 정리',
+            description: '무리하지 않고 다음 바론을 내다봅니다.',
+            effect: { winRateMod: 0.015, goldMod: 60, moraleMod: 0, riskFactor: 0.05 },
+          },
+          {
+            id: 'split',
+            label: '사이드 동시 압박',
+            description: '바론 버프를 사이드 2개에 동시에 활용합니다.',
+            effect: { winRateMod: 0.03, goldMod: 180, moraleMod: 1, riskFactor: 0.2 },
+          },
+        ]
+      : isTrailing
+        ? [
+            {
+              id: 'press',
+              label: '역전을 노린 교전',
+              description: '위험을 감수하고 한타를 먼저 엽니다.',
+              effect: { winRateMod: 0.04, goldMod: 200, moraleMod: 2, riskFactor: 0.55 },
+            },
+            {
+              id: 'reset',
+              label: '버티기',
+              description: '수비 운영으로 시간을 벌며 상대 실수를 기다립니다.',
+              effect: { winRateMod: 0.01, goldMod: 20, moraleMod: 0, riskFactor: 0.1 },
+            },
+            {
+              id: 'split',
+              label: '사이드 교환',
+              description: '사이드를 흔들어 골드 격차를 줄입니다.',
+              effect: { winRateMod: 0.025, goldMod: 100, moraleMod: 0, riskFactor: 0.3 },
+            },
+          ]
+        : [
+            {
+              id: 'press',
+              label: '압박 유지',
+              description: '템포를 올리며 다음 교전을 먼저 엽니다.',
+              effect: { winRateMod: 0.025, goldMod: 120, moraleMod: 1, riskFactor: 0.35 },
+            },
+            {
+              id: 'reset',
+              label: '시야 재정비',
+              description: '한 박자 쉬고 귀환 후 시야를 다시 잡습니다.',
+              effect: { winRateMod: 0.012, goldMod: 40, moraleMod: 0, riskFactor: 0.1 },
+            },
+            {
+              id: 'split',
+              label: '사이드 운영',
+              description: '공간을 교환하며 사이드 압박을 키웁니다.',
+              effect: { winRateMod: 0.018, goldMod: 80, moraleMod: 0, riskFactor: 0.2 },
+            },
+          ];
+
     return {
       id: `decision_${tick}`,
       tick,
       phase: this.state.phase,
-      situation: `${tick}분 구간 브리핑입니다. 다음 운영 방향을 선택하세요.`,
+      situation,
       mode: this.gameMode,
       resolved: false,
-      options: [
-        {
-          id: 'press',
-          label: '압박 유지',
-          description: '템포를 올리며 다음 교전을 먼저 엽니다.',
-          effect: { winRateMod: 0.025, goldMod: 120, moraleMod: 1, riskFactor: 0.35 },
-        },
-        {
-          id: 'reset',
-          label: '시야 재정비',
-          description: '한 박자 쉬고 귀환 후 시야를 다시 잡습니다.',
-          effect: { winRateMod: 0.012, goldMod: 40, moraleMod: 0, riskFactor: 0.1 },
-        },
-        {
-          id: 'split',
-          label: '사이드 운영',
-          description: '공간을 교환하며 사이드 압박을 키웁니다.',
-          effect: { winRateMod: 0.018, goldMod: 80, moraleMod: 0, riskFactor: 0.2 },
-        },
-      ],
+      options,
     };
   }
 

@@ -207,12 +207,12 @@ export function SeasonGoalView() {
             <div className="fm-text-xs fm-font-semibold fm-text-accent fm-text-upper fm-mb-sm">부임 브리핑</div>
             <h1 className="fm-text-2xl fm-font-bold fm-text-primary" style={{ margin: 0 }}>2026 시즌 부임 브리핑</h1>
             <p className="fm-text-md fm-text-muted fm-mt-sm" style={{ lineHeight: 1.7 }}>
-              이제 팀과 시즌 목표가 정해집니다. 이 화면은 계약 확인이 아니라 어떤 압박 속에서 시즌을 시작하는지 보여주는 첫 브리핑입니다.
+              이번 화면에서는 시즌 목표를 확인하고 바로 시작하면 됩니다. 부가 브리핑은 아래 상세 보기로 접어두었습니다.
             </p>
           </div>
         </header>
 
-        <div className="intro-two-column intro-two-column--wide">
+        <div className="intro-two-column intro-two-column--balanced">
           <div className="fm-flex-col fm-gap-lg">
             <section className="fm-panel">
               <div className="fm-panel__header">
@@ -226,61 +226,30 @@ export function SeasonGoalView() {
                   <span className="fm-badge fm-badge--default">팬 기대 {teamMeta.fanExpectation}</span>
                 </div>
 
-                <div className="fm-card" style={{ borderColor: `${pressureColor}55` }}>
-                  <div className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">보드 압박</div>
-                  <div className="fm-text-base fm-font-semibold" style={{ color: pressureColor }}>
-                    {teamMeta.pressureLevel}
-                  </div>
-                  <p className="fm-text-sm fm-text-muted fm-mt-sm" style={{ lineHeight: 1.7 }}>
-                    {teamMeta.boardStoryline}
-                  </p>
-                </div>
-
-                <div className="intro-card-grid intro-card-grid--2">
+                <div className="intro-summary-grid">
                   <div className="fm-card">
-                    <div className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">첫 시즌 초점</div>
-                    <p className="fm-text-sm fm-text-primary" style={{ lineHeight: 1.7, margin: 0 }}>
-                      {teamMeta.openingFocus}
+                    <div className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">핵심 시즌 목표</div>
+                    <div className="fm-text-xl fm-font-bold fm-text-accent">{currentGoal.label}</div>
+                    <p className="fm-text-sm fm-text-muted fm-mt-sm" style={{ lineHeight: 1.7, marginBottom: 0 }}>
+                      순위 {currentGoal.standing}위 이내
+                      {currentGoal.playoff ? ' · 플레이오프 가시권' : ' · 중위권 수성'}
                     </p>
                   </div>
                   <div className="fm-card">
-                    <div className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">라이벌 구도</div>
-                    <p className="fm-text-sm fm-text-primary" style={{ lineHeight: 1.7, margin: 0 }}>
-                      {teamMeta.rivalry}
+                    <div className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">보드 압박</div>
+                    <div className="fm-text-base fm-font-semibold" style={{ color: pressureColor }}>
+                      {teamMeta.pressureLevel}
+                    </div>
+                    <p className="fm-text-sm fm-text-muted fm-mt-sm" style={{ lineHeight: 1.7, marginBottom: 0 }}>
+                      {teamMeta.boardStoryline}
                     </p>
                   </div>
                 </div>
-              </div>
-            </section>
-
-            <section className="fm-panel">
-              <div className="fm-panel__header">
-                <span className="fm-panel__title">1군 로스터</span>
-              </div>
-              <div className="fm-panel__body--flush">
-                <table className="fm-table fm-table--striped">
-                  <thead>
-                    <tr>
-                      <th>포지션</th>
-                      <th>이름</th>
-                      <th className="text-right">OVR</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {starters.map((player) => (
-                      <tr key={player.name}>
-                        <td><span className="fm-text-accent fm-font-bold fm-text-xs">{player.role}</span></td>
-                        <td className="fm-cell--name">{player.name}</td>
-                        <td className="text-right fm-font-bold">{player.stats.ovr}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
               </div>
             </section>
           </div>
 
-          <aside className="fm-flex-col fm-gap-lg intro-sidebar">
+          <aside className="fm-flex-col fm-gap-lg">
             {mode === 'manager' && pendingManager && (
               <section className="fm-panel">
                 <div className="fm-panel__header">
@@ -307,7 +276,7 @@ export function SeasonGoalView() {
 
             <section className="fm-panel">
               <div className="fm-panel__header">
-                <span className="fm-panel__title">시즌 목표</span>
+                <span className="fm-panel__title">시즌 시작 준비</span>
               </div>
               <div className="fm-panel__body fm-flex-col fm-gap-sm">
                 <div className="fm-info-row">
@@ -331,26 +300,6 @@ export function SeasonGoalView() {
                     <span className="fm-alert__text">목표를 한 단계 낮춘 대신 시즌 초반 보드 만족도는 줄어듭니다.</span>
                   </div>
                 )}
-              </div>
-            </section>
-
-            <section className="fm-panel">
-              <div className="fm-panel__header">
-                <span className="fm-panel__title">리스크 보상</span>
-              </div>
-              <div className="fm-panel__body fm-flex-col fm-gap-sm">
-                <div className="fm-card">
-                  <div className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">성공 시</div>
-                  <p className="fm-text-sm fm-text-primary" style={{ margin: 0, lineHeight: 1.7 }}>
-                    {teamMeta.successReward}
-                  </p>
-                </div>
-                <div className="fm-card">
-                  <div className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">실패 시</div>
-                  <p className="fm-text-sm fm-text-primary" style={{ margin: 0, lineHeight: 1.7 }}>
-                    {teamMeta.failureRisk}
-                  </p>
-                </div>
               </div>
             </section>
 
@@ -406,6 +355,49 @@ export function SeasonGoalView() {
             </div>
           </aside>
         </div>
+
+        <details className="intro-detail-disclosure">
+          <summary>상세 브리핑 보기</summary>
+          <div className="fm-flex-col fm-gap-md">
+            <div className="intro-card-grid intro-card-grid--2">
+              <div className="fm-card">
+                <div className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">첫 시즌 초점</div>
+                <p className="fm-text-sm fm-text-primary" style={{ lineHeight: 1.7, margin: 0 }}>
+                  {teamMeta.openingFocus}
+                </p>
+              </div>
+              <div className="fm-card">
+                <div className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">라이벌 구도</div>
+                <p className="fm-text-sm fm-text-primary" style={{ lineHeight: 1.7, margin: 0 }}>
+                  {teamMeta.rivalry}
+                </p>
+              </div>
+              <div className="fm-card">
+                <div className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">성공 시</div>
+                <p className="fm-text-sm fm-text-primary" style={{ margin: 0, lineHeight: 1.7 }}>
+                  {teamMeta.successReward}
+                </p>
+              </div>
+              <div className="fm-card">
+                <div className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">실패 시</div>
+                <p className="fm-text-sm fm-text-primary" style={{ margin: 0, lineHeight: 1.7 }}>
+                  {teamMeta.failureRisk}
+                </p>
+              </div>
+            </div>
+
+            <div className="fm-card">
+              <div className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">1군 로스터</div>
+              <div className="intro-roster-chiplist">
+                {starters.map((player) => (
+                  <span key={player.name} className="fm-badge fm-badge--default">
+                    {player.role} {player.name} {player.stats.ovr}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        </details>
       </div>
 
       <button className="fm-btn fm-btn--ghost intro-back" onClick={() => navigate('/team-select')}>

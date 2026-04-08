@@ -259,17 +259,13 @@ export async function calculateChemistryBonus(teamId: string): Promise<number> {
  * 이미 존재하는 쌍은 무시 (INSERT OR IGNORE)
  */
 export async function initializeTeamChemistry(teamId: string): Promise<void> {
-  try {
-    const players = await getPlayersByTeamId(teamId);
+  const players = await getPlayersByTeamId(teamId);
 
-    if (players.length < 2) return;
+  if (players.length < 2) return;
 
-    for (let i = 0; i < players.length; i++) {
-      for (let j = i + 1; j < players.length; j++) {
-        await upsertPlayerChemistry(players[i].id, players[j].id, 50);
-      }
+  for (let i = 0; i < players.length; i++) {
+    for (let j = i + 1; j < players.length; j++) {
+      await upsertPlayerChemistry(players[i].id, players[j].id, 50);
     }
-  } catch (e) {
-    console.warn('[chemistryEngine] initializeTeamChemistry failed:', e);
   }
 }

@@ -31,7 +31,7 @@ import { initializeTeamChemistry } from '../engine/chemistry/chemistryEngine';
 import { generatePlayerGoals } from '../engine/playerGoal/playerGoalEngine';
 import { initializeKnowledgeBase } from '../ai/rag/ragEngine';
 import { initGlobalRng } from '../utils/random';
-import { releaseUserTeamHeadCoach, seedAllTeamsStaff } from '../engine/staff/staffEngine';
+import { seedAllTeamsStaff } from '../engine/staff/staffEngine';
 import { ensureInitialCoachBriefingNews } from '../engine/manager/managerSetupEngine';
 
 const BACKGROUND_STATS: Record<
@@ -131,6 +131,22 @@ async function syncLocalSaveMetadata(params: {
   );
 }
 
+async function initializePostSeedSystems(teamIds: string[], seasonId: number): Promise<void> {
+  for (const teamId of teamIds) {
+    try {
+      await initializeTeamChemistry(teamId);
+    } catch (error) {
+      console.warn(`[initGame] chemistry initialization failed for ${teamId}:`, error);
+    }
+
+    try {
+      await generatePlayerGoals(teamId, seasonId);
+    } catch (error) {
+      console.warn(`[initGame] player-goal initialization failed for ${teamId}:`, error);
+    }
+  }
+}
+
 async function resetSlotDatabase(dbFileName: string): Promise<void> {
   await prepareForDatabaseFileMutation();
   if (await gameDatabaseExists(dbFileName)) {
@@ -180,10 +196,7 @@ export async function initializeNewGame(
   initGlobalRng(rngSeed);
 
   await seedAllData();
-  await seedAllTeamsStaff(2026, mode === 'manager' ? teamId : undefined);
-  if (mode === 'manager') {
-    await releaseUserTeamHeadCoach(teamId);
-  }
+  await seedAllTeamsStaff(2026);
 
   try {
     await initializeKnowledgeBase();
@@ -191,7 +204,12 @@ export async function initializeNewGame(
     console.warn('[initGame] knowledge base initialization skipped:', error);
   }
 
-  const result = await withTransaction(async () => {
+  const allTeams = await getAllTeams();
+  const allTeamIds = allTeams.map((team) => team.id);
+  const userTeam = allTeams.find((team) => team.id === teamId);
+  const teamName = userTeam?.name ?? teamId;
+
+  const result = await withTransaction(async (txDb) => {
     const seasonId = await createSeason(2026, 'spring');
 
     const regions: Region[] = ['LCK', 'LPL', 'LEC', 'LCS'];
@@ -243,9 +261,8 @@ export async function initializeNewGame(
       });
 
       if (pendingPlayer.traits.length > 0) {
-        const conn = await getDatabase();
         for (const traitId of pendingPlayer.traits) {
-          await conn.execute(
+          await txDb.execute(
             'INSERT INTO player_traits (player_id, trait_id) VALUES ($1, $2)',
             [userPlayerId, traitId],
           );
@@ -256,19 +273,6 @@ export async function initializeNewGame(
     const lckTeams = await getTeamsByRegion('LCK');
     await generateLCKCup(seasonId, 2026, lckTeams.map((team) => team.id));
 
-    try {
-      const allTeams = await getAllTeams();
-      for (const team of allTeams) {
-        await initializeTeamChemistry(team.id);
-        await generatePlayerGoals(team.id, seasonId);
-      }
-    } catch (error) {
-      console.warn('[initGame] chemistry or player-goal initialization skipped:', error);
-    }
-
-    const allTeams = await getAllTeams();
-    const userTeam = allTeams.find((team) => team.id === teamId);
-    const teamName = userTeam?.name ?? teamId;
     const saveId = await createSave({
       mode,
       teamId,
@@ -303,8 +307,7 @@ export async function initializeNewGame(
     });
 
     if (mode === 'manager' && pendingManager) {
-      const conn = await getDatabase();
-      await conn.execute(
+      await txDb.execute(
         `INSERT INTO manager_profiles
           (save_id, name, nationality, age, background,
            tactical_knowledge, motivation, discipline,
@@ -334,6 +337,8 @@ export async function initializeNewGame(
 
     return save;
   });
+
+  await initializePostSeedSystems(allTeamIds, result.currentSeasonId);
 
   const dbFinal = await getDatabase();
   await dbFinal.execute('PRAGMA foreign_keys = ON');

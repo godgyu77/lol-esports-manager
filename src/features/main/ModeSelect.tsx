@@ -19,23 +19,23 @@ interface ModeOption {
 const MODE_OPTIONS: ModeOption[] = [
   {
     id: 'manager',
-    icon: 'FRONT OFFICE',
+    icon: '구단 운영',
     title: '감독 모드',
     difficulty: '추천 시작 방식',
-    fantasy: '로스터, 코치진, 예산, 보드 목표를 모두 관리하며 시즌 전체를 운영합니다.',
-    features: ['로스터와 주전 경쟁 관리', '코치와 전술, 훈련 운영', '보드 요구와 팀 분위기 조율', '이적시장과 시즌 목표 조정'],
+    fantasy: '로스터, 코치진, 예산, 시즌 목표를 모두 조율하며 시즌 전체를 운영합니다.',
+    features: ['로스터와 주전 경쟁 관리', '전술과 훈련 운영', '보드 요구와 시즌 목표 조정'],
     availability: 'available',
   },
   {
     id: 'player',
-    icon: 'RISING STAR',
+    icon: '개인 선수',
     title: '선수 모드',
     difficulty: 'EA 범위 밖',
-    fantasy: '기존 세이브 로드는 유지되지만, 신규 선수 커리어 시작은 Phase 0에서 잠시 막아둡니다.',
-    features: ['기존 player 세이브는 계속 불러오기 가능', '새 커리어 시작은 정식 구현 전까지 차단', '이번 EA는 감독 루프 안정화에 집중', '매니저 모드로 바로 플레이 가능'],
+    fantasy: '선수 커리어 신규 시작은 아직 준비 중이며, 현재는 감독 모드 경험에 집중합니다.',
+    features: ['기존 플레이어 세이브 불러오기는 가능', '신규 선수 커리어 시작은 추후 지원', '현재 EA는 감독 루프 중심'],
     availability: 'coming_soon',
     availabilityLabel: '준비 중',
-    disabledReason: '선수 모드 신규 시작은 아직 준비 중입니다. 이번 EA는 감독 모드 핵심 루프에 집중합니다.',
+    disabledReason: '선수 모드 신규 시작은 아직 준비 중입니다. 현재는 감독 모드로 시작하는 것을 권장합니다.',
   },
 ];
 
@@ -58,17 +58,14 @@ export function ModeSelect() {
   return (
     <div className="mode-select">
       <div className="mode-select__hero">
-        <span className="mode-select__eyebrow">CAREER ENTRY</span>
+        <span className="mode-select__eyebrow">커리어 시작</span>
         <h1 className="mode-select__title">어떤 방식으로 시즌에 들어갈지 정해보세요</h1>
-        <p className="mode-select__subtitle">
-          이번 Phase 0에서는 EA 핵심 루프인 감독 커리어를 우선 안정화했습니다.
-          선수 모드는 메뉴에서 계속 볼 수 있지만, 신규 시작은 아직 열어두지 않았습니다.
-        </p>
+        <p className="mode-select__subtitle">지금은 시작 방식만 고르면 됩니다. 자세한 설명은 선택 후 화면에서 이어집니다.</p>
       </div>
 
       {message && (
         <div className="fm-alert fm-alert--warning" style={{ marginBottom: 20 }}>
-          <span className="fm-alert__text">{message} 매니저 모드로 시작하는 것을 추천합니다.</span>
+          <span className="fm-alert__text">{message}</span>
         </div>
       )}
 
@@ -97,7 +94,7 @@ export function ModeSelect() {
               ))}
             </ul>
             <span className="mode-card__cta">
-              {option.availability === 'available' ? '감독 커리어 시작하기' : 'EA 비대상'}
+              {option.availability === 'available' ? '감독 커리어 시작하기' : 'EA 범위 밖'}
             </span>
           </button>
         ))}

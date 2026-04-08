@@ -2,11 +2,11 @@ import type { GameResult, PlayerGameStatLine } from '../match/matchSimulator';
 
 export type MatchInsightImpact = 'high' | 'medium' | 'low';
 export type MatchInsightAction =
-  | 'Review tactics'
-  | 'Adjust training'
-  | 'Protect player condition'
-  | 'Revisit draft priorities'
-  | 'Consider roster changes';
+  | '전술 재검토'
+  | '훈련 조정'
+  | '선수 컨디션 관리'
+  | '드래프트 우선순위 재점검'
+  | '로스터 변경 검토';
 
 export interface MatchInsightReason {
   title: string;
@@ -76,12 +76,12 @@ export function buildPostMatchInsightReport(
   if (Math.abs(earlyDiff) >= 1800) {
     const lostEarly = earlyDiff < 0;
     reasons.push({
-      title: lostEarly ? 'Early game slipped away' : 'Strong early setup paid off',
+      title: lostEarly ? '초반 주도권을 놓쳤습니다' : '초반 우위가 승리로 연결됐습니다',
       summary: lostEarly
-        ? `You were down ${Math.abs(earlyDiff)} gold at 15 minutes, so lane pressure and first rotations snowballed against you.`
-        : `You built a ${earlyDiff} gold lead by 15 minutes and converted lane pressure into tempo for the rest of the game.`,
+        ? `15분 기준 골드가 ${Math.abs(earlyDiff)} 뒤처졌습니다. 라인전 압박과 초반 로테이션에서 밀리며 상대에게 스노우볼이 넘어갔습니다.`
+        : `15분 기준 ${earlyDiff} 골드 우위를 만들어냈습니다. 라인전 압박을 템포로 전환해 이후 경기 흐름을 가져왔습니다.`,
       impact: impactFromValue(Math.min(Math.abs(earlyDiff) / 3500, 1)),
-      nextAction: lostEarly ? 'Adjust training' : 'Review tactics',
+      nextAction: lostEarly ? '훈련 조정' : '전술 재검토',
     });
   }
 
@@ -89,12 +89,12 @@ export function buildPostMatchInsightReport(
   if (Math.abs(towerDiff) >= 3) {
     const lostMap = towerDiff < 0;
     reasons.push({
-      title: lostMap ? 'Map control broke down' : 'Map pressure stayed in your hands',
+      title: lostMap ? '맵 장악이 흔들렸습니다' : '맵 압박을 유지했습니다',
       summary: lostMap
-        ? `You lost the tower race ${ownTowers}-${enemyTowers}, which usually means weak lane assignments or poor side lane protection.`
-        : `You won the tower race ${ownTowers}-${enemyTowers}, which kept neutral setup and side lane pressure in your favor.`,
+        ? `포탑 경쟁에서 ${ownTowers}-${enemyTowers}로 뒤졌습니다. 라인 배치가 불안정하거나 사이드 라인 방어가 부족했을 가능성이 높습니다.`
+        : `포탑 경쟁에서 ${ownTowers}-${enemyTowers}로 앞섰습니다. 중립 오브젝트 진입과 사이드 라인 압박을 유리하게 가져갔습니다.`,
       impact: impactFromValue(Math.min(Math.abs(towerDiff) / 6, 1)),
-      nextAction: lostMap ? 'Review tactics' : 'Revisit draft priorities',
+      nextAction: lostMap ? '전술 재검토' : '드래프트 우선순위 재점검',
     });
   }
 
@@ -103,12 +103,12 @@ export function buildPostMatchInsightReport(
   if (Math.abs(objectiveDiff) >= 1.5) {
     const lostObjectives = objectiveDiff < 0;
     reasons.push({
-      title: lostObjectives ? 'Neutral objective setup was behind' : 'Objective control created the win window',
+      title: lostObjectives ? '중립 오브젝트 싸움에서 밀렸습니다' : '오브젝트 장악이 승리를 만들었습니다',
       summary: lostObjectives
-        ? 'The opponent controlled more dragons, heralds, barons, or grubs, so their setup around big objectives translated into a cleaner game state.'
-        : 'Your team secured the more valuable neutral objectives, which gave you the cleanest route to close the game out.',
+        ? '상대가 드래곤, 전령, 바론, 공허 유충을 더 많이 확보했습니다. 주요 오브젝트 주변 셋업에서 밀리며 게임 운영이 불리해졌습니다.'
+        : '팀이 핵심 중립 오브젝트를 먼저 가져갔습니다. 이를 발판으로 가장 깔끔하게 게임을 마무리할 수 있었습니다.',
       impact: impactFromValue(Math.min(Math.abs(objectiveDiff) / 4, 1)),
-      nextAction: lostObjectives ? 'Revisit draft priorities' : 'Review tactics',
+      nextAction: lostObjectives ? '드래프트 우선순위 재점검' : '전술 재검토',
     });
   }
 
@@ -117,34 +117,34 @@ export function buildPostMatchInsightReport(
   if (Math.abs(killDiff) >= 5 || Math.abs(damageDiff) >= 9000) {
     const lostFights = killDiff < 0 || damageDiff < 0;
     reasons.push({
-      title: lostFights ? 'Teamfights favored the opponent' : 'Your teamfights converted well',
+      title: lostFights ? '한타에서 상대에게 눌렸습니다' : '한타 수행력이 좋았습니다',
       summary: lostFights
-        ? `The fight profile ended ${ownKills}-${enemyKills} in kills with ${Math.abs(damageDiff)} less total damage, which points to execution, spacing, or engage timing issues.`
-        : `The fight profile ended ${ownKills}-${enemyKills} in kills with ${damageDiff} more total damage, so your skirmish execution clearly held up.`,
+        ? `킬 스코어 ${ownKills}-${enemyKills}, 총 딜량 ${Math.abs(damageDiff)} 차이로 뒤졌습니다. 교전 실행력, 포지셔닝, 또는 진입 타이밍 문제가 있을 수 있습니다.`
+        : `킬 스코어 ${ownKills}-${enemyKills}, 총 딜량 ${damageDiff} 앞섰습니다. 교전 실행력이 안정적으로 유지됐습니다.`,
       impact: impactFromValue(Math.min(Math.max(Math.abs(killDiff) / 12, Math.abs(damageDiff) / 15000), 1)),
-      nextAction: lostFights ? 'Adjust training' : 'Review tactics',
+      nextAction: lostFights ? '훈련 조정' : '전술 재검토',
     });
   }
 
   const worstOwnDeaths = [...ownStats].sort((left, right) => right.deaths - left.deaths)[0];
   if (worstOwnDeaths && worstOwnDeaths.deaths >= 5) {
     reasons.push({
-      title: 'One role became a pressure point',
-      summary: `${worstOwnDeaths.position.toUpperCase()} died ${worstOwnDeaths.deaths} times, which often signals matchup strain, poor protection, or a lineup issue worth revisiting.`,
+      title: '특정 포지션이 집중 압박을 받았습니다',
+      summary: `${worstOwnDeaths.position.toUpperCase()}이(가) ${worstOwnDeaths.deaths}번 죽었습니다. 매치업 열세, 보호 부족, 또는 라인업 구성 문제일 수 있습니다.`,
       impact: impactFromValue(Math.min(worstOwnDeaths.deaths / 8, 1)),
-      nextAction: worstOwnDeaths.deaths >= 7 ? 'Consider roster changes' : 'Protect player condition',
+      nextAction: worstOwnDeaths.deaths >= 7 ? '로스터 변경 검토' : '선수 컨디션 관리',
     });
   }
 
   if (reasons.length < 3) {
     const finalGoldDiff = ownGold - enemyGold;
     reasons.push({
-      title: isPerspectiveWin ? 'Closing discipline held' : 'The game stayed close until late',
+      title: isPerspectiveWin ? '마무리 운영이 안정적이었습니다' : '후반까지 박빙 흐름이 이어졌습니다',
       summary: isPerspectiveWin
-        ? `You finished with a ${finalGoldDiff} gold lead, so the team kept enough structure to turn pressure into a result.`
-        : `The final gold gap was ${Math.abs(finalGoldDiff)}, which suggests the result was still recoverable with better mid-to-late decisions.`,
+        ? `최종 ${finalGoldDiff} 골드 우위로 마무리했습니다. 팀이 압박을 결과로 전환할 만큼 충분히 구조를 유지했습니다.`
+        : `최종 골드 격차는 ${Math.abs(finalGoldDiff)}였습니다. 중후반 의사결정이 더 나았다면 결과를 뒤집을 여지가 있었습니다.`,
       impact: impactFromValue(Math.min(Math.abs(finalGoldDiff) / 6000, 1)),
-      nextAction: isPerspectiveWin ? 'Review tactics' : 'Protect player condition',
+      nextAction: isPerspectiveWin ? '전술 재검토' : '선수 컨디션 관리',
     });
   }
 
@@ -156,8 +156,8 @@ export function buildPostMatchInsightReport(
     .slice(0, 5);
 
   return {
-    headline: isPerspectiveWin ? 'Your preparation translated into the result.' : 'The result exposed a few controllable weak points.',
-    outcomeLabel: isPerspectiveWin ? 'What worked' : 'Why it slipped',
+    headline: isPerspectiveWin ? '준비가 결과로 이어졌습니다.' : '이번 결과에서 개선할 수 있는 약점이 드러났습니다.',
+    outcomeLabel: isPerspectiveWin ? '잘 된 부분' : '아쉬운 부분',
     reasons: trimmedReasons,
     recommendedActions: dedupeActions(trimmedReasons),
   };

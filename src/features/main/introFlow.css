@@ -9,11 +9,11 @@
   max-width: 1180px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
 }
 
 .intro-hero .fm-panel__body {
-  padding: 30px;
+  padding: 24px;
 }
 
 .intro-hero h1,
@@ -23,7 +23,7 @@
 
 .intro-two-column {
   display: grid;
-  gap: 20px;
+  gap: 16px;
   align-items: start;
 }
 
@@ -35,9 +35,8 @@
   grid-template-columns: minmax(0, 1.05fr) minmax(340px, 0.95fr);
 }
 
-.intro-sidebar,
 .intro-scroll-panel {
-  max-height: 70vh;
+  max-height: 60vh;
   overflow-y: auto;
   scrollbar-gutter: stable;
 }
@@ -69,6 +68,52 @@
   min-height: 0;
 }
 
+.intro-summary-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.intro-detail-disclosure {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.02);
+  overflow: hidden;
+}
+
+.intro-detail-disclosure summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 16px 18px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.intro-detail-disclosure summary::-webkit-details-marker {
+  display: none;
+}
+
+.intro-detail-disclosure[open] summary {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.intro-detail-disclosure > div {
+  padding: 18px;
+}
+
+.intro-roster-chiplist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.intro-inline-note {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
 @media (max-width: 960px) {
   .intro-page {
     padding: 24px 16px 48px;
@@ -84,6 +129,10 @@
   .intro-scroll-panel {
     max-height: none;
     overflow-y: visible;
+  }
+
+  .intro-summary-grid {
+    grid-template-columns: 1fr;
   }
 }
 

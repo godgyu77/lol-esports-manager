@@ -14,11 +14,13 @@ describe('TeamSelect', () => {
     vi.clearAllMocks();
   });
 
-  it('shows team briefing details after choosing a team', async () => {
+  it('shows compact team summary after choosing a team', async () => {
     const { user } = renderWithProviders(<TeamSelect />, { gameState: { mode: 'manager' } });
     await user.click(screen.getByRole('button', { name: /T1/i }));
     expect(screen.getByText('팀 입단 브리핑')).toBeInTheDocument();
+    expect(screen.getByText(/왜 이 팀인가/)).toBeInTheDocument();
     expect(screen.getByText(/추천 유저/)).toBeInTheDocument();
+    expect(screen.getByText('상세 브리핑 보기')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '이 팀으로 부임 준비' })).toBeInTheDocument();
   });
 });

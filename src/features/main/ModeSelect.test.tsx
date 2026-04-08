@@ -24,7 +24,7 @@ describe('ModeSelect', () => {
 
     await user.click(screen.getByRole('button', { name: /선수 모드/i }));
 
-    expect(screen.getByText(/선수 모드 신규 시작은 아직 준비 중입니다/i)).toBeInTheDocument();
+    expect(screen.getByText(/선수 모드 신규 시작은 아직 준비 중입니다/)).toBeInTheDocument();
     expect(mockNavigate).not.toHaveBeenCalled();
     expect(useGameStore.getState().mode).toBeNull();
   });
@@ -32,7 +32,7 @@ describe('ModeSelect', () => {
   it('starts manager mode normally', async () => {
     const { user } = renderWithProviders(<ModeSelect />);
 
-    await user.click(screen.getByRole('button', { name: /감독 모드/i }));
+    await user.click(screen.getByText('감독 모드').closest('button')!);
 
     expect(useGameStore.getState().mode).toBe('manager');
     expect(mockNavigate).toHaveBeenCalledWith('/manager-create');

@@ -13,6 +13,7 @@ import { GROWTH_CONSTANTS } from '../../data/systemPrompt';
 import type { Position } from '../../types/game';
 import type { Player, PlayerStats, PlayStyleArchetype } from '../../types/player';
 import type { CoachingPhilosophy } from '../../types/staff';
+import { getCombinedTraitEffectProfile } from '../../utils/traitUtils';
 import { createRng } from '../../utils/rng';
 
 // ─────────────────────────────────────────
@@ -118,6 +119,14 @@ function getHighPotentialFactor(potential: number, phase: GrowthPhase): number {
   return 1.0;
 }
 
+function getTraitGrowthFactor(player: Player, phase: GrowthPhase): number {
+  const traitIds = player.traits ?? [];
+  if (phase === 'declining' || traitIds.length === 0) return 1.0;
+  const effect = getCombinedTraitEffectProfile(traitIds);
+  const growthFactor = 1 + effect.growth * 0.05;
+  return Math.max(0.9, Math.min(1.35, growthFactor));
+}
+
 // ─────────────────────────────────────────
 // 일관성 기반 하락 완화
 // ─────────────────────────────────────────
@@ -171,6 +180,7 @@ export function calculateGrowth(
     player.playstyle,
   );
   const highPotentialFactor = getHighPotentialFactor(player.potential, phase);
+  const traitGrowthFactor = getTraitGrowthFactor(player, phase);
   const consistencyDeclineFactor = getConsistencyDeclineFactor(player.stats.consistency, phase);
 
   const statKeys: (keyof PlayerStats)[] = [
@@ -200,7 +210,7 @@ export function calculateGrowth(
     if (phase === 'growing' || phase === 'peak') {
       // 신인 폭발 성장: 17~19세는 성장 가속 x1.3
       const rookieBurstFactor = (phase === 'growing' && player.age >= 17 && player.age <= 19) ? 1.3 : 1.0;
-      totalChange *= playtimeFactor * coachingFactor * highPotentialFactor * rookieBurstFactor;
+      totalChange *= playtimeFactor * coachingFactor * highPotentialFactor * traitGrowthFactor * rookieBurstFactor;
     }
 
     // 하락기: 일관성 기반 하락 완화 적용
