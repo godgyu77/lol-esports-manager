@@ -69,14 +69,17 @@ export function BroadcastHud({
           <span>{Math.round(gameState.goldHome / 100) / 10}k</span>
           <span>{gameState.killsHome}킬</span>
           <span>{gameState.towersHome}타워</span>
-          <span>{gameState.dragonsHome}드래곤</span>
+          <span>{gameState.dragonsHome}용</span>
         </div>
         <div className="broadcast-hud__buffs">
           {gameState.baronHome ? <span className="broadcast-hud__buff">바론</span> : null}
-          {gameState.dragonSoul.soulTeam === 'home' ? <span className="broadcast-hud__buff">소울</span> : null}
+          {gameState.dragonSoul.soulTeam === 'home' ? <span className="broadcast-hud__buff">영혼</span> : null}
           {gameState.grubsHome > 0 ? <span className="broadcast-hud__buff">유충 {gameState.grubsHome}</span> : null}
         </div>
-        <DragonPips count={gameState.dragonSoul.homeStacks} soulType={gameState.dragonSoul.soulTeam === 'home' ? gameState.dragonSoul.soulType : undefined} />
+        <DragonPips
+          count={gameState.dragonSoul.homeStacks}
+          soulType={gameState.dragonSoul.soulTeam === 'home' ? gameState.dragonSoul.soulType : undefined}
+        />
       </div>
 
       <div className="broadcast-hud__center">
@@ -112,7 +115,9 @@ export function BroadcastHud({
           <span>{resetCount}명 귀환 중</span>
         </div>
         <div className="broadcast-hud__focus">
-          {gameState.focusEvent ? `${gameState.focusEvent.label}: ${gameState.focusEvent.detail}` : '카메라가 다음 결정적 장면을 찾고 있습니다.'}
+          {gameState.focusEvent
+            ? `${gameState.focusEvent.label}: ${gameState.focusEvent.detail}`
+            : '카메라가 다음 결정 장면을 찾고 있습니다.'}
         </div>
       </div>
 
@@ -126,14 +131,17 @@ export function BroadcastHud({
           <span>{Math.round(gameState.goldAway / 100) / 10}k</span>
           <span>{gameState.killsAway}킬</span>
           <span>{gameState.towersAway}타워</span>
-          <span>{gameState.dragonsAway}드래곤</span>
+          <span>{gameState.dragonsAway}용</span>
         </div>
         <div className="broadcast-hud__buffs">
           {gameState.baronAway ? <span className="broadcast-hud__buff">바론</span> : null}
-          {gameState.dragonSoul.soulTeam === 'away' ? <span className="broadcast-hud__buff">소울</span> : null}
+          {gameState.dragonSoul.soulTeam === 'away' ? <span className="broadcast-hud__buff">영혼</span> : null}
           {gameState.grubsAway > 0 ? <span className="broadcast-hud__buff">유충 {gameState.grubsAway}</span> : null}
         </div>
-        <DragonPips count={gameState.dragonSoul.awayStacks} soulType={gameState.dragonSoul.soulTeam === 'away' ? gameState.dragonSoul.soulType : undefined} />
+        <DragonPips
+          count={gameState.dragonSoul.awayStacks}
+          soulType={gameState.dragonSoul.soulTeam === 'away' ? gameState.dragonSoul.soulType : undefined}
+        />
       </div>
     </section>
   );

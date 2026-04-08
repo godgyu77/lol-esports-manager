@@ -29,17 +29,17 @@
   z-index: 1;
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(340px, 460px);
-  gap: 40px;
+  gap: 28px;
   max-width: 1240px;
   margin: 0 auto;
-  padding: 64px 32px 110px;
+  padding: 48px 32px 96px;
 }
 
 .launcher__hero,
 .launcher__hub {
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 20px;
 }
 
 .launcher__logo {
@@ -104,8 +104,8 @@
 
 .launcher__story-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 18px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
 }
 
 .launcher__story-card,
@@ -119,8 +119,8 @@
 }
 
 .launcher__story-card {
-  min-height: 170px;
-  padding: 20px 20px 22px;
+  min-height: 150px;
+  padding: 18px 18px 20px;
   box-shadow: 0 16px 34px rgba(0, 0, 0, 0.16);
 }
 
@@ -150,13 +150,13 @@
 }
 
 .launcher__continue-card {
-  padding: 28px;
+  padding: 24px;
   box-shadow: 0 20px 44px rgba(0, 0, 0, 0.24);
-  min-height: 292px;
+  min-height: 264px;
 }
 
 .launcher__identity-card {
-  padding: 20px 22px;
+  padding: 18px 20px;
   box-shadow: 0 16px 30px rgba(0, 0, 0, 0.18);
 }
 
@@ -236,12 +236,12 @@
 .launcher__menu-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
+  gap: 14px;
 }
 
 .launcher__menu-card {
-  min-height: 164px;
-  padding: 20px;
+  min-height: 148px;
+  padding: 18px;
   color: inherit;
   text-align: left;
   cursor: pointer;

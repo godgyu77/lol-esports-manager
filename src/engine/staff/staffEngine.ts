@@ -317,10 +317,10 @@ function getStaffRoleFitPenalty(staff: Staff): number {
 }
 
 function buildStaffFitSummaryLine(alignmentScore: number, rolePenalty: number): string {
-  if (rolePenalty >= 0.2) return 'This staff member is working in a role they do not really want, so output will be less stable.';
-  if (alignmentScore <= -12) return 'The coach profile is drifting away from the manager identity, which weakens buy-in.';
-  if (alignmentScore >= 12) return 'The coach profile and manager identity are aligned, so recommendations land more cleanly.';
-  return 'The staff role fit is serviceable but not giving you a strong extra edge.';
+  if (rolePenalty >= 0.2) return '원하지 않는 역할을 맡고 있어 장기적으로 성과가 흔들릴 가능성이 큽니다.';
+  if (alignmentScore <= -12) return '감독 철학과 스태프 성향이 어긋나 있어 현장 설득력이 약해지고 있습니다.';
+  if (alignmentScore >= 12) return '감독 철학과 스태프 성향이 잘 맞아 추천과 실행이 매끄럽게 이어집니다.';
+  return '역할 수행은 가능하지만 팀에 강한 추가 이점을 주는 단계는 아닙니다.';
 }
 
 function scoreToDecision(score: number): { decision: StaffOfferDecision; acceptance: StaffAcceptanceLevel } {

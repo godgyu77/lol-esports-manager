@@ -132,11 +132,9 @@ describe('TeamHistoryView', () => {
       },
     });
 
-    expect(await screen.findByText('History Ledger')).toBeInTheDocument();
-    expect(screen.getByText('Regional Rivalry')).toBeInTheDocument();
+    expect(await screen.findByText('T1')).toBeInTheDocument();
     expect(screen.getByText('Gen.G')).toBeInTheDocument();
-    expect(screen.getByText('Series record: 3W - 1L')).toBeInTheDocument();
-    expect(screen.getByText('franchise icon')).toBeInTheDocument();
+    expect(screen.getByText('Regional rivalry series updated. Latest meeting: 2-1.')).toBeInTheDocument();
     expect(screen.getAllByText('Faker').length).toBeGreaterThan(0);
     expect(mockGetTeamHistoryLedger).toHaveBeenCalledWith('lck_T1', undefined, 24);
   });

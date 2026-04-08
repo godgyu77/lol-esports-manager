@@ -9,6 +9,7 @@ export interface PlayerComplaint {
   complaintType: ComplaintType;
   severity: number;       // 1-3
   message: string;
+  description?: string;
   status: ComplaintStatus;
   createdDate: string;
   resolvedDate: string | null;

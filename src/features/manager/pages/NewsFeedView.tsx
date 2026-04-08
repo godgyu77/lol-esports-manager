@@ -18,21 +18,21 @@ const PAGE_SIZE = 20;
 
 const CATEGORY_CONFIG: Record<NewsCategory, { icon: string; color: string }> = {
   match_result: { icon: '\u2694', color: '#c89b3c' },
-  transfer_rumor: { icon: '\u{1F4E6}', color: '#a78bfa' },
-  player_complaint: { icon: '\u{1F464}', color: '#f87171' },
-  team_analysis: { icon: '\u{1F4CA}', color: '#60a5fa' },
-  interview: { icon: '\u{1F3A4}', color: '#34d399' },
-  social_media: { icon: '\u{1F4F1}', color: '#fb923c' },
-  injury_report: { icon: '\u{1F915}', color: '#f87171' },
-  transfer_complete: { icon: '\u{1F91D}', color: '#a78bfa' },
-  scandal: { icon: '\u26A0', color: '#ef4444' },
-  fan_reaction: { icon: '\u{1F4AC}', color: '#fb923c' },
-  award_news: { icon: '\u{1F3C6}', color: '#fbbf24' },
-  patch_notes: { icon: '\u{1F527}', color: '#60a5fa' },
-  coach_briefing: { icon: '\u{1F9E0}', color: '#34d399' },
+  transfer_rumor: { icon: '\u{1F4E6}', color: '#2563eb' },
+  player_complaint: { icon: '\u{1F464}', color: '#dc2626' },
+  team_analysis: { icon: '\u{1F4CA}', color: '#0891b2' },
+  interview: { icon: '\u{1F3A4}', color: '#059669' },
+  social_media: { icon: '\u{1F4F1}', color: '#ea580c' },
+  injury_report: { icon: '\u{1F915}', color: '#dc2626' },
+  transfer_complete: { icon: '\u{1F91D}', color: '#7c3aed' },
+  scandal: { icon: '\u26A0', color: '#b91c1c' },
+  fan_reaction: { icon: '\u{1F4AC}', color: '#f59e0b' },
+  award_news: { icon: '\u{1F3C6}', color: '#ca8a04' },
+  patch_notes: { icon: '\u{1F527}', color: '#0f766e' },
+  coach_briefing: { icon: '\u{1F9E0}', color: '#16a34a' },
 };
 
-const FILTER_TABS: Array<{ key: NewsCategory | 'all' | 'briefing' | 'alert'; label: string }> = [
+const FILTER_TABS: Array<{ key: NewsCategory | 'all' | 'briefing'; label: string }> = [
   { key: 'all', label: '전체 기사' },
   { key: 'briefing', label: '미확인 브리핑' },
   { key: 'match_result', label: '경기' },
@@ -44,12 +44,25 @@ const FILTER_TABS: Array<{ key: NewsCategory | 'all' | 'briefing' | 'alert'; lab
   { key: 'social_media', label: 'SNS' },
 ];
 
+const PRESENTATION_LABELS = {
+  briefing: '브리핑',
+  feature: '기사',
+  alert: '속보',
+} as const;
+
+const NARRATIVE_BADGE_LABELS: Record<string, string> = {
+  legacy: '전통',
+  international: '국제전',
+  rivalry: '라이벌',
+  pressure: '압박',
+};
+
 function groupByDate(articles: NewsArticle[]): Map<string, NewsArticle[]> {
   const grouped = new Map<string, NewsArticle[]>();
   for (const article of articles) {
-    const list = grouped.get(article.articleDate) ?? [];
-    list.push(article);
-    grouped.set(article.articleDate, list);
+    const existing = grouped.get(article.articleDate) ?? [];
+    existing.push(article);
+    grouped.set(article.articleDate, existing);
   }
   return grouped;
 }
@@ -66,7 +79,7 @@ function buildArticleParagraphs(content: string) {
 }
 
 function getImportanceLabel(importance: number) {
-  if (importance >= 3) return '헤드라인급';
+  if (importance >= 3) return '헤드라인';
   if (importance === 2) return '주요 기사';
   return '일반 기사';
 }
@@ -76,33 +89,25 @@ function inferNarrativeBadges(article: NewsArticle): string[] {
   const badges: string[] = [];
   const includesAny = (keywords: string[]) => keywords.some((keyword) => haystack.includes(keyword));
 
-  if (includesAny(['dynasty', 'franchise arc', 'legacy', '왕조', '계보', '프랜차이즈', '레거시'])) {
-    badges.push('legacy');
-  }
-  if (includesAny(['international', 'cross-region', 'broadcast desk', 'worlds', 'msi', '국제전', '국제', '지역 대항'])) {
-    badges.push('international');
-  }
-  if (includesAny(['rival', 'rivalry', 'head-to-head', '라이벌', '맞대결', '숙적'])) {
-    badges.push('rivalry');
-  }
-  if (includesAny(['rebuild', 'collapse', 'pressure', '압박', '붕괴', '재건', '위기'])) {
-    badges.push('pressure');
-  }
+  if (includesAny(['dynasty', 'franchise arc', 'legacy', '왕조', '계보', '프랜차이즈', '과거'])) badges.push('legacy');
+  if (includesAny(['international', 'cross-region', 'worlds', 'msi', '국제전', '국제', '지역 대결'])) badges.push('international');
+  if (includesAny(['rival', 'rivalry', 'head-to-head', '라이벌', '맞대결', '숙적'])) badges.push('rivalry');
+  if (includesAny(['rebuild', 'collapse', 'pressure', '압박', '붕괴', '긴장', '위기'])) badges.push('pressure');
 
   return badges.slice(0, 2);
 }
 
 function getNarrativeBadges(article: NewsArticle): string[] {
-  return (article.narrativeTags.length > 0
-    ? article.narrativeTags
-    : inferNarrativeBadges(article)).slice(0, 2);
+  return (article.narrativeTags.length > 0 ? article.narrativeTags : inferNarrativeBadges(article)).slice(0, 2);
 }
 
 function ImportanceBadge({ importance }: { importance: number }) {
   if (importance <= 1) return null;
-  const badgeClass = importance >= 3 ? 'fm-badge--danger' : 'fm-badge--warning';
-  const label = importance >= 3 ? '긴급' : '주요';
-  return <span className={`fm-badge ${badgeClass}`}>{label}</span>;
+  return (
+    <span className={`fm-badge ${importance >= 3 ? 'fm-badge--danger' : 'fm-badge--warning'}`}>
+      {importance >= 3 ? '긴급' : '주요'}
+    </span>
+  );
 }
 
 export function NewsFeedView() {
@@ -114,11 +119,9 @@ export function NewsFeedView() {
   const [filter, setFilter] = useState<NewsCategory | 'all' | 'briefing'>('all');
   const [unreadCount, setUnreadCount] = useState(0);
   const [selectedArticleId, setSelectedArticleId] = useState<number | null>(null);
-  const filterKeys = FILTER_TABS
-    .map((tab) => tab.key)
-    .filter((key): key is NewsCategory | 'all' | 'briefing' => key !== 'alert');
+
   const { getItemProps } = useToolbarNavigation({
-    items: filterKeys,
+    items: FILTER_TABS.map((tab) => tab.key),
     activeItem: filter,
     onSelect: setFilter,
   });
@@ -129,7 +132,7 @@ export function NewsFeedView() {
     return 'feature';
   }, []);
 
-  const loadUnreadCount = useCallback(async () => {
+  const loadUnread = useCallback(async () => {
     if (!season) return;
     setUnreadCount(await getUnreadCount(season.id));
   }, [season]);
@@ -139,17 +142,17 @@ export function NewsFeedView() {
       if (!season) return;
       setLoading(true);
       try {
-        const fetched = currentFilter === 'briefing'
-          ? await getUnreadBriefings(season.id, PAGE_SIZE)
-          : await getRecentNews(season.id, PAGE_SIZE, offset, currentFilter === 'all' ? undefined : currentFilter);
+        const fetched =
+          currentFilter === 'briefing'
+            ? await getUnreadBriefings(season.id, PAGE_SIZE)
+            : await getRecentNews(season.id, PAGE_SIZE, offset, currentFilter === 'all' ? undefined : currentFilter);
 
         if (offset === 0 || currentFilter === 'briefing') {
           setArticles(fetched);
-          setSelectedArticleId((prev) => prev ?? fetched[0]?.id ?? null);
+          setSelectedArticleId(fetched[0]?.id ?? null);
         } else {
           setArticles((prev) => [...prev, ...fetched]);
         }
-
         setHasMore(currentFilter !== 'briefing' && fetched.length >= PAGE_SIZE);
       } finally {
         setLoading(false);
@@ -161,8 +164,8 @@ export function NewsFeedView() {
   useEffect(() => {
     setSelectedArticleId(null);
     void loadArticles(0, filter);
-    void loadUnreadCount();
-  }, [filter, loadArticles, loadUnreadCount]);
+    void loadUnread();
+  }, [filter, loadArticles, loadUnread]);
 
   const selectedArticle = useMemo(
     () => articles.find((article) => article.id === selectedArticleId) ?? null,
@@ -170,9 +173,15 @@ export function NewsFeedView() {
   );
 
   const leadArticle = useMemo(
-    () => articles.reduce<NewsArticle | null>((best, article) => (best === null || article.importance > best.importance ? article : best), null),
+    () =>
+      articles.reduce<NewsArticle | null>(
+        (best, article) => (best === null || article.importance > best.importance ? article : best),
+        null,
+      ),
     [articles],
   );
+
+  const grouped = useMemo(() => groupByDate(articles), [articles]);
 
   const relatedArticles = useMemo(() => {
     if (!selectedArticle) return [];
@@ -192,46 +201,35 @@ export function NewsFeedView() {
       .slice(0, 4);
   }, [articles, getPresentation, selectedArticle]);
 
-  const headlineArticles = useMemo(
-    () => [...articles].sort((left, right) => right.importance - left.importance).slice(0, 3),
-    [articles],
-  );
+  const articleParagraphs = selectedArticle ? buildArticleParagraphs(selectedArticle.content) : [];
 
   const handleOpenArticle = useCallback(async (article: NewsArticle) => {
     setSelectedArticleId(article.id);
-
     if (article.isRead) return;
-
     await markAsRead(article.id);
     setUnreadCount((prev) => Math.max(0, prev - 1));
     setArticles((prev) => prev.map((item) => (item.id === article.id ? { ...item, isRead: true } : item)));
   }, []);
 
-  const handleMarkAllRead = async () => {
+  const handleMarkAllRead = useCallback(async () => {
     if (!season) return;
     await markAllAsRead(season.id);
     setUnreadCount(0);
     setArticles((prev) => prev.map((article) => ({ ...article, isRead: true })));
-  };
+  }, [season]);
 
   if (!season) {
     return <p className="fm-text-muted">시즌 데이터를 불러오는 중입니다...</p>;
   }
 
-  const grouped = groupByDate(articles);
-  const splitLabel = getSplitLabel(season.split);
-  const articleParagraphs = selectedArticle ? buildArticleParagraphs(selectedArticle.content) : [];
-  const selectedConfig = selectedArticle ? CATEGORY_CONFIG[selectedArticle.category] : null;
-  const selectedNarrativeBadges = selectedArticle ? getNarrativeBadges(selectedArticle) : [];
-
   return (
     <div className="newsfeed-layout">
       <div className="newsfeed-hero fm-card">
         <div>
-          <span className="newsfeed-hero-kicker">e스포츠 뉴스룸</span>
-          <h1 className="fm-page-title">뉴스 피드</h1>
+          <span className="newsfeed-hero-kicker">E스포츠 뉴스룸</span>
+          <h1 className="fm-page-title">뉴스피드</h1>
           <p className="fm-page-subtitle">
-            {season.year}년 {splitLabel} 시즌의 기사와 코치 브리핑을 한곳에서 정리합니다.
+            {season.year} {getSplitLabel(season.split)} 시즌 기사와 코치 브리핑을 한 화면에서 확인합니다.
           </p>
         </div>
         <div className="newsfeed-hero-stats">
@@ -244,75 +242,52 @@ export function NewsFeedView() {
             <strong>{leadArticle ? getImportanceLabel(leadArticle.importance) : '대기 중'}</strong>
           </div>
           <div className="newsfeed-stat-card">
-            <span>현재 섹션</span>
+            <span>현재 필터</span>
             <strong>{FILTER_TABS.find((tab) => tab.key === filter)?.label}</strong>
           </div>
         </div>
       </div>
 
-      <div className="newsfeed-headlines">
-        {headlineArticles.map((article, index) => (
-          <button
-            key={article.id}
-            type="button"
-            className={`fm-card newsfeed-headline-card ${selectedArticleId === article.id ? 'newsfeed-headline-card--active' : ''}`}
-            onClick={() => void handleOpenArticle(article)}
-          >
-            <span className="newsfeed-headline-rank">Top {index + 1}</span>
-            <strong>{article.title}</strong>
-            <p>{getArticleSummary(article)}</p>
-          </button>
-        ))}
-      </div>
-
       <MainLoopPanel
-        eyebrow="뉴스룸 규칙"
-        title="기사, 브리핑, 알림을 같은 목록 안에서 역할별로 구분합니다"
-        subtitle="읽음 처리는 미확인 배지만 정리하고, 목록은 유지합니다. 코치 메모는 브리핑, 긴급 이슈는 알림, 시즌 맥락은 기사로 분리했습니다."
+        eyebrow="뉴스 운영"
+        title="기사와 브리핑을 한 번에 읽고 바로 판단할 수 있게 정리했습니다."
+        subtitle="뉴스는 읽는 정보 허브로 유지하고, 처리해야 할 메시지는 받은편지에서 관리하는 구조입니다."
         insights={[
           {
-            label: '오늘 해야 할 일',
-            value: filter === 'briefing' ? '브리핑 확인' : '헤드라인 정리',
-            detail: selectedArticle?.title ?? '선택된 항목이 없습니다.',
+            label: '메인 기사',
+            value: selectedArticle?.title ?? '선택된 기사 없음',
+            detail: leadArticle ? `가장 주목도가 높은 기사: ${leadArticle.title}` : '아직 표시할 대표 기사가 없습니다.',
             tone: 'accent',
           },
           {
-            label: '가장 큰 리스크',
-            value: articles.find((article) => getPresentation(article) === 'alert') ? '중요 알림 도착' : '안정',
-            detail: articles.find((article) => getPresentation(article) === 'alert')?.title ?? '당장 대응이 필요한 뉴스 알림은 없습니다.',
-            tone: articles.find((article) => getPresentation(article) === 'alert') ? 'danger' : 'success',
+            label: '브리핑 상태',
+            value: unreadCount > 0 ? `${unreadCount}건 남음` : '정리 완료',
+            detail:
+              unreadCount > 0 ? '코치 브리핑과 주요 기사부터 먼저 확인해 주세요.' : '읽지 않은 기사와 브리핑이 없습니다.',
+            tone: unreadCount > 0 ? 'warning' : 'success',
           },
           {
-            label: '다음 경기 준비',
-            value: unreadCount > 0 ? `${unreadCount}건 미확인` : '정리 완료',
-            detail: '코치 브리핑을 먼저 읽고, 경기 기사와 팀 이슈는 같은 타임라인 안에서 이어서 볼 수 있게 맞췄습니다.',
+            label: '읽기 방식',
+            value: filter === 'briefing' ? '브리핑 집중' : '기사 중심',
+            detail: '왼쪽 목록에서 고르고, 오른쪽에서 대표 기사와 본문을 읽는 포털형 레이아웃입니다.',
             tone: 'accent',
-          },
-          {
-            label: '역할 분리',
-            value: '기사 / 브리핑 / 알림',
-            detail: '기사는 맥락을 쌓고, 브리핑은 오늘의 판단을 돕고, 알림은 즉시 대응해야 할 이슈를 먼저 드러냅니다.',
-            tone: 'success',
           },
         ]}
         actions={[
           { label: '전체 읽음 처리', onClick: () => void handleMarkAllRead(), disabled: unreadCount === 0 },
         ]}
-        note="같은 뉴스라도 성격이 다르면 기대 행동이 달라집니다. 이번 정리는 그 행동 차이가 바로 읽히게 만드는 데 초점을 맞췄습니다."
+        note="계약, 불만, 부상처럼 직접 처리해야 하는 메시지는 받은편지에서 우선 관리합니다."
       />
 
       <div className="fm-page-header">
         <div>
-          <p className="fm-page-subtitle fm-flex fm-items-center fm-gap-sm">
-            읽음 처리 시 배지와 미확인 강조만 즉시 사라지고, 목록은 그대로 유지됩니다.
-            {unreadCount > 0 && <span className="fm-badge fm-badge--danger">{unreadCount}건 미확인</span>}
-          </p>
+          <p className="fm-page-subtitle">기사와 브리핑을 날짜별로 모아 두고, 중요도 순으로 읽기 쉽게 정리했습니다.</p>
         </div>
-        {unreadCount > 0 && (
-          <button className="fm-btn" onClick={handleMarkAllRead}>
+        {unreadCount > 0 ? (
+          <button className="fm-btn" onClick={() => void handleMarkAllRead()}>
             전체 읽음 처리
           </button>
-        )}
+        ) : null}
       </div>
 
       <div className="fm-tabs newsfeed-tabs" role="tablist" aria-label="뉴스 필터" aria-orientation="horizontal">
@@ -320,12 +295,12 @@ export function NewsFeedView() {
           <button
             key={tab.key}
             className={`fm-tab ${filter === tab.key ? 'fm-tab--active' : ''}`}
-            onClick={() => setFilter(tab.key as NewsCategory | 'all' | 'briefing')}
+            onClick={() => setFilter(tab.key)}
             role="tab"
             aria-selected={filter === tab.key}
             aria-controls={`news-panel-${tab.key}`}
             id={`news-tab-${tab.key}`}
-            {...getItemProps(tab.key as NewsCategory | 'all' | 'briefing')}
+            {...getItemProps(tab.key)}
           >
             {tab.label}
           </button>
@@ -334,13 +309,13 @@ export function NewsFeedView() {
 
       <div className="newsfeed-shell">
         <section className="newsfeed-list-panel" role="tabpanel" id={`news-panel-${filter}`} aria-labelledby={`news-tab-${filter}`}>
-          {articles.length === 0 && !loading && (
+          {articles.length === 0 && !loading ? (
             <div className="fm-card fm-text-center fm-p-lg">
               <p className="fm-text-lg fm-text-muted">
-                {filter === 'briefing' ? '읽지 않은 브리핑이 없습니다.' : '표시할 뉴스가 아직 없습니다.'}
+                {filter === 'briefing' ? '읽지 않은 브리핑이 없습니다.' : '표시할 뉴스가 없습니다.'}
               </p>
             </div>
-          )}
+          ) : null}
 
           <div className="fm-flex-col newsfeed-timeline">
             {[...grouped.entries()].map(([date, dayArticles]) => (
@@ -355,6 +330,7 @@ export function NewsFeedView() {
                   {dayArticles.map((article) => {
                     const config = CATEGORY_CONFIG[article.category];
                     const isSelected = selectedArticleId === article.id;
+                    const presentation = getPresentation(article);
                     return (
                       <button
                         key={article.id}
@@ -381,39 +357,30 @@ export function NewsFeedView() {
 
                           <div className="fm-flex-1 newsfeed-article-body">
                             <div className="fm-flex fm-items-center fm-gap-sm fm-mb-xs newsfeed-article-meta">
-                              <span
-                                className="fm-badge"
-                                style={{
-                                  background: `${config.color}20`,
-                                  color: config.color,
-                                }}
-                              >
+                              <span className="fm-badge" style={{ background: `${config.color}20`, color: config.color }}>
                                 {NEWS_CATEGORY_LABELS[article.category]}
                               </span>
-                              <span className="fm-badge fm-badge--default">
-                                {article.presentation === 'briefing' ? '브리핑' : '기사'}
-                              </span>
+                              <span className="fm-badge fm-badge--default">{PRESENTATION_LABELS[presentation]}</span>
                               <ImportanceBadge importance={article.importance} />
                               {getNarrativeBadges(article).map((badge) => (
-                                <span key={`list-${article.id}-${badge}`} className="fm-badge fm-badge--info">
-                                  {badge}
+                                <span key={`${article.id}-${badge}`} className="fm-badge fm-badge--info">
+                                  {NARRATIVE_BADGE_LABELS[badge] ?? badge}
                                 </span>
                               ))}
-                              {getPresentation(article) === 'alert' && <span className="fm-badge fm-badge--danger">긴급</span>}
-                              {!article.isRead && <span className="newsfeed-unread-dot" title="읽지 않음" />}
+                              {presentation === 'alert' ? <span className="fm-badge fm-badge--danger">속보</span> : null}
+                              {!article.isRead ? <span className="newsfeed-unread-dot" title="읽지 않음" /> : null}
                             </div>
 
-                            <p className="fm-text-lg fm-font-semibold fm-text-primary newsfeed-article-title">
-                              {article.title}
-                            </p>
-
+                            <p className="fm-text-lg fm-font-semibold fm-text-primary newsfeed-article-title">{article.title}</p>
                             <p className="fm-text-sm fm-text-secondary newsfeed-article-copy">{getArticleSummary(article)}</p>
 
                             <div className="fm-flex fm-items-center fm-justify-between fm-mt-sm newsfeed-article-footer">
                               <span className="fm-text-xs fm-text-muted newsfeed-article-readmore">
                                 {article.presentation === 'briefing'
-                                  ? '읽으면 미확인 상태만 해제됩니다'
-                                  : isSelected ? '기사 읽는 중' : '클릭해서 기사 보기'}
+                                  ? '열면 브리핑 확인 상태가 반영됩니다.'
+                                  : isSelected
+                                    ? '본문을 읽는 중'
+                                    : '클릭해서 기사 보기'}
                               </span>
                               <span className="fm-text-xs fm-text-muted">{getImportanceLabel(article.importance)}</span>
                             </div>
@@ -427,21 +394,21 @@ export function NewsFeedView() {
             ))}
           </div>
 
-          {hasMore && articles.length > 0 && (
+          {hasMore && articles.length > 0 ? (
             <div className="fm-text-center fm-mt-md">
               <button className="fm-btn fm-btn--lg" onClick={() => void loadArticles(articles.length, filter)} disabled={loading}>
                 {loading ? '불러오는 중...' : '더 보기'}
               </button>
             </div>
-          )}
+          ) : null}
 
-          {loading && articles.length === 0 && (
+          {loading && articles.length === 0 ? (
             <p className="fm-text-md fm-text-muted fm-text-center fm-p-lg">뉴스를 불러오는 중입니다...</p>
-          )}
+          ) : null}
         </section>
 
         <aside className="fm-card newsfeed-reader">
-          {selectedArticle && selectedConfig ? (
+          {selectedArticle ? (
             <>
               <div className="newsfeed-reader-hero">
                 <div className="newsfeed-reader-topline">
@@ -454,16 +421,16 @@ export function NewsFeedView() {
                   <span
                     className="fm-badge"
                     style={{
-                      background: `${selectedConfig.color}20`,
-                      color: selectedConfig.color,
+                      background: `${CATEGORY_CONFIG[selectedArticle.category].color}20`,
+                      color: CATEGORY_CONFIG[selectedArticle.category].color,
                     }}
                   >
-                    {selectedArticle.presentation === 'briefing' ? '브리핑' : '아카이브 기사'}
+                    {PRESENTATION_LABELS[getPresentation(selectedArticle)]}
                   </span>
                   <ImportanceBadge importance={selectedArticle.importance} />
-                  {selectedNarrativeBadges.map((badge) => (
+                  {getNarrativeBadges(selectedArticle).map((badge) => (
                     <span key={`reader-${selectedArticle.id}-${badge}`} className="fm-badge fm-badge--info">
-                      {badge}
+                      {NARRATIVE_BADGE_LABELS[badge] ?? badge}
                     </span>
                   ))}
                 </div>
@@ -481,8 +448,8 @@ export function NewsFeedView() {
               <div className="newsfeed-related">
                 <div className="newsfeed-related-header">
                   <div>
-                    <span className="newsfeed-related-kicker">Related Stories</span>
-                    <h3>관련 기사</h3>
+                    <span className="newsfeed-related-kicker">관련 기사</span>
+                    <h3>같이 읽을 기사</h3>
                   </div>
                 </div>
 
@@ -502,15 +469,15 @@ export function NewsFeedView() {
                     ))}
                   </div>
                 ) : (
-                  <p className="newsfeed-related-empty">같이 읽을 만한 관련 기사가 아직 충분하지 않습니다.</p>
+                  <p className="newsfeed-related-empty">지금은 함께 읽을 만한 관련 기사가 없습니다.</p>
                 )}
               </div>
             </>
           ) : (
             <div className="newsfeed-reader-empty">
               <span className="newsfeed-reader-empty-label">기사 보기</span>
-              <h2>왼쪽 목록에서 기사나 브리핑을 선택하세요.</h2>
-              <p>브리핑은 빠르게 확인하고, 기사형 뉴스는 자세한 본문을 읽을 수 있습니다.</p>
+              <h2>왼쪽 목록에서 기사나 브리핑을 선택해 주세요.</h2>
+              <p>중요한 기사부터 먼저 보고, 오른쪽 본문에서 자세한 내용을 읽는 구조입니다.</p>
             </div>
           )}
         </aside>

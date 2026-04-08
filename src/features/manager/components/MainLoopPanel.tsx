@@ -1,13 +1,13 @@
 ﻿import { useId } from 'react';
 import './MainLoopPanel.css';
 
-type InsightTone = 'neutral' | 'accent' | 'danger' | 'success';
+type InsightTone = 'neutral' | 'accent' | 'warning' | 'danger' | 'success';
 type ActionVariant = 'default' | 'primary' | 'info';
 
 export interface MainLoopInsight {
   label: string;
   value: string;
-  detail: string;
+  detail?: string;
   tone?: InsightTone;
 }
 
@@ -36,6 +36,8 @@ function getToneClass(tone: InsightTone | undefined): string {
     case 'success':
       return 'manager-loop__value--success';
     case 'accent':
+      return 'manager-loop__value--accent';
+    case 'warning':
       return 'manager-loop__value--accent';
     default:
       return '';

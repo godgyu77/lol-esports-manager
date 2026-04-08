@@ -26,14 +26,6 @@ vi.mock('../../../engine/news/newsEngine', () => ({
   markAllAsRead: mockMarkAllAsRead,
   markAsRead: mockMarkAsRead,
   getArticleSummary: mockGetArticleSummary,
-  inferNarrativeTags: vi.fn((title: string, content: string) => {
-    const haystack = `${title} ${content}`.toLowerCase();
-    const tags: string[] = [];
-    if (haystack.includes('왕조') || haystack.includes('legacy')) tags.push('legacy');
-    if (haystack.includes('국제전') || haystack.includes('international')) tags.push('international');
-    if (haystack.includes('위기') || haystack.includes('압박') || haystack.includes('pressure')) tags.push('pressure');
-    return tags;
-  }),
 }));
 
 const briefingArticle: NewsArticle = {
@@ -74,7 +66,7 @@ const legacyArticle: NewsArticle = {
   articleDate: '2026-03-02',
   category: 'team_analysis',
   title: 'Team outlook update',
-  content: '왕조 서사가 커지고 국제전 압박도 함께 높아지고 있다.',
+  content: '왕조 서사와 국제전 압박이 동시에 커지고 있다.',
   importance: 2,
   isRead: true,
   relatedTeamId: 'lck_T1',
@@ -90,7 +82,7 @@ const pressureArticle: NewsArticle = {
   articleDate: '2026-03-03',
   category: 'team_analysis',
   title: 'Locker room watch',
-  content: '재건 국면에서 위기와 압박이 동시에 커지고 있다.',
+  content: '팀 내부 압박과 위기가 동시에 커지고 있다.',
   importance: 1,
   isRead: true,
   relatedTeamId: 'lck_T1',
@@ -176,7 +168,6 @@ describe('NewsFeedView', () => {
     });
 
     await screen.findByRole('heading', { level: 1 });
-
     const tabs = within(screen.getByRole('tablist')).getAllByRole('tab');
 
     await act(async () => {
@@ -219,11 +210,10 @@ describe('NewsFeedView', () => {
     });
 
     await screen.findByRole('tablist');
-
     const toolbar = screen.getByRole('tablist');
     const buttons = within(toolbar).getAllByRole('tab');
-
     buttons[0].focus();
+
     await user.keyboard('{ArrowRight}');
 
     await waitFor(() => {
@@ -232,7 +222,7 @@ describe('NewsFeedView', () => {
     });
   });
 
-  it('surfaces narrative badges for legacy and international articles', async () => {
+  it('surfaces Korean narrative badges for legacy and international articles', async () => {
     renderWithProviders(<NewsFeedView />, {
       gameState: {
         season: {
@@ -254,8 +244,8 @@ describe('NewsFeedView', () => {
       screen.getByRole('button', { name: /뉴스 기사 열기: Team outlook update/i }).click();
     });
 
-    expect((await screen.findAllByText('legacy')).length).toBeGreaterThan(0);
-    expect(screen.getAllByText('international').length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('전통')).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('국제전').length).toBeGreaterThan(0);
   });
 
   it('detects pressure badges from Korean narrative copy', async () => {
@@ -280,7 +270,7 @@ describe('NewsFeedView', () => {
       screen.getByRole('button', { name: /뉴스 기사 열기: Locker room watch/i }).click();
     });
 
-    expect((await screen.findAllByText('pressure')).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('압박')).length).toBeGreaterThan(0);
   });
 
   it('prefers stored narrative tags when articles already carry metadata', async () => {
@@ -305,7 +295,7 @@ describe('NewsFeedView', () => {
       screen.getByRole('button', { name: /뉴스 기사 열기: Franchise desk memo/i }).click();
     });
 
-    expect((await screen.findAllByText('legacy')).length).toBeGreaterThan(0);
-    expect(screen.getAllByText('international').length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('전통')).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('국제전').length).toBeGreaterThan(0);
   });
 });

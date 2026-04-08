@@ -65,14 +65,14 @@ export const STAFF_SPECIALTY_LABELS: Record<StaffSpecialty, string> = {
 };
 
 export const STAFF_ROLE_EFFECTS: Record<StaffRole, string> = {
-  head_coach: '전체 훈련 효율과 사기 안정에 영향을 줍니다.',
-  coach: '특정 훈련 효율과 선수 성장 보정이 올라갑니다.',
-  analyst: '밴픽 추천 정확도와 상대 분석력이 올라갑니다.',
-  scout_manager: '스카우팅 정확도와 발굴 효율이 올라갑니다.',
-  sports_psychologist: '사기 회복과 압박 저항에 도움을 줍니다.',
-  nutritionist: '체력 회복과 부상 예방을 돕습니다.',
-  physiotherapist: '부상 회복과 재부상 방지에 도움을 줍니다.',
-  data_analyst: '상대 분석과 메타 적응 보정을 제공합니다.',
+  head_coach: '전체 훈련 효율과 팀 분위기, 사기 안정화에 가장 큰 영향을 줍니다.',
+  coach: '선수 훈련 효율과 역할 숙련도 상승을 직접 지원합니다.',
+  analyst: '밴픽 추천 정확도와 상대 분석 품질을 높여줍니다.',
+  scout_manager: '스카우팅 정확도와 신인 발굴 효율을 높여줍니다.',
+  sports_psychologist: '사기 회복과 압박 대응 능력에 도움을 줍니다.',
+  nutritionist: '체력 회복과 피로 관리 효율을 높여줍니다.',
+  physiotherapist: '부상 예방과 회복, 재발 방지에 도움을 줍니다.',
+  data_analyst: '상대 분석과 메타 적응 보정 수치를 강화합니다.',
 };
 
 export const COACHING_PHILOSOPHY_LABELS: Record<CoachingPhilosophy, string> = {

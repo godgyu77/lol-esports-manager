@@ -1,11 +1,3 @@
-/**
- * 선수 불만/요구 관리 페이지
- * - 활성 불만 목록 (카드)
- * - 불만 대응: [대화하기] [무시]
- * - 심각도 색상 (1:노랑, 2:주황, 3:빨강)
- * - 불만 이력 탭
- */
-
 import { useEffect, useState, useCallback } from 'react';
 import { useGameStore } from '../../../stores/gameStore';
 import {
@@ -24,6 +16,8 @@ import {
   type PlayerManagementInsight,
 } from '../../../engine/satisfaction/playerSatisfactionEngine';
 import { getPlayerById } from '../../../db/queries';
+import { NOTIFICATIONS_INVALIDATED_EVENT } from '../../../engine/news/newsEvents';
+import { MainLoopPanel } from '../components/MainLoopPanel';
 import type { PlayerComplaint } from '../../../types/complaint';
 import { COMPLAINT_TYPE_LABELS, COMPLAINT_SEVERITY_LABELS } from '../../../types/complaint';
 
@@ -67,6 +61,10 @@ export function ComplaintsView() {
   const [playerInsights, setPlayerInsights] = useState<Record<string, PlayerManagementInsight>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [persuadeResult, setPersuadeResult] = useState<{ complaintId: number; success: boolean } | null>(null);
+  const [conflictPanelId, setConflictPanelId] = useState<number | null>(null);
+  const [conflictResult, setConflictResult] = useState<ConflictResult | null>(null);
+  const [conflictLoading, setConflictLoading] = useState(false);
 
   const userTeamId = save?.userTeamId ?? '';
 
@@ -84,11 +82,9 @@ export function ComplaintsView() {
 
       setActiveComplaints(active);
       setHistoryComplaints(history);
-      setPlayerInsights(
-        Object.fromEntries(insights.map((insight) => [insight.playerId, insight])),
-      );
+      setPlayerInsights(Object.fromEntries(insights.map((insight) => [insight.playerId, insight])));
+      window.dispatchEvent(new Event(NOTIFICATIONS_INVALIDATED_EVENT));
 
-      // 선수 이름 로딩
       const allComplaints = [...active, ...history];
       const uniquePlayerIds = [...new Set(allComplaints.map((c) => c.playerId))];
       const names: Record<string, string> = {};
@@ -98,7 +94,7 @@ export function ComplaintsView() {
       }
       setPlayerNames(names);
     } catch (err) {
-      console.error('불만 데이터 로딩 실패:', err);
+      console.error('complaints load failed:', err);
       setError('불만 데이터를 불러오는 중 오류가 발생했습니다.');
     } finally {
       setIsLoading(false);
@@ -106,25 +102,15 @@ export function ComplaintsView() {
   }, [season, save, userTeamId]);
 
   useEffect(() => {
-    loadData();
+    void loadData();
   }, [loadData]);
-
-  const [persuadeResult, setPersuadeResult] = useState<{ complaintId: number; success: boolean } | null>(null);
-  const [conflictPanelId, setConflictPanelId] = useState<number | null>(null);
-  const [conflictResult, setConflictResult] = useState<ConflictResult | null>(null);
-  const [conflictLoading, setConflictLoading] = useState(false);
 
   const handleResolve = async (complaint: PlayerComplaint) => {
     try {
-      await resolveComplaint(
-        complaint.id,
-        'talk',
-        currentDate ?? '',
-        save?.id,
-      );
+      await resolveComplaint(complaint.id, 'talk', currentDate ?? '', save?.id);
       await loadData();
     } catch (err) {
-      console.error('불만 해결 실패:', err);
+      console.error('complaint resolve failed:', err);
     }
   };
 
@@ -133,20 +119,16 @@ export function ComplaintsView() {
       await ignoreComplaint(complaint.id, save?.id);
       await loadData();
     } catch (err) {
-      console.error('불만 무시 실패:', err);
+      console.error('complaint ignore failed:', err);
     }
   };
 
   const handleAllowTransfer = async (complaint: PlayerComplaint) => {
     try {
-      await allowTransfer(
-        complaint.id,
-        currentDate ?? '',
-        save?.id,
-      );
+      await allowTransfer(complaint.id, currentDate ?? '', save?.id);
       await loadData();
     } catch (err) {
-      console.error('이적 허용 실패:', err);
+      console.error('allow transfer failed:', err);
     }
   };
 
@@ -155,23 +137,18 @@ export function ComplaintsView() {
       await denyTransfer(complaint.id);
       await loadData();
     } catch (err) {
-      console.error('이적 거부 실패:', err);
+      console.error('deny transfer failed:', err);
     }
   };
 
   const handlePersuadeTransfer = async (complaint: PlayerComplaint) => {
     try {
-      const success = await persuadeTransfer(
-        complaint.id,
-        currentDate ?? '',
-        save?.id,
-      );
+      const success = await persuadeTransfer(complaint.id, currentDate ?? '', save?.id);
       setPersuadeResult({ complaintId: complaint.id, success });
       await loadData();
-      // 3초 후 결과 메시지 제거
       setTimeout(() => setPersuadeResult(null), 3000);
     } catch (err) {
-      console.error('설득 실패:', err);
+      console.error('persuade transfer failed:', err);
     }
   };
 
@@ -184,54 +161,64 @@ export function ComplaintsView() {
       await loadData();
       setTimeout(() => setConflictResult(null), 4000);
     } catch (err) {
-      console.error('갈등 해결 실패:', err);
+      console.error('conflict resolve failed:', err);
     } finally {
       setConflictLoading(false);
     }
   };
 
-  const toggleConflictPanel = (complaintId: number) => {
-    setConflictPanelId((prev) => (prev === complaintId ? null : complaintId));
-    setConflictResult(null);
-  };
-
-  if (isLoading) {
-    return <div className="fm-text-muted fm-text-center fm-p-lg">로딩 중...</div>;
-  }
-
-  if (error) {
-    return <div className="fm-text-danger fm-text-center fm-p-lg">{error}</div>;
-  }
-
   const displayComplaints = tab === 'active' ? activeComplaints : historyComplaints;
 
-  return (
-    <div style={{ maxWidth: '900px' }}>
-      <h1 className="fm-page-title fm-mb-lg">선수 관리</h1>
+  if (isLoading) return <div className="fm-text-muted fm-text-center fm-p-lg">불만 데이터를 불러오는 중입니다...</div>;
+  if (error) return <div className="fm-text-danger fm-text-center fm-p-lg">{error}</div>;
 
-      {/* 탭 */}
+  return (
+    <div className="fm-animate-in">
+      <div className="fm-page-header">
+        <h1 className="fm-page-title">선수 관리</h1>
+      </div>
+
+      <MainLoopPanel
+        eyebrow="불만 관리"
+        title="활성 불만과 누적 이력을 한 화면에서 보고 바로 조치할 수 있게 정리했습니다."
+        subtitle="메뉴 배지와 실제 목록이 최대한 같은 타이밍에 맞춰지도록 로딩 시점을 맞췄고, 지금 처리할 항목이 먼저 보이게 구성했습니다."
+        insights={[
+          {
+            label: '활성 불만',
+            value: `${activeComplaints.length}건`,
+            detail: activeComplaints[0] ? `${playerNames[activeComplaints[0].playerId] ?? '선수'}의 이슈가 가장 먼저 확인됩니다.` : '현재 활성 불만은 없습니다.',
+            tone: activeComplaints.length > 0 ? 'warning' : 'success',
+          },
+          {
+            label: '최근 기록',
+            value: `${historyComplaints.length}건`,
+            detail: historyComplaints.length > 0 ? '해결과 무시 기록을 함께 보며 대응 방식을 점검할 수 있습니다.' : '아직 이번 시즌 이력이 많지 않습니다.',
+            tone: 'accent',
+          },
+          {
+            label: '우선 확인',
+            value: activeComplaints[0] ? COMPLAINT_TYPE_LABELS[activeComplaints[0].complaintType] : '안정',
+            detail: activeComplaints[0] ? activeComplaints[0].description : '즉시 대응이 필요한 불만이 없습니다.',
+            tone: activeComplaints[0] ? 'danger' : 'success',
+          },
+        ]}
+        actions={[]}
+        note="이 화면은 선수와 직접 관련된 처리 허브입니다. 뉴스는 읽는 곳, 받은편지는 운영 메시지 처리용으로 역할을 분리했습니다."
+      />
+
       <div className="fm-tabs">
-        <button
-          className={`fm-tab ${tab === 'active' ? 'fm-tab--active' : ''}`}
-          onClick={() => setTab('active')}
-        >
+        <button className={`fm-tab ${tab === 'active' ? 'fm-tab--active' : ''}`} onClick={() => setTab('active')}>
           활성 불만 ({activeComplaints.length})
         </button>
-        <button
-          className={`fm-tab ${tab === 'history' ? 'fm-tab--active' : ''}`}
-          onClick={() => setTab('history')}
-        >
+        <button className={`fm-tab ${tab === 'history' ? 'fm-tab--active' : ''}`} onClick={() => setTab('history')}>
           불만 이력
         </button>
       </div>
 
-      {/* 불만 목록 */}
       {displayComplaints.length === 0 ? (
         <div className="fm-card fm-text-center fm-p-lg">
           <p className="fm-text-muted fm-text-lg">
-            {tab === 'active'
-              ? '현재 활성 불만이 없습니다.'
-              : '이번 시즌 불만 이력이 없습니다.'}
+            {tab === 'active' ? '현재 활성 불만이 없습니다.' : '이번 시즌 불만 이력이 없습니다.'}
           </p>
         </div>
       ) : (
@@ -240,7 +227,7 @@ export function ComplaintsView() {
             <ComplaintCard
               key={complaint.id}
               complaint={complaint}
-              playerName={playerNames[complaint.playerId] ?? '알 수 없음'}
+              playerName={playerNames[complaint.playerId] ?? '이름 없음'}
               insight={playerInsights[complaint.playerId]}
               onResolve={tab === 'active' ? () => handleResolve(complaint) : undefined}
               onIgnore={tab === 'active' ? () => handleIgnore(complaint) : undefined}
@@ -250,7 +237,7 @@ export function ComplaintsView() {
               persuadeResult={persuadeResult?.complaintId === complaint.id ? persuadeResult : null}
               isConflict={complaint.complaintType === 'conflict'}
               conflictPanelOpen={conflictPanelId === complaint.id}
-              onToggleConflictPanel={tab === 'active' && complaint.complaintType === 'conflict' ? () => toggleConflictPanel(complaint.id) : undefined}
+              onToggleConflictPanel={tab === 'active' && complaint.complaintType === 'conflict' ? () => setConflictPanelId((prev) => (prev === complaint.id ? null : complaint.id)) : undefined}
               onConflictResolve={tab === 'active' && complaint.complaintType === 'conflict' ? (method: ConflictMethod) => handleConflictResolve(complaint.id, method) : undefined}
               conflictResult={conflictResult?.complaintId === complaint.id ? conflictResult : null}
               conflictLoading={conflictLoading}
@@ -261,10 +248,6 @@ export function ComplaintsView() {
     </div>
   );
 }
-
-// ─────────────────────────────────────────
-// 불만 카드 컴포넌트
-// ─────────────────────────────────────────
 
 function ComplaintCard({
   complaint,
@@ -299,213 +282,57 @@ function ComplaintCard({
   conflictResult?: ConflictResult | null;
   conflictLoading?: boolean;
 }) {
-  const isTransfer = complaint.complaintType === 'transfer';
-  const severityBorderColor = complaint.severity >= 3
-    ? 'var(--danger)'
-    : complaint.severity >= 2
-    ? 'var(--warning)'
-    : '#f1c40f';
-
   return (
-    <div
-      className="fm-card"
-      style={{ borderLeft: `4px solid ${isConflict ? 'var(--danger)' : severityBorderColor}` }}
-    >
-      <div className="fm-flex fm-justify-between fm-items-center fm-mb-sm">
-        <div className="fm-flex fm-items-center fm-gap-sm">
-          <span className="fm-text-lg fm-font-bold fm-text-primary">{playerName}</span>
-          <span className={`fm-badge ${getSeverityBadgeClass(complaint.severity)}`}>
-            {COMPLAINT_SEVERITY_LABELS[complaint.severity] ?? '알 수 없음'}
-          </span>
-          {isConflict && (
-            <span className="fm-badge fm-badge--danger">갈등</span>
-          )}
+    <div className="fm-card">
+      <div className="fm-flex fm-justify-between fm-items-center fm-gap-sm fm-mb-sm fm-flex-wrap">
+        <div className="fm-flex fm-items-center fm-gap-sm fm-flex-wrap">
+          <strong className="fm-text-primary">{playerName}</strong>
+          <span className={`fm-badge ${getSeverityBadgeClass(complaint.severity)}`}>{COMPLAINT_SEVERITY_LABELS[complaint.severity]}</span>
+          <span className="fm-badge fm-badge--default">{COMPLAINT_TYPE_LABELS[complaint.complaintType]}</span>
+          {complaint.status !== 'active' ? <span className={`fm-badge ${getStatusBadgeClass(complaint.status)}`}>{complaint.status}</span> : null}
         </div>
-        <div className="fm-flex fm-items-center fm-gap-sm">
-          <span className="fm-badge fm-badge--accent">
-            {COMPLAINT_TYPE_LABELS[complaint.complaintType] ?? complaint.complaintType}
-          </span>
-          <span className="fm-text-xs fm-text-muted">{complaint.createdDate}</span>
-        </div>
+        <span className="fm-text-sm fm-text-muted">{complaint.createdDate}</span>
       </div>
 
-      <p className="fm-text-lg fm-text-secondary fm-mb-md" style={{ lineHeight: '1.5', margin: '0 0 12px 0' }}>
-        {complaint.message}
-      </p>
+      <p className="fm-text-secondary fm-mb-sm" style={{ marginTop: 0 }}>{complaint.description}</p>
 
       {insight && (
-        <div
-          className="fm-card fm-mb-sm"
-          style={{
-            background: 'rgba(73, 199, 241, 0.08)',
-            borderColor: 'rgba(73, 199, 241, 0.25)',
-          }}
-        >
-          <div className="fm-flex fm-justify-between fm-items-center fm-mb-xs">
-            <span className="fm-text-sm fm-font-semibold fm-text-primary">관리 포인트</span>
-            <span className={`fm-badge ${insight.urgency === 'high' ? 'fm-badge--danger' : insight.urgency === 'medium' ? 'fm-badge--warning' : 'fm-badge--info'}`}>
-              {insight.urgency === 'high' ? '즉시 대응' : insight.urgency === 'medium' ? '주의 필요' : '점검 권장'}
-            </span>
-          </div>
-          <p className="fm-text-sm fm-text-secondary" style={{ margin: '0 0 6px 0', lineHeight: 1.5 }}>
-            취약 요인: <span className="fm-font-semibold">{SATISFACTION_FACTOR_LABELS[insight.weakestFactor]}</span> ({insight.weakestScore})
-          </p>
-          <p className="fm-text-sm fm-text-muted" style={{ margin: 0, lineHeight: 1.5 }}>
-            {insight.recommendation}
-          </p>
+        <div className="fm-alert fm-alert--info fm-mb-sm">
+          <span className="fm-alert__text">
+            만족도 {insight.overallSatisfaction} / 가장 약한 항목: {SATISFACTION_FACTOR_LABELS[insight.weakestFactor]} ({insight.weakestScore})
+            {' '}· {insight.recommendation}
+          </span>
         </div>
       )}
 
-      {/* 설득 결과 메시지 */}
       {persuadeResult && (
         <div className={`fm-alert ${persuadeResult.success ? 'fm-alert--success' : 'fm-alert--danger'} fm-mb-sm`}>
-          <span className="fm-alert__text fm-font-semibold">
-            {persuadeResult.success
-              ? '설득에 성공했습니다! 선수가 이적 의사를 철회했습니다.'
-              : '설득에 실패했습니다. 선수의 불만이 더욱 커졌습니다.'}
-          </span>
+          <span className="fm-alert__text">{persuadeResult.success ? '설득에 성공했습니다.' : '설득에 실패했습니다.'}</span>
         </div>
       )}
 
-      {/* 갈등 해결 결과 메시지 */}
       {conflictResult && (
         <div className={`fm-alert ${conflictResult.success ? 'fm-alert--success' : 'fm-alert--danger'} fm-mb-sm`}>
-          <span className="fm-alert__text fm-font-semibold">
-            {conflictResult.message}
-          </span>
+          <span className="fm-alert__text">{conflictResult.message}</span>
         </div>
       )}
 
-      {/* 상태 표시 (이력 탭) */}
-      {complaint.status !== 'active' && (
-        <div className="fm-flex fm-items-center fm-gap-sm fm-mb-sm">
-          <span className={`fm-badge ${getStatusBadgeClass(complaint.status)}`}>
-            {getStatusLabel(complaint.status)}
-          </span>
-          {complaint.resolution && (
-            <span className="fm-text-md fm-text-muted">{getResolutionLabel(complaint.resolution)}</span>
-          )}
-        </div>
-      )}
+      <div className="fm-flex fm-gap-sm fm-flex-wrap">
+        {onResolve ? <button className="fm-btn fm-btn--primary fm-btn--sm" onClick={onResolve}>대화로 해결</button> : null}
+        {onIgnore ? <button className="fm-btn fm-btn--sm" onClick={onIgnore}>무시</button> : null}
+        {onAllowTransfer ? <button className="fm-btn fm-btn--danger fm-btn--sm" onClick={onAllowTransfer}>이적 허용</button> : null}
+        {onDenyTransfer ? <button className="fm-btn fm-btn--sm" onClick={onDenyTransfer}>이적 거절</button> : null}
+        {onPersuadeTransfer ? <button className="fm-btn fm-btn--info fm-btn--sm" onClick={onPersuadeTransfer}>설득 시도</button> : null}
+        {isConflict && onToggleConflictPanel ? <button className="fm-btn fm-btn--info fm-btn--sm" onClick={onToggleConflictPanel}>갈등 중재</button> : null}
+      </div>
 
-      {/* 갈등 타입: 해결 방법 선택 UI */}
-      {isConflict && onToggleConflictPanel && complaint.status === 'active' && (
-        <>
-          <div className="fm-flex fm-gap-sm" style={{ justifyContent: 'flex-end' }}>
-            <button
-              className="fm-btn fm-btn--danger"
-              onClick={onToggleConflictPanel}
-              aria-expanded={conflictPanelOpen}
-              aria-label="갈등 해결 방법 선택 패널 열기"
-            >
-              {conflictPanelOpen ? '닫기' : '해결 방법 선택'}
-            </button>
-            {onIgnore && (
-              <button className="fm-btn fm-btn--ghost" onClick={onIgnore}>
-                무시
-              </button>
-            )}
-          </div>
-
-          {conflictPanelOpen && onConflictResolve && (
-            <div className="fm-card fm-mt-md">
-              <p className="fm-text-lg fm-font-semibold fm-text-primary fm-mb-md" style={{ margin: '0 0 12px 0' }}>
-                갈등 해결 방법
-              </p>
-              <div className="fm-grid fm-grid--3">
-                <button
-                  className="fm-card fm-card--clickable fm-flex-col fm-items-center fm-gap-sm"
-                  onClick={() => onConflictResolve('team_talk')}
-                  disabled={conflictLoading}
-                  aria-label="팀 토크로 갈등 해결 시도"
-                  style={{ borderColor: 'var(--info)' }}
-                >
-                  <span className="fm-text-lg fm-font-bold fm-text-primary">팀 토크</span>
-                  <span className="fm-text-base fm-text-accent fm-font-semibold">성공률 50%</span>
-                  <span className="fm-text-sm fm-text-muted">양측 사기 +3</span>
-                </button>
-                <button
-                  className="fm-card fm-card--clickable fm-flex-col fm-items-center fm-gap-sm"
-                  onClick={() => onConflictResolve('mentoring')}
-                  disabled={conflictLoading}
-                  aria-label="멘토링으로 갈등 해결 시도"
-                  style={{ borderColor: '#a78bfa' }}
-                >
-                  <span className="fm-text-lg fm-font-bold fm-text-primary">멘토링</span>
-                  <span className="fm-text-base fm-text-accent fm-font-semibold">성공률 60%</span>
-                  <span className="fm-text-sm fm-text-muted">양측 케미 +5</span>
-                </button>
-                <button
-                  className="fm-card fm-card--clickable fm-flex-col fm-items-center fm-gap-sm"
-                  onClick={() => onConflictResolve('mediation')}
-                  disabled={conflictLoading}
-                  aria-label="중재로 갈등 해결 시도"
-                  style={{ borderColor: 'var(--success)' }}
-                >
-                  <span className="fm-text-lg fm-font-bold fm-text-primary">중재</span>
-                  <span className="fm-text-base fm-text-accent fm-font-semibold">성공률 70%</span>
-                  <span className="fm-text-sm fm-text-muted">사기 +2, 케미 +3</span>
-                </button>
-              </div>
-              {conflictLoading && (
-                <p className="fm-text-md fm-text-muted fm-text-center fm-mt-sm">처리 중...</p>
-              )}
-            </div>
-          )}
-        </>
-      )}
-
-      {/* 일반 불만 액션 버튼 (활성 탭) - 갈등이 아닌 경우만 */}
-      {onResolve && onIgnore && !isTransfer && !isConflict && (
-        <div className="fm-flex fm-gap-sm" style={{ justifyContent: 'flex-end' }}>
-          <button className="fm-btn fm-btn--success" onClick={onResolve}>
-            대화하기
-          </button>
-          <button className="fm-btn fm-btn--ghost" onClick={onIgnore}>
-            무시
-          </button>
-        </div>
-      )}
-
-      {/* 이적 요청 전용 액션 버튼 */}
-      {isTransfer && onAllowTransfer && onDenyTransfer && onPersuadeTransfer && (
-        <div className="fm-flex fm-gap-sm" style={{ justifyContent: 'flex-end' }}>
-          <button className="fm-btn" style={{ borderColor: 'var(--info)', color: 'var(--info)' }} onClick={onPersuadeTransfer}>
-            대화로 설득
-          </button>
-          <button className="fm-btn" style={{ borderColor: 'var(--warning)', color: 'var(--warning)' }} onClick={onDenyTransfer}>
-            이적 거부
-          </button>
-          <button className="fm-btn fm-btn--danger" onClick={onAllowTransfer}>
-            이적 허용
-          </button>
+      {isConflict && conflictPanelOpen && onConflictResolve && (
+        <div className="fm-grid fm-grid--3 fm-mt-md">
+          <button className="fm-btn fm-btn--sm" disabled={conflictLoading} onClick={() => onConflictResolve('team_talk')}>팀 미팅</button>
+          <button className="fm-btn fm-btn--sm" disabled={conflictLoading} onClick={() => onConflictResolve('mentoring')}>멘토링</button>
+          <button className="fm-btn fm-btn--sm" disabled={conflictLoading} onClick={() => onConflictResolve('mediation')}>직접 중재</button>
         </div>
       )}
     </div>
   );
-}
-
-function getResolutionLabel(resolution: string): string {
-  switch (resolution) {
-    case 'talk': return '대화로 해결';
-    case 'promise_starter': return '주전 약속';
-    case 'salary_raise': return '연봉 인상';
-    case 'allow_transfer': return '이적 허용';
-    case 'deny_transfer': return '이적 거부';
-    case 'persuade_success': return '설득 성공';
-    case 'persuade_fail': return '설득 실패';
-    case 'team_talk': return '팀 토크로 해결';
-    case 'mentoring': return '멘토링으로 해결';
-    case 'mediation': return '중재로 해결';
-    default: return resolution;
-  }
-}
-
-function getStatusLabel(status: string): string {
-  switch (status) {
-    case 'resolved': return '해결됨';
-    case 'ignored': return '무시됨';
-    case 'escalated': return '확대됨';
-    default: return status;
-  }
 }

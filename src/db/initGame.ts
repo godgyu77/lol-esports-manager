@@ -343,7 +343,12 @@ export async function initializeNewGame(
   }
 
   if (mode === 'manager') {
-    await ensureInitialCoachBriefingNews(teamId, result.currentSeasonId, SEASON_DATES.spring.start);
+    const activeSeason = await getActiveSeason();
+    await ensureInitialCoachBriefingNews(
+      teamId,
+      result.currentSeasonId,
+      activeSeason?.currentDate ?? activeSeason?.startDate ?? SEASON_DATES.spring.start,
+    );
   }
 
   return result;

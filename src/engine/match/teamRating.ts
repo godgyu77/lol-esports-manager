@@ -45,6 +45,14 @@ export interface MatchupResult {
   laneMatchups: Record<Position, number>;
 }
 
+function isMainDivision(division: string): boolean {
+  return division === 'main' || division === '1군';
+}
+
+function isBenchDivision(division: string): boolean {
+  return division === 'academy' || division === 'sub' || division === '2군';
+}
+
 // ─────────────────────────────────────────
 // 선수 개인 전투력
 // ─────────────────────────────────────────
@@ -306,14 +314,14 @@ export function buildLineup(
   for (const pos of positions) {
     // 1군(main) 선수 중 부상이 아닌 해당 포지션 선수를 찾음
     let candidate = roster.find(
-      p => p.position === pos && p.division === 'main' && !(injuredPlayerIds?.has(p.id)),
+      p => p.position === pos && isMainDivision(p.division) && !(injuredPlayerIds?.has(p.id)),
     );
 
     // 부포지션(secondaryPosition) 선수도 탐색
     if (!candidate) {
       candidate = roster.find(
         p => (p as unknown as { secondaryPosition?: string }).secondaryPosition === pos
-          && p.division === 'main' && !(injuredPlayerIds?.has(p.id))
+          && isMainDivision(p.division) && !(injuredPlayerIds?.has(p.id))
           && !positions.some(usedPos => lineup[usedPos]?.id === p.id),
       );
     }
@@ -321,7 +329,7 @@ export function buildLineup(
     // 1군에 없으면 (부상 등) 2군(academy)에서 대체 선수 탐색
     if (!candidate) {
       candidate = roster.find(
-        p => p.position === pos && p.division === 'academy' && !(injuredPlayerIds?.has(p.id)),
+        p => p.position === pos && isBenchDivision(p.division) && !(injuredPlayerIds?.has(p.id)),
       );
     }
 

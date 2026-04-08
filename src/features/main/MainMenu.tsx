@@ -37,10 +37,9 @@ function getSaveResumeSummary(save: GameSave): { headline: string; subline: stri
 }
 
 const EXPERIENCE_PILLARS = [
-  '패치 변화에 맞춰 팀을 설계하는 운영',
-  '코치진 운영과 로스터 정치',
-  '드래프트, 스크림, 중계 서사가 이어지는 시즌',
-  '오래 기억되는 e스포츠 커리어 아크',
+  '패치 대응 운영',
+  '드래프트와 로스터 관리',
+  '시즌 서사 중심 진행',
 ] as const;
 
 export function MainMenu() {
@@ -105,9 +104,9 @@ export function MainMenu() {
             <div className="launcher__eyebrow">리그 프런트 오피스 시뮬레이션</div>
             <h1 className="launcher__title">LoL e스포츠 매니저</h1>
             <p className="launcher__subtitle">
-              밴픽부터 로스터 운영, 시즌 목표와 국제전 기대감까지.
+              밴픽, 로스터, 코치진, 시즌 목표를 한 흐름으로 묶은
               <br />
-              내 시즌을 직접 이끄는 e스포츠 매니지먼트 경험입니다.
+              한국형 e스포츠 운영 시뮬레이션입니다.
             </p>
             <div className="launcher__pillar-row" aria-label="핵심 경험 요소">
               {EXPERIENCE_PILLARS.map((pillar) => (
@@ -118,19 +117,14 @@ export function MainMenu() {
 
           <div className="launcher__story-grid">
             <article className="launcher__story-card">
-              <span className="launcher__story-label">오늘의 리그</span>
-              <strong>LCK, LPL, LEC, LCS 시즌 운영</strong>
-              <p>시즌 전체를 따라가며 밴픽과 방송 경기, 보드 기대치를 관리합니다.</p>
-            </article>
-            <article className="launcher__story-card">
-              <span className="launcher__story-label">추천 시작 방식</span>
+              <span className="launcher__story-label">추천 시작</span>
               <strong>감독 모드로 첫 시즌 시작</strong>
-              <p>로스터 운영과 밴픽, 보드 목표가 모두 열려 있어 첫 플레이에 가장 잘 맞습니다.</p>
+              <p>훈련, 전술, 밴픽, 구단 운영이 모두 열려 있어 전체 루프를 가장 자연스럽게 익힐 수 있습니다.</p>
             </article>
             <article className="launcher__story-card">
-              <span className="launcher__story-label">AI 운영 상태</span>
+              <span className="launcher__story-label">AI 상태</span>
               <strong>{aiStatusLabel}</strong>
-              <p>로컬 AI가 없어도 템플릿과 규칙 엔진으로 콘텐츠가 끊기지 않게 설계되어 있습니다.</p>
+              <p>로컬 AI가 없어도 템플릿과 규칙 엔진으로 뉴스, 브리핑, 시즌 흐름이 끊기지 않게 설계돼 있습니다.</p>
             </article>
           </div>
         </section>
@@ -187,10 +181,10 @@ export function MainMenu() {
           </div>
 
           <div className="launcher__identity-card">
-            <span className="launcher__continue-label">브랜드 노트</span>
-            <strong>축구 게임의 스킨이 아니라 LoL e스포츠 운영 게임으로 설계했습니다.</strong>
+            <span className="launcher__continue-label">빠른 안내</span>
+            <strong>뉴스는 읽고, 받은편지는 처리하고, 밴픽과 경기는 몰입해서 진행하는 구조입니다.</strong>
             <p>
-              패치 해석, 스태프 신뢰, 선수 케미, 방송 압박, 장기 커리어 정체성이 하나의 루프 안에 묶여 있습니다.
+              처음 시작할 때는 새 커리어 한 번만 선택하면 됩니다. 이후에는 최근 커리어 카드에서 바로 이어서 플레이할 수 있습니다.
             </p>
           </div>
 

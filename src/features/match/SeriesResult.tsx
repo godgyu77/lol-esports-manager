@@ -42,7 +42,8 @@ export function SeriesResult({
           <span className="match-result-team">{awayTeamShortName}</span>
         </div>
         <p className="match-result-winner">{winnerName} 승리</p>
-        {gameResults && gameResults.length > 0 && (
+
+        {gameResults && gameResults.length > 0 ? (
           <div className="match-result-highlights">
             <MatchHighlights
               gameResults={gameResults}
@@ -50,13 +51,15 @@ export function SeriesResult({
               awayTeamName={awayTeamShortName}
             />
           </div>
-        )}
-        {postMatchComment && (
+        ) : null}
+
+        {postMatchComment ? (
           <div className="match-result-comment">
             <p className="match-result-headline">{postMatchComment.headline}</p>
             <p className="match-result-coach-comment">"{postMatchComment.coachComment}"</p>
           </div>
-        )}
+        ) : null}
+
         <button className="fm-btn fm-btn--primary fm-btn--lg" onClick={onReturn} autoFocus>
           대시보드로 돌아가기
         </button>

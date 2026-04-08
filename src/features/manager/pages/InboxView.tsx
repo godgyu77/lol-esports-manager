@@ -1,9 +1,4 @@
-/**
- * 받은 편지함 페이지
- * - 모든 알림을 카테고리별로 관리
- */
-
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGameStore } from '../../../stores/gameStore';
 import {
@@ -19,7 +14,18 @@ import { getStandings, getMatchesByTeam } from '../../../db/queries';
 import { MainLoopPanel } from '../components/MainLoopPanel';
 import { useToolbarNavigation } from '../hooks/useToolbarNavigation';
 
-const CATEGORIES: Array<InboxCategory | 'all' | 'fan'> = ['all', 'fan', 'transfer', 'contract', 'complaint', 'board', 'injury', 'promise', 'scouting', 'news', 'general'];
+const CATEGORIES: Array<InboxCategory | 'all' | 'fan'> = [
+  'all',
+  'transfer',
+  'contract',
+  'complaint',
+  'board',
+  'injury',
+  'promise',
+  'scouting',
+  'general',
+  'fan',
+];
 
 const CATEGORY_COLORS: Record<string, string> = {
   transfer: '#c89b3c',
@@ -61,9 +67,9 @@ function getInboxPresentation(message: InboxMessage): 'alert' | 'briefing' | 'ta
 
 function getInboxPresentationLabel(message: InboxMessage): string {
   const presentation = getInboxPresentation(message);
-  if (presentation === 'alert') return '알림';
-  if (presentation === 'briefing') return '브리핑';
-  return '작업';
+  if (presentation === 'alert') return '조치 필요';
+  if (presentation === 'briefing') return '참고';
+  return '업무';
 }
 
 function getInboxPresentationColor(message: InboxMessage): string {
@@ -80,7 +86,7 @@ export function InboxView() {
   const navigate = useNavigate();
 
   const [messages, setMessages] = useState<InboxMessage[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
+  const [, setUnreadCount] = useState(0);
   const [filter, setFilter] = useState<InboxCategory | 'all' | 'fan'>('all');
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -89,6 +95,7 @@ export function InboxView() {
   const [fanLetters, setFanLetters] = useState<FanLetter[]>([]);
   const [fanLetterReply, setFanLetterReply] = useState<Record<number, string>>({});
   const [fanLoading, setFanLoading] = useState(false);
+
   const { getItemProps } = useToolbarNavigation({
     items: CATEGORIES,
     activeItem: filter,
@@ -108,7 +115,7 @@ export function InboxView() {
       setMessages(msgs);
       setUnreadCount(count);
     } catch (err) {
-      console.error('인박스 로딩 실패:', err);
+      console.error('받은편지 로딩 실패:', err);
     } finally {
       setIsLoading(false);
     }
@@ -126,7 +133,7 @@ export function InboxView() {
       setFanLoading(true);
       try {
         const userTeam = teams.find((team) => team.id === userTeamId);
-        const teamName = userTeam?.name ?? '팀';
+        const teamName = userTeam?.name ?? '우리 팀';
 
         const matches = await getMatchesByTeam(season.id, userTeamId);
         const playedMatches = matches.filter((match) => match.isPlayed).sort((a, b) => b.week - a.week);
@@ -200,68 +207,65 @@ export function InboxView() {
     setMessages((prev) => prev.map((message) => ({ ...message, isRead: true })));
   };
 
-  if (!save) return <p className="fm-text-muted">데이터를 불러오는 중...</p>;
-  if (isLoading) return <p className="fm-text-muted">인박스를 불러오는 중...</p>;
+  const filtered = useMemo(() => {
+    if (filter === 'fan') return [];
+    if (filter === 'all') return messages;
+    return messages.filter((message) => message.category === filter);
+  }, [filter, messages]);
 
-  const filtered = filter === 'all' ? messages : messages.filter((message) => message.category === filter);
-  const inboxRisk = filtered.find((message) => getInboxPresentation(message) === 'alert')
-    ?? messages.find((message) => getInboxPresentation(message) === 'alert')
-    ?? null;
-  const newestBriefing = filtered.find((message) => getInboxPresentation(message) === 'briefing')
-    ?? messages.find((message) => getInboxPresentation(message) === 'briefing')
-    ?? null;
+  const actionMessages = filtered.filter((message) => getInboxPresentation(message) === 'alert');
+  const briefingMessages = filtered.filter((message) => getInboxPresentation(message) !== 'alert');
+  const inboxRisk = actionMessages[0] ?? messages.find((message) => getInboxPresentation(message) === 'alert') ?? null;
+  const newestBriefing = briefingMessages[0] ?? messages.find((message) => getInboxPresentation(message) !== 'alert') ?? null;
+
+  if (!save) return <p className="fm-text-muted">데이터를 불러오는 중입니다...</p>;
+  if (isLoading) return <p className="fm-text-muted">받은편지를 불러오는 중입니다...</p>;
 
   return (
     <div>
       <div className="fm-page-header">
-        <h1 className="fm-page-title">인박스 ({unreadCount}건 미확인)</h1>
+        <h1 className="fm-page-title">받은편지</h1>
         <div className="fm-flex fm-gap-sm">
           <button className={`fm-btn ${showUnreadOnly ? '' : 'fm-btn--ghost'}`} onClick={() => setShowUnreadOnly((prev) => !prev)} aria-pressed={showUnreadOnly}>
-            {showUnreadOnly ? '전체 메시지 보기' : '읽지 않은 메시지만 보기'}
+            {showUnreadOnly ? '전체 메시지 보기' : '미확인 메시지만 보기'}
           </button>
           <button className="fm-btn fm-btn--ghost" onClick={handleMarkAllRead}>모두 읽음 처리</button>
         </div>
       </div>
 
       <MainLoopPanel
-        eyebrow="인박스 규칙"
-        title="읽음 상태는 강조만 지우고, 목록은 유지합니다"
-        subtitle="알림은 우선순위를 높게 유지하고, 브리핑은 맥락을 남겨 두며, 작업형 메시지는 실행 버튼으로 바로 이어지게 정리했습니다."
+        eyebrow="받은편지 규칙"
+        title="받은편지는 처리할 메시지 중심으로, 뉴스는 읽는 기사 중심으로 분리했습니다."
+        subtitle="계약, 불만, 보드 압박, 부상처럼 직접 조치가 필요한 항목을 먼저 보고, 참고용 정보는 낮은 우선순위로 확인하는 구조입니다."
         insights={[
           {
-            label: '오늘 해야 할 일',
-            value: showUnreadOnly ? '미확인만 검토 중' : '전체 메시지 검토',
-            detail: filtered[0] ? `최신 메시지: ${filtered[0].title}` : '현재 필터에 해당하는 메시지가 없습니다.',
+            label: '오늘 처리할 일',
+            value: showUnreadOnly ? '미확인만 보는 중' : '전체 메시지 검토 중',
+            detail: filtered[0] ? `가장 최근 메시지: ${filtered[0].title}` : '현재 필터에 해당하는 메시지가 없습니다.',
             tone: 'accent',
           },
           {
             label: '가장 큰 리스크',
             value: inboxRisk ? getInboxPresentationLabel(inboxRisk) : '안정',
-            detail: inboxRisk?.title ?? '즉시 확인이 필요한 인박스 알림은 없습니다.',
+            detail: inboxRisk?.title ?? '즉시 확인이 필요한 운영 메시지가 없습니다.',
             tone: inboxRisk ? 'danger' : 'success',
           },
           {
-            label: '다음 경기 준비',
-            value: newestBriefing ? '브리핑 도착' : '대기 중',
-            detail: newestBriefing ? `브리핑 제목: ${newestBriefing.title}` : '새로운 팀 브리핑은 아직 없습니다.',
+            label: '읽는 정보',
+            value: newestBriefing ? '참고 메시지 있음' : '대기 중',
+            detail: newestBriefing ? `${newestBriefing.title} 같은 참고성 메시지는 빠르게 읽고 넘기면 됩니다.` : '참고용 메시지는 아직 없습니다.',
             tone: 'accent',
-          },
-          {
-            label: '목록 유지 규칙',
-            value: '읽음 후에도 유지',
-            detail: '읽음 처리는 배지와 미확인 강조만 정리합니다. 기록은 계속 남아 흐름을 잃지 않게 했습니다.',
-            tone: 'success',
           },
         ]}
         actions={[
-          { label: showUnreadOnly ? '루프에서 전체 보기' : '루프에서 미확인만 보기', onClick: () => setShowUnreadOnly((prev) => !prev), variant: 'primary' },
+          { label: showUnreadOnly ? '전체 메시지 보기' : '미확인만 보기', onClick: () => setShowUnreadOnly((prev) => !prev), variant: 'primary' },
           { label: '모두 읽음 처리', onClick: () => void handleMarkAllRead() },
           { label: '뉴스 보기', onClick: () => navigate('/manager/news'), variant: 'info' },
         ]}
-        note="기사형 정보는 뉴스에서, 알림과 작업형 메시지는 인박스에서 처리하는 흐름으로 역할을 분리했습니다."
+        note="기사형 정보는 뉴스 화면에서 읽고, 받은편지에서는 실제로 처리해야 하는 운영 메시지를 우선 확인합니다."
       />
 
-      <div className="fm-tabs" role="tablist" aria-label="인박스 필터" aria-orientation="horizontal">
+      <div className="fm-tabs" role="tablist" aria-label="받은편지 필터" aria-orientation="horizontal">
         {CATEGORIES.map((category) => (
           <button
             key={category}
@@ -281,7 +285,7 @@ export function InboxView() {
       {filter === 'fan' && (
         <div role="tabpanel" id={`inbox-panel-${filter}`} aria-labelledby={`inbox-tab-${filter}`}>
           {fanLoading ? (
-            <p className="fm-text-muted fm-text-md">팬레터를 불러오는 중...</p>
+            <p className="fm-text-muted fm-text-md">팬레터를 불러오는 중입니다...</p>
           ) : fanLetters.length === 0 ? (
             <p className="fm-text-muted fm-text-md">팬레터가 없습니다.</p>
           ) : (
@@ -303,7 +307,7 @@ export function InboxView() {
                       {FAN_LETTER_LABELS[letter.type] ?? letter.type}
                     </span>
                     <span className="fm-flex-1 fm-font-semibold fm-text-primary fm-text-md">{letter.subject}</span>
-                    <span className="fm-text-sm fm-text-muted">from: {letter.from}</span>
+                    <span className="fm-text-sm fm-text-muted">보낸 사람: {letter.from}</span>
                   </div>
                   <div className="fm-mt-sm">
                     <p className="fm-text-md fm-text-secondary" style={{ margin: 0 }}>{letter.content}</p>
@@ -356,70 +360,133 @@ export function InboxView() {
       )}
 
       {filter !== 'fan' && (
-        <div role="tabpanel" id={`inbox-panel-${filter}`} aria-labelledby={`inbox-tab-${filter}`}>
+        <div role="tabpanel" id={`inbox-panel-${filter}`} aria-labelledby={`inbox-tab-${filter}`} className="fm-flex-col fm-gap-md">
           {filtered.length === 0 ? (
             <p className="fm-text-muted fm-text-md">
               {showUnreadOnly ? '읽지 않은 메시지가 없습니다.' : '메시지가 없습니다.'}
             </p>
           ) : (
-            <div className="fm-flex-col fm-gap-xs">
-            {filtered.map((msg) => (
-              <div
-                key={msg.id}
-                className={`fm-card ${!msg.isRead ? 'fm-card--highlight' : ''}`}
-                style={{ borderLeft: `3px solid ${CATEGORY_COLORS[msg.category] ?? '#8a8a9a'}` }}
-              >
-                <button
-                  type="button"
-                  className="fm-btn fm-btn--ghost"
-                  style={{ width: '100%', justifyContent: 'flex-start', padding: 0, textAlign: 'left', border: 'none', minHeight: 0 }}
-                  onClick={() => void handleExpand(msg)}
-                  aria-expanded={expandedId === msg.id}
-                  aria-controls={`inbox-message-${msg.id}`}
-                >
-                <div className="fm-flex fm-items-center fm-gap-sm" style={{ width: '100%' }}>
-                  <span
-                    className="fm-badge"
-                    style={{
-                      background: `${CATEGORY_COLORS[msg.category] ?? '#8a8a9a'}30`,
-                      color: CATEGORY_COLORS[msg.category],
-                    }}
-                  >
-                    {INBOX_CATEGORY_LABELS[msg.category] ?? msg.category}
-                  </span>
-                  <span
-                    className="fm-badge"
-                    aria-label={`message type: ${getInboxPresentationLabel(msg)}`}
-                    style={{
-                      background: `${getInboxPresentationColor(msg)}22`,
-                      color: getInboxPresentationColor(msg),
-                    }}
-                  >
-                    {getInboxPresentationLabel(msg)}
-                  </span>
-                  <span className={`fm-flex-1 fm-text-md ${msg.isRead ? 'fm-text-muted' : 'fm-font-semibold fm-text-primary'}`}>
-                    {msg.title}
-                  </span>
-                  {msg.actionRequired && <span className="fm-badge fm-badge--danger">조치 필요</span>}
-                  {!msg.isRead && (
-                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} aria-hidden="true" />
-                  )}
-                  <span className="fm-text-sm fm-text-muted">{msg.createdDate}</span>
-                </div>
-                </button>
-                {expandedId === msg.id && (
-                  <div id={`inbox-message-${msg.id}`} className="fm-mt-sm" style={{ paddingTop: '10px', borderTop: '1px solid var(--border-subtle)' }}>
-                    <p className="fm-text-md fm-text-secondary" style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{msg.content}</p>
-                    {msg.actionRoute && (
-                      <button className="fm-btn fm-btn--primary fm-btn--sm fm-mt-sm" onClick={(e) => { e.stopPropagation(); if (msg.actionRoute) void navigate(msg.actionRoute); }}>
-                        이동 &rarr;
-                      </button>
-                    )}
+            <>
+              {actionMessages.length > 0 && (
+                <div className="fm-panel">
+                  <div className="fm-panel__header">
+                    <span className="fm-panel__title">우선 처리</span>
                   </div>
-                )}
-              </div>
-            ))}
-            </div>
+                  <div className="fm-panel__body fm-flex-col fm-gap-xs">
+                    {actionMessages.map((msg) => (
+                      <div
+                        key={msg.id}
+                        className={`fm-card ${!msg.isRead ? 'fm-card--highlight' : ''}`}
+                        style={{ borderLeft: `3px solid ${CATEGORY_COLORS[msg.category] ?? '#8a8a9a'}` }}
+                      >
+                        <button
+                          type="button"
+                          className="fm-btn fm-btn--ghost"
+                          style={{ width: '100%', justifyContent: 'flex-start', padding: 0, textAlign: 'left', border: 'none', minHeight: 0 }}
+                          onClick={() => void handleExpand(msg)}
+                          aria-expanded={expandedId === msg.id}
+                          aria-controls={`inbox-message-${msg.id}`}
+                        >
+                          <div className="fm-flex fm-items-center fm-gap-sm" style={{ width: '100%' }}>
+                            <span className="fm-badge" style={{ background: `${CATEGORY_COLORS[msg.category] ?? '#8a8a9a'}30`, color: CATEGORY_COLORS[msg.category] }}>
+                              {INBOX_CATEGORY_LABELS[msg.category] ?? msg.category}
+                            </span>
+                            <span
+                              className="fm-badge"
+                              aria-label={`message type: ${getInboxPresentationLabel(msg)}`}
+                              style={{ background: `${getInboxPresentationColor(msg)}22`, color: getInboxPresentationColor(msg) }}
+                            >
+                              {getInboxPresentationLabel(msg)}
+                            </span>
+                            <span className={`fm-flex-1 fm-text-md ${msg.isRead ? 'fm-text-muted' : 'fm-font-semibold fm-text-primary'}`}>
+                              {msg.title}
+                            </span>
+                            {msg.actionRequired && <span className="fm-badge fm-badge--danger">즉시 확인</span>}
+                            {!msg.isRead && (
+                              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} aria-hidden="true" />
+                            )}
+                            <span className="fm-text-sm fm-text-muted">{msg.createdDate}</span>
+                          </div>
+                        </button>
+                        {expandedId === msg.id && (
+                          <div id={`inbox-message-${msg.id}`} className="fm-mt-sm" style={{ paddingTop: '10px', borderTop: '1px solid var(--border-subtle)' }}>
+                            <p className="fm-text-md fm-text-secondary" style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{msg.content}</p>
+                            {msg.actionRoute && (
+                              <button className="fm-btn fm-btn--primary fm-btn--sm fm-mt-sm" onClick={(e) => { e.stopPropagation(); if (msg.actionRoute) void navigate(msg.actionRoute); }}>
+                                바로 이동
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {briefingMessages.length > 0 && (
+                <div className="fm-panel">
+                  <div className="fm-panel__header">
+                    <span className="fm-panel__title">참고 메시지</span>
+                  </div>
+                  <div className="fm-panel__body fm-flex-col fm-gap-xs">
+                    {briefingMessages.map((msg) => (
+                      <div
+                        key={msg.id}
+                        className={`fm-card ${!msg.isRead ? 'fm-card--highlight' : ''}`}
+                        style={{ borderLeft: `3px solid ${CATEGORY_COLORS[msg.category] ?? '#8a8a9a'}` }}
+                      >
+                        <button
+                          type="button"
+                          className="fm-btn fm-btn--ghost"
+                          style={{ width: '100%', justifyContent: 'flex-start', padding: 0, textAlign: 'left', border: 'none', minHeight: 0 }}
+                          onClick={() => void handleExpand(msg)}
+                          aria-expanded={expandedId === msg.id}
+                          aria-controls={`inbox-message-${msg.id}`}
+                        >
+                          <div className="fm-flex fm-items-center fm-gap-sm" style={{ width: '100%' }}>
+                            <span className="fm-badge" style={{ background: `${CATEGORY_COLORS[msg.category] ?? '#8a8a9a'}30`, color: CATEGORY_COLORS[msg.category] }}>
+                              {INBOX_CATEGORY_LABELS[msg.category] ?? msg.category}
+                            </span>
+                            <span
+                              className="fm-badge"
+                              aria-label={`message type: ${getInboxPresentationLabel(msg)}`}
+                              style={{ background: `${getInboxPresentationColor(msg)}22`, color: getInboxPresentationColor(msg) }}
+                            >
+                              {getInboxPresentationLabel(msg)}
+                            </span>
+                            <span className={`fm-flex-1 fm-text-md ${msg.isRead ? 'fm-text-muted' : 'fm-font-semibold fm-text-primary'}`}>
+                              {msg.title}
+                            </span>
+                            {!msg.isRead && (
+                              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} aria-hidden="true" />
+                            )}
+                            <span className="fm-text-sm fm-text-muted">{msg.createdDate}</span>
+                          </div>
+                        </button>
+                        {expandedId === msg.id && (
+                          <div id={`inbox-message-${msg.id}`} className="fm-mt-sm" style={{ paddingTop: '10px', borderTop: '1px solid var(--border-subtle)' }}>
+                            <p className="fm-text-md fm-text-secondary" style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{msg.content}</p>
+                            <div className="fm-flex fm-gap-sm fm-mt-sm">
+                              {msg.actionRoute && (
+                                <button className="fm-btn fm-btn--primary fm-btn--sm" onClick={(e) => { e.stopPropagation(); if (msg.actionRoute) void navigate(msg.actionRoute); }}>
+                                  바로 이동
+                                </button>
+                              )}
+                              {msg.category === 'news' && (
+                                <button className="fm-btn fm-btn--info fm-btn--sm" onClick={(e) => { e.stopPropagation(); void navigate('/manager/news'); }}>
+                                  뉴스 화면 열기
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       )}

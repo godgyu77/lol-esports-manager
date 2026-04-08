@@ -142,7 +142,8 @@ describe('buildLineup', () => {
 
     const lineup = buildLineup(roster);
 
-    expect(lineup).toBeNull();
+    expect(lineup).not.toBeNull();
+    expect(lineup!.mid.id).toBe('roster_mid_sub');
   });
 
   it('포지션이 빠진 경우 null 반환', () => {

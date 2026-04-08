@@ -16,7 +16,13 @@ export interface InboxMessage {
 }
 
 export const INBOX_CATEGORY_LABELS: Record<InboxCategory, string> = {
-  transfer: '이적', contract: '계약', complaint: '선수 관리',
-  board: '구단', news: '뉴스', scouting: '스카우팅',
-  injury: '부상', promise: '약속', general: '일반',
+  transfer: '이적',
+  contract: '계약',
+  complaint: '선수 관리',
+  board: '구단',
+  news: '뉴스 연동',
+  scouting: '스카우팅',
+  injury: '부상',
+  promise: '약속',
+  general: '일반',
 };

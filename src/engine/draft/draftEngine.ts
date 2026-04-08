@@ -10,6 +10,7 @@ import type { Position } from '../../types/game';
 import type { Champion, ChampionSynergy } from '../../types/champion';
 import type { ChampionProficiency } from '../../types/player';
 import { getDatabase } from '../../db/database';
+import { CHAMPION_DB } from '../../data/championDb';
 import { pickRandom } from '../../utils/random';
 
 // ─────────────────────────────────────────
@@ -62,10 +63,17 @@ export interface TeamDraftState {
 }
 
 const POSITION_ORDER: Position[] = ['top', 'jungle', 'mid', 'adc', 'support'];
+const CHAMPION_BY_ID = new Map(CHAMPION_DB.map((champion) => [champion.id, champion]));
 
 function getNextAvailablePickPosition(teamState: TeamDraftState): Position | null {
   const usedPositions = new Set(teamState.picks.map((pick) => pick.position));
   return POSITION_ORDER.find((position) => !usedPositions.has(position)) ?? null;
+}
+
+function canChampionPlayPosition(championId: string, position: Position): boolean {
+  const champion = CHAMPION_BY_ID.get(championId);
+  if (!champion) return true;
+  return champion.primaryRole === position || champion.secondaryRoles.includes(position);
 }
 
 /** 전체 드래프트 상태 */
@@ -197,6 +205,7 @@ export function executeDraftAction(
   } else {
     const resolvedPosition = position ?? getNextAvailablePickPosition(teamState);
     if (!resolvedPosition) return false;
+    if (position && !canChampionPlayPosition(championId, resolvedPosition)) return false;
     if (teamState.picks.some(p => p.position === resolvedPosition)) return false;
     teamState.picks.push({ championId, position: resolvedPosition });
     state.pickedChampions.push(championId);
@@ -240,8 +249,13 @@ export function swapChampions(
   if (indexB < 0 || indexB >= team.picks.length) return false;
   if (indexA === indexB) return false;
 
-  const tempChampionId = team.picks[indexA].championId;
-  team.picks[indexA].championId = team.picks[indexB].championId;
+  const pickA = team.picks[indexA];
+  const pickB = team.picks[indexB];
+  if (!canChampionPlayPosition(pickA.championId, pickB.position)) return false;
+  if (!canChampionPlayPosition(pickB.championId, pickA.position)) return false;
+
+  const tempChampionId = pickA.championId;
+  team.picks[indexA].championId = pickB.championId;
   team.picks[indexB].championId = tempChampionId;
   return true;
 }

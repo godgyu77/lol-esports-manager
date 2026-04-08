@@ -45,7 +45,7 @@ const initialSeriesState = {
   seriesScore: { home: 0, away: 0 },
   currentGameNum: 1,
   gameResults: [] as GameResult[],
-  hardFearlessSeries: true,
+  hardFearlessSeries: false,
   currentGameDraftRequired: true,
   seriesFearlessPool: { blue: [], red: [] } as Record<'blue' | 'red', string[]>,
   betweenGames: false,

@@ -21,6 +21,7 @@ export interface GameSave {
   saveName: string;
   playTimeMinutes: number;
   teamName?: string;
+  managerName?: string;
   seasonInfo?: string;
   rngSeed?: string;
 }

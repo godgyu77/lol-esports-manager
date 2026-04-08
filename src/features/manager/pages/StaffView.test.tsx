@@ -40,6 +40,10 @@ vi.mock('../../../engine/social/socialEngine', () => ({
   generateStaffReaction: mockGenerateStaffReaction,
 }));
 
+vi.mock('../../../engine/manager/franchiseNarrativeEngine', () => ({
+  buildRelationshipNetworkReport: vi.fn().mockResolvedValue(null),
+}));
+
 vi.mock('../../../db/database', () => ({
   getDatabase: vi.fn().mockResolvedValue({
     select: mockDbSelect,
@@ -88,7 +92,7 @@ describe('StaffView', () => {
     mockGetStaffFitSummary.mockResolvedValue([]);
   });
 
-  it('shows the manager-as-head-coach banner and current coaching staff', async () => {
+  it('shows current coaching staff', async () => {
     mockGetTeamStaff.mockResolvedValue([
       {
         id: 1,
@@ -114,9 +118,8 @@ describe('StaffView', () => {
       gameState: { save: mockSave, season: mockSeason },
     });
 
-    expect(await screen.findByText('현재 감독은 당신입니다. 이 화면에서는 코치진과 지원 스태프만 영입하거나 정리할 수 있습니다.')).toBeInTheDocument();
-    expect(screen.getByText('Coach Kim')).toBeInTheDocument();
-    expect(screen.getByText('선호 역할: 코치')).toBeInTheDocument();
+    expect(await screen.findByText('Coach Kim')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /방출/i })).toBeInTheDocument();
   });
 
   it('shows candidate reasons and hires accepted free agents', async () => {
@@ -148,20 +151,22 @@ describe('StaffView', () => {
       decision: 'accept',
       acceptance: 'medium',
       score: 64,
-      reasons: ['Head coach background makes the coaching offer realistic.', 'The club project looks competitive enough.'],
+      reasons: [
+        'Head coach background makes the coaching offer realistic.',
+        'The club project looks competitive enough.',
+      ],
     });
 
     const { user } = renderWithProviders(<StaffView />, {
       gameState: { save: mockSave, season: mockSeason },
     });
 
-    await user.click(await screen.findByRole('button', { name: 'FA 스태프 시장 보기' }));
+    await user.click(await screen.findByRole('button', { name: /FA/i }));
 
     expect(await screen.findByText('Former Boss')).toBeInTheDocument();
-    expect(screen.getAllByText('감독 출신').length).toBeGreaterThan(0);
     expect(screen.getByText(/coaching offer realistic/i)).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: '코치 제안' }));
+    await user.click(screen.getByRole('button', { name: /코치 제안/i }));
 
     await waitFor(() => {
       expect(mockHireStaffByOffer).toHaveBeenCalledWith(2, 'team-user', 'coach', 2027);

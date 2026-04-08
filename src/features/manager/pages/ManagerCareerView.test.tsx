@@ -113,8 +113,8 @@ describe('ManagerCareerView', () => {
       },
     });
 
-    expect(await screen.findByText('프랜차이즈 아크 타임라인')).toBeInTheDocument();
-    expect(screen.getByText('T1 is showing signs of a real rebuild')).toBeInTheDocument();
+    expect(await screen.findByText('T1 is showing signs of a real rebuild')).toBeInTheDocument();
     expect(screen.getByText('young core rising')).toBeInTheDocument();
+    expect(mockGetCareerArcEvents).toHaveBeenCalledWith(1, 'lck_T1', 6);
   });
 });

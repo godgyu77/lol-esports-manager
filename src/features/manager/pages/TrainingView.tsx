@@ -1,9 +1,9 @@
 ﻿/**
- * ?덈젴 愿由??섏씠吏
- * - ??1: 二쇨컙 ?덈젴 ?ㅼ?以??ㅼ젙
- * - ??2: ?좎닔 媛쒕퀎 ?덈젴 諛곗젙
- * - ??3: ?덈젴 ?대젰
- * - ??4: 硫섑넗留?
+ * 훈련 관리 페이지
+ * - 주간 훈련 스케줄 설정
+ * - 선수 개별 훈련 배정
+ * - 훈련 이력 확인
+ * - 멘토링 운영
  */
 
 import { useEffect, useState, useCallback } from 'react';
@@ -97,7 +97,7 @@ export function TrainingView() {
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
-  // 硫섑넗留??곹깭
+  // 멘토링 상태
   const [mentoringPairs, setMentoringPairs] = useState<MentoringPair[]>([]);
   const [eligibleMentors, setEligibleMentors] = useState<Player[]>([]);
   const [eligibleMentees, setEligibleMentees] = useState<Player[]>([]);
@@ -143,7 +143,7 @@ export function TrainingView() {
       setEligibleMentors(mentors);
       setEligibleMentees(mentees);
 
-      // ?ㅽ겕由?湲곕컲 ?덈젴 異붿쿇
+      // 스크림 기반 훈련 추천
       try {
         const recentScrims = await getRecentScrims(userTeamId, 3);
         if (recentScrims.length > 0) {
@@ -246,7 +246,7 @@ export function TrainingView() {
           },
           {
             label: '다음 경기',
-            value: pendingMatch ? `${pendingMatch.matchDate ?? season?.currentDate ?? '일정'} vs ${nextOpponent}` : 'DayView에서 일정 확인',
+            value: pendingMatch ? `${pendingMatch.matchDate ?? season?.currentDate ?? '일정'} vs ${nextOpponent}` : '시즌 진행 화면에서 일정 확인',
             detail: pendingMatch ? '경기 전까지 훈련 강도와 방향을 맞추면 선수 기세 결정에도 직접 영향을 줍니다.' : '가까운 경기 일정이 잡히면 이 화면 설정이 바로 준비 루프로 이어집니다.',
             tone: 'accent',
           },
@@ -258,7 +258,7 @@ export function TrainingView() {
           },
         ]}
         actions={[
-          { label: 'DayView로 돌아가기', onClick: () => navigate('/manager/day'), variant: 'primary' },
+          { label: '시즌 진행으로 돌아가기', onClick: () => navigate('/manager/day'), variant: 'primary' },
           { label: '전술 정리', onClick: () => navigate('/manager/tactics') },
           { label: '뉴스 브리핑 보기', onClick: () => navigate('/manager/news'), variant: 'info' },
         ]}
@@ -781,3 +781,4 @@ export function TrainingView() {
     </div>
   );
 }
+

@@ -116,7 +116,7 @@ describe('InboxView', () => {
     });
 
     await act(async () => {
-      screen.getByRole('button', { name: '읽지 않은 메시지만 보기' }).click();
+      screen.getByRole('button', { name: '미확인 메시지만 보기' }).click();
     });
 
     await waitFor(() => {

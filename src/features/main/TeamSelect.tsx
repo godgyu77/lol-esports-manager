@@ -33,8 +33,7 @@ const ALL_TEAMS: TeamListItem[] = [
   ...buildTeamList(LCS_TEAMS, 'LCS'),
 ];
 
-const REGIONS: { value: Region | 'ALL'; label: string }[] = [
-  { value: 'ALL', label: '전체' },
+const REGIONS: { value: Region; label: string }[] = [
   { value: 'LCK', label: 'LCK' },
   { value: 'LPL', label: 'LPL' },
   { value: 'LEC', label: 'LEC' },
@@ -81,14 +80,12 @@ export function TeamSelect() {
   const mode = useGameStore((s) => s.mode);
   const setPendingTeamId = useGameStore((s) => s.setPendingTeamId);
 
-  const [selectedRegion, setSelectedRegion] = useState<Region | 'ALL'>('ALL');
+  const [selectedRegion, setSelectedRegion] = useState<Region>('LCK');
   const [selectedTeam, setSelectedTeam] = useState<TeamListItem | null>(null);
 
   const teamData = selectedTeam ? getTeamData(selectedTeam) : null;
   const filteredTeams = useMemo(
-    () => (selectedRegion === 'ALL'
-      ? ALL_TEAMS
-      : ALL_TEAMS.filter((team) => team.region === selectedRegion)),
+    () => ALL_TEAMS.filter((team) => team.region === selectedRegion),
     [selectedRegion],
   );
   const starters = useMemo(
@@ -121,7 +118,7 @@ export function TeamSelect() {
     <div className="fm-content fm-flex-col fm-items-center intro-page">
       <div className="intro-shell">
         <header className="fm-panel intro-hero intro-panel-soft">
-          <div className="fm-panel__body" style={{ padding: 28 }}>
+          <div className="fm-panel__body" style={{ padding: 24 }}>
             <div className="fm-text-xs fm-font-semibold fm-text-accent fm-text-upper fm-mb-sm">팀 입단 브리핑</div>
             <h1 className="fm-text-2xl fm-font-bold fm-text-primary" style={{ margin: 0 }}>첫 시즌을 맡을 팀을 선택하세요</h1>
             <p className="fm-text-md fm-text-muted fm-mt-sm" style={{ lineHeight: 1.7 }}>
@@ -129,6 +126,11 @@ export function TeamSelect() {
                 ? '어떤 팀을 맡느냐에 따라 시즌 압박, 팬 기대, 보드 목표가 모두 달라집니다.'
                 : '어떤 팀에서 커리어를 시작하느냐에 따라 성장 속도와 경쟁 환경이 크게 달라집니다.'}
             </p>
+            <div className="fm-flex fm-gap-sm fm-mt-md" style={{ flexWrap: 'wrap' }}>
+              <span className="fm-badge fm-badge--accent">LCK 기본 표시</span>
+              <span className="fm-badge fm-badge--default">목록 먼저, 상세는 선택 후</span>
+              <span className="fm-badge fm-badge--default">감독 부임 규칙 명시</span>
+            </div>
           </div>
         </header>
 
@@ -150,7 +152,7 @@ export function TeamSelect() {
               <span className="fm-panel__title">팀 목록</span>
             </div>
             <div className="fm-panel__body">
-              <div className="fm-grid fm-grid--2 intro-scroll-panel" style={{ gap: 12 }}>
+              <div className="fm-flex-col intro-scroll-panel" style={{ gap: 10 }}>
                 {filteredTeams.map((team) => (
                   <button
                     key={team.id}
@@ -180,7 +182,7 @@ export function TeamSelect() {
                   <span className="fm-badge fm-badge--accent">{selectedTeam.region}</span>
                 </div>
 
-                <div className="fm-panel__body fm-flex-col fm-gap-md">
+                  <div className="fm-panel__body fm-flex-col fm-gap-md">
                   <div className="fm-flex fm-gap-sm" style={{ flexWrap: 'wrap' }}>
                     <span className="fm-badge fm-badge--accent">{teamMeta.playstyleTag}</span>
                     <span className="fm-badge fm-badge--default">재정 티어 {teamData.financialTier}</span>
@@ -232,6 +234,14 @@ export function TeamSelect() {
                         </div>
                       ))}
                     </div>
+                  </div>
+
+                  <div className="fm-card" style={{ background: 'rgba(255,255,255,0.02)' }}>
+                    <div className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">감독 합류 규칙</div>
+                    <p className="fm-text-sm fm-text-secondary" style={{ margin: 0, lineHeight: 1.6 }}>
+                      선택한 팀의 기존 감독 자리는 비워지고, 사용자가 새 감독으로 부임합니다.
+                      기존 코치와 분석 스태프는 팀에 남아 그대로 시즌 운영을 이어갑니다.
+                    </p>
                   </div>
 
                   <button className="fm-btn fm-btn--primary fm-btn--lg" style={{ width: '100%' }} onClick={handleStart}>

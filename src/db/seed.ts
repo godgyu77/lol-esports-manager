@@ -183,7 +183,7 @@ async function seedTeams(
       // 연봉: OVR 등급별 차등 (만 원 단위)
       // S+(97)→8억, A(86)→5.2억, B(75)→3.1억, C(63)→1.5억, D(50)→0.7억
       const salaryRatio = (ovrNum - 40) / 57;
-      const salary = Math.round(salaryRatio ** 2.2 * 75000 + 5000);
+      const salary = Math.round(salaryRatio ** 2.05 * 52000 + 4000);
 
       await insertPlayer({
         id: playerId,

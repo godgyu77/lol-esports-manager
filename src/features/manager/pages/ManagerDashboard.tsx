@@ -31,7 +31,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: '/manager', label: '대시보드', icon: 'H', end: true },
       { to: '/manager/day', label: '시즌 진행', icon: 'D' },
-      { to: '/manager/inbox', label: '인박스', icon: 'I' },
+      { to: '/manager/inbox', label: '받은 편지', icon: 'I' },
       { to: '/manager/news', label: '뉴스', icon: 'N' },
     ],
   },
@@ -60,7 +60,7 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     id: 'business',
-    title: '구단',
+    title: '구단 운영',
     defaultExpanded: true,
     items: [
       { to: '/manager/transfer', label: '이적 시장', icon: 'TF' },
@@ -70,6 +70,10 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
 ];
+
+function getSplitLabel(split?: string) {
+  return split === 'spring' ? '스프링' : split === 'summer' ? '서머' : '-';
+}
 
 export function ManagerDashboard() {
   const navigate = useNavigate();
@@ -91,17 +95,21 @@ export function ManagerDashboard() {
     onSave: () => navigate('/save-load'),
   });
 
-  const isMatchRoute = location.pathname.startsWith('/manager/match');
+  const isImmersiveRoute =
+    location.pathname.startsWith('/manager/match') ||
+    location.pathname.startsWith('/manager/draft');
+  const badges = useNavBadges(save?.userTeamId ?? '', season?.id ?? 0);
+  const userTeam = teams.find((team) => team.id === save?.userTeamId);
 
   useEffect(() => {
-    if (matchActive && !isMatchRoute) {
+    if (matchActive && !location.pathname.startsWith('/manager/match')) {
       requestNavigationPause();
       navigate('/manager/match', { replace: true });
     }
-  }, [isMatchRoute, matchActive, navigate, requestNavigationPause]);
+  }, [location.pathname, matchActive, navigate, requestNavigationPause]);
 
   useEffect(() => {
-    if (isMatchRoute) return;
+    if (isImmersiveRoute) return;
 
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
@@ -112,19 +120,13 @@ export function ManagerDashboard() {
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isMatchRoute]);
+  }, [isImmersiveRoute]);
 
   const toggleGroup = useCallback((groupId: string) => {
     setExpandedGroups((prev) => ({ ...prev, [groupId]: !prev[groupId] }));
   }, []);
 
-  const badges = useNavBadges(save?.userTeamId ?? '', season?.id ?? 0);
-  const userTeam = teams.find((team) => team.id === save?.userTeamId);
-  const seasonLabel = season ? `${season.year} ${season.split === 'spring' ? '스프링' : '서머'}` : '-';
-  const dateLabel = season?.currentDate ?? '-';
-  const weekLabel = season ? `W${season.currentWeek}` : '-';
-
-  if (isMatchRoute) {
+  if (isImmersiveRoute) {
     return (
       <div className="fm-layout fm-layout--match-focus">
         <div className="fm-main">
@@ -152,9 +154,9 @@ export function ManagerDashboard() {
         </div>
 
         <div className="fm-sidebar__focus">
-          <span className="fm-sidebar__focus-label">이번 주 포커스</span>
+          <span className="fm-sidebar__focus-label">이번 주 핵심</span>
           <p className="fm-sidebar__focus-text">
-            시즌 진행, 뉴스 확인, 훈련 조정처럼 지금 바로 필요한 행동부터 정리해두는 편이 운영 리듬을 잡기 좋습니다.
+            시즌 진행 전에는 뉴스, 선수 상태, 훈련 강도, 재정 압박을 먼저 확인하는 흐름으로 운영하는 것이 가장 안전합니다.
           </p>
         </div>
 
@@ -216,16 +218,16 @@ export function ManagerDashboard() {
           </button>
           <div className="fm-topbar__section">
             <span className="fm-topbar__label">시즌</span>
-            <span className="fm-topbar__value">{seasonLabel}</span>
+            <span className="fm-topbar__value">{season ? `${season.year} ${getSplitLabel(season.split)}` : '-'}</span>
           </div>
           <div className="fm-topbar__divider" />
           <div className="fm-topbar__section">
             <span className="fm-topbar__label">날짜</span>
-            <span className="fm-topbar__value">{dateLabel}</span>
+            <span className="fm-topbar__value">{season?.currentDate ?? '-'}</span>
           </div>
           <div className="fm-topbar__divider" />
           <div className="fm-topbar__section">
-            <span className="fm-topbar__value--accent">{weekLabel}</span>
+            <span className="fm-topbar__value--accent">{season ? `W${season.currentWeek}` : '-'}</span>
           </div>
           {userTeam && (
             <>
@@ -241,7 +243,7 @@ export function ManagerDashboard() {
               </div>
             </>
           )}
-          <button className="fm-topbar__action" onClick={() => navigate('/manager/day')}>
+          <button className="fm-btn fm-btn--primary fm-btn--sm fm-topbar__action" onClick={() => navigate('/manager/day')}>
             다음 일정
           </button>
         </div>

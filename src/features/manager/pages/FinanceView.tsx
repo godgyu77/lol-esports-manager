@@ -24,6 +24,7 @@ import { getBudgetPressureSnapshot } from '../../../engine/manager/systemDepthEn
 import { useGameStore } from '../../../stores/gameStore';
 import { formatAmount } from '../../../utils/formatUtils';
 import type { BudgetPressureSnapshot } from '../../../types/systemDepth';
+import { MainLoopPanel } from '../components/MainLoopPanel';
 
 const CATEGORY_LABELS: Record<string, string> = {
   salary: '선수 연봉',
@@ -65,11 +66,22 @@ function getOfferMeaning(style: ConditionalSponsorOffer['offerStyle']): string {
   return '변동성은 낮고 안정적으로 예산을 채우기 좋은 계약입니다.';
 }
 
+function getPressureLabel(level?: BudgetPressureSnapshot['pressureLevel'] | null): string {
+  if (level === 'critical') return '위험';
+  if (level === 'watch') return '주의';
+  return '안정';
+}
+
+function getPressureBandLabel(band?: BudgetPressureSnapshot['pressureBand'] | null): string {
+  if (band === 'hard_stop') return '하드 스톱';
+  if (band === 'warning') return '경고 구간';
+  if (band === 'taxed') return '사치세 구간';
+  return '여유 구간';
+}
+
 export function FinanceView() {
   const season = useGameStore((s) => s.season);
   const save = useGameStore((s) => s.save);
-  const teams = useGameStore((s) => s.teams);
-  const setTeams = useGameStore((s) => s.setTeams);
 
   const [summary, setSummary] = useState<FinanceSummary | null>(null);
   const [budget, setBudget] = useState(0);
@@ -94,14 +106,21 @@ export function FinanceView() {
 
   const syncStoreTeam = useCallback((nextBudget: number, nextReputation?: number) => {
     if (!save) return;
-    setTeams(
-      teams.map((team) =>
-        team.id === save.userTeamId
-          ? { ...team, budget: nextBudget, reputation: nextReputation ?? team.reputation }
-          : team,
-      ),
-    );
-  }, [save, setTeams, teams]);
+    const state = useGameStore.getState();
+    const nextTeams = state.teams.map((team) => {
+      if (team.id !== save.userTeamId) return team;
+      const resolvedReputation = nextReputation ?? team.reputation;
+      if (team.budget === nextBudget && team.reputation === resolvedReputation) {
+        return team;
+      }
+      return { ...team, budget: nextBudget, reputation: resolvedReputation };
+    });
+
+    const changed = nextTeams.some((team, index) => team !== state.teams[index]);
+    if (changed) {
+      useGameStore.setState({ teams: nextTeams });
+    }
+  }, [save]);
 
   const loadData = useCallback(async () => {
     if (!season || !save) return;
@@ -234,6 +253,36 @@ export function FinanceView() {
         <h1 className="fm-page-title">재정</h1>
       </div>
 
+      <MainLoopPanel
+        eyebrow="재정 운용"
+        title="예산, 소모 속도, 활주로를 첫 화면에서 바로 읽을 수 있게 정리했습니다."
+        subtitle="재정 화면은 장기 숫자를 보는 곳이 아니라, 지금 위험한 지점과 바로 취할 수 있는 방향을 빠르게 확인하는 화면으로 구성합니다."
+        insights={[
+          {
+            label: '현재 예산',
+            value: formatAmount(budget),
+            detail: `이번 시즌 누적 수익 ${summary.balance >= 0 ? '+' : ''}${formatAmount(summary.balance)}`,
+            tone: summary.balance >= 0 ? 'success' : 'danger',
+          },
+          {
+            label: '재정 압박',
+            value: getPressureLabel(pressureSnapshot?.pressureLevel),
+            detail: pressureSnapshot?.topDrivers?.[0] ?? '특별한 압박 요인은 아직 크지 않습니다.',
+            tone: pressureSnapshot?.pressureLevel === 'critical' ? 'danger' : pressureSnapshot?.pressureLevel === 'watch' ? 'warning' : 'success',
+          },
+          {
+            label: '예산 활주로',
+            value: pressureSnapshot ? `${pressureSnapshot.runwayWeeks.toFixed(1)}주` : '확인 중',
+            detail: pressureSnapshot ? '현재 주간 소모 기준으로 버틸 수 있는 기간입니다.' : '활주로 계산 데이터를 불러오는 중입니다.',
+            tone: pressureSnapshot && pressureSnapshot.runwayWeeks < 6 ? 'danger' : 'accent',
+          },
+        ]}
+        actions={[
+          { label: '스폰서 제안 보기', onClick: handleGenerateOffers, variant: 'primary', disabled: rerollsRemaining <= 0 || isMaxSponsors },
+        ]}
+        note="금액 표기는 전부 억 기준으로 통일했고, 주간/월간 소모 문구도 같은 기준으로 읽히게 맞췄습니다."
+      />
+
       <div className="fm-grid fm-grid--4 fm-mb-lg">
         <div className="fm-card">
           <div className="fm-stat">
@@ -275,7 +324,7 @@ export function FinanceView() {
                 <div className="fm-flex fm-justify-between fm-items-center fm-mb-sm">
                   <strong className="fm-text-primary">압박 단계</strong>
                   <span className={`fm-badge ${pressureSnapshot.pressureLevel === 'critical' ? 'fm-badge--danger' : pressureSnapshot.pressureLevel === 'watch' ? 'fm-badge--warning' : 'fm-badge--success'}`}>
-                    {pressureSnapshot.pressureLevel}
+                    {getPressureLabel(pressureSnapshot.pressureLevel)}
                   </span>
                 </div>
                 <p className="fm-text-secondary" style={{ margin: 0 }}>
@@ -288,7 +337,7 @@ export function FinanceView() {
                   <span className="fm-badge fm-badge--default">{formatAmount(pressureSnapshot.weeklyRecurringExpenses)}</span>
                 </div>
                 <p className="fm-text-secondary" style={{ margin: 0 }}>
-                  월간 기준선 {formatAmount(pressureSnapshot.monthlyRecurringExpenses)}
+                  월간 소모 {formatAmount(pressureSnapshot.monthlyRecurringExpenses)}
                 </p>
               </div>
               <div className="fm-card">
@@ -317,7 +366,7 @@ export function FinanceView() {
                 <div className="fm-flex fm-justify-between fm-items-center fm-mb-sm">
                   <strong className="fm-text-primary">연봉 / 상한</strong>
                   <span className={`fm-badge ${pressureSnapshot.pressureBand === 'hard_stop' ? 'fm-badge--danger' : pressureSnapshot.pressureBand === 'warning' ? 'fm-badge--warning' : pressureSnapshot.pressureBand === 'taxed' ? 'fm-badge--info' : 'fm-badge--success'}`}>
-                    {pressureSnapshot.pressureBand}
+                    {getPressureBandLabel(pressureSnapshot.pressureBand)}
                   </span>
                 </div>
                 <p className="fm-text-secondary" style={{ margin: 0 }}>
@@ -361,6 +410,30 @@ export function FinanceView() {
                   <li key={driver}>{driver}</li>
                 ))}
               </ul>
+            </div>
+            <div className="fm-grid fm-grid--3 fm-mt-md">
+              <div className="fm-card">
+                <strong className="fm-text-primary">즉시 대응</strong>
+                <p className="fm-text-secondary fm-mt-sm" style={{ marginBottom: 0 }}>
+                  {pressureSnapshot.runwayWeeks < 6
+                    ? '먼저 지출을 줄이거나 스폰서 계약을 확보해야 합니다.'
+                    : '당장 급한 상황은 아니지만 주간 소모를 계속 점검해야 합니다.'}
+                </p>
+              </div>
+              <div className="fm-card">
+                <strong className="fm-text-primary">중기 운영</strong>
+                <p className="fm-text-secondary fm-mt-sm" style={{ marginBottom: 0 }}>
+                  {pressureSnapshot.capRoom < 0
+                    ? '연봉 상한 초과 상태라면 사치세와 보드 압박이 누적됩니다.'
+                    : '상한 여유를 유지한 채 스태프와 로스터 확장을 판단할 수 있습니다.'}
+                </p>
+              </div>
+              <div className="fm-card">
+                <strong className="fm-text-primary">협상 포인트</strong>
+                <p className="fm-text-secondary fm-mt-sm" style={{ marginBottom: 0 }}>
+                  실패 협상 비용이 커질수록 체감 압박이 빠르게 높아집니다. 확실한 제안부터 선택하는 편이 좋습니다.
+                </p>
+              </div>
             </div>
             <div className="fm-card fm-mt-md" data-testid="finance-board-reaction">
               <strong className="fm-text-primary">보드 반응</strong>

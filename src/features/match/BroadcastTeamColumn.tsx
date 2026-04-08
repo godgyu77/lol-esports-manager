@@ -14,16 +14,12 @@ function getMomentum(player: LivePlayerStat, highlighted: boolean) {
   return Math.max(10, Math.min(100, base));
 }
 
-function getLevel(player: LivePlayerStat) {
-  return Math.max(1, Math.min(18, 1 + Math.floor(player.cs / 28) + player.kills));
-}
-
 function getItemSlots(player: LivePlayerStat) {
   return Math.max(1, Math.min(6, Math.floor(player.goldEarned / 2500)));
 }
 
 function getChampionLabel(championId?: string) {
-  if (!championId) return '드래프트';
+  if (!championId) return '드래프트 미확정';
   return CHAMPION_DB.find((champion) => champion.id === championId)?.nameKo ?? championId;
 }
 
@@ -34,9 +30,9 @@ function getZoneLabel(zone: string) {
     top_lane: '탑 라인',
     mid_lane: '미드 라인',
     bot_lane: '봇 라인',
-    top_river: '상단 강가',
+    top_river: '탑 강가',
     mid_river: '중앙 강가',
-    bot_river: '하단 강가',
+    bot_river: '봇 강가',
     home_jungle: '블루 정글',
     away_jungle: '레드 정글',
     dragon_pit: '드래곤 둥지',
@@ -52,8 +48,8 @@ function getActivityLabel(activity: string) {
     rotating: '합류 중',
     farming: '파밍',
     objective: '오브젝트 압박',
-    teamfight: '한타 교전',
-    reset: '재정비',
+    teamfight: '팀 교전',
+    reset: '정비 중',
   };
   return labels[activity] ?? activity;
 }
@@ -64,7 +60,7 @@ function getPositionLabel(position: string) {
     jungle: '정글',
     mid: '미드',
     adc: '원딜',
-    support: '서폿',
+    support: '서포터',
   };
   return labels[position] ?? position.toUpperCase();
 }
@@ -96,7 +92,6 @@ export function BroadcastTeamColumn({
           const highlighted = Boolean(mapState?.highlight);
           const momentum = getMomentum(player, highlighted);
           const itemSlots = getItemSlots(player);
-          const level = getLevel(player);
 
           return (
             <article
@@ -106,7 +101,6 @@ export function BroadcastTeamColumn({
               <div className="broadcast-player-card__identity">
                 <div className="broadcast-player-card__avatar">
                   <span>{player.playerName.slice(0, 2).toUpperCase()}</span>
-                  <strong>{level}</strong>
                 </div>
                 <div className="broadcast-player-card__meta">
                   <div className="broadcast-player-card__topline">
@@ -124,7 +118,9 @@ export function BroadcastTeamColumn({
                 <div className="broadcast-player-card__bar">
                   <div className="broadcast-player-card__bar-fill" style={{ width: `${momentum}%` }} />
                 </div>
-                <span>{mapState ? `${getZoneLabel(mapState.zone)} · ${getActivityLabel(mapState.activity)}` : '라인 상태 추적 중'}</span>
+                <span>
+                  {mapState ? `${getZoneLabel(mapState.zone)} · ${getActivityLabel(mapState.activity)}` : '전장 위치 추적 중'}
+                </span>
               </div>
 
               <div className="broadcast-player-card__footer">

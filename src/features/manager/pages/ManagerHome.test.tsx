@@ -3,12 +3,10 @@ import { ManagerHome } from './ManagerHome';
 
 const {
   mockGetMatchesByTeam,
-  mockGetTeamTotalSalary,
   mockGetTeamConditions,
   mockGetRecentDailyEvents,
   mockGetExpiringContracts,
   mockGetPlayerManagementInsights,
-  mockGetSatisfactionReport,
   mockGenerateStaffRecommendations,
   mockGetStaffFitSummary,
   mockGetUnreadCount,
@@ -19,12 +17,10 @@ const {
   mockGetMainLoopRiskItems,
 } = vi.hoisted(() => ({
   mockGetMatchesByTeam: vi.fn(),
-  mockGetTeamTotalSalary: vi.fn(),
   mockGetTeamConditions: vi.fn(),
   mockGetRecentDailyEvents: vi.fn(),
   mockGetExpiringContracts: vi.fn(),
   mockGetPlayerManagementInsights: vi.fn(),
-  mockGetSatisfactionReport: vi.fn(),
   mockGenerateStaffRecommendations: vi.fn(),
   mockGetStaffFitSummary: vi.fn(),
   mockGetUnreadCount: vi.fn(),
@@ -35,70 +31,31 @@ const {
   mockGetMainLoopRiskItems: vi.fn(),
 }));
 
-vi.mock('../../../hooks/useBgm', () => ({
-  useBgm: vi.fn(),
-}));
-
-vi.mock('../../tutorial/TutorialOverlay', () => ({
-  TutorialOverlay: () => null,
-}));
-
-vi.mock('../components/MeetingModal', () => ({
-  MeetingModal: () => null,
-}));
-
-vi.mock('../../../ai/advancedAiService', () => ({
-  generateDailyBriefing: mockGenerateDailyBriefing,
-}));
-
+vi.mock('../../../hooks/useBgm', () => ({ useBgm: vi.fn() }));
+vi.mock('../../tutorial/TutorialOverlay', () => ({ TutorialOverlay: () => null }));
+vi.mock('../../../ai/advancedAiService', () => ({ generateDailyBriefing: mockGenerateDailyBriefing }));
 vi.mock('../../../db/queries', () => ({
   getMatchesByTeam: mockGetMatchesByTeam,
   getRecentDailyEvents: mockGetRecentDailyEvents,
   getTeamConditions: mockGetTeamConditions,
-  getTeamTotalSalary: mockGetTeamTotalSalary,
   getExpiringContracts: mockGetExpiringContracts,
 }));
-
-vi.mock('../../../engine/board/boardEngine', () => ({
-  getBoardExpectations: vi.fn().mockResolvedValue({ satisfaction: 60 }),
-}));
-
-vi.mock('../../../engine/complaint/complaintEngine', () => ({
-  getActiveComplaints: vi.fn().mockResolvedValue([]),
-}));
-
-vi.mock('../../../engine/injury/injuryEngine', () => ({
-  getInjuredPlayerIds: vi.fn().mockResolvedValue(new Set()),
-}));
-
-vi.mock('../../../engine/news/newsEngine', () => ({
-  getUnreadCount: mockGetUnreadCount,
-}));
-
+vi.mock('../../../engine/board/boardEngine', () => ({ getBoardExpectations: vi.fn().mockResolvedValue({ satisfaction: 60 }) }));
+vi.mock('../../../engine/complaint/complaintEngine', () => ({ getActiveComplaints: vi.fn().mockResolvedValue([]) }));
+vi.mock('../../../engine/news/newsEngine', () => ({ getUnreadCount: mockGetUnreadCount }));
 vi.mock('../../../engine/manager/managerIdentityEngine', () => ({
   getManagerIdentity: vi.fn().mockResolvedValue(null),
   getManagerIdentitySummaryLine: vi.fn().mockReturnValue('identity summary'),
-  MANAGER_PHILOSOPHY_LABELS: {
-    discipline: '규율',
-    playerCare: '케어',
-    analytics: '분석',
-    aggression: '공격성',
-  },
+  MANAGER_PHILOSOPHY_LABELS: { discipline: '규율', playerCare: '케어', analytics: '분석', aggression: '공격성' },
 }));
-
 vi.mock('../../../engine/satisfaction/playerSatisfactionEngine', () => ({
   getPlayerManagementInsights: mockGetPlayerManagementInsights,
-  getSatisfactionReport: mockGetSatisfactionReport,
-  SATISFACTION_FACTOR_LABELS: {
-    morale: '사기',
-  },
+  SATISFACTION_FACTOR_LABELS: { morale: '사기' },
 }));
-
 vi.mock('../../../engine/staff/staffEngine', () => ({
   generateStaffRecommendations: mockGenerateStaffRecommendations,
   getStaffFitSummary: mockGetStaffFitSummary,
 }));
-
 vi.mock('../../../engine/manager/systemDepthEngine', () => ({
   getBudgetPressureSnapshot: mockGetBudgetPressureSnapshot,
   getActiveConsequences: mockGetActiveConsequences,
@@ -122,42 +79,33 @@ describe('ManagerHome', () => {
         games: [],
         matchType: 'regular',
         boFormat: 'Bo3',
-        hardFearlessSeries: false,
         matchDate: '2026-03-03',
       },
     ]);
-    mockGetTeamTotalSalary.mockResolvedValue(250000);
     mockGetTeamConditions.mockResolvedValue(new Map());
     mockGetRecentDailyEvents.mockResolvedValue([]);
     mockGetExpiringContracts.mockResolvedValue([]);
     mockGetPlayerManagementInsights.mockResolvedValue([]);
-    mockGetSatisfactionReport.mockResolvedValue([]);
     mockGenerateStaffRecommendations.mockResolvedValue([]);
     mockGetStaffFitSummary.mockResolvedValue([]);
     mockGetUnreadCount.mockResolvedValue(2);
     mockGenerateDailyBriefing.mockResolvedValue({
-      briefing: '오늘은 다음 경기 준비가 핵심입니다.',
-      alerts: ['읽지 않은 인박스가 있습니다.'],
-      advice: ['훈련 방향을 먼저 확인하세요.'],
+      briefing: '오늘은 다음 경기를 준비하며 운영 흐름을 정리할 시간입니다.',
+      alerts: ['읽지 않은 뉴스가 있습니다.'],
+      advice: ['훈련 방향을 먼저 맞추고 다음 일정을 확인하세요.'],
     });
     mockGetBudgetPressureSnapshot.mockResolvedValue({
-      currentBudget: 500000,
-      weeklyRecurringExpenses: 20000,
-      monthlyRecurringExpenses: 80000,
-      recentNegotiationCosts: 2500,
-      boardRisk: 12,
-      pressureScore: 45,
+      totalPayroll: 0,
+      salaryCap: 0,
       pressureLevel: 'watch',
-      topDrivers: ['최근 실패한 협상으로 이미 2,500이 소모됐습니다.'],
+      topDrivers: ['최근 지출 흐름을 다시 점검해야 합니다.'],
     });
     mockGetActiveConsequences.mockResolvedValue([]);
     mockGetPrepRecommendationRecords.mockResolvedValue([]);
-    mockGetMainLoopRiskItems.mockResolvedValue([
-      { title: '재정 압박', summary: '최근 실패한 협상으로 이미 2,500이 소모됐습니다.', tone: 'neutral' },
-    ]);
+    mockGetMainLoopRiskItems.mockResolvedValue([{ title: '재정 압박', summary: '최근 지출 흐름을 다시 점검해야 합니다.' }]);
   });
 
-  it('surfaces the main loop summary and primary actions on one screen', async () => {
+  it('메인 루프 요약과 주요 액션을 보여준다', async () => {
     renderWithProviders(<ManagerHome />, {
       gameState: {
         save: {
@@ -184,41 +132,19 @@ describe('ManagerHome', () => {
           isActive: true,
         },
         teams: [
-          {
-            id: 'lck_T1',
-            name: 'T1',
-            shortName: 'T1',
-            region: 'LCK',
-            budget: 500000,
-            salaryCap: 400000,
-            reputation: 85,
-            roster: [],
-            playStyle: 'controlled',
-          },
-          {
-            id: 'lck_GEN',
-            name: 'Gen.G',
-            shortName: 'GEN',
-            region: 'LCK',
-            budget: 450000,
-            salaryCap: 400000,
-            reputation: 84,
-            roster: [],
-            playStyle: 'controlled',
-          },
+          { id: 'lck_T1', name: 'T1', shortName: 'T1', region: 'LCK', budget: 500000, salaryCap: 400000, reputation: 85, roster: [], playStyle: 'controlled' },
+          { id: 'lck_GEN', name: 'Gen.G', shortName: 'GEN', region: 'LCK', budget: 450000, salaryCap: 400000, reputation: 84, roster: [], playStyle: 'controlled' },
         ],
       },
-      settingsState: {
-        tutorialComplete: true,
-      },
+      settingsState: { tutorialComplete: true },
     });
 
     expect(await screen.findByText('매니저 루프')).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: '시즌 진행' }).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByRole('button', { name: '훈련 보기' }).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByRole('button', { name: '전술 보기' }).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByRole('button', { name: '뉴스 확인' }).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText(/Payroll 0만 \/ cap 0만/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByRole('button', { name: '시즌 진행' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '훈련 보기' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '전술 보기' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '뉴스 확인' })).toBeInTheDocument();
+    expect(screen.getAllByText(/Payroll 0\.00억 \/ cap 0\.00억/).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByRole('button', { name: '읽지 않은 뉴스 2건이 있습니다.' })).toBeInTheDocument();
   });
 });

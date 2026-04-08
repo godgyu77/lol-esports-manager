@@ -36,46 +36,30 @@ const POSITION_LABELS: Record<'top' | 'jungle' | 'mid' | 'adc' | 'support', stri
   support: '서포터',
 };
 
-function getPlayerSwapStatus(player: Player | undefined): { label: string; tone: 'good' | 'warning' | 'danger' | 'neutral' } {
+function getPlayerSwapStatus(player: Player | undefined): {
+  label: string;
+  tone: 'good' | 'warning' | 'danger' | 'neutral';
+} {
   if (!player) return { label: '정보 없음', tone: 'neutral' };
   if (player.mental.morale >= 75) return { label: '컨디션 좋음', tone: 'good' };
   if (player.mental.morale >= 55) return { label: '준비 완료', tone: 'neutral' };
   if (player.mental.morale >= 40) return { label: '집중 필요', tone: 'warning' };
-  return { label: '폼 조정 필요', tone: 'danger' };
+  return { label: '멘탈 관리 필요', tone: 'danger' };
 }
 
 function buildSwapTags(player: Player | undefined, championId: string): string[] {
   if (!player) return [];
 
   const tags: string[] = [];
-  const topPool = [...player.championPool]
-    .sort((left, right) => right.proficiency - left.proficiency)
-    .slice(0, 3);
+  const topPool = [...player.championPool].sort((left, right) => right.proficiency - left.proficiency).slice(0, 3);
 
-  if (topPool.some((entry) => entry.championId === championId)) {
-    tags.push('주력픽');
-  } else {
-    tags.push('전략픽');
-  }
+  tags.push(topPool.some((entry) => entry.championId === championId) ? '주력픽' : '보조픽');
 
   if (player.playstyle === 'aggressive') tags.push('교전형');
   if (player.playstyle === 'supportive') tags.push('보조형');
   if (player.playstyle === 'versatile') tags.push('유연함');
 
   return tags;
-}
-
-function _buildSwapSummary(player: Player | undefined, championId: string): string {
-  if (!player) return '선수 배치가 아직 확정되지 않았습니다.';
-
-  const comfortPick = [...player.championPool]
-    .sort((left, right) => right.proficiency - left.proficiency)
-    .slice(0, 3)
-    .some((entry) => entry.championId === championId);
-
-  return comfortPick
-    ? '주력 챔피언 계열이라 최종 배치 적합도가 높습니다.'
-    : '숙련도는 충분하지만 마지막 교정이 필요할 수 있습니다.';
 }
 
 export function DraftView() {
@@ -127,12 +111,10 @@ export function DraftView() {
       setBlueInfo(buildDraftTeamInfo(homePlayers));
       setRedInfo(buildDraftTeamInfo(awayPlayers));
 
-      const isSeriesDraft = pendingMatch.boFormat !== 'Bo1';
       const isFearless =
         hardFearlessSeries ||
         pendingMatch.hardFearlessSeries === true ||
-        pendingMatch.fearlessDraft === true ||
-        isSeriesDraft;
+        pendingMatch.fearlessDraft === true;
       const pool = currentGameNum > 1 ? seriesFearlessPool : fearlessPool;
       setDraft(createDraftState(isFearless, isFearless ? pool : undefined));
       setSelectedChampion(null);
@@ -209,8 +191,8 @@ export function DraftView() {
     generateDraftAdvice({
       phase: draft.currentActionType,
       turn: draft.currentStep,
-      myTeam: isUserBlue ? (homeTeam?.shortName ?? '블루') : (awayTeam?.shortName ?? '레드'),
-      opponentTeam: isUserBlue ? (awayTeam?.shortName ?? '레드') : (homeTeam?.shortName ?? '블루'),
+      myTeam: isUserBlue ? homeTeam?.shortName ?? '블루 팀' : awayTeam?.shortName ?? '레드 팀',
+      opponentTeam: isUserBlue ? awayTeam?.shortName ?? '레드 팀' : homeTeam?.shortName ?? '블루 팀',
       myBans: isUserBlue ? draft.blue.bans : draft.red.bans,
       opponentBans: isUserBlue ? draft.red.bans : draft.blue.bans,
       myPicks: (isUserBlue ? draft.blue.picks : draft.red.picks).map((pick) => pick.championId),
@@ -237,22 +219,25 @@ export function DraftView() {
     return () => clearTimeout(timer);
   }, [basePath, draft, navigate, setCurrentGameDraftRequired, setDayPhase, setDraftResult]);
 
-  const handleSwapCard = useCallback((index: number) => {
-    if (!draft || draft.phase !== 'swap') return;
+  const handleSwapCard = useCallback(
+    (index: number) => {
+      if (!draft || draft.phase !== 'swap') return;
 
-    if (swapSelection === null) {
-      setSwapSelection(index);
-      return;
-    }
+      if (swapSelection === null) {
+        setSwapSelection(index);
+        return;
+      }
 
-    if (swapSelection !== index) {
-      const nextDraft = structuredClone(draft);
-      swapChampions(nextDraft, userSide, swapSelection, index);
-      setDraft(nextDraft);
-    }
+      if (swapSelection !== index) {
+        const nextDraft = structuredClone(draft);
+        swapChampions(nextDraft, userSide, swapSelection, index);
+        setDraft(nextDraft);
+      }
 
-    setSwapSelection(null);
-  }, [draft, swapSelection, userSide]);
+      setSwapSelection(null);
+    },
+    [draft, swapSelection, userSide],
+  );
 
   const handleFinalizeDraft = useCallback(() => {
     if (!draft) return;
@@ -298,6 +283,8 @@ export function DraftView() {
   const currentIsUser = mode === 'manager' && draft.currentSide === userSide;
   const userTeamPicks = userSide === 'blue' ? draft.blue.picks : draft.red.picks;
   const userRoster = userSide === 'blue' ? homeRoster : awayRoster;
+  const stageLabel = draft.phase === 'swap' ? '최종 배치' : draft.currentActionType === 'ban' ? '밴' : '픽';
+  const controlLabel = draft.phase === 'swap' ? '직접 재배치' : '자유 선택';
 
   return (
     <div className="draft-stage">
@@ -308,13 +295,14 @@ export function DraftView() {
             <span className="draft-stage-kicker">드래프트 룸</span>
             <h1 className="draft-stage-title">세트 {currentGameNum} 밴픽</h1>
             <p className="draft-stage-copy">
-              포지션에 먼저 묶이지 않고 좋은 챔피언부터 선점한 뒤, 마지막 스왑에서 우리 선수에게 가장 어울리는 구도로 정리합니다.
+              경기 집중 구간입니다. 상대 조합의 방향을 먼저 읽고, 우리 선수들이 가장 편하게 수행할 수 있는 픽으로
+              마무리하세요.
             </p>
           </div>
           <div className="draft-stage-status">
             <div className="draft-stage-pill">
               <span>현재 단계</span>
-              <strong>{draft.phase === 'swap' ? '최종 스왑' : draft.currentActionType === 'ban' ? '밴' : '픽'}</strong>
+              <strong>{stageLabel}</strong>
             </div>
             <div className="draft-stage-pill">
               <span>진행도</span>
@@ -322,7 +310,7 @@ export function DraftView() {
             </div>
             <div className="draft-stage-pill">
               <span>입력 방식</span>
-              <strong>{draft.phase === 'swap' ? '직접 재배치' : '자유 선픽'}</strong>
+              <strong>{controlLabel}</strong>
             </div>
           </div>
         </header>
@@ -330,7 +318,7 @@ export function DraftView() {
         {draft.fearlessMode ? (
           <div className="draft-fearless-banner">
             하드 피어리스 드래프트: 이전 세트에 사용한 챔피언은 다음 세트에서 다시 쓸 수 없습니다.
-            {(draft.fearlessPool.blue.length > 0 || draft.fearlessPool.red.length > 0) ? (
+            {draft.fearlessPool.blue.length > 0 || draft.fearlessPool.red.length > 0 ? (
               <span className="draft-fearless-count">
                 블루 {draft.fearlessPool.blue.length}명 제한 / 레드 {draft.fearlessPool.red.length}명 제한
               </span>
@@ -389,7 +377,7 @@ export function DraftView() {
                 <span className="draft-ai-advice-label">AI 코치 브리핑</span>
                 {aiAdviceLoading ? (
                   <span className="draft-ai-advice-loading">현재 밴픽 흐름을 분석하는 중입니다...</span>
-                ) : currentIsUser && aiAdvice ? (
+                ) : aiAdvice ? (
                   <div className="draft-ai-advice-content">
                     <span className="draft-ai-advice-suggestion">{aiAdvice.suggestion}</span>
                     <span className="draft-ai-advice-reason">{aiAdvice.reason}</span>
@@ -405,14 +393,18 @@ export function DraftView() {
               <div className="draft-swap-phase fm-card">
                 <div className="draft-swap-header">
                   <span className="draft-swap-kicker">Final Setup</span>
-                  <h3 className="draft-swap-title">선수 배치 스왑</h3>
+                  <h3 className="draft-swap-title">선수 배치 조정</h3>
                   <p className="draft-swap-desc">
-                    같은 팀 카드에서 챔피언을 하나 누르고, 바꿀 다른 카드를 누르면 챔피언만 서로 맞바뀝니다. 포지션 슬롯은 그대로 유지됩니다.
+                    같은 팀 카드에서 챔피언 하나를 먼저 고르고, 다른 카드를 누르면 챔피언만 서로 맞바꿉니다.
+                    선수는 그대로 유지되므로 마지막 배치만 빠르게 정리하면 됩니다.
                   </p>
                 </div>
 
                 <div className="fm-alert fm-alert--info" style={{ marginBottom: 12 }}>
-                  <span className="fm-alert__text">주력 픽은 안정적이고 낯선 픽은 위험합니다. 최종 배치 전에 카드 상태를 한 번 더 확인하세요.</span>
+                  <span className="fm-alert__text">
+                    주력 픽일수록 안정적이고, 비주력 픽일수록 리스크가 커집니다. 경기 시작 전에 카드 상태를
+                    한 번 더 확인하세요.
+                  </span>
                 </div>
 
                 <div className="draft-swap-picks">
@@ -427,12 +419,16 @@ export function DraftView() {
                         onClick={() => handleSwapCard(index)}
                       >
                         <PlayerIdentityCard
-                          name={player?.name ?? '선수 미정'}
+                          name={player?.name ?? '선수 미지정'}
                           position={pick.position}
                           accentColor={userSide === 'blue' ? '#3b82f6' : '#ef4444'}
                           subtitle={champ?.nameKo ?? champ?.name ?? pick.championId}
                           tags={buildSwapTags(player, pick.championId)}
-                          meta={swapSelection === index ? '이제 바꿀 다른 카드를 선택하세요' : `${POSITION_LABELS[pick.position]} 슬롯`}
+                          meta={
+                            swapSelection === index
+                              ? '이제 바꿀 다른 카드를 선택하세요'
+                              : `${POSITION_LABELS[pick.position]} 후보`
+                          }
                           statusLabel={swapSelection === index ? '선택됨' : status.label}
                           statusTone={swapSelection === index ? 'warning' : status.tone}
                           highlighted={swapSelection === index}

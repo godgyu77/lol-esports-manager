@@ -14,16 +14,6 @@ vi.mock('../../../hooks/useKeyboardShortcuts', () => ({
   useKeyboardShortcuts: vi.fn(),
 }));
 
-vi.mock('../../../engine/season/dayAdvancer', () => ({
-  advanceDay: vi.fn().mockResolvedValue({
-    nextDate: '2025-01-16',
-    date: '2025-01-15',
-    dayType: 'training',
-    hasUserMatch: false,
-  }),
-  skipToNextMatchDay: vi.fn().mockResolvedValue([]),
-}));
-
 vi.mock('../../../components/CommandPalette', () => ({
   CommandPalette: () => null,
 }));
@@ -69,7 +59,7 @@ describe('ManagerDashboard', () => {
     resetStores();
   });
 
-  it('사이드바에 팀 이름과 네비게이션 그룹을 렌더한다', () => {
+  it('사이드바와 내비게이션 그룹을 렌더링한다', () => {
     renderWithProviders(<ManagerDashboard />, {
       gameState: { save: mockSave, season: mockSeason, teams: [mockTeam] },
       routerProps: { initialEntries: ['/manager'] },
@@ -77,9 +67,7 @@ describe('ManagerDashboard', () => {
 
     expect(screen.getAllByText('T1').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('감독 겸 단장')).toBeInTheDocument();
-
-    const sidebar = screen.getByRole('navigation', { name: '매니저 내비게이션' });
-    expect(sidebar).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: '매니저 내비게이션' })).toBeInTheDocument();
     expect(screen.getByText('대시보드')).toBeInTheDocument();
     expect(screen.getByText('팀 운영')).toBeInTheDocument();
   });
@@ -97,7 +85,7 @@ describe('ManagerDashboard', () => {
     expect(screen.getByText('85')).toBeInTheDocument();
   });
 
-  it('시즌 진행 버튼이 존재한다', () => {
+  it('시즌 진행 버튼을 표시한다', () => {
     renderWithProviders(<ManagerDashboard />, {
       gameState: { save: mockSave, season: mockSeason, teams: [mockTeam] },
       routerProps: { initialEntries: ['/manager'] },
@@ -106,7 +94,7 @@ describe('ManagerDashboard', () => {
     expect(screen.getAllByText('시즌 진행').length).toBeGreaterThanOrEqual(1);
   });
 
-  it('사이드바 하단 버튼이 존재한다', () => {
+  it('하단 유틸리티 버튼을 표시한다', () => {
     renderWithProviders(<ManagerDashboard />, {
       gameState: { save: mockSave, season: mockSeason, teams: [mockTeam] },
       routerProps: { initialEntries: ['/manager'] },

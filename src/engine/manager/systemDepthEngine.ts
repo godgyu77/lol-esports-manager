@@ -18,10 +18,10 @@ import type {
 } from '../../types/systemDepth';
 
 const WEEKLY_FIXED_EXPENSES = {
-  facility: 500,
-  staff: 300,
-  operations: 200,
-  matchPrep: 150,
+  facility: 280,
+  staff: 140,
+  operations: 120,
+  matchPrep: 90,
 } as const;
 
 function addDaysIso(date: string, days: number): string {
@@ -45,8 +45,8 @@ function fromJson(value: string | null | undefined): string[] {
 }
 
 function pressureLevel(score: number): BudgetPressureSnapshot['pressureLevel'] {
-  if (score >= 65) return 'critical';
-  if (score >= 32) return 'watch';
+  if (score >= 72) return 'critical';
+  if (score >= 40) return 'watch';
   return 'stable';
 }
 
@@ -114,32 +114,32 @@ export async function getBudgetPressureSnapshot(
     weeklyRecurringExpenses > 0 ? currentBudget / Math.max(weeklyRecurringExpenses, 1) : 12;
   const budgetRisk =
     currentBudget < 0
-      ? 60
+      ? 52
       : runwayWeeks < 3
-        ? 48
+        ? 40
         : runwayWeeks < 6
-          ? 34
+          ? 28
           : runwayWeeks < 10
-            ? 20
-            : 8;
+            ? 14
+            : 4;
   const negotiationRisk =
     recentNegotiationCosts > 8000
-      ? 24
+      ? 18
       : recentNegotiationCosts > 4000
-        ? 16
+        ? 12
         : recentNegotiationCosts > 1500
-          ? 8
+          ? 5
           : 0;
-  const negotiationCountRisk = failedNegotiations >= 4 ? 12 : failedNegotiations >= 2 ? 6 : 0;
+  const negotiationCountRisk = failedNegotiations >= 4 ? 8 : failedNegotiations >= 2 ? 4 : 0;
   const payrollRisk =
     payrollSnapshot.pressureBand === 'hard_stop'
-      ? 30
+      ? 24
       : payrollSnapshot.pressureBand === 'warning'
-        ? 20
+        ? 14
         : payrollSnapshot.pressureBand === 'taxed'
-          ? 10
+          ? 6
           : 0;
-  const boardRisk = board ? Math.max(8, 72 - board.satisfaction) : 12;
+  const boardRisk = board ? Math.max(4, 64 - board.satisfaction) : 8;
   const pressureScore = Math.max(
     0,
     Math.min(100, Math.round(budgetRisk + negotiationRisk + negotiationCountRisk + payrollRisk + boardRisk)),
@@ -155,7 +155,7 @@ export async function getBudgetPressureSnapshot(
     );
   }
   if (board && board.satisfaction <= 45) topDrivers.push('지출 압박이 뚜렷해지면서 보드의 인내심도 빠르게 줄고 있습니다.');
-  if (topDrivers.length === 0) topDrivers.push('Recurring costs are still within a manageable range.');
+  if (topDrivers.length === 0) topDrivers.push('고정 지출은 아직 관리 가능한 범위입니다.');
   const boardPressureNote =
     !board
       ? '보드의 가시성은 제한적이지만 재정 압박은 계속 쌓이고 있습니다.'

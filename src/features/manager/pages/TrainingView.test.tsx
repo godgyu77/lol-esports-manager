@@ -1,4 +1,4 @@
-import { renderWithProviders, screen, waitFor, within, resetStores } from '../../../test/testUtils';
+﻿import { renderWithProviders, screen, waitFor, within, resetStores } from '../../../test/testUtils';
 import { TrainingView } from './TrainingView';
 
 const {
@@ -116,7 +116,9 @@ describe('TrainingView', () => {
       },
     });
 
-    expect(await screen.findByText('훈련 루프')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '훈련 관리' })).toBeInTheDocument();
+    expect(screen.getByText(/2026-03-03 vs GEN/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '시즌 진행으로 돌아가기' })).toBeInTheDocument();
 
     const toolbar = screen.getByRole('tablist');
     const buttons = within(toolbar).getAllByRole('tab');

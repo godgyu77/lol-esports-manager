@@ -1,21 +1,9 @@
-/**
- * 팀 히스토리 뷰
- * - 팀 요약: 팀명, 리전, 총 시즌, 트로피 수
- * - 시즌별 기록 테이블: 시즌/전적/순위/플레이오프/트로피
- * - 트로피 캐비닛: 아이콘 그리드
- * - 레전드 선수: 통산 경기수/킬 기준 상위 10인
- */
-
 import { useEffect, useState } from 'react';
 import { useGameStore } from '../../../stores/gameStore';
 import { getDatabase } from '../../../db/database';
 import { buildTeamLegacyReport } from '../../../engine/manager/franchiseNarrativeEngine';
 import { getTeamHistoryLedger } from '../../../engine/manager/releaseDepthEngine';
 import type { TeamHistoryLedger } from '../../../types/systemDepth';
-
-// ─────────────────────────────────────────
-// 타입
-// ─────────────────────────────────────────
 
 interface SeasonHistoryRecord {
   seasonId: number;
@@ -41,7 +29,6 @@ interface LegendPlayer {
   totalKills: number;
 }
 
-// DB Row 타입
 interface SeasonRecordRow {
   season_id: number;
   final_standing: number | null;
@@ -66,9 +53,39 @@ interface LegendRow {
   total_kills: number;
 }
 
-// ─────────────────────────────────────────
-// 컴포넌트
-// ─────────────────────────────────────────
+const POSITION_LABELS: Record<string, string> = {
+  top: '탑',
+  jungle: '정글',
+  mid: '미드',
+  adc: '원딜',
+  support: '서포터',
+};
+
+const AWARD_LABELS: Record<string, string> = {
+  mvp: '최우수 선수',
+  rookie: '신인상',
+  all_pro_top: '베스트 탑',
+  all_pro_jungle: '베스트 정글',
+  all_pro_mid: '베스트 미드',
+  all_pro_adc: '베스트 원딜',
+  all_pro_support: '베스트 서포터',
+  champion: '우승',
+};
+
+function formatLedgerType(value: string): string {
+  return value
+    .split('_')
+    .map((part) => {
+      if (part === 'rivalry') return '라이벌';
+      if (part === 'record') return '기록';
+      if (part === 'legacy') return '유산';
+      if (part === 'lineage') return '계보';
+      if (part === 'franchise') return '프랜차이즈';
+      if (part === 'icon') return '아이콘';
+      return part;
+    })
+    .join(' ');
+}
 
 export function TeamHistoryView() {
   const save = useGameStore((s) => s.save);
@@ -93,66 +110,76 @@ export function TeamHistoryView() {
       try {
         const db = await getDatabase();
 
-        // 시즌별 기록
-        const historyRows = await db.select<SeasonRecordRow[]>(
-          `SELECT season_id, final_standing, wins, losses, playoff_result, champion
-           FROM season_records
-           WHERE team_id = $1
-           ORDER BY season_id DESC`,
-          [userTeam.id],
-        ).catch((): SeasonRecordRow[] => []);
+        const historyRows = await db
+          .select<SeasonRecordRow[]>(
+            `SELECT season_id, final_standing, wins, losses, playoff_result, champion
+             FROM season_records
+             WHERE team_id = $1
+             ORDER BY season_id DESC`,
+            [userTeam.id],
+          )
+          .catch((): SeasonRecordRow[] => []);
 
-        // 수상 기록
-        const awardRows = await db.select<TeamAwardRow[]>(
-          `SELECT season_id, award_type, player_id, team_id, value
-           FROM awards
-           WHERE team_id = $1
-           ORDER BY season_id DESC`,
-          [userTeam.id],
-        ).catch((): TeamAwardRow[] => []);
+        const awardRows = await db
+          .select<TeamAwardRow[]>(
+            `SELECT season_id, award_type, player_id, team_id, value
+             FROM awards
+             WHERE team_id = $1
+             ORDER BY season_id DESC`,
+            [userTeam.id],
+          )
+          .catch((): TeamAwardRow[] => []);
 
-        // 레전드 선수 (통산 경기 수 기준 상위 10인)
-        const legendRows = await db.select<LegendRow[]>(
-          `SELECT p.name, p.position,
-                  COALESCE(SUM(CASE WHEN gs.player_id IS NOT NULL THEN 1 ELSE 0 END), 0) as total_games,
-                  COALESCE(SUM(gs.kills), 0) as total_kills
-           FROM players p
-           LEFT JOIN player_game_stats gs ON gs.player_id = p.id
-           WHERE p.team_id = $1
-           GROUP BY p.id, p.name, p.position
-           ORDER BY total_games DESC, total_kills DESC
-           LIMIT 10`,
-          [userTeam.id],
-        ).catch((): LegendRow[] => []);
+        const legendRows = await db
+          .select<LegendRow[]>(
+            `SELECT p.name, p.position,
+                    COALESCE(SUM(CASE WHEN gs.player_id IS NOT NULL THEN 1 ELSE 0 END), 0) as total_games,
+                    COALESCE(SUM(gs.kills), 0) as total_kills
+             FROM players p
+             LEFT JOIN player_game_stats gs ON gs.player_id = p.id
+             WHERE p.team_id = $1
+             GROUP BY p.id, p.name, p.position
+             ORDER BY total_games DESC, total_kills DESC
+             LIMIT 10`,
+            [userTeam.id],
+          )
+          .catch((): LegendRow[] => []);
 
+        if (cancelled) return;
+
+        setHistory(
+          historyRows.map((row) => ({
+            seasonId: row.season_id,
+            finalStanding: row.final_standing,
+            wins: row.wins,
+            losses: row.losses,
+            playoffResult: row.playoff_result,
+            champion: row.champion === 1,
+          })),
+        );
+
+        setAwards(
+          awardRows.map((row) => ({
+            seasonId: row.season_id,
+            awardType: row.award_type,
+            playerId: row.player_id,
+            teamId: row.team_id,
+            value: row.value,
+          })),
+        );
+
+        setLegends(
+          legendRows.map((row) => ({
+            name: row.name,
+            position: row.position,
+            totalGames: row.total_games,
+            totalKills: row.total_kills,
+          })),
+        );
+
+        const releaseLedger = await getTeamHistoryLedger(userTeam.id, undefined, 24).catch(() => []);
         if (!cancelled) {
-          setHistory(historyRows.map((r) => ({
-            seasonId: r.season_id,
-            finalStanding: r.final_standing,
-            wins: r.wins,
-            losses: r.losses,
-            playoffResult: r.playoff_result,
-            champion: r.champion === 1,
-          })));
-
-          setAwards(awardRows.map((r) => ({
-            seasonId: r.season_id,
-            awardType: r.award_type,
-            playerId: r.player_id,
-            teamId: r.team_id,
-            value: r.value,
-          })));
-
-          setLegends(legendRows.map((r) => ({
-            name: r.name,
-            position: r.position,
-            totalGames: r.total_games,
-            totalKills: r.total_kills,
-          })));
-          const releaseLedger = await getTeamHistoryLedger(userTeam.id, undefined, 24).catch(() => []);
-          if (!cancelled) {
-            setLedger(releaseLedger);
-          }
+          setLedger(releaseLedger);
         }
       } catch (err) {
         console.warn('[TeamHistoryView] load failed:', err);
@@ -161,9 +188,11 @@ export function TeamHistoryView() {
       }
     };
 
-    load();
-    return () => { cancelled = true; };
-  }, [userTeam, season]);
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [season, userTeam]);
 
   if (!userTeam || !season) {
     return <p className="fm-text-muted fm-p-md">데이터를 불러오는 중...</p>;
@@ -174,41 +203,22 @@ export function TeamHistoryView() {
   }
 
   const totalSeasons = history.length;
-  const totalTrophies = history.filter((h) => h.champion).length;
-  const totalWins = history.reduce((s, h) => s + h.wins, 0);
-  const totalLosses = history.reduce((s, h) => s + h.losses, 0);
+  const totalTrophies = history.filter((item) => item.champion).length;
+  const totalWins = history.reduce((sum, item) => sum + item.wins, 0);
+  const totalLosses = history.reduce((sum, item) => sum + item.losses, 0);
   const totalGames = totalWins + totalLosses;
   const winRate = totalGames > 0 ? ((totalWins / totalGames) * 100).toFixed(1) : '0.0';
   const legacyReport = buildTeamLegacyReport({ team: userTeam, history, legends });
   const rivalryLedger = ledger.filter((entry) => entry.ledgerType === 'rivalry_record').slice(0, 4);
   const lineageLedger = ledger.filter((entry) => entry.ledgerType !== 'rivalry_record').slice(0, 6);
 
-  const positionLabel: Record<string, string> = {
-    top: '탑',
-    jungle: '정글',
-    mid: '미드',
-    adc: '원딜',
-    support: '서포터',
-  };
-
-  const awardTypeLabel: Record<string, string> = {
-    mvp: 'MVP',
-    rookie: '신인왕',
-    all_pro_top: 'All-Pro 탑',
-    all_pro_jungle: 'All-Pro 정글',
-    all_pro_mid: 'All-Pro 미드',
-    all_pro_adc: 'All-Pro 원딜',
-    all_pro_support: 'All-Pro 서포터',
-    champion: '우승',
-  };
-
   return (
     <div className="fm-animate-in">
       <div className="fm-page-header">
         <h1 className="fm-page-title">팀 히스토리</h1>
+        <p className="fm-page-subtitle">이 팀이 어떤 기록과 이야기를 쌓아왔는지 한 화면에서 확인합니다.</p>
       </div>
 
-      {/* 팀 요약 */}
       <div className="fm-panel">
         <div className="fm-panel__header">
           <span className="fm-panel__title">{userTeam.name}</span>
@@ -217,7 +227,7 @@ export function TeamHistoryView() {
           <div className="fm-grid" style={{ gridTemplateColumns: 'repeat(5, 1fr)' }}>
             <div className="fm-card fm-text-center">
               <div className="fm-stat" style={{ alignItems: 'center' }}>
-                <span className="fm-stat__label">리전</span>
+                <span className="fm-stat__label">지역</span>
                 <span className="fm-stat__value">{userTeam.region}</span>
               </div>
             </div>
@@ -249,27 +259,26 @@ export function TeamHistoryView() {
         </div>
       </div>
 
-      {/* 트로피 캐비닛 */}
       <div className="fm-panel">
         <div className="fm-panel__header">
-          <span className="fm-panel__title">Franchise Identity</span>
+          <span className="fm-panel__title">구단 정체성</span>
         </div>
         <div className="fm-panel__body fm-flex-col fm-gap-md">
           <div className="fm-card fm-card--highlight">
             <div className="fm-flex-col fm-gap-xs">
-              <span className="fm-text-xs fm-font-semibold fm-text-accent">Club Arc</span>
+              <span className="fm-text-xs fm-font-semibold fm-text-accent">구단 흐름</span>
               <strong className="fm-text-lg fm-text-primary">{legacyReport.identity}</strong>
               <span className="fm-text-sm fm-text-secondary">{legacyReport.internationalPosture}</span>
             </div>
           </div>
           <div className="fm-grid fm-grid--3">
             <div className="fm-card">
-              <span className="fm-text-xs fm-font-semibold fm-text-accent">Timeline Hook</span>
+              <span className="fm-text-xs fm-font-semibold fm-text-accent">서사 포인트</span>
               <p className="fm-text-sm fm-text-secondary fm-mt-sm">{legacyReport.timelineHook}</p>
             </div>
             {legacyReport.replayHooks.map((hook) => (
               <div key={hook} className="fm-card">
-                <span className="fm-text-xs fm-font-semibold fm-text-accent">Replay Value</span>
+                <span className="fm-text-xs fm-font-semibold fm-text-accent">반복되는 가치</span>
                 <p className="fm-text-sm fm-text-secondary fm-mt-sm">{hook}</p>
               </div>
             ))}
@@ -277,68 +286,69 @@ export function TeamHistoryView() {
         </div>
       </div>
 
-      {(rivalryLedger.length > 0 || lineageLedger.length > 0) && (
+      {rivalryLedger.length > 0 || lineageLedger.length > 0 ? (
         <div className="fm-panel">
           <div className="fm-panel__header">
-            <span className="fm-panel__title">History Ledger</span>
+            <span className="fm-panel__title">역사 기록부</span>
           </div>
           <div className="fm-panel__body fm-flex-col fm-gap-md">
-            {rivalryLedger.length > 0 && (
+            {rivalryLedger.length > 0 ? (
               <div className="fm-grid fm-grid--2">
                 {rivalryLedger.map((entry) => (
                   <div key={entry.id} className="fm-card">
-                    <span className="fm-text-xs fm-font-semibold fm-text-accent">Regional Rivalry</span>
+                    <span className="fm-text-xs fm-font-semibold fm-text-accent">지역 라이벌</span>
                     <p className="fm-text-sm fm-text-primary fm-mt-sm">{entry.subjectName}</p>
                     <p className="fm-text-sm fm-text-secondary">
-                      Series record: {entry.statValue}W - {entry.secondaryValue}L
+                      상대 전적: {entry.statValue}승 {entry.secondaryValue}패
                     </p>
-                    <p className="fm-text-xs fm-text-muted">Updated {entry.updatedAt}</p>
-                    {entry.note && <p className="fm-text-xs fm-text-muted">{entry.note}</p>}
+                    <p className="fm-text-xs fm-text-muted">최종 갱신 {entry.updatedAt}</p>
+                    {entry.note ? <p className="fm-text-xs fm-text-muted">{entry.note}</p> : null}
                   </div>
                 ))}
               </div>
-            )}
-            {lineageLedger.length > 0 && (
+            ) : null}
+            {lineageLedger.length > 0 ? (
               <div className="fm-grid fm-grid--3">
                 {lineageLedger.map((entry) => (
                   <div key={entry.id} className="fm-card">
-                    <span className="fm-text-xs fm-font-semibold fm-text-accent">{entry.ledgerType.replace('_', ' ')}</span>
+                    <span className="fm-text-xs fm-font-semibold fm-text-accent">{formatLedgerType(entry.ledgerType)}</span>
                     <p className="fm-text-sm fm-text-primary fm-mt-sm">{entry.subjectName}</p>
-                    {entry.note && <p className="fm-text-sm fm-text-secondary">{entry.note}</p>}
-                    {entry.extra.length > 0 && (
+                    {entry.note ? <p className="fm-text-sm fm-text-secondary">{entry.note}</p> : null}
+                    {entry.extra.length > 0 ? (
                       <div className="fm-flex fm-gap-xs fm-flex-wrap">
                         {entry.extra.map((tag) => (
                           <span key={`${entry.id}-${tag}`} className="fm-badge fm-badge--default">{tag}</span>
                         ))}
                       </div>
-                    )}
+                    ) : null}
                   </div>
                 ))}
               </div>
-            )}
+            ) : null}
           </div>
         </div>
-      )}
+      ) : null}
 
-      {totalTrophies > 0 && (
+      {totalTrophies > 0 ? (
         <div className="fm-panel">
           <div className="fm-panel__header">
-            <span className="fm-panel__title">트로피 캐비닛</span>
+            <span className="fm-panel__title">우승 기록</span>
           </div>
           <div className="fm-panel__body">
             <div className="fm-flex fm-flex-wrap fm-gap-md">
-              {history.filter((h) => h.champion).map((h) => (
-                <div key={h.seasonId} className="fm-card fm-card--highlight fm-text-center" style={{ padding: '16px 20px' }}>
+              {history.filter((item) => item.champion).map((item) => (
+                <div key={item.seasonId} className="fm-card fm-card--highlight fm-text-center" style={{ padding: '16px 20px' }}>
                   <span style={{ fontSize: '32px', display: 'block' }}>{'\uD83C\uDFC6'}</span>
-                  <span className="fm-text-xs fm-font-semibold fm-text-accent fm-mt-sm" style={{ display: 'block' }}>시즌 {h.seasonId}</span>
+                  <span className="fm-text-xs fm-font-semibold fm-text-accent fm-mt-sm" style={{ display: 'block' }}>
+                    시즌 {item.seasonId}
+                  </span>
                 </div>
               ))}
             </div>
           </div>
         </div>
-      )}
+      ) : null}
 
-      {/* 시즌별 기록 */}
       <div className="fm-panel">
         <div className="fm-panel__header">
           <span className="fm-panel__title">시즌별 기록</span>
@@ -363,16 +373,14 @@ export function TeamHistoryView() {
                 <tbody>
                   {history.map((record) => {
                     const total = record.wins + record.losses;
-                    const wr = total > 0 ? ((record.wins / total) * 100).toFixed(1) : '0.0';
+                    const recordWinRate = total > 0 ? ((record.wins / total) * 100).toFixed(1) : '0.0';
                     return (
                       <tr key={record.seasonId}>
                         <td className="fm-cell--name">시즌 {record.seasonId}</td>
-                        <td className="text-center">
-                          {record.finalStanding != null ? `${record.finalStanding}위` : '-'}
-                        </td>
+                        <td className="text-center">{record.finalStanding != null ? `${record.finalStanding}위` : '-'}</td>
                         <td className="text-center">{record.wins}</td>
                         <td className="text-center">{record.losses}</td>
-                        <td className="text-center">{wr}%</td>
+                        <td className="text-center">{recordWinRate}%</td>
                         <td>{record.playoffResult ?? '-'}</td>
                         <td className={`text-center ${record.champion ? 'fm-cell--gold' : 'fm-text-muted'}`}>
                           {record.champion ? '\uD83C\uDFC6' : '-'}
@@ -387,31 +395,27 @@ export function TeamHistoryView() {
         </div>
       </div>
 
-      {/* 수상 기록 */}
-      {awards.length > 0 && (
+      {awards.length > 0 ? (
         <div className="fm-panel">
           <div className="fm-panel__header">
             <span className="fm-panel__title">수상 기록</span>
           </div>
           <div className="fm-panel__body">
             <div className="fm-flex fm-flex-wrap fm-gap-sm">
-              {awards.map((award, idx) => (
-                <div key={`${award.seasonId}-${award.awardType}-${idx}`} className="fm-flex fm-items-center fm-gap-sm fm-badge fm-badge--accent">
-                  <span className="fm-font-semibold">
-                    {awardTypeLabel[award.awardType] ?? award.awardType}
-                  </span>
+              {awards.map((award, index) => (
+                <div key={`${award.seasonId}-${award.awardType}-${index}`} className="fm-flex fm-items-center fm-gap-sm fm-badge fm-badge--accent">
+                  <span className="fm-font-semibold">{AWARD_LABELS[award.awardType] ?? award.awardType}</span>
                   <span className="fm-text-xs" style={{ opacity: 0.7 }}>시즌 {award.seasonId}</span>
                 </div>
               ))}
             </div>
           </div>
         </div>
-      )}
+      ) : null}
 
-      {/* 레전드 선수 */}
       <div className="fm-panel">
         <div className="fm-panel__header">
-          <span className="fm-panel__title">레전드 선수 (통산 기록)</span>
+          <span className="fm-panel__title">레전드 선수</span>
         </div>
         <div className="fm-panel__body--flush">
           {legends.length === 0 ? (
@@ -421,29 +425,21 @@ export function TeamHistoryView() {
               <table className="fm-table fm-table--striped">
                 <thead>
                   <tr>
-                    <th className="text-center">#</th>
+                    <th className="text-center">순번</th>
                     <th>선수</th>
                     <th>포지션</th>
-                    <th className="text-center">경기</th>
-                    <th className="text-center">킬</th>
+                    <th className="text-center">경기 수</th>
+                    <th className="text-center">킬 수</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {legends.map((player, idx) => (
-                    <tr key={`${player.name}-${idx}`}>
-                      <td className={`text-center ${idx < 3 ? 'fm-cell--gold' : ''}`}>
-                        {idx + 1}
-                      </td>
-                      <td className="fm-cell--name">
-                        {player.name}
-                      </td>
-                      <td>
-                        {positionLabel[player.position] ?? player.position}
-                      </td>
+                  {legends.map((player, index) => (
+                    <tr key={`${player.name}-${index}`}>
+                      <td className={`text-center ${index < 3 ? 'fm-cell--gold' : ''}`}>{index + 1}</td>
+                      <td className="fm-cell--name">{player.name}</td>
+                      <td>{POSITION_LABELS[player.position] ?? player.position}</td>
                       <td className="text-center">{player.totalGames}</td>
-                      <td className="text-center fm-cell--accent">
-                        {player.totalKills}
-                      </td>
+                      <td className="text-center">{player.totalKills}</td>
                     </tr>
                   ))}
                 </tbody>

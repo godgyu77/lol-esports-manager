@@ -15,6 +15,7 @@ import {
   buildDraftTeamInfo,
   getRecommendedBans,
   getRecommendedPicks,
+  swapChampions,
 } from './draftEngine';
 import type { Champion } from '../../types/champion';
 import type { Position } from '../../types/game';
@@ -81,6 +82,35 @@ describe('createDraftState', () => {
 
     expect(state.fearlessMode).toBe(true);
     expect(state.fearlessPool).toEqual(pool);
+  });
+  it('포지션에 맞지 않는 챔피언 픽은 거부한다', () => {
+    const state = createDraftState();
+    for (let i = 0; i < 6; i++) {
+      executeDraftAction(state, `ban_${i}`);
+    }
+
+    const success = executeDraftAction(state, 'varus', 'jungle');
+
+    expect(success).toBe(false);
+    expect(state.blue.picks).toHaveLength(0);
+  });
+
+  it('스왑으로도 잘못된 포지션 조합은 만들 수 없다', () => {
+    const state = createDraftState();
+    state.phase = 'swap';
+    state.blue.picks = [
+      { championId: 'renekton', position: 'top' },
+      { championId: 'varus', position: 'adc' },
+      { championId: 'orianna', position: 'mid' },
+      { championId: 'leesin', position: 'jungle' },
+      { championId: 'thresh', position: 'support' },
+    ];
+
+    const success = swapChampions(state, 'blue', 0, 1);
+
+    expect(success).toBe(false);
+    expect(state.blue.picks[0]).toEqual({ championId: 'renekton', position: 'top' });
+    expect(state.blue.picks[1]).toEqual({ championId: 'varus', position: 'adc' });
   });
 });
 

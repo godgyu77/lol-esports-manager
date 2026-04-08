@@ -57,8 +57,16 @@ export function useNavBadges(userTeamId: string, seasonId: number): Record<strin
       void load();
     };
 
+    const handleVisibilityRefresh = () => {
+      if (document.visibilityState === 'visible') {
+        void load();
+      }
+    };
+
     window.addEventListener(NEWS_BADGES_INVALIDATED_EVENT, handleInvalidate);
     window.addEventListener(NOTIFICATIONS_INVALIDATED_EVENT, handleInvalidate);
+    window.addEventListener('focus', handleInvalidate);
+    document.addEventListener('visibilitychange', handleVisibilityRefresh);
 
     // 30초마다 갱신
     const interval = setInterval(load, 30000);
@@ -68,6 +76,8 @@ export function useNavBadges(userTeamId: string, seasonId: number): Record<strin
       clearInterval(interval);
       window.removeEventListener(NEWS_BADGES_INVALIDATED_EVENT, handleInvalidate);
       window.removeEventListener(NOTIFICATIONS_INVALIDATED_EVENT, handleInvalidate);
+      window.removeEventListener('focus', handleInvalidate);
+      document.removeEventListener('visibilitychange', handleVisibilityRefresh);
     };
   }, [userTeamId, seasonId]);
 

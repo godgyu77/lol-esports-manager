@@ -1,7 +1,7 @@
 /**
  * 국제 대회 생성과 일정 관리를 담당하는 엔진입니다.
- * - LCK Cup, FST, MSI, EWC, Worlds 참가팀과 대진을 생성합니다.
- * - 그룹 스테이지, 스위스, 토너먼트 브래킷용 데이터를 함께 관리합니다.
+ * - LCK Cup, FST, MSI, EWC, Worlds 참가 팀과 일정을 생성합니다.
+ * - 그룹 스테이지, 스위스, 녹아웃 브래킷용 데이터를 함께 관리합니다.
  */
 import type { Region } from '../../types/game';
 import type { MatchType } from '../../types/match';
@@ -69,7 +69,7 @@ export async function createTournament(
   return id;
 }
 
-/** 대회 참가팀을 추가한다. */
+/** 대회 참가 팀을 추가한다. */
 export async function addTournamentParticipant(
   tournamentId: string,
   teamId: string,
@@ -374,7 +374,7 @@ export async function generateLCKCup(
     dates.start,
     'lck_cup_regular',
     'Bo3',
-    true, // ?�어리스 ?�래?�트
+    true, // 하드 피어리스 드래프트
   );
 
   await updateTournamentStatus(tournamentId, 'group_stage');
@@ -423,7 +423,7 @@ export async function generateLCKCupPlayoff(
     fearlessDraft: true,
   });
 
-  // 결승 (Bo5)
+  // 寃곗듅 (Bo5)
   await insertMatch({
     id: `${tournamentId}_final`, seasonId, week: 0,
     teamHomeId: 'TBD', teamAwayId: 'TBD',
@@ -474,7 +474,7 @@ export async function generateFST(
     fearlessDraft: true,
   });
 
-  // 결승 (Bo5)
+  // 寃곗듅 (Bo5)
   await insertMatch({
     id: `${tournamentId}_final`, seasonId, week: 0,
     teamHomeId: 'TBD', teamAwayId: 'TBD',
@@ -490,7 +490,8 @@ export async function generateFST(
 }
 
 /**
- * - 결승: Bo5
+ * MSI 대진 생성
+ * - 결승은 Bo5
  */
 export async function generateMSI(
   seasonId: number,
@@ -530,7 +531,7 @@ export async function generateMSI(
     fearlessDraft: true,
   });
 
-  // 결승
+  // 寃곗듅
   await insertMatch({
     id: `${tournamentId}_final`, seasonId, week: 0,
     teamHomeId: 'TBD_MSI_FINAL_HOME', teamAwayId: 'TBD_MSI_FINAL_AWAY',
@@ -592,7 +593,7 @@ export async function generateEWC(
     matchDate: addDays(dates.start, 6), matchType: 'ewc_semi', boFormat: 'Bo5',
   });
 
-  // 결승 (Bo5)
+  // 寃곗듅 (Bo5)
   await insertMatch({
     id: `${tournamentId}_final`, seasonId, week: 0,
     teamHomeId: 'TBD', teamAwayId: 'TBD',
@@ -636,7 +637,7 @@ export async function generateWorlds(
 
   await generateSwissRound(tournamentId, seasonId, 1, dates.start);
 
-  const knockoutStart = addDays(dates.start, 25); // ?�위???�료 ??
+  const knockoutStart = addDays(dates.start, 25); // 스위스 종료 후
   for (let i = 1; i <= 4; i++) {
     await insertMatch({
       id: `${tournamentId}_qf${i}`, seasonId, week: 0,
@@ -694,7 +695,7 @@ export async function generateSwissRound(
     return bw - aw;
   });
 
-  const overflow: typeof active = []; // 매칭 ?????�
+  const overflow: typeof active = []; // 매칭에서 밀린 팀
 
   for (const key of sortedKeys) {
     const pool = [...(groups.get(key) ?? []), ...overflow.splice(0)];
@@ -953,7 +954,7 @@ async function processMSIResult(
   }
 }
 
-/** Worlds 결과 처리 */
+/** Worlds 寃곌낵 泥섎━ */
 async function processWorldsResult(
   tournamentId: string, matchId: string, winnerTeamId: string,
   seasonId: number, db: Awaited<ReturnType<typeof getDatabase>>,
@@ -987,7 +988,7 @@ async function processWorldsResult(
   }
 }
 
-/** LCK Cup 결과 처리 */
+/** LCK Cup 寃곌낵 泥섎━ */
 async function processLCKCupResult(
   tournamentId: string, matchId: string, db: Awaited<ReturnType<typeof getDatabase>>,
 ): Promise<void> {

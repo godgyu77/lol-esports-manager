@@ -97,7 +97,8 @@ describe('TacticsView', () => {
       },
     });
 
-    expect(await screen.findByText('전술 루프')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '전술 관리' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'AI 코치' })).toBeInTheDocument();
     expect(screen.getByText(/2026-03-03 vs Gen\.G/)).toBeInTheDocument();
   });
 });

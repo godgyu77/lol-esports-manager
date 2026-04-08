@@ -273,7 +273,7 @@ describe('DayView', () => {
       isTrainingConfigured: false,
       isTacticsConfigured: false,
       isReadyToAdvance: false,
-      blockingReasons: ['?덈젴 怨꾪쉷???놁뒿?덈떎.', '?꾩닠 ?ㅼ젙???놁뒿?덈떎.'],
+      blockingReasons: ['훈련 계획이 없습니다.', '전술 설정이 없습니다.'],
     });
     mockGenerateInitialCoachRecommendations.mockResolvedValue([
       {
