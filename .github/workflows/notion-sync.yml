@@ -36,12 +36,7 @@ jobs:
         with:
           node-version: 24
 
-      - name: Skip when Notion secrets are missing
-        if: ${{ secrets.NOTION_TOKEN == '' }}
-        run: echo "NOTION_TOKEN is not configured. Skipping Notion sync."
-
       - name: Sync event to Notion
-        if: ${{ secrets.NOTION_TOKEN != '' }}
         env:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           NOTION_TASKS_DATABASE_ID: ${{ secrets.NOTION_TASKS_DATABASE_ID }}
@@ -49,4 +44,10 @@ jobs:
           NOTION_PATCH_NOTES_DATABASE_ID: ${{ secrets.NOTION_PATCH_NOTES_DATABASE_ID }}
           NOTION_PROJECTS_DATABASE_ID: ${{ secrets.NOTION_PROJECTS_DATABASE_ID }}
           NOTION_SYNC_MODE: ${{ github.event.inputs.mode || 'event' }}
-        run: node scripts/notion-sync.mjs
+        run: |
+          if [ -z "$NOTION_TOKEN" ]; then
+            echo "NOTION_TOKEN is not configured. Skipping Notion sync."
+            exit 0
+          fi
+
+          node scripts/notion-sync.mjs
