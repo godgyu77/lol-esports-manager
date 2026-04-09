@@ -1,4 +1,4 @@
-name: Notion Sync
+name: Notion Project Sync
 
 on:
   push:
@@ -26,8 +26,8 @@ on:
 
 jobs:
   notion-sync:
+    name: Sync GitHub events to Notion project tracker
     runs-on: ubuntu-latest
-    if: ${{ secrets.NOTION_TOKEN != '' }}
 
     steps:
       - uses: actions/checkout@v6
@@ -36,7 +36,12 @@ jobs:
         with:
           node-version: 24
 
+      - name: Skip when Notion secrets are missing
+        if: ${{ secrets.NOTION_TOKEN == '' }}
+        run: echo "NOTION_TOKEN is not configured. Skipping Notion sync."
+
       - name: Sync event to Notion
+        if: ${{ secrets.NOTION_TOKEN != '' }}
         env:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           NOTION_TASKS_DATABASE_ID: ${{ secrets.NOTION_TASKS_DATABASE_ID }}

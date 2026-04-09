@@ -120,7 +120,7 @@ describe('InboxView', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText('읽지 않은 메시지가 없습니다.')).toBeInTheDocument();
+      expect(screen.getByText('읽지 않은 메시지가 없습니다')).toBeInTheDocument();
     });
   });
 
