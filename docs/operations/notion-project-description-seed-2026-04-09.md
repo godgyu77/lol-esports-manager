@@ -1,34 +1,50 @@
-# LoL Esports Manager
+# LoL Esports Manager 프로젝트 개요
 
-## Overview
+## 프로젝트 소개
 
-LoL Esports Manager is a management simulation focused on running a professional League of Legends team through season planning, roster decisions, staff management, tactical preparation, live match presentation, media handling, and long-term club identity building.
+LoL Esports Manager는 프로 리그 오브 레전드 팀을 운영하는 감독 시뮬레이션 게임입니다.
+플레이어는 단순히 경기 결과만 보는 것이 아니라, 시즌 운영, 로스터 관리, 재정 판단, 전술 준비, 훈련 계획, 언론 대응, 팬 반응, 팀 역사까지 함께 관리하게 됩니다.
 
-The project is inspired by the long-form management feel of games like Football Manager, but it is adapted to esports realities such as draft flow, patch meta shifts, community sentiment, international pressure, player chemistry, and broadcast storytelling.
+이 프로젝트는 Football Manager 같은 장기 운영형 매니지먼트 게임의 감각을 참고하되, e스포츠에만 있는 요소를 적극적으로 반영하는 방향으로 설계되어 있습니다.
+예를 들어 드래프트 흐름, 패치 메타 변화, 국제전 압박, 커뮤니티 여론, 선수 케미스트리, 방송 연출, 프랜차이즈 서사 같은 요소가 핵심 차별점입니다.
 
-## Core Pillars
+## 핵심 목표
 
-- Manager-first decision loop centered on daily and weekly priorities
-- Team operations including roster, tactics, training, scouting, finance, and staff
-- Matchday flow with draft, live presentation, and post-match narrative
-- Media and community systems that shape perception around the club
-- Long-term history, rivalry, and franchise identity across multiple seasons
+- 하루와 일주일 단위의 의사결정이 자연스럽게 이어지는 감독 중심 루프 만들기
+- 전술, 훈련, 재정, 스카우팅, 보드 압박, 선수 불만이 서로 연결되는 구조 만들기
+- 단기 승패뿐 아니라 여러 시즌에 걸쳐 축적되는 팀 역사와 커리어 감각 만들기
+- LoL e스포츠 특유의 긴장감과 드라마를 매니지먼트 장르에 맞게 재해석하기
 
-## Current Development Focus
+## 현재 프로젝트 강점
 
-- Build and test stability
-- Stronger core loop between dashboard, day progression, and match preparation
-- Better cross-system consequences between finance, board pressure, morale, and media
-- More believable transfer and contract logic
-- Stronger long-term narrative memory through team history and career arcs
+- 감독 화면, 전술, 훈련, 재정, 스카우팅, 라이브 경기, 드래프트, 보드, 언론, 커뮤니티 등 주요 시스템 틀이 이미 존재합니다.
+- FM식 정보 구조를 잘 이해한 상태에서 e스포츠에 맞는 변형을 시도하고 있습니다.
+- 팀 역사, 커리어 축적, 팬 반응, 미디어 흐름처럼 숫자 외의 서사 시스템이 들어가 있어 차별화 잠재력이 큽니다.
+- 테스트와 타입 검사를 기반으로 프로젝트를 관리하려는 방향성이 보입니다.
 
-## Recommended Notion Structure
+## 현재 보완이 필요한 부분
 
-- Task DB: active work items and priorities
-- Dev Log DB: push, PR, and development snapshots
-- Patch Notes DB: releases and milestone summaries
-- Projects DB: high-level project description, goals, and current focus
+- 빌드와 타입 오류를 먼저 안정화해서 항상 실행 가능한 상태를 만드는 것
+- 핵심 플레이 루프를 더 명확하게 다듬는 것
+- 재정, 보드, 선수단 분위기, 미디어 반응이 더 강하게 연결되도록 시스템 밀도를 높이는 것
+- 이적과 계약 AI를 더 설득력 있게 만들어 장기 플레이 몰입도를 높이는 것
+- 여러 시즌을 이어가고 싶게 만드는 역사, 라이벌리, 세대교체 요소를 강화하는 것
 
-## Short Positioning
+## 현재 우선순위
 
-This project aims to become a replayable esports management game where strategic decisions feel cumulative, club identity matters over time, and the player experiences both the pressure and drama of leading a top-tier League of Legends organization.
+1. 빌드 오류와 테스트 불일치 정리
+2. ManagerHome 중심의 핵심 루프 정리
+3. 시스템 간 연쇄 효과 강화
+4. 이적 및 계약 AI 개선
+5. 장기 커리어와 팀 역사 축적 강화
+
+## 추천 노션 활용 방식
+
+- Task DB: 해야 할 일, 우선순위, 작업 위치, 다음 액션 관리
+- Dev Log DB: 푸시, PR, 수동 스냅샷 등 개발 기록 자동 저장
+- Patch Notes DB: 버전별 변경 내역과 릴리스 요약 관리
+- Projects DB: 프로젝트 설명, 현재 방향, 핵심 목표, 장기 비전 관리
+
+## 한 줄 포지셔닝
+
+LoL Esports Manager는 단순한 경기 결과 확인 게임이 아니라, 팀을 오래 운영하면서 구단의 정체성과 서사를 만들어가는 장기형 e스포츠 감독 시뮬레이션을 목표로 합니다.

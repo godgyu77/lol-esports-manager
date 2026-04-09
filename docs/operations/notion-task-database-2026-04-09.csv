@@ -1,20 +1,6 @@
 Name,Status,Priority,Area,Location,Owner,Next Step,Done Definition,Suggested File,Notes
-Fix SocialFeed commentCount type,Todo,Critical,Build,Office,Me,Align SocialReaction type or UI usage,npm run build passes for SocialFeed,src/features/manager/pages/SocialFeedView.tsx,Current build blocker
-Fix TeamHistory field mismatches,Todo,Critical,Build,Office,Me,Align legacyReport and ledger field usage,npm run build passes for TeamHistory,src/features/manager/pages/TeamHistoryView.tsx,Current build blocker
-Fix settingsStore typing,Todo,Critical,Build,Office,Me,Resolve Stronghold and AI provider types,npm run build passes for settingsStore,src/stores/settingsStore.ts,Current build blocker
-Fix ManagerHome test team typing,Todo,High,Tests,Office,Me,Update test fixtures to Team/Region types,ManagerHome test passes,src/features/manager/pages/ManagerHome.test.tsx,Current build blocker
-Fix postMatchInsight test labels,Todo,High,Tests,Office,Me,Match test expectation with localized strings or update engine,npm test passes for postMatchInsight,src/engine/analysis/postMatchInsightEngine.test.ts,Localized labels changed
-Fix InboxView empty state test,Todo,High,Tests,Office,Me,Update test for current unread-only wording,npm test passes for InboxView,src/features/manager/pages/InboxView.test.tsx,Current wording mismatch
-Run full verification,Todo,Critical,Verification,Office,Me,Run typecheck test and build together,All three commands pass,,Do this after blockers are fixed
-Refine ManagerHome priority cards,Todo,High,Core Loop,Home,Me,Reduce dashboard focus to top 3 priorities,Today risk next match and key action are obvious,src/features/manager/pages/ManagerHome.tsx,Core loop clarity task
-Review DayView action flow,Todo,High,Core Loop,Home,Me,Make daily decision path clearer,Player can progress day with clear decision hierarchy,src/features/manager/pages/DayView.tsx,Pair with ManagerHome
-Simplify manager navigation priority,Todo,Medium,UX,Home,Me,Reorder high-frequency manager routes,Dashboard feels less noisy,src/features/manager/pages/ManagerDashboard.tsx,After core loop review
-Strengthen finance to board pressure chain,Todo,High,System Depth,Home,Me,Increase direct consequences from budget pressure,Finance problems clearly impact board operations and choices,src/engine/manager/systemDepthEngine.ts,High leverage improvement
-Strengthen complaints morale media chain,Todo,High,System Depth,Home,Me,Connect complaints to morale and media fallout,Complaint escalation creates visible multi-system effects,src/engine/manager/systemDepthEngine.ts,High leverage improvement
-Improve transfer negotiation AI,Todo,High,Transfers,Home,Me,Expand acceptance logic with context and pressure,Transfer outcomes feel more believable,src/engine/economy/transferEngine.ts,Important medium-term task
-Add long-term career narrative consequences,Todo,Medium,Career,Home,Me,Make arcs and history affect next season decisions,History feels cumulative over seasons,src/engine/manager/releaseDepthEngine.ts,Long-term retention task
-Design patch meta system v1,Backlog,Medium,Feature,Weekend,Me,Define meta shifts affecting tactics scouting and value,Patch changes alter real management decisions,,Best strategic differentiator
-Add player personality vs coach philosophy conflicts,Backlog,Medium,Feature,Weekend,Me,Define conflict triggers and consequences,Coach style materially affects player relationships,,Strong narrative value
-Add international event pressure layer,Backlog,Medium,Feature,Weekend,Me,Expand regional style and international expectation impact,International events feel special and risky,,Strong esports identity
-Expand fan community impact,Backlog,Low,Feature,Weekend,Me,Feed community mood into board sponsor and morale systems,Community reactions have mechanical consequences,,Fits current strengths
-Add franchise icon succession system,Backlog,Low,Feature,Weekend,Me,Track icon transition and fan response,Retirement or transfer of stars affects club identity,,Long-term immersion feature
+SocialFeed commentCount 타입 오류 정리,할 일,치명,빌드,회사,나,SocialReaction 타입 또는 UI 참조 필드를 먼저 맞추기,SocialFeed 관련 빌드 오류가 사라지고 화면이 정상 렌더링됨,src/features/manager/pages/SocialFeedView.tsx,현재 빌드 막힘 원인
+TeamHistory 필드 불일치 수정,할 일,치명,빌드,회사,나,legacyReport와 ledger에서 실제 존재하는 필드 기준으로 정리하기,TeamHistory 관련 빌드 오류가 사라지고 히스토리 화면이 정상 렌더링됨,src/features/manager/pages/TeamHistoryView.tsx,현재 빌드 막힘 원인
+settingsStore 타입 정리,할 일,치명,빌드,회사,나,Stronghold와 AI provider 타입 경계를 먼저 정리하기,settingsStore 관련 타입 오류가 사라지고 빌드가 통과함,src/stores/settingsStore.ts,현재 빌드 막힘 원인
+ManagerHome 테스트 fixture 타입 수정,할 일,높음,테스트,회사,나,Team과 Region 타입 정의에 맞춰 fixture 다시 맞추기,ManagerHome 테스트가 타입 오류 없이 통과함,src/features/manager/pages/ManagerHome.test.tsx,현재 빌드 막힘 원인
+postMatchInsight 테스트 기대값 최신화,할 일,높음,테스트,회사,나,한국어 로컬라이즈 기준으로 기대 문구와 구조를 확인하기,postMatchInsight 관련 테스트가 안정적으로 통과함,src/engine/analysis/postMatchInsightEngine.test.ts,로컬라이즈 반영 이후 기대값 정리 필요

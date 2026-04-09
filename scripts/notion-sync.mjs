@@ -85,19 +85,19 @@ function parseConventionalType(message) {
 }
 
 function taskPriorityFromType(type) {
-  if (type === 'fix') return 'High';
-  if (type === 'feat') return 'Medium';
-  if (type === 'refactor') return 'Medium';
-  if (type === 'test') return 'Low';
-  return 'Low';
+  if (type === 'fix') return '높음';
+  if (type === 'feat') return '중간';
+  if (type === 'refactor') return '중간';
+  if (type === 'test') return '낮음';
+  return '낮음';
 }
 
 function taskAreaFromType(type) {
-  if (type === 'fix') return 'Bugfix';
-  if (type === 'feat') return 'Feature';
-  if (type === 'refactor') return 'Refactor';
-  if (type === 'test') return 'Test';
-  return 'Maintenance';
+  if (type === 'fix') return '버그 수정';
+  if (type === 'feat') return '기능 개발';
+  if (type === 'refactor') return '리팩터링';
+  if (type === 'test') return '테스트';
+  return '유지보수';
 }
 
 function blocksFromMarkdown(markdown) {
@@ -198,17 +198,17 @@ async function syncPushEvent(payload) {
 
   const summary = commitSummary(commits);
   const files = changedFilesFromPush(payload);
-  const titleValue = `Push: ${summary.messages[0] ?? GITHUB_SHA.slice(0, 7)}`;
+  const titleValue = `푸시 기록: ${summary.messages[0] ?? GITHUB_SHA.slice(0, 7)}`;
   const compareUrl = payload.compare ?? shaUrl(GITHUB_SHA);
   const body = [
-    `Repository: ${GITHUB_REPOSITORY}`,
-    `Branch: ${GITHUB_REF_NAME || payload.ref || '-'}`,
-    `Commits: ${commits.length}`,
+    `저장소: ${GITHUB_REPOSITORY}`,
+    `브랜치: ${GITHUB_REF_NAME || payload.ref || '-'}`,
+    `커밋 수: ${commits.length}`,
     '',
-    'Commit messages:',
+    '이번 푸시에 포함된 커밋:',
     ...summary.messages.map((message) => `- ${message}`),
     '',
-    'Changed files:',
+    '변경된 파일:',
     ...files.slice(0, 25).map((file) => `- ${file}`),
   ].join('\n');
 
@@ -216,13 +216,19 @@ async function syncPushEvent(payload) {
     DATABASES.devlog,
     {
       Name: title(titleValue),
-      Type: select('Push'),
-      Status: select('Logged'),
-      Source: select('GitHub Actions'),
+      Type: select('푸시'),
+      Status: select('기록됨'),
+      Source: select('GitHub 자동화'),
       Repository: richText(GITHUB_REPOSITORY),
       Branch: richText(GITHUB_REF_NAME || payload.ref || ''),
-      Summary: richText(`${commits.length} commit(s), ${files.length} changed file(s)`),
-      Tags: multiSelect(['push', ...summary.types]),
+      Summary: richText(`총 ${commits.length}개 커밋과 ${files.length}개 파일 변경이 감지되었습니다.`),
+      Tags: multiSelect(['푸시', ...summary.types.map((type) => ({
+        feat: '기능',
+        fix: '수정',
+        refactor: '리팩터링',
+        test: '테스트',
+        chore: '정리',
+      }[type] ?? type))]),
       URL: urlValue(compareUrl),
       Date: dateValue(new Date().toISOString()),
     },
@@ -239,26 +245,26 @@ async function syncPullRequestEvent(payload) {
   const labels = toPlainArray(pr.labels).map((label) => label.name).filter(Boolean);
   const titleLine = `PR #${pr.number}: ${pr.title}`;
   const body = [
-    `Action: ${action}`,
-    `Repository: ${GITHUB_REPOSITORY}`,
-    `Branch: ${pr.head?.ref ?? ''} -> ${pr.base?.ref ?? ''}`,
-    `Author: ${pr.user?.login ?? 'unknown'}`,
+    `이벤트: ${action}`,
+    `저장소: ${GITHUB_REPOSITORY}`,
+    `브랜치: ${pr.head?.ref ?? ''} -> ${pr.base?.ref ?? ''}`,
+    `작성자: ${pr.user?.login ?? 'unknown'}`,
     '',
-    'Description:',
-    pr.body?.trim() || '(no description)',
+    'PR 설명:',
+    pr.body?.trim() || '(설명이 없습니다)',
   ].join('\n');
 
   await createPage(
     DATABASES.devlog,
     {
       Name: title(titleLine),
-      Type: select('Pull Request'),
-      Status: select(pr.merged ? 'Merged' : 'Logged'),
-      Source: select('GitHub Actions'),
+      Type: select('풀 리퀘스트'),
+      Status: select(pr.merged ? '병합됨' : '기록됨'),
+      Source: select('GitHub 자동화'),
       Repository: richText(GITHUB_REPOSITORY),
       Branch: richText(pr.head?.ref ?? ''),
-      Summary: richText(`${action} PR event`),
-      Tags: multiSelect(['pull_request', action, ...(pr.merged ? ['merged'] : []), ...labels]),
+      Summary: richText(`PR #${pr.number}에서 ${action} 이벤트가 발생했습니다.`),
+      Tags: multiSelect(['풀리퀘스트', action, ...(pr.merged ? ['병합'] : []), ...labels]),
       URL: urlValue(pr.html_url),
       Date: dateValue(new Date().toISOString()),
     },
@@ -271,12 +277,12 @@ async function syncPullRequestEvent(payload) {
       DATABASES.tasks,
       {
         Name: title(pr.title),
-        Status: select('Todo'),
-        Priority: select('Medium'),
+        Status: select('할 일'),
+        Priority: select('중간'),
         Area: select(taskAreaFromType(parseConventionalType(pr.title))),
         Source: select('GitHub PR'),
-        Summary: richText(`Review and land PR #${pr.number}`),
-        Tags: multiSelect(['github', 'pr', ...labels]),
+        Summary: richText(`PR #${pr.number} 검토, 수정 반영, 병합 여부 판단이 필요한 작업입니다.`),
+        Tags: multiSelect(['깃허브', 'PR', ...labels]),
         URL: urlValue(pr.html_url),
         Date: dateValue(new Date().toISOString()),
       },
@@ -291,13 +297,13 @@ async function syncReleaseEvent(payload) {
   if (!release) return;
 
   const body = [
-    `Repository: ${GITHUB_REPOSITORY}`,
-    `Tag: ${release.tag_name}`,
-    `Name: ${release.name || release.tag_name}`,
-    `Target: ${release.target_commitish || '-'}`,
+    `저장소: ${GITHUB_REPOSITORY}`,
+    `태그: ${release.tag_name}`,
+    `릴리스 이름: ${release.name || release.tag_name}`,
+    `대상 브랜치/커밋: ${release.target_commitish || '-'}`,
     '',
-    'Release notes:',
-    release.body?.trim() || '(no release notes)',
+    '릴리스 노트:',
+    release.body?.trim() || '(릴리스 노트가 없습니다)',
   ].join('\n');
 
   await createPage(
@@ -305,11 +311,11 @@ async function syncReleaseEvent(payload) {
     {
       Name: title(release.name || release.tag_name),
       Version: richText(release.tag_name),
-      Status: select('Published'),
-      Type: select('Release'),
+      Status: select('배포됨'),
+      Type: select('릴리스'),
       Repository: richText(GITHUB_REPOSITORY),
-      Summary: richText(`Release ${release.tag_name} published`),
-      Tags: multiSelect(['release', release.prerelease ? 'prerelease' : 'stable']),
+      Summary: richText(`${release.tag_name} 버전 릴리스가 발행되었습니다.`),
+      Tags: multiSelect(['릴리스', release.prerelease ? '사전배포' : '정식배포']),
       URL: urlValue(release.html_url),
       Date: dateValue(release.published_at || new Date().toISOString()),
     },
@@ -321,18 +327,18 @@ async function syncReleaseEvent(payload) {
 async function syncProjectSummary() {
   const summaryFile = path.join(process.cwd(), 'docs', 'operations', 'notion-project-description-seed-2026-04-09.md');
   const content = await readFile(summaryFile, 'utf8');
-  const firstHeading = content.split('\n').find((line) => line.startsWith('# ')) ?? '# LoL Esports Manager';
+  const firstHeading = content.split('\n').find((line) => line.startsWith('# ')) ?? '# LoL Esports Manager 프로젝트 개요';
   const titleValue = firstHeading.replace(/^# /, '').trim();
 
   await createPage(
     DATABASES.projects,
     {
       Name: title(titleValue),
-      Status: select('Active'),
-      Type: select('Project Summary'),
+      Status: select('진행 중'),
+      Type: select('프로젝트 개요'),
       Repository: richText(GITHUB_REPOSITORY),
-      Summary: richText('Seeded from repository automation setup'),
-      Tags: multiSelect(['project', 'summary', 'seed']),
+      Summary: richText('현재 프로젝트 방향, 핵심 목표, 차별화 포인트를 자동 시드 문서 기준으로 정리한 항목입니다.'),
+      Tags: multiSelect(['프로젝트', '개요', '시드']),
       URL: urlValue(repoUrl()),
       Date: dateValue(new Date().toISOString()),
     },
@@ -344,24 +350,24 @@ async function syncProjectSummary() {
 async function syncManualSnapshot() {
   const shaShort = GITHUB_SHA ? GITHUB_SHA.slice(0, 7) : 'manual';
   const body = [
-    `Repository: ${GITHUB_REPOSITORY}`,
-    `Branch: ${GITHUB_REF_NAME || '-'}`,
-    `Commit: ${shaShort}`,
+    `저장소: ${GITHUB_REPOSITORY}`,
+    `브랜치: ${GITHUB_REF_NAME || '-'}`,
+    `커밋: ${shaShort}`,
     '',
-    'This snapshot was created manually via workflow_dispatch.',
+    '이 항목은 workflow_dispatch로 수동 실행해서 생성한 개발 로그 스냅샷입니다.',
   ].join('\n');
 
   await createPage(
     DATABASES.devlog,
     {
-      Name: title(`Manual snapshot ${shaShort}`),
-      Type: select('Manual Snapshot'),
-      Status: select('Logged'),
-      Source: select('GitHub Actions'),
+      Name: title(`수동 스냅샷 ${shaShort}`),
+      Type: select('수동 스냅샷'),
+      Status: select('기록됨'),
+      Source: select('GitHub 자동화'),
       Repository: richText(GITHUB_REPOSITORY),
       Branch: richText(GITHUB_REF_NAME || ''),
-      Summary: richText('Manual dev-log snapshot from workflow_dispatch'),
-      Tags: multiSelect(['manual', 'snapshot']),
+      Summary: richText('워크플로 수동 실행으로 남긴 개발 로그 스냅샷입니다.'),
+      Tags: multiSelect(['수동', '스냅샷']),
       URL: urlValue(shaUrl(GITHUB_SHA)),
       Date: dateValue(new Date().toISOString()),
     },
@@ -398,7 +404,7 @@ async function main() {
     return;
   }
 
-  console.log(`No sync handler for event "${GITHUB_EVENT_NAME}" with mode "${MODE}".`);
+  console.log(`이벤트 "${GITHUB_EVENT_NAME}"와 모드 "${MODE}"에 대한 동기화 핸들러가 없습니다.`);
 }
 
 main().catch((error) => {

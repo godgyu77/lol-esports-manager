@@ -1,2 +1,2 @@
 Name,Type,Status,Source,Repository,Branch,Summary,Tags,URL,Date
-Manual setup seed,Manual Snapshot,Logged,Setup,lol-esports-manager,main,Initial seed row for Dev Log database,"manual,seed,setup",,2026-04-09
+초기 개발 로그 시드,수동 스냅샷,기록됨,초기 설정,lol-esports-manager,main,노션 Dev Log DB 구성을 확인하기 위한 초기 시드 항목입니다.,"수동,시드,설정",,2026-04-09
