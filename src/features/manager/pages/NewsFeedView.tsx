@@ -10,8 +10,8 @@ import {
   markAllAsRead,
   markAsRead,
 } from '../../../engine/news/newsEngine';
-import { MainLoopPanel } from '../components/MainLoopPanel';
 import { useToolbarNavigation } from '../hooks/useToolbarNavigation';
+import { localizeEntityNamesInText } from '../../../utils/displayName';
 import './NewsFeedView.css';
 
 const PAGE_SIZE = 20;
@@ -201,7 +201,7 @@ export function NewsFeedView() {
       .slice(0, 4);
   }, [articles, getPresentation, selectedArticle]);
 
-  const articleParagraphs = selectedArticle ? buildArticleParagraphs(selectedArticle.content) : [];
+  const articleParagraphs = selectedArticle ? buildArticleParagraphs(localizeEntityNamesInText(selectedArticle.content)) : [];
 
   const handleOpenArticle = useCallback(async (article: NewsArticle) => {
     setSelectedArticleId(article.id);
@@ -226,8 +226,8 @@ export function NewsFeedView() {
     <div className="newsfeed-layout">
       <div className="newsfeed-hero fm-card">
         <div>
-          <span className="newsfeed-hero-kicker">E스포츠 뉴스룸</span>
-          <h1 className="fm-page-title">뉴스피드</h1>
+          <span className="newsfeed-hero-kicker">e스포츠 뉴스룸</span>
+          <h1 className="fm-page-title">뉴스 피드</h1>
           <p className="fm-page-subtitle">
             {season.year} {getSplitLabel(season.split)} 시즌 기사와 코치 브리핑을 한 화면에서 확인합니다.
           </p>
@@ -248,46 +248,45 @@ export function NewsFeedView() {
         </div>
       </div>
 
-      <MainLoopPanel
-        eyebrow="뉴스 운영"
-        title="기사와 브리핑을 한 번에 읽고 바로 판단할 수 있게 정리했습니다."
-        subtitle="뉴스는 읽는 정보 허브로 유지하고, 처리해야 할 메시지는 받은편지에서 관리하는 구조입니다."
-        insights={[
-          {
-            label: '메인 기사',
-            value: selectedArticle?.title ?? '선택된 기사 없음',
-            detail: leadArticle ? `가장 주목도가 높은 기사: ${leadArticle.title}` : '아직 표시할 대표 기사가 없습니다.',
-            tone: 'accent',
-          },
-          {
-            label: '브리핑 상태',
-            value: unreadCount > 0 ? `${unreadCount}건 남음` : '정리 완료',
-            detail:
-              unreadCount > 0 ? '코치 브리핑과 주요 기사부터 먼저 확인해 주세요.' : '읽지 않은 기사와 브리핑이 없습니다.',
-            tone: unreadCount > 0 ? 'warning' : 'success',
-          },
-          {
-            label: '읽기 방식',
-            value: filter === 'briefing' ? '브리핑 집중' : '기사 중심',
-            detail: '왼쪽 목록에서 고르고, 오른쪽에서 대표 기사와 본문을 읽는 포털형 레이아웃입니다.',
-            tone: 'accent',
-          },
-        ]}
-        actions={[
-          { label: '전체 읽음 처리', onClick: () => void handleMarkAllRead(), disabled: unreadCount === 0 },
-        ]}
-        note="계약, 불만, 부상처럼 직접 처리해야 하는 메시지는 받은편지에서 우선 관리합니다."
-      />
+      <div className="fm-panel fm-mb-md">
+        <div className="fm-panel__header">
+          <span className="fm-panel__title">뉴스 현황</span>
+        </div>
+        <div className="fm-panel__body">
+          <div className="fm-grid fm-grid--3 fm-mb-md">
+            <div className="fm-card">
+              <div className="fm-text-xs fm-text-muted fm-mb-xs">현재 확인 중</div>
+              <div className="fm-text-lg fm-font-semibold fm-text-primary">{selectedArticle?.title ?? '선택한 기사 없음'}</div>
+              <div className="fm-text-xs fm-text-muted fm-mt-xs">
+                {leadArticle ? `가장 주목도 높은 기사: ${localizeEntityNamesInText(leadArticle.title)}` : '아직 표시할 주요 기사가 없습니다.'}
+              </div>
+            </div>
+            <div className="fm-card">
+              <div className="fm-text-xs fm-text-muted fm-mb-xs">브리핑 상태</div>
+              <div className="fm-text-lg fm-font-semibold fm-text-primary">{unreadCount > 0 ? `${unreadCount}건 남음` : '정리 완료'}</div>
+              <div className="fm-text-xs fm-text-muted fm-mt-xs">
+                {unreadCount > 0 ? '코치 브리핑과 중요 기사부터 확인하면 됩니다.' : '지금 읽지 않은 기사와 브리핑은 없습니다.'}
+              </div>
+            </div>
+            <div className="fm-card">
+              <div className="fm-text-xs fm-text-muted fm-mb-xs">현재 필터</div>
+              <div className="fm-text-lg fm-font-semibold fm-text-primary">{FILTER_TABS.find((tab) => tab.key === filter)?.label}</div>
+              <div className="fm-text-xs fm-text-muted fm-mt-xs">왼쪽 목록에서 기사를 고르고, 오른쪽에서 본문을 읽으면 됩니다.</div>
+            </div>
+          </div>
+          <div className="fm-flex fm-items-center fm-justify-between fm-gap-sm fm-flex-wrap">
+            <div className="fm-text-sm fm-text-secondary">받은편지에서 직접 처리할 메시지를 제외한 기사와 브리핑만 모아 보여줍니다.</div>
+            <button className="fm-btn" onClick={() => void handleMarkAllRead()} disabled={unreadCount === 0}>
+              전체 읽음 처리
+            </button>
+          </div>
+        </div>
+      </div>
 
       <div className="fm-page-header">
         <div>
-          <p className="fm-page-subtitle">기사와 브리핑을 날짜별로 모아 두고, 중요도 순으로 읽기 쉽게 정리했습니다.</p>
+          <p className="fm-page-subtitle">기사는 날짜별로 모아 보고, 중요한 항목부터 차례대로 읽을 수 있게 정리했습니다.</p>
         </div>
-        {unreadCount > 0 ? (
-          <button className="fm-btn" onClick={() => void handleMarkAllRead()}>
-            전체 읽음 처리
-          </button>
-        ) : null}
       </div>
 
       <div className="fm-tabs newsfeed-tabs" role="tablist" aria-label="뉴스 필터" aria-orientation="horizontal">
@@ -310,9 +309,14 @@ export function NewsFeedView() {
       <div className="newsfeed-shell">
         <section className="newsfeed-list-panel" role="tabpanel" id={`news-panel-${filter}`} aria-labelledby={`news-tab-${filter}`}>
           {articles.length === 0 && !loading ? (
-            <div className="fm-card fm-text-center fm-p-lg">
-              <p className="fm-text-lg fm-text-muted">
+            <div className="fm-empty-state fm-empty-state--compact">
+              <div className="fm-empty-state__title">
                 {filter === 'briefing' ? '읽지 않은 브리핑이 없습니다.' : '표시할 뉴스가 없습니다.'}
+              </div>
+              <p className="fm-empty-state__copy">
+                {filter === 'briefing'
+                  ? '새 브리핑이 들어오면 이곳에서 바로 확인할 수 있습니다.'
+                  : '다른 필터를 선택하거나 다음 주차 진행 후 다시 확인해 주세요.'}
               </p>
             </div>
           ) : null}
@@ -337,7 +341,7 @@ export function NewsFeedView() {
                         className={`fm-card newsfeed-article ${!article.isRead ? 'fm-card--highlight newsfeed-article--unread' : ''} ${isSelected ? 'newsfeed-article--selected' : ''}`}
                         onClick={() => void handleOpenArticle(article)}
                         type="button"
-                        aria-label={`뉴스 기사 열기: ${article.title}`}
+                        aria-label={`뉴스 기사 열기: ${localizeEntityNamesInText(article.title)}`}
                         aria-pressed={isSelected}
                       >
                         <div className="fm-flex fm-gap-md newsfeed-article-shell">
@@ -371,8 +375,8 @@ export function NewsFeedView() {
                               {!article.isRead ? <span className="newsfeed-unread-dot" title="읽지 않음" /> : null}
                             </div>
 
-                            <p className="fm-text-lg fm-font-semibold fm-text-primary newsfeed-article-title">{article.title}</p>
-                            <p className="fm-text-sm fm-text-secondary newsfeed-article-copy">{getArticleSummary(article)}</p>
+                            <p className="fm-text-lg fm-font-semibold fm-text-primary newsfeed-article-title">{localizeEntityNamesInText(article.title)}</p>
+                            <p className="fm-text-sm fm-text-secondary newsfeed-article-copy">{localizeEntityNamesInText(getArticleSummary(article))}</p>
 
                             <div className="fm-flex fm-items-center fm-justify-between fm-mt-sm newsfeed-article-footer">
                               <span className="fm-text-xs fm-text-muted newsfeed-article-readmore">
@@ -435,8 +439,8 @@ export function NewsFeedView() {
                   ))}
                 </div>
 
-                <h2 className="newsfeed-reader-title">{selectedArticle.title}</h2>
-                <p className="newsfeed-reader-deck">{getArticleSummary(selectedArticle)}</p>
+                <h2 className="newsfeed-reader-title">{localizeEntityNamesInText(selectedArticle.title)}</h2>
+                <p className="newsfeed-reader-deck">{localizeEntityNamesInText(getArticleSummary(selectedArticle))}</p>
               </div>
 
               <div className="newsfeed-reader-body">
@@ -463,8 +467,8 @@ export function NewsFeedView() {
                         onClick={() => void handleOpenArticle(article)}
                       >
                         <span className="newsfeed-related-category">{NEWS_CATEGORY_LABELS[article.category]}</span>
-                        <strong>{article.title}</strong>
-                        <p>{getArticleSummary(article)}</p>
+                        <strong>{localizeEntityNamesInText(article.title)}</strong>
+                        <p>{localizeEntityNamesInText(getArticleSummary(article))}</p>
                       </button>
                     ))}
                   </div>
@@ -475,9 +479,11 @@ export function NewsFeedView() {
             </>
           ) : (
             <div className="newsfeed-reader-empty">
-              <span className="newsfeed-reader-empty-label">기사 보기</span>
-              <h2>왼쪽 목록에서 기사나 브리핑을 선택해 주세요.</h2>
-              <p>중요한 기사부터 먼저 보고, 오른쪽 본문에서 자세한 내용을 읽는 구조입니다.</p>
+              <div className="fm-empty-state fm-empty-state--compact">
+                <span className="newsfeed-reader-empty-label">기사 보기</span>
+                <div className="fm-empty-state__title">왼쪽 목록에서 기사나 브리핑을 선택해 주세요.</div>
+                <p className="fm-empty-state__copy">중요한 기사부터 보고, 오른쪽 본문에서 자세한 내용을 읽는 구조입니다.</p>
+              </div>
             </div>
           )}
         </aside>

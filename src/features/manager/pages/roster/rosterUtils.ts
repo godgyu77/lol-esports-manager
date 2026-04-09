@@ -8,6 +8,8 @@ export interface ChemistryRow {
   player_b_id: string;
   player_a_name: string;
   player_b_name: string;
+  player_a_division?: Division;
+  player_b_division?: Division;
   chemistry_score: number;
 }
 

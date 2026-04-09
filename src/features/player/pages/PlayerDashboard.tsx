@@ -1,5 +1,6 @@
 ﻿import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { ErrorBoundary } from '../../../components/ErrorBoundary';
+import { MobileBottomNav } from '../../../components/MobileBottomNav';
 import { useAutoSave } from '../../../hooks/useAutoSave';
 
 const NAV_GROUPS = [
@@ -109,6 +110,16 @@ export function PlayerDashboard() {
             <Outlet />
           </ErrorBoundary>
         </div>
+        <MobileBottomNav
+          items={[
+            { to: '/player', label: '홈', icon: 'H', end: true },
+            { to: '/player/day', label: '하루', icon: 'D' },
+            { to: '/player/training', label: '훈련', icon: 'TR' },
+            { to: '/player/relations', label: '팀', icon: 'RL' },
+            { to: '/player/contract', label: '계약', icon: 'CT' },
+            { to: '/player/career', label: '더보기', icon: '+' },
+          ]}
+        />
       </div>
     </div>
   );

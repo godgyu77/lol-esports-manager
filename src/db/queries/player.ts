@@ -4,6 +4,7 @@
 import type { Position } from '../../types';
 import type { ChampionProficiency, Player, PlayerContract, PlayerMental, PlayerStats } from '../../types/player';
 import { getDatabase } from '../database';
+import { getDisplayPlayerName } from '../../utils/displayName';
 
 // ─────────────────────────────────────────
 // Row → TypeScript 매핑
@@ -60,7 +61,7 @@ export function mapRowToPlayer(row: PlayerRow): PlayerWithDivision {
 
   return {
     id: row.id,
-    name: row.name,
+    name: getDisplayPlayerName(row.name),
     teamId: row.team_id,
     position: row.position,
     secondaryPosition: (row.secondary_position as Position) ?? null,

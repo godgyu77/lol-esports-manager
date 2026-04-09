@@ -12,6 +12,7 @@ import { updatePlayerStats, updatePlayerMental, getTeamWithRoster } from '../../
 import { isAiAvailable } from '../../../ai/gameAiService';
 import { chatWithLlmJson } from '../../../ai/provider';
 import { buildPlayerContext } from '../../../ai/contextBuilder';
+import { MainLoopPanel } from '../../manager/components/MainLoopPanel';
 
 interface TrainingType {
   id: string;
@@ -257,6 +258,10 @@ JSON: {"training": "훈련 유형명", "reason": "추천 이유 (30자 이내)"}
 
   const ovr = getOvr(myPlayer);
   const filledCount = selectedSlots.filter((s) => s !== null).length;
+  const firstSelectedSlot = selectedSlots.find((slotId) => slotId !== null);
+  const primaryTrainingLabel = firstSelectedSlot
+    ? TRAINING_TYPES.find((training) => training.id === firstSelectedSlot)?.name ?? '선택됨'
+    : '미선택';
 
   return (
     <div>
@@ -269,6 +274,43 @@ JSON: {"training": "훈련 유형명", "reason": "추천 이유 (30자 이내)"}
           <span className={`fm-ovr ${getOvrClass(ovr)} fm-text-lg`}>OVR {ovr}</span>
         </div>
       </div>
+
+      <MainLoopPanel
+        eyebrow="선수 루프"
+        title="오늘 루틴과 추천 훈련을 먼저 읽는 훈련 허브"
+        subtitle="슬롯 수, 핵심 훈련, AI 추천을 먼저 보고 아래에서 오늘 훈련을 확정할 수 있게 정리했습니다."
+        insights={[
+          {
+            label: '오늘 루틴',
+            value: executed ? '훈련 완료' : `${filledCount}/${MAX_SLOTS} 슬롯`,
+            detail: executed ? '오늘 훈련 결과가 아래에 기록되어 있습니다.' : '최대 3개의 슬롯으로 오늘 루틴을 구성합니다.',
+            tone: executed ? 'success' : 'accent',
+          },
+          {
+            label: '핵심 훈련',
+            value: primaryTrainingLabel,
+            detail: primaryTrainingLabel === '미선택' ? '먼저 하나의 주력 훈련부터 고르면 루틴이 빨리 읽힙니다.' : '첫 선택 훈련이 오늘 성장 방향을 가장 잘 보여줍니다.',
+            tone: primaryTrainingLabel === '미선택' ? 'warning' : 'accent',
+          },
+          {
+            label: 'AI 추천',
+            value: aiRecommendation?.training ?? '수동 선택',
+            detail: aiRecommendation?.reason ?? '직접 오늘 성장 방향을 고르는 단계입니다.',
+            tone: aiRecommendation ? 'success' : 'neutral',
+          },
+          {
+            label: '다음 액션',
+            value: executed ? '결과 확인' : '슬롯 확정',
+            detail: executed ? '결과를 확인한 뒤 다음 루틴을 다시 설계하면 됩니다.' : '슬롯을 채운 뒤 훈련 실행으로 오늘 루틴을 확정하세요.',
+            tone: 'accent',
+          },
+        ]}
+        actions={[
+          { label: '훈련 실행', onClick: () => void handleExecute(), variant: 'primary', disabled: filledCount === 0 || executed },
+          { label: '초기화', onClick: handleReset, disabled: !executed && filledCount === 0 },
+        ]}
+        note={`현재 OVR ${ovr}. 오늘은 ${aiRecommendation?.training ?? '직접 설계한 루틴'} 중심으로 성장 포인트를 쌓는 흐름입니다.`}
+      />
 
       {/* AI 훈련 추천 */}
       {aiRecommendation && !executed && (

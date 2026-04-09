@@ -1,0 +1,47 @@
+name: Notion Sync
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - 'codex/**'
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+    branches:
+      - main
+      - master
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Sync mode'
+        required: true
+        default: 'manual_snapshot'
+        type: choice
+        options:
+          - manual_snapshot
+          - project_summary
+
+jobs:
+  notion-sync:
+    runs-on: ubuntu-latest
+    if: ${{ secrets.NOTION_TOKEN != '' }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Sync event to Notion
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_TASKS_DATABASE_ID: ${{ secrets.NOTION_TASKS_DATABASE_ID }}
+          NOTION_DEVLOG_DATABASE_ID: ${{ secrets.NOTION_DEVLOG_DATABASE_ID }}
+          NOTION_PATCH_NOTES_DATABASE_ID: ${{ secrets.NOTION_PATCH_NOTES_DATABASE_ID }}
+          NOTION_PROJECTS_DATABASE_ID: ${{ secrets.NOTION_PROJECTS_DATABASE_ID }}
+          NOTION_SYNC_MODE: ${{ github.event.inputs.mode || 'event' }}
+        run: node scripts/notion-sync.mjs

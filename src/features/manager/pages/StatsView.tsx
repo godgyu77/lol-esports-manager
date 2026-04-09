@@ -6,6 +6,7 @@ import type { Match } from '../../../types/match';
 import type { Position } from '../../../types/game';
 import type { Player } from '../../../types/player';
 import { Skeleton, SkeletonTable, SkeletonCards } from '../../../components/Skeleton';
+import { MainLoopPanel } from '../components/MainLoopPanel';
 import {
   getDetailedPlayerStats,
   getTeamDetailedStats,
@@ -431,6 +432,38 @@ export function StatsView() {
       <h1 className="fm-page-title fm-mb-lg">경기 통계</h1>
 
       {/* ─── 탭 ─── */}
+      <MainLoopPanel
+        eyebrow="통계 허브"
+        title="지금 팀이 잘하는 것과 흔들리는 구간을 먼저 읽는 통계 화면"
+        subtitle="표 전체보다 현재 전적과 최근 흐름, 그리고 어떤 비교 탭을 보고 있는지 먼저 확인할 수 있게 정리합니다."
+        insights={[
+          {
+            label: '현재 전적',
+            value: `${userStanding?.wins ?? 0}승 ${userStanding?.losses ?? 0}패`,
+            detail: `승률 ${winRate}% / 세트 ${userStanding?.setWins ?? 0}-${userStanding?.setLosses ?? 0}`,
+            tone: winRateNum >= 50 ? 'success' : 'warning',
+          },
+          {
+            label: '최근 흐름',
+            value: currentStreak > 0 ? `${currentStreak}${streakType === 'win' ? '연승' : '연패'}` : '기록 없음',
+            detail: playedMatches[0] ? `최근 경기 ${getTeamName(getOpponentId(playedMatches[0]))}` : '아직 집계된 최근 경기가 없습니다.',
+            tone: streakType === 'win' ? 'success' : streakType === 'loss' ? 'danger' : 'accent',
+          },
+          {
+            label: '현재 탭',
+            value: activeTab === 'overview' ? '기본 통계' : activeTab === 'detailed' ? '상세 통계' : activeTab === 'playerRanking' ? '선수 순위' : activeTab === 'teamStats' ? '팀 비교' : 'MVP 보드',
+            detail: '아래 탭에서 더 자세한 비교 표와 리더보드를 이어서 볼 수 있습니다.',
+            tone: 'accent',
+          },
+        ]}
+        actions={[
+          { label: '기본 통계', onClick: () => setActiveTab('overview'), variant: 'primary' },
+          { label: '상세 통계', onClick: () => setActiveTab('detailed') },
+          { label: '선수 순위', onClick: () => setActiveTab('playerRanking'), variant: 'info' },
+        ]}
+        note="상단은 현재 상태를 읽는 용도, 아래 탭은 비교와 세부 분석을 읽는 용도로 분리합니다."
+      />
+
       <div className="fm-tabs" style={{ flexWrap: 'wrap' }}>
         <button
           className={`fm-tab ${activeTab === 'overview' ? 'fm-tab--active' : ''}`}

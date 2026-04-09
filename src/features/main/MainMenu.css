@@ -317,6 +317,84 @@
   }
 }
 
+@media (max-width: 1366px), (max-height: 768px) {
+  .launcher__shell {
+    gap: 18px;
+    padding: 28px 22px 72px;
+  }
+
+  .launcher__hero {
+    gap: 24px;
+  }
+
+  .launcher__hub {
+    gap: 14px;
+  }
+
+  .launcher__logo-icon {
+    width: 80px;
+    height: 80px;
+    margin-bottom: 14px;
+  }
+
+  .launcher__subtitle {
+    margin-top: 14px;
+    font-size: 15px;
+    line-height: 1.58;
+  }
+
+  .launcher__hero-actions {
+    margin-top: 16px;
+  }
+
+  .launcher__continue-card {
+    min-height: 224px;
+    padding: 20px;
+  }
+
+  .launcher__continue-title {
+    font-size: 28px;
+  }
+
+  .launcher__menu-grid {
+    gap: 10px;
+  }
+
+  .launcher__menu-card {
+    min-height: 118px;
+    padding: 14px;
+    gap: 14px;
+  }
+
+  .launcher__footer {
+    bottom: 14px;
+  }
+}
+
+@media (max-height: 760px) {
+  .launcher__shell {
+    padding-top: 22px;
+    padding-bottom: 64px;
+  }
+
+  .launcher__hero {
+    gap: 18px;
+  }
+
+  .launcher__story-card {
+    min-height: 160px;
+  }
+
+  .launcher__continue-card {
+    min-height: 208px;
+  }
+
+  .launcher__primary-cta {
+    margin-top: 16px;
+    min-height: 50px;
+  }
+}
+
 @media (max-width: 640px) {
   .launcher__shell {
     padding: 28px 16px 126px;

@@ -218,7 +218,7 @@ async function getLatestMetaSnapshot(seasonId: number): Promise<MetaSnapshot> {
   if (!modifierRow) {
     return {
       patchNumber: null,
-      summary: 'No major patch swings are logged yet, so team-specific execution should matter more than raw meta volatility.',
+      summary: '아직 큰 패치 변동은 감지되지 않았으므로, 메타 급변보다 팀 완성도와 실행력이 더 중요합니다.',
       shifts,
     };
   }
@@ -233,7 +233,7 @@ async function getLatestMetaSnapshot(seasonId: number): Promise<MetaSnapshot> {
 
   return {
     patchNumber: modifierRow.patch_number,
-    summary: `Patch ${modifierRow.patch_number} is currently rewarding ${strongestAxis[0]} reads first, so clean interpretation matters as much as raw form.`,
+    summary: `패치 ${modifierRow.patch_number} 기준으로는 ${strongestAxis[0]} 해석이 특히 중요하므로, 단순 폼 못지않게 메타 이해도가 중요합니다.`,
     shifts,
   };
 }
@@ -254,7 +254,7 @@ export async function buildCompetitiveOperationBrief(params: {
   const [metaSnapshot, recentScrims, opponentReport] = await Promise.all([
     getLatestMetaSnapshot(params.seasonId).catch(() => ({
       patchNumber: null,
-      summary: 'Patch read is still forming, so the team that turns prep into cleaner execution should control the match.',
+      summary: '패치 해석이 아직 굳어지지 않았으므로, 준비를 더 깔끔한 실행으로 옮기는 팀이 경기를 잡을 가능성이 큽니다.',
       shifts: [] as string[],
     })),
     getRecentScrims(params.userTeam.id, 3).catch(() => []),
@@ -276,17 +276,17 @@ export async function buildCompetitiveOperationBrief(params: {
   const bans = params.recommendedBans.slice(0, 3);
   const watchPoints: string[] = [];
   if (opponentReport?.weakPosition) {
-    watchPoints.push(`Pressure ${opponentReport.weakPosition} side early before they stabilize.`);
+    watchPoints.push(`${opponentReport.weakPosition} 라인을 초반부터 압박해 상대가 안정되기 전에 흔들 필요가 있습니다.`);
   }
   if (opponentReport?.opponentWeaknesses?.weakPhase) {
     if (opponentReport.opponentWeaknesses.weakPhase === 'early') {
-      watchPoints.push('Their weakest phase is early game, so contest first setup windows aggressively.');
+      watchPoints.push('상대의 가장 약한 구간이 초반이므로, 첫 오브젝트와 주도권 타이밍을 강하게 흔드는 편이 좋습니다.');
     } else if (opponentReport.opponentWeaknesses.weakPhase === 'late') {
-      watchPoints.push('Do not rush late-game flips if they tend to fall apart after 25 minutes.');
+      watchPoints.push('상대가 후반 25분 이후 무너지는 편이라면, 무리한 후반 승부수보다 안정적인 운영이 더 좋습니다.');
     }
   }
   if (opponentReport?.opponentPatterns?.averageGameDuration) {
-    watchPoints.push(`Their games average ${opponentReport.opponentPatterns.averageGameDuration} minutes, so tempo control matters.`);
+    watchPoints.push(`상대 경기 평균 시간은 ${opponentReport.opponentPatterns.averageGameDuration}분이므로, 템포 조절이 중요합니다.`);
   }
 
   const directives = [
@@ -294,16 +294,16 @@ export async function buildCompetitiveOperationBrief(params: {
     leadCoachRecommendation?.summary,
     latestPrep ? summarizePrepRecord(latestPrep) : null,
     params.budgetPressure?.pressureLevel === 'critical'
-      ? 'Because board pressure is high, prioritise clean fundamentals over expensive improvisation.'
+      ? '보드 압박이 큰 상황이므로, 무리한 승부수보다 기본기와 안정적인 운영을 우선해야 합니다.'
       : null,
   ].filter((value): value is string => Boolean(value));
 
-  const deskHeadline = `${params.userTeam.shortName} vs ${params.opponentTeam.shortName}: patch read, draft posture, and setup discipline will decide the series.`;
+  const deskHeadline = `${params.userTeam.shortName} vs ${params.opponentTeam.shortName}: 패치 해석, 드래프트 방향, 준비 완성도가 이번 시리즈를 가를 전망입니다.`;
   const deskSummary = [
     metaSnapshot.summary,
     latestScrim
-      ? `Recent scrims versus ${latestScrim.opponentName} finished ${latestScrim.wins}-${latestScrim.losses} and pointed toward ${latestScrim.feedback.summary}`
-      : 'Recent scrim data is light, so today will reveal whether the current prep really holds under stage pressure.',
+      ? `최근 ${latestScrim.opponentName} 상대로 치른 스크림은 ${latestScrim.wins}-${latestScrim.losses}였고, ${latestScrim.feedback.summary}`
+      : '최근 스크림 표본이 많지 않아서, 오늘 경기가 현재 준비가 실전 압박 아래서도 유지되는지 보여줄 가능성이 큽니다.',
     storyPulse.summary,
   ].join(' ');
 
@@ -311,30 +311,30 @@ export async function buildCompetitiveOperationBrief(params: {
     deskHeadline,
     deskSummary,
     patchPulse: {
-      label: metaSnapshot.patchNumber ? `Patch ${metaSnapshot.patchNumber}` : 'Meta Watch',
+      label: metaSnapshot.patchNumber ? `패치 ${metaSnapshot.patchNumber}` : '메타 점검',
       summary: metaSnapshot.summary,
       shifts: metaSnapshot.shifts.slice(0, 3),
     },
     scrimPulse: {
-      label: latestScrim ? `Scrim read vs ${latestScrim.opponentName}` : 'Scrim read still thin',
+      label: latestScrim ? `${latestScrim.opponentName} 상대 스크림 요약` : '스크림 표본 부족',
       summary: latestScrim
         ? latestScrim.feedback.summary
-        : 'Use today as a live read because recent scrim signals are not strong enough to anchor the whole plan.',
+        : '최근 스크림 신호만으로 전체 플랜을 고정하기 어려우니, 오늘 경기를 실전 점검 무대로 써야 합니다.',
       takeaway: latestPrep
         ? summarizePrepRecord(latestPrep)
-        : 'Translate practice into one or two sharp stage-ready priorities instead of carrying too many ideas at once.',
+        : '훈련 내용을 한 번에 많이 들고 가기보다, 실전에 바로 쓸 수 있는 한두 가지 우선순위로 압축하는 편이 좋습니다.',
     },
     draftPulse: {
-      label: 'Draft priorities',
+      label: '드래프트 우선순위',
       summary: opponentReport
-        ? `Scouting confidence ${opponentReport.accuracy}. Their weak point currently reads through ${opponentReport.weakPosition ?? 'macro stability'} and the ban board should reflect that.`
-        : 'Draft should lean on your comfort structure first because the scouting model is still thin.',
+        ? `스카우팅 신뢰도는 ${opponentReport.accuracy} 수준입니다. 현재 약점은 ${opponentReport.weakPosition ?? '운영 안정감'} 쪽으로 읽히므로, 밴픽도 그 점을 반영해야 합니다.`
+        : '스카우팅 표본이 아직 얕으므로, 드래프트는 우선 우리 팀이 익숙한 구조를 중심으로 가는 편이 안전합니다.',
       bans,
       watchPoints: watchPoints.slice(0, 3),
     },
     coachPulse: {
-      label: 'Coach briefing',
-      summary: leadCoachRecommendation?.summary ?? 'The coaching staff want a cleaner, more disciplined game than a flashy one.',
+      label: '코치 브리핑',
+      summary: leadCoachRecommendation?.summary ?? '코칭 스태프는 화려한 승부수보다 더 깔끔하고 규율 있는 경기 운영을 원하고 있습니다.',
       directives: directives.slice(0, 3),
     },
     storyPulse,

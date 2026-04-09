@@ -15,6 +15,7 @@ import {
 import type { HallOfFameEntry, SeasonRecord } from '../../../types/records';
 import { RECORD_TYPE_LABELS } from '../../../types/records';
 import type { AllTimeRecord } from '../../../engine/records/recordsEngine';
+import { MainLoopPanel } from '../components/MainLoopPanel';
 
 type TabType = 'hallOfFame' | 'allTimeRecords' | 'teamHistory';
 
@@ -110,6 +111,39 @@ export function RecordsView() {
       </div>
 
       {/* 탭 네비게이션 */}
+      <MainLoopPanel
+        eyebrow="참고 화면"
+        title="명예의 전당과 구단 기록을 먼저 읽는 기록실"
+        subtitle="탭별 표를 길게 보기 전에 지금 어느 기록 묶음을 보고 있는지와 데이터 축적 정도를 먼저 파악할 수 있게 정리했습니다."
+        insights={[
+          {
+            label: '명예의 전당',
+            value: `${hofSeasonIds.length}시즌`,
+            detail: hofSeasonIds.length > 0 ? '시즌별 우승과 MVP 기록이 누적되어 있습니다.' : '아직 시즌 종료 기록이 없습니다.',
+            tone: hofSeasonIds.length > 0 ? 'success' : 'warning',
+          },
+          {
+            label: '전체 기록',
+            value: `${allTimeRecords.length}개`,
+            detail: `${categories.length}개 카테고리로 정리됩니다.`,
+            tone: categories.length > 0 ? 'accent' : 'neutral',
+          },
+          {
+            label: '팀 히스토리',
+            value: userTeamName || '팀 미선택',
+            detail: `${teamHistory.length}개 시즌 기록이 팀 히스토리에 쌓여 있습니다.`,
+            tone: teamHistory.length > 0 ? 'accent' : 'neutral',
+          },
+          {
+            label: '현재 보기',
+            value: activeTab === 'hallOfFame' ? '명예의 전당' : activeTab === 'allTimeRecords' ? '전체 기록' : '팀 히스토리',
+            detail: '아래 탭에서 시즌별 수상, 전체 기록, 팀 히스토리를 차례로 읽을 수 있습니다.',
+            tone: 'neutral',
+          },
+        ]}
+        note="기록실은 비교적 숨 고르는 화면이라, 상단 요약 뒤에 탭별 상세 기록을 읽는 흐름으로 유지했습니다."
+      />
+
       <div className="fm-tabs">
         {([
           ['hallOfFame', '명예의 전당'],

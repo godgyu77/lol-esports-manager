@@ -3,9 +3,11 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Skeleton } from './components/Skeleton';
 import { AiSetupWizard } from './components/AiSetupWizard';
+import { MobileAiSetup } from './components/MobileAiSetup';
 import { useTheme } from './hooks/useTheme';
 import { useSettingsStore } from './stores/settingsStore';
 import type { SettingsState } from './stores/settingsStore';
+import { isMobileRuntime, isTauriRuntime } from './stores/settingsStore';
 import { ToastContainer } from './components/ToastContainer';
 
 // ─────────────────────────────────────────
@@ -82,11 +84,7 @@ function AiSetupGate() {
   const aiSetupSkipped = useSettingsStore((s: SettingsState) => s.aiSetupSkipped);
 
   if (!aiSetupCompleted && !aiSetupSkipped) {
-    return (
-      <AiSetupWizard
-        onComplete={() => undefined}
-      />
-    );
+    return isMobileRuntime() ? <MobileAiSetup onComplete={() => undefined} /> : <AiSetupWizard onComplete={() => undefined} />;
   }
 
   return (
@@ -174,6 +172,7 @@ function App() {
   useEffect(() => {
     if (applied.current) return;
     applied.current = true;
+    if (!isTauriRuntime() || isMobileRuntime()) return;
     const mode = useSettingsStore.getState().windowMode;
     import('./utils/windowManager').then(({ applyWindowMode }) => applyWindowMode(mode));
   }, []);

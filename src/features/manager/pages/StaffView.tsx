@@ -16,7 +16,6 @@ import {
   buildRelationshipNetworkReport,
   type RelationshipNetworkReport,
 } from '../../../engine/manager/franchiseNarrativeEngine';
-import { MainLoopPanel } from '../components/MainLoopPanel';
 import type { StaffFitSummary } from '../../../types/systemDepth';
 import type { Staff, StaffCandidateView, StaffRole } from '../../../types/staff';
 import {
@@ -67,7 +66,7 @@ function getDecisionLabel(decision: StaffCandidateView['decision']): string {
 
 function buildBonusSourceLabel(staffList: Staff[], roles: StaffRole[]): string {
   const matching = staffList.filter((staff) => roles.includes(staff.role));
-  if (matching.length === 0) return '현재 적용 중인 해당 스태프가 없습니다.';
+  if (matching.length === 0) return '현재 해당 역할의 스태프가 없습니다.';
   return matching.map((staff) => `${staff.name}(${STAFF_ROLE_LABELS[staff.role]})`).join(', ');
 }
 
@@ -75,17 +74,41 @@ function localizeNarrative(text: string | null | undefined): string {
   if (!text) return '';
 
   return text
-    .replace('Room chemistry is balanced', '스태프 룸 분위기는 대체로 안정적입니다')
+    .replace('Room chemistry is balanced', '스태프 관계 분위기는 대체로 안정적입니다.')
     .replace(
-      '0 tracked links · average affinity 50/100 · 5 young players in the mix',
+      '0 tracked links 쨌 average affinity 50/100 쨌 5 young players in the mix',
       '아직 강하게 묶인 관계는 없지만 평균 친화도는 무난하고 성장 자원도 충분합니다.',
     )
-    .replace('0 tracked links 쨌 average affinity 50/100 쨌 5 young players in the mix', '아직 강하게 묶인 관계는 없지만 평균 친화도는 무난하고 성장 자원도 충분합니다.')
-    .replace('No standout duo yet', '아직 두드러지는 핵심 조합은 없습니다')
-    .replace('No obvious fault line yet', '눈에 띄는 갈등 축은 아직 없습니다')
+    .replace(
+      '0 tracked links 夷?average affinity 50/100 夷?5 young players in the mix',
+      '아직 강하게 묶인 관계는 없지만 평균 친화도는 무난하고 성장 자원도 충분합니다.',
+    )
+    .replace('No standout duo yet', '아직 두드러지는 핵심 조합은 없습니다.')
+    .replace('No obvious fault line yet', '지금 당장 드러나는 갈등 축은 없습니다.')
     .replace(
       'Park Jinseok sets the tone, and the staff room is currently stable enough to support a long arc.',
       '현재 스태프 분위기는 비교적 안정적이며 장기 운영을 버틸 기반이 있습니다.',
+    )
+    .trim();
+}
+
+function localizeStaffUiNarrative(text: string | null | undefined): string {
+  return localizeNarrative(text)
+    .replace('Budget pressure', '재정 압박')
+    .replace('Room chemistry watch', '팀 케미스트리 점검')
+    .replace('Room chemistry', '팀 케미스트리')
+    .replace('Regional pressure check', '지역 기대 압박 점검')
+    .replace(
+      'Relationship signal is still shallow, but staff trust is sitting around',
+      '관계 신호는 아직 얕지만 스태프 신뢰도는 현재',
+    )
+    .replace(
+      'The board has already tied credibility to international-level delivery.',
+      '보드진은 이미 국제 무대 성과를 신뢰 기준으로 보기 시작했습니다.',
+    )
+    .replace(
+      'International pressure is forming, but the club still has room to build before it becomes a season-defining burden.',
+      '국제 기대 압박이 형성되고 있지만 아직 시즌 전체를 짓누를 단계는 아닙니다.',
     )
     .trim();
 }
@@ -97,7 +120,9 @@ function StaffCard({ staff, onFire }: { staff: Staff; onFire: (staff: Staff) => 
         <div className="fm-flex fm-items-center fm-gap-sm fm-flex-wrap">
           <span className="fm-badge fm-badge--accent">{STAFF_ROLE_LABELS[staff.role]}</span>
           <strong className="fm-text-primary">{staff.name}</strong>
-          {staff.careerOrigin === 'head_coach' ? <span className="fm-badge fm-badge--warning">전직 감독</span> : null}
+          {staff.careerOrigin === 'head_coach' ? (
+            <span className="fm-badge fm-badge--warning">전 감독 출신</span>
+          ) : null}
         </div>
         <span className="fm-badge fm-badge--default">능력 {staff.ability}</span>
       </div>
@@ -112,7 +137,9 @@ function StaffCard({ staff, onFire }: { staff: Staff; onFire: (staff: Staff) => 
       <div className="fm-alert fm-alert--info fm-mb-sm">
         <span className="fm-alert__text">{STAFF_ROLE_EFFECTS[staff.role]}</span>
       </div>
-      <button className="fm-btn fm-btn--sm" onClick={() => onFire(staff)}>방출</button>
+      <button className="fm-btn fm-btn--sm" onClick={() => onFire(staff)}>
+        방출
+      </button>
     </div>
   );
 }
@@ -196,7 +223,7 @@ export function StaffView() {
 
     if (candidate.decision === 'reject') {
       setMessage({
-        text: `${candidate.staff.name} 영입 제안이 거절됐습니다. ${candidate.reasons[0] ?? ''}`.trim(),
+        text: `${candidate.staff.name} 영입 제안이 거절되었습니다. ${candidate.reasons[0] ?? ''}`.trim(),
         type: 'error',
       });
       return;
@@ -256,6 +283,10 @@ export function StaffView() {
   const headCoach = staffList.find((staff) => staff.role === 'head_coach') ?? null;
   const currentCoaches = staffList.filter((staff) => staff.role === 'coach');
   const currentSpecialists = staffList.filter((staff) => staff.role !== 'coach' && staff.role !== 'head_coach');
+  const leadCoach =
+    headCoach ??
+    currentCoaches.find((staff) => staff.careerOrigin === 'head_coach' || staff.preferredRole === 'head_coach') ??
+    null;
   const medicalStaff = currentSpecialists.filter((staff) =>
     ['sports_psychologist', 'nutritionist', 'physiotherapist'].includes(staff.role),
   );
@@ -296,7 +327,7 @@ export function StaffView() {
     <div className="fm-animate-in">
       <div className="fm-page-header">
         <h1 className="fm-page-title">스태프 관리</h1>
-        <p className="fm-page-subtitle">현재 팀 스태프와 영입 후보를 한 화면에서 비교하고 바로 판단할 수 있습니다.</p>
+        <p className="fm-page-subtitle">현재 팀 스태프와 영입 후보를 비교하고 필요한 자리만 바로 보강할 수 있습니다.</p>
       </div>
 
       {message ? (
@@ -305,53 +336,46 @@ export function StaffView() {
         </div>
       ) : null}
 
-      <MainLoopPanel
-        eyebrow="스태프 운영"
-        title="현재 팀 스태프와 영입 후보를 바로 비교할 수 있게 정리했습니다."
-        subtitle="감독 모드에서는 기존 감독 자리를 사용자가 맡고, 현재 팀 코치진과 전문 스태프를 유지한 채 시즌을 운영합니다."
-        insights={[
-          {
-            label: '현재 인원',
-            value: `${staffList.length} / ${TEAM_STAFF_LIMIT}`,
-            detail: `총 스태프 연봉 ${totalSalary.toLocaleString()}만`,
-            tone: staffList.length >= TEAM_STAFF_LIMIT ? 'warning' : 'accent',
-          },
-          {
-            label: '헤드코치',
-            value: headCoach ? headCoach.name : '공석',
-            detail: headCoach ? '핵심 코칭 축이 배치되어 있습니다.' : '헤드코치 없이 코치진만으로 운영 중입니다.',
-            tone: headCoach ? 'success' : 'warning',
-          },
-          {
-            label: '분석 / 메디컬',
-            value: `${analysisStaff.length} / ${medicalStaff.length}`,
-            detail:
-              analysisStaff.length + medicalStaff.length > 0
-                ? '분석과 선수 관리 지원 인력이 운영을 받치고 있습니다.'
-                : '분석, 심리, 메디컬 인력 보강이 필요합니다.',
-            tone: analysisStaff.length + medicalStaff.length > 0 ? 'accent' : 'warning',
-          },
-        ]}
-        actions={[{ label: 'FA 스태프 시장 보기', onClick: openFAModal, variant: 'primary' }]}
-        note="우리 팀 스태프와 영입 가능 후보를 분리해서 보여주고, 역할과 효과를 같이 읽을 수 있게 구성했습니다."
-      />
-
-      <div className="fm-grid fm-grid--4 fm-mb-md">
-        <div className="fm-card">
-          <div className="fm-text-xs fm-text-muted fm-mb-xs">감독</div>
-          <div className="fm-text-lg fm-font-semibold fm-text-primary">{save.managerName ?? '사용자 감독'}</div>
+      <div className="fm-panel fm-mb-md">
+        <div className="fm-panel__header">
+          <span className="fm-panel__title">스태프 운영 현황</span>
         </div>
-        <div className="fm-card">
-          <div className="fm-text-xs fm-text-muted fm-mb-xs">헤드코치</div>
-          <div className="fm-text-lg fm-font-semibold fm-text-primary">{headCoach ? headCoach.name : '공석'}</div>
-        </div>
-        <div className="fm-card">
-          <div className="fm-text-xs fm-text-muted fm-mb-xs">코칭 스태프</div>
-          <div className="fm-text-lg fm-font-semibold fm-text-primary">{currentCoaches.length}명</div>
-        </div>
-        <div className="fm-card">
-          <div className="fm-text-xs fm-text-muted fm-mb-xs">총 운영비</div>
-          <div className="fm-text-lg fm-font-semibold fm-text-primary">{totalSalary.toLocaleString()}만</div>
+        <div className="fm-panel__body">
+          <div className="fm-grid fm-grid--4 fm-mb-md">
+            <div className="fm-card">
+              <div className="fm-text-xs fm-text-muted fm-mb-xs">감독</div>
+              <div className="fm-text-lg fm-font-semibold fm-text-primary">{save.managerName ?? '사용자 감독'}</div>
+            </div>
+            <div className="fm-card">
+              <div className="fm-text-xs fm-text-muted fm-mb-xs">핵심 코치</div>
+              <div className="fm-text-lg fm-font-semibold fm-text-primary">{leadCoach ? leadCoach.name : '공석'}</div>
+              <div className="fm-text-xs fm-text-muted fm-mt-xs">
+                {headCoach
+                  ? '정식 헤드코치 체제로 운영 중입니다.'
+                  : leadCoach?.careerOrigin === 'head_coach'
+                    ? '감독 부임 후 기존 감독이 핵심 코치로 전환되었습니다.'
+                    : '코치진 중심 체제로 운영 중입니다.'}
+              </div>
+            </div>
+            <div className="fm-card">
+              <div className="fm-text-xs fm-text-muted fm-mb-xs">코칭 스태프</div>
+              <div className="fm-text-lg fm-font-semibold fm-text-primary">{currentCoaches.length}명</div>
+              <div className="fm-text-xs fm-text-muted fm-mt-xs">전체 스태프 {staffList.length} / {TEAM_STAFF_LIMIT}</div>
+            </div>
+            <div className="fm-card">
+              <div className="fm-text-xs fm-text-muted fm-mb-xs">분석 / 메디컬</div>
+              <div className="fm-text-lg fm-font-semibold fm-text-primary">{analysisStaff.length} / {medicalStaff.length}</div>
+              <div className="fm-text-xs fm-text-muted fm-mt-xs">총 운영비 {totalSalary.toLocaleString()}만</div>
+            </div>
+          </div>
+          <div className="fm-flex fm-items-center fm-justify-between fm-gap-sm fm-flex-wrap">
+            <div className="fm-text-sm fm-text-secondary">
+              감독 체제와 코치진, 전문 스태프를 분리해서 보고 필요한 자리만 빠르게 보강할 수 있습니다.
+            </div>
+            <button className="fm-btn fm-btn--primary" onClick={openFAModal}>
+              FA 스태프 시장 보기
+            </button>
+          </div>
         </div>
       </div>
 
@@ -362,23 +386,23 @@ export function StaffView() {
           </div>
           <div className="fm-panel__body">
             <div className="fm-card fm-card--highlight fm-mb-md">
-              <strong className="fm-text-lg fm-text-primary">{localizeNarrative(relationshipReport.headline)}</strong>
+              <strong className="fm-text-lg fm-text-primary">{localizeStaffUiNarrative(relationshipReport.headline)}</strong>
               <p className="fm-text-secondary fm-mt-sm" style={{ marginBottom: 0 }}>
-                {localizeNarrative(relationshipReport.summary)}
+                {localizeStaffUiNarrative(relationshipReport.summary)}
               </p>
             </div>
             <div className="fm-grid fm-grid--3">
               <div className="fm-card">
                 <span className="fm-text-xs fm-font-semibold fm-text-accent">가장 좋은 연결</span>
-                <p className="fm-text-sm fm-text-secondary fm-mt-sm">{localizeNarrative(relationshipReport.strongLink)}</p>
+                <p className="fm-text-sm fm-text-secondary fm-mt-sm">{localizeStaffUiNarrative(relationshipReport.strongLink)}</p>
               </div>
               <div className="fm-card">
                 <span className="fm-text-xs fm-font-semibold fm-text-accent">주의할 연결</span>
-                <p className="fm-text-sm fm-text-secondary fm-mt-sm">{localizeNarrative(relationshipReport.riskLink)}</p>
+                <p className="fm-text-sm fm-text-secondary fm-mt-sm">{localizeStaffUiNarrative(relationshipReport.riskLink)}</p>
               </div>
               <div className="fm-card">
                 <span className="fm-text-xs fm-font-semibold fm-text-accent">스태프 분위기</span>
-                <p className="fm-text-sm fm-text-secondary fm-mt-sm">{localizeNarrative(relationshipReport.staffPulse)}</p>
+                <p className="fm-text-sm fm-text-secondary fm-mt-sm">{localizeStaffUiNarrative(relationshipReport.staffPulse)}</p>
               </div>
             </div>
           </div>
@@ -457,7 +481,7 @@ export function StaffView() {
           <div className="fm-panel__body">
             {currentCoaches.length === 0 ? (
               <div className="fm-alert fm-alert--warning">
-                <span className="fm-alert__text">전담 코치가 없습니다. 훈련 효율과 선수 육성 보정이 약해질 수 있습니다.</span>
+                <span className="fm-alert__text">전담 코치가 없습니다. 훈련 효율과 선수 조언 품질이 함께 떨어질 수 있습니다.</span>
               </div>
             ) : (
               <div className="fm-flex-col fm-gap-sm">
@@ -494,10 +518,24 @@ export function StaffView() {
             </div>
             <div className="fm-modal__body">
               <div className="fm-flex fm-gap-xs fm-flex-wrap fm-mb-md">
-                <button className={`fm-btn fm-btn--sm ${candidateFilter === 'all' ? 'fm-btn--primary' : ''}`} onClick={() => setCandidateFilter('all')}>전체</button>
-                <button className={`fm-btn fm-btn--sm ${candidateFilter === 'coach' ? 'fm-btn--primary' : ''}`} onClick={() => setCandidateFilter('coach')}>코치 선호</button>
-                <button className={`fm-btn fm-btn--sm ${candidateFilter === 'former_head_coach' ? 'fm-btn--primary' : ''}`} onClick={() => setCandidateFilter('former_head_coach')}>전직 감독</button>
-                <button className={`fm-btn fm-btn--sm ${candidateFilter === 'specialist' ? 'fm-btn--primary' : ''}`} onClick={() => setCandidateFilter('specialist')}>전문 스태프</button>
+                <button className={`fm-btn fm-btn--sm ${candidateFilter === 'all' ? 'fm-btn--primary' : ''}`} onClick={() => setCandidateFilter('all')}>
+                  전체
+                </button>
+                <button className={`fm-btn fm-btn--sm ${candidateFilter === 'coach' ? 'fm-btn--primary' : ''}`} onClick={() => setCandidateFilter('coach')}>
+                  코치 우선
+                </button>
+                <button
+                  className={`fm-btn fm-btn--sm ${candidateFilter === 'former_head_coach' ? 'fm-btn--primary' : ''}`}
+                  onClick={() => setCandidateFilter('former_head_coach')}
+                >
+                  전 감독 출신
+                </button>
+                <button
+                  className={`fm-btn fm-btn--sm ${candidateFilter === 'specialist' ? 'fm-btn--primary' : ''}`}
+                  onClick={() => setCandidateFilter('specialist')}
+                >
+                  전문 스태프
+                </button>
               </div>
 
               {faLoading ? (
@@ -513,7 +551,7 @@ export function StaffView() {
                           <strong className="fm-text-primary">{candidate.staff.name}</strong>
                           <span className="fm-badge fm-badge--accent">{STAFF_ROLE_LABELS[candidate.offeredRole]} 제안</span>
                           {candidate.staff.preferredRole === 'head_coach' || candidate.staff.careerOrigin === 'head_coach' ? (
-                            <span className="fm-badge fm-badge--warning">전직 감독</span>
+                            <span className="fm-badge fm-badge--warning">전 감독 출신</span>
                           ) : null}
                         </div>
                         <span className={`fm-font-semibold ${getAcceptanceTone(candidate.acceptance)}`}>{getAcceptanceLabel(candidate.acceptance)}</span>

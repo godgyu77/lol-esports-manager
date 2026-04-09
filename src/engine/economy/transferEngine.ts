@@ -654,7 +654,7 @@ export function assessInternationalTransfer(
       relocationCost: 0,
       canTransfer: true,
       riskLevel: 'low',
-      summary: 'Domestic move with no adaptation risk.',
+      summary: '국내 이적이라 적응 리스크가 거의 없습니다.',
     };
   }
 
@@ -700,12 +700,12 @@ export function assessInternationalTransfer(
   else riskLevel = 'low';
 
   const riskLabels = {
-    low: 'low',
-    medium: 'medium',
-    high: 'high',
-    very_high: 'very high',
+    low: '낮음',
+    medium: '보통',
+    high: '높음',
+    very_high: '매우 높음',
   };
-  const summary = `International transfer ${fromRegion}->${toRegion}: ${riskLabels[riskLevel]} risk, ${Math.round(languageBarrier * 100)}% language barrier, ${culturalAdaptationDays} adaptation days, ${visaProcessingDays} visa days.`;
+  const summary = `국제 이적 ${fromRegion}->${toRegion}: 리스크 ${riskLabels[riskLevel]}, 언어 장벽 ${Math.round(languageBarrier * 100)}%, 적응 예상 ${culturalAdaptationDays}일, 비자 예상 ${visaProcessingDays}일.`;
 
   return {
     visaDifficulty,

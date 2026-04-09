@@ -30,7 +30,6 @@ import { useTeamStore } from '../../../stores/teamStore';
 import type { CoachSetupRecommendation, ManagerSetupStatus } from '../../../types/managerSetup';
 import type { BudgetPressureSnapshot, CareerArcEvent, OngoingConsequence, PrepRecommendationRecord } from '../../../types/systemDepth';
 import { TRAINING_ACTIVITY_LABELS, TRAINING_TYPE_LABELS, type TrainingScheduleEntry } from '../../../types/training';
-import { MainLoopPanel } from '../components/MainLoopPanel';
 import './DayView.css';
 
 type ImpactTone = 'positive' | 'risk' | 'neutral';
@@ -651,39 +650,73 @@ export function DayView() {
         <h1 className="fm-page-title">시즌 진행</h1>
       </div>
 
-      <MainLoopPanel
-        eyebrow="시즌 루프"
-        title="지금 해야 할 일과 다음 경기, 위험 요소를 첫 화면에서 바로 읽을 수 있게 정리했습니다."
-        subtitle="이 화면은 날짜를 넘기는 버튼만 누르는 곳이 아니라, 오늘 처리할 운영 판단을 빠르게 끝내는 메인 허브입니다."
-        insights={[
-          {
-            label: '현재 상태',
-            value: nextMatch ? `${nextMatch.daysUntil}일 뒤 경기` : '일정 확인 단계',
-            detail: nextMatch ? `${nextMatch.date} vs ${nextMatch.opponentName}` : '가까운 경기 일정이 잡히면 여기서 바로 준비 흐름으로 이어집니다.',
-            tone: 'accent',
-          },
-          {
-            label: '즉시 해야 할 일',
-            value: primaryLoopAction.label,
-            detail: primaryLoopAction.detail,
-            tone: primaryLoopAction.tone,
-          },
-          {
-            label: '가장 큰 위험',
-            value: budgetIsUrgent ? '재정 압박' : topConsequence?.title ?? '안정',
-            detail: budgetIsUrgent
+      <div className="dv-date-card">
+        <div className="dv-date-main">
+          <span className="fm-text-lg fm-text-muted">{currentDate}</span>
+          <span className="dv-date-day">{DAY_NAMES[dayOfWeek]}요일</span>
+        </div>
+        <div className="dv-date-info">
+          <span className="fm-badge fm-badge--default">{season.currentWeek}주차</span>
+          <span className="fm-text-lg fm-font-semibold fm-text-accent">{userTeam.shortName}</span>
+        </div>
+      </div>
+
+      <div className="fm-grid fm-grid--3 fm-mb-lg">
+        <div className="fm-card">
+          <div className="fm-stat">
+            <span className="fm-stat__label">다음 경기</span>
+            <span className="fm-stat__value">{nextMatch ? `${nextMatch.daysUntil}일 뒤` : '일정 확인'}</span>
+          </div>
+          <p className="fm-text-xs fm-text-secondary fm-mt-xs" style={{ marginBottom: 0 }}>
+            {nextMatch ? `${nextMatch.date} vs ${nextMatch.opponentName}` : '가까운 경기 일정이 잡히면 여기서 바로 준비 흐름으로 이어집니다.'}
+          </p>
+        </div>
+        <div className="fm-card">
+          <div className="fm-stat">
+            <span className="fm-stat__label">지금 할 일</span>
+            <span className={`fm-stat__value ${primaryLoopAction.tone === 'danger' ? 'fm-text-danger' : primaryLoopAction.tone === 'success' ? 'fm-text-success' : 'fm-text-accent'}`}>
+              {primaryLoopAction.label}
+            </span>
+          </div>
+          <p className="fm-text-xs fm-text-secondary fm-mt-xs" style={{ marginBottom: 0 }}>{primaryLoopAction.detail}</p>
+        </div>
+        <div className="fm-card">
+          <div className="fm-stat">
+            <span className="fm-stat__label">주요 리스크</span>
+            <span className={`fm-stat__value ${budgetIsUrgent || topConsequence?.severity === 'high' ? 'fm-text-danger' : 'fm-text-success'}`}>
+              {budgetIsUrgent ? '재정 압박' : topConsequence?.title ?? '안정'}
+            </span>
+          </div>
+          <p className="fm-text-xs fm-text-secondary fm-mt-xs" style={{ marginBottom: 0 }}>
+            {budgetIsUrgent
               ? `${budgetPressure?.topDrivers[0] ?? ''} ${budgetPressure?.boardPressureNote ?? ''}`.trim()
-              : topConsequence?.summary ?? '즉시 개입이 필요한 리스크는 보이지 않습니다.',
-            tone: budgetIsUrgent || topConsequence?.severity === 'high' ? 'danger' : 'success',
-          },
-        ]}
-        actions={[
-          { label: primaryLoopAction.label, onClick: primaryLoopAction.onClick, variant: 'primary', disabled: isProcessing },
-          { label: '훈련 보기', onClick: () => navigate('/manager/training') },
-          { label: '뉴스 보기', onClick: () => navigate('/manager/news'), variant: 'info' },
-        ]}
-        note="누적 콘텐츠는 뉴스에서 스크롤로 읽고, 이 화면은 오늘의 결정과 이동 동선을 한눈에 보는 데 집중합니다."
-      />
+              : topConsequence?.summary ?? '즉시 개입이 필요한 리스크는 보이지 않습니다.'}
+          </p>
+        </div>
+      </div>
+
+      <div className="fm-flex fm-gap-sm fm-flex-wrap fm-mb-lg">
+        <button
+          className="fm-btn fm-btn--primary"
+          onClick={primaryLoopAction.onClick}
+          disabled={isProcessing}
+          data-testid={primaryLoopAction.testId}
+        >
+          {primaryLoopAction.label}
+        </button>
+        <button
+          className="fm-btn fm-btn--info"
+          onClick={() => void handleSkip()}
+          disabled={isProcessing || !isSetupReady}
+          aria-label="다음 경기까지 자동 진행"
+          data-testid="dayview-skip-action"
+        >
+          다음 경기까지 자동 진행
+        </button>
+        <button className="fm-btn" onClick={() => navigate('/manager/training')} disabled={isProcessing}>
+          주간 훈련 수정
+        </button>
+      </div>
 
       {setupStatus && (
         <div className="fm-panel fm-mb-lg">
@@ -754,17 +787,6 @@ export function DayView() {
         </div>
       )}
 
-      <div className="dv-date-card">
-        <div className="dv-date-main">
-          <span className="fm-text-lg fm-text-muted">{currentDate}</span>
-          <span className="dv-date-day">{DAY_NAMES[dayOfWeek]}요일</span>
-        </div>
-        <div className="dv-date-info">
-          <span className="fm-badge fm-badge--default">{season.currentWeek}주차</span>
-          <span className="fm-text-lg fm-font-semibold fm-text-accent">{userTeam.shortName}</span>
-        </div>
-      </div>
-
       <div className="fm-grid fm-grid--2 fm-mb-lg">
         <div className="fm-panel">
           <div className="fm-panel__header">
@@ -797,29 +819,6 @@ export function DayView() {
                   {recentCareerArc?.summary ?? (coachAdvice?.headline ?? '경기 결과와 운영 선택이 하나의 시즌 이야기로 연결되기 시작합니다.')}
                 </p>
               </div>
-            </div>
-
-            <div className="fm-flex fm-gap-sm fm-flex-wrap">
-              <button
-                className="fm-btn fm-btn--primary"
-                onClick={primaryLoopAction.onClick}
-                disabled={isProcessing}
-                data-testid={primaryLoopAction.testId}
-              >
-                {primaryLoopAction.label}
-              </button>
-              <button
-                className="fm-btn fm-btn--info"
-                onClick={() => void handleSkip()}
-                disabled={isProcessing || !isSetupReady}
-                aria-label="다음 경기까지 자동 진행"
-                data-testid="dayview-skip-action"
-              >
-                다음 경기까지 자동 진행
-              </button>
-              <button className="fm-btn" onClick={() => navigate('/manager/training')} disabled={isProcessing}>
-                주간 훈련 수정
-              </button>
             </div>
 
             <div className="fm-alert fm-alert--warning">

@@ -4,6 +4,7 @@ import { getDatabase } from '../../../db/database';
 import { buildTeamLegacyReport } from '../../../engine/manager/franchiseNarrativeEngine';
 import { getTeamHistoryLedger } from '../../../engine/manager/releaseDepthEngine';
 import type { TeamHistoryLedger } from '../../../types/systemDepth';
+import { MainLoopPanel } from '../components/MainLoopPanel';
 
 interface SeasonHistoryRecord {
   seasonId: number;
@@ -218,6 +219,39 @@ export function TeamHistoryView() {
         <h1 className="fm-page-title">팀 히스토리</h1>
         <p className="fm-page-subtitle">이 팀이 어떤 기록과 이야기를 쌓아왔는지 한 화면에서 확인합니다.</p>
       </div>
+
+      <MainLoopPanel
+        eyebrow="참고 화면"
+        title="구단 역사와 레거시를 먼저 읽는 히스토리 화면"
+        subtitle="모든 시즌 표를 보기 전에 누적 우승, 통산 전적, 레거시 요약부터 확인할 수 있게 구성했습니다."
+        insights={[
+          {
+            label: '총 시즌',
+            value: `${totalSeasons}`,
+            detail: `${userTeam.name} 기준 누적 시즌 수입니다.`,
+            tone: 'accent',
+          },
+          {
+            label: '트로피',
+            value: `${totalTrophies}`,
+            detail: `누적 전적 ${totalWins}승 ${totalLosses}패`,
+            tone: totalTrophies > 0 ? 'success' : 'neutral',
+          },
+          {
+            label: '누적 승률',
+            value: `${winRate}%`,
+            detail: legacyReport.headline,
+            tone: Number(winRate) >= 50 ? 'success' : 'warning',
+          },
+          {
+            label: '히스토리 메모',
+            value: `${ledger.length}건`,
+            detail: ledger[0]?.summary ?? '최근 레거시 기록이 아직 많지 않습니다.',
+            tone: 'neutral',
+          },
+        ]}
+        note="팀 히스토리는 결과를 천천히 읽는 화면이라, 상단에서 레거시 방향만 먼저 읽고 아래 시즌 기록으로 내려가게 했습니다."
+      />
 
       <div className="fm-panel">
         <div className="fm-panel__header">

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { renderWithProviders, screen, resetStores } from '../../../test/testUtils';
 import { ManagerDashboard } from './ManagerDashboard';
 import type { Team, Season, GameSave } from '../../../types';
@@ -19,7 +20,7 @@ vi.mock('../../../components/CommandPalette', () => ({
 }));
 
 vi.mock('../../../components/ErrorBoundary', () => ({
-  ErrorBoundary: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  ErrorBoundary: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 
 vi.mock('../../../utils/formatUtils', () => ({
@@ -59,20 +60,20 @@ describe('ManagerDashboard', () => {
     resetStores();
   });
 
-  it('사이드바와 내비게이션 그룹을 렌더링한다', () => {
+  it('사이드바에 팀 정보와 내비게이션 그룹을 보여준다', () => {
     renderWithProviders(<ManagerDashboard />, {
       gameState: { save: mockSave, season: mockSeason, teams: [mockTeam] },
       routerProps: { initialEntries: ['/manager'] },
     });
 
     expect(screen.getAllByText('T1').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText('감독 겸 단장')).toBeInTheDocument();
+    expect(screen.getByText('감독 커리어')).toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: '매니저 내비게이션' })).toBeInTheDocument();
     expect(screen.getByText('대시보드')).toBeInTheDocument();
     expect(screen.getByText('팀 운영')).toBeInTheDocument();
   });
 
-  it('상단바에 시즌 날짜 예산 명성 정보를 표시한다', () => {
+  it('상단바에 시즌 날짜 예산 명성 정보를 보여준다', () => {
     renderWithProviders(<ManagerDashboard />, {
       gameState: { save: mockSave, season: mockSeason, teams: [mockTeam] },
       routerProps: { initialEntries: ['/manager'] },
@@ -85,7 +86,7 @@ describe('ManagerDashboard', () => {
     expect(screen.getByText('85')).toBeInTheDocument();
   });
 
-  it('시즌 진행 버튼을 표시한다', () => {
+  it('시즌 진행 버튼을 보여준다', () => {
     renderWithProviders(<ManagerDashboard />, {
       gameState: { save: mockSave, season: mockSeason, teams: [mockTeam] },
       routerProps: { initialEntries: ['/manager'] },
@@ -94,7 +95,7 @@ describe('ManagerDashboard', () => {
     expect(screen.getAllByText('시즌 진행').length).toBeGreaterThanOrEqual(1);
   });
 
-  it('하단 유틸리티 버튼을 표시한다', () => {
+  it('하단 유틸리티 버튼을 보여준다', () => {
     renderWithProviders(<ManagerDashboard />, {
       gameState: { save: mockSave, season: mockSeason, teams: [mockTeam] },
       routerProps: { initialEntries: ['/manager'] },

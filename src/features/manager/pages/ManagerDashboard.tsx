@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { CommandPalette } from '../../../components/CommandPalette';
 import { ErrorBoundary } from '../../../components/ErrorBoundary';
+import { MobileBottomNav } from '../../../components/MobileBottomNav';
 import { useAutoSave } from '../../../hooks/useAutoSave';
 import { useKeyboardShortcuts } from '../../../hooks/useKeyboardShortcuts';
 import { useNavBadges } from '../../../hooks/useNavBadges';
@@ -29,10 +30,10 @@ const NAV_GROUPS: NavGroup[] = [
     title: '기본',
     defaultExpanded: true,
     items: [
-      { to: '/manager', label: '대시보드', icon: '🏠', end: true },
-      { to: '/manager/day', label: '시즌 진행', icon: '📅' },
-      { to: '/manager/inbox', label: '받은 편지', icon: '📬' },
-      { to: '/manager/news', label: '뉴스', icon: '📰' },
+      { to: '/manager', label: '대시보드', icon: 'H', end: true },
+      { to: '/manager/day', label: '시즌 진행', icon: 'D' },
+      { to: '/manager/inbox', label: '받은편지', icon: 'I' },
+      { to: '/manager/news', label: '뉴스', icon: 'N' },
     ],
   },
   {
@@ -40,11 +41,11 @@ const NAV_GROUPS: NavGroup[] = [
     title: '팀 운영',
     defaultExpanded: true,
     items: [
-      { to: '/manager/roster', label: '로스터', icon: '👥' },
-      { to: '/manager/tactics', label: '전술', icon: '⚔️' },
-      { to: '/manager/training', label: '훈련', icon: '🏋️' },
-      { to: '/manager/staff', label: '스태프', icon: '👔' },
-      { to: '/manager/complaints', label: '선수 관리', icon: '💬' },
+      { to: '/manager/roster', label: '로스터', icon: 'R' },
+      { to: '/manager/tactics', label: '전술', icon: 'T' },
+      { to: '/manager/training', label: '훈련', icon: 'TR' },
+      { to: '/manager/staff', label: '스태프', icon: 'ST' },
+      { to: '/manager/complaints', label: '선수 관리', icon: 'P' },
     ],
   },
   {
@@ -52,10 +53,10 @@ const NAV_GROUPS: NavGroup[] = [
     title: '시즌',
     defaultExpanded: true,
     items: [
-      { to: '/manager/schedule', label: '일정', icon: '📋' },
-      { to: '/manager/calendar', label: '캘린더', icon: '🗓️' },
-      { to: '/manager/standings', label: '순위', icon: '📊' },
-      { to: '/manager/patch-meta', label: '패치 메타', icon: '🔄' },
+      { to: '/manager/schedule', label: '일정', icon: 'S' },
+      { to: '/manager/calendar', label: '캘린더', icon: 'C' },
+      { to: '/manager/standings', label: '순위', icon: 'L' },
+      { to: '/manager/patch-meta', label: '패치 메타', icon: 'M' },
     ],
   },
   {
@@ -63,16 +64,18 @@ const NAV_GROUPS: NavGroup[] = [
     title: '구단 운영',
     defaultExpanded: true,
     items: [
-      { to: '/manager/transfer', label: '이적 시장', icon: '💱' },
-      { to: '/manager/finance', label: '재정', icon: '💰' },
-      { to: '/manager/facility', label: '시설', icon: '🏢' },
-      { to: '/manager/board', label: '이사회', icon: '🎯' },
+      { to: '/manager/transfer', label: '이적 시장', icon: 'FA' },
+      { to: '/manager/finance', label: '재정', icon: '$' },
+      { to: '/manager/facility', label: '시설', icon: 'F' },
+      { to: '/manager/board', label: '이사회', icon: 'B' },
     ],
   },
 ];
 
 function getSplitLabel(split?: string) {
-  return split === 'spring' ? '스프링' : split === 'summer' ? '서머' : '-';
+  if (split === 'spring') return '스프링';
+  if (split === 'summer') return '서머';
+  return '-';
 }
 
 export function ManagerDashboard() {
@@ -147,17 +150,13 @@ export function ManagerDashboard() {
       <nav className={`fm-sidebar${sidebarOpen ? ' fm-sidebar--open' : ''}`} aria-label="매니저 내비게이션">
         <div className="fm-sidebar__header">
           <div className="fm-sidebar__team-logo">{userTeam?.shortName?.slice(0, 2) ?? 'LM'}</div>
-          <div>
+          <div className="fm-sidebar__header-copy">
             <div className="fm-sidebar__team-name">{userTeam?.name ?? '내 팀'}</div>
-            <div className="fm-sidebar__team-sub">감독 겸 단장</div>
+            <div className="fm-sidebar__team-sub">감독 커리어</div>
+            <div className="fm-sidebar__team-chip">
+              {season ? `${season.year} ${getSplitLabel(season.split)} W${season.currentWeek}` : '시즌 대기'}
+            </div>
           </div>
-        </div>
-
-        <div className="fm-sidebar__focus">
-          <span className="fm-sidebar__focus-label">이번 주 핵심</span>
-          <p className="fm-sidebar__focus-text">
-            시즌 진행 전에는 뉴스, 선수 상태, 훈련 강도, 재정 압박을 먼저 확인하는 흐름으로 운영하는 것이 가장 안전합니다.
-          </p>
         </div>
 
         <div className="fm-sidebar__nav">
@@ -216,33 +215,37 @@ export function ManagerDashboard() {
           <button className="fm-sidebar-toggle" onClick={() => setSidebarOpen((prev) => !prev)} aria-label="사이드바 열기">
             =
           </button>
-          <div className="fm-topbar__section">
-            <span className="fm-topbar__label">시즌</span>
-            <span className="fm-topbar__value">{season ? `${season.year} ${getSplitLabel(season.split)}` : '-'}</span>
+
+          <div className="fm-topbar__summary">
+            <div className="fm-topbar__section fm-topbar__section--compact">
+              <span className="fm-topbar__label">시즌</span>
+              <span className="fm-topbar__value">{season ? `${season.year} ${getSplitLabel(season.split)}` : '-'}</span>
+            </div>
+            <div className="fm-topbar__section fm-topbar__section--compact">
+              <span className="fm-topbar__label">날짜</span>
+              <span className="fm-topbar__value">{season?.currentDate ?? '-'}</span>
+            </div>
+            <div className="fm-topbar__section fm-topbar__section--compact">
+              <span className="fm-topbar__label">주차</span>
+              <span className="fm-topbar__value--accent">{season ? `W${season.currentWeek}` : '-'}</span>
+            </div>
           </div>
-          <div className="fm-topbar__divider" />
-          <div className="fm-topbar__section">
-            <span className="fm-topbar__label">날짜</span>
-            <span className="fm-topbar__value">{season?.currentDate ?? '-'}</span>
-          </div>
-          <div className="fm-topbar__divider" />
-          <div className="fm-topbar__section">
-            <span className="fm-topbar__value--accent">{season ? `W${season.currentWeek}` : '-'}</span>
-          </div>
+
+          <div className="fm-topbar__spacer" />
+
           {userTeam && (
-            <>
-              <div className="fm-topbar__divider" />
-              <div className="fm-topbar__section">
+            <div className="fm-topbar__summary fm-topbar__summary--team">
+              <div className="fm-topbar__section fm-topbar__section--compact">
                 <span className="fm-topbar__label">예산</span>
                 <span className="fm-topbar__value">{formatAmount(userTeam.budget)}</span>
               </div>
-              <div className="fm-topbar__divider" />
-              <div className="fm-topbar__section">
+              <div className="fm-topbar__section fm-topbar__section--compact">
                 <span className="fm-topbar__label">명성</span>
                 <span className="fm-topbar__value--accent">{userTeam.reputation}</span>
               </div>
-            </>
+            </div>
           )}
+
           <button className="fm-btn fm-btn--primary fm-btn--sm fm-topbar__action" onClick={() => navigate('/manager/day')}>
             다음 일정
           </button>
@@ -253,6 +256,17 @@ export function ManagerDashboard() {
             <Outlet />
           </ErrorBoundary>
         </div>
+
+        <MobileBottomNav
+          items={[
+            { to: '/manager', label: '홈', icon: 'H', end: true },
+            { to: '/manager/day', label: '일정', icon: 'D' },
+            { to: '/manager/roster', label: '팀', icon: 'R' },
+            { to: '/manager/tactics', label: '전술', icon: 'T' },
+            { to: '/manager/transfer', label: '이적', icon: '$' },
+            { label: '더보기', icon: '+', onClick: () => setSidebarOpen(true) },
+          ]}
+        />
       </div>
 
       <CommandPalette isOpen={showCommandPalette} onClose={() => setShowCommandPalette(false)} />

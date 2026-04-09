@@ -10,6 +10,7 @@ import { useGameStore } from '../../../stores/gameStore';
 import { getDatabase } from '../../../db/database';
 import type { NewsCategory } from '../../../types/news';
 import { NEWS_CATEGORY_LABELS } from '../../../types/news';
+import { localizeEntityNamesInText } from '../../../utils/displayName';
 
 interface NewsArticleRow {
   id: number;
@@ -281,7 +282,7 @@ export function PlayerMediaView() {
                           {getImportanceLabel(article.importance)}
                         </span>
                         <div>
-                          <p className="fm-text-md fm-font-medium fm-text-primary">{article.title}</p>
+                          <p className="fm-text-md fm-font-medium fm-text-primary">{localizeEntityNamesInText(article.title)}</p>
                           <p className="fm-text-xs fm-text-muted">{article.articleDate}</p>
                         </div>
                       </div>
@@ -353,9 +354,9 @@ export function PlayerMediaView() {
                       <span className="fm-badge fm-badge--danger">핵심</span>
                     )}
                   </div>
-                  <p className="fm-text-md fm-font-medium fm-text-primary">{article.title}</p>
+                  <p className="fm-text-md fm-font-medium fm-text-primary">{localizeEntityNamesInText(article.title)}</p>
                   <p className="fm-text-xs fm-text-muted fm-mt-sm" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                    {article.content}
+                    {localizeEntityNamesInText(article.content)}
                   </p>
                 </div>
               ))}
@@ -391,8 +392,8 @@ export function PlayerMediaView() {
                           <span className="fm-badge fm-badge--info">{reaction.communitySource}</span>
                           <span className="fm-text-xs fm-text-muted">{reaction.eventDate}</span>
                         </div>
-                        <p className="fm-text-md fm-font-medium fm-text-primary">{reaction.title}</p>
-                        <p className="fm-text-xs fm-text-muted fm-mt-sm">{reaction.content}</p>
+                        <p className="fm-text-md fm-font-medium fm-text-primary">{localizeEntityNamesInText(reaction.title)}</p>
+                        <p className="fm-text-xs fm-text-muted fm-mt-sm">{localizeEntityNamesInText(reaction.content)}</p>
                       </div>
                       {comments.length > 0 && (
                         <span className="fm-text-xs fm-text-muted fm-flex-shrink-0">{comments.length}개 댓글</span>
@@ -406,7 +407,7 @@ export function PlayerMediaView() {
                           {comments.map((comment) => (
                             <div key={comment.id} className="fm-flex fm-items-center fm-gap-sm">
                               <span className="fm-text-xs fm-font-medium fm-text-info" style={{ minWidth: '60px' }}>{comment.username}</span>
-                              <p className={`fm-text-xs fm-flex-1 ${getSentimentClass(comment.sentiment)}`}>{comment.comment}</p>
+                              <p className={`fm-text-xs fm-flex-1 ${getSentimentClass(comment.sentiment)}`}>{localizeEntityNamesInText(comment.comment)}</p>
                               <span className="fm-text-xs fm-text-muted">{comment.likes > 0 ? `+${comment.likes}` : ''}</span>
                             </div>
                           ))}

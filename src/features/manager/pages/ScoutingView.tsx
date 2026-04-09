@@ -23,6 +23,7 @@ import type { Player } from '../../../types/player';
 import { getFreeAgents } from '../../../db/queries';
 import { Skeleton, SkeletonTable } from '../../../components/Skeleton';
 import { generateScoutingReport, type ScoutingReport as AiScoutingReport } from '../../../ai/advancedAiService';
+import { MainLoopPanel } from '../components/MainLoopPanel';
 
 import { POSITION_LABELS_SHORT as POSITION_LABELS } from '../../../utils/constants';
 
@@ -221,6 +222,9 @@ export function ScoutingView() {
   const filteredPlayers = posFilter === 'all'
     ? allPlayers
     : allPlayers.filter(p => p.position === posFilter);
+  const availableScouts = scouts.filter((scout) => !isScoutBusy(scout.id)).length;
+  const pendingTop = pendingReports[0];
+  const topPendingPlayer = pendingTop ? findPlayer(pendingTop.playerId) : null;
 
   return (
     <div>
@@ -235,6 +239,38 @@ export function ScoutingView() {
       )}
 
       {/* 탭 */}
+      <MainLoopPanel
+        eyebrow="스카우팅 루프"
+        title="빈 스카우트와 우선 리포트를 먼저 읽는 스카우팅 허브"
+        subtitle="전체 선수 풀보다 지금 바로 배정할 사람과 곧 끝나는 리포트를 먼저 확인할 수 있게 정리합니다."
+        insights={[
+          {
+            label: '가용 스카우트',
+            value: `${availableScouts}명`,
+            detail: `${scouts.length}명 중 바로 배정 가능한 스카우트 수입니다.`,
+            tone: availableScouts > 0 ? 'success' : 'danger',
+          },
+          {
+            label: '진행 중 리포트',
+            value: `${pendingReports.length}건`,
+            detail: pendingTop ? `${topPendingPlayer?.name ?? '대상'} / D-${pendingTop.daysRemaining}` : '현재 진행 중인 리포트가 없습니다.',
+            tone: pendingReports.length > 0 ? 'accent' : 'success',
+          },
+          {
+            label: '관심 목록',
+            value: `${watchlist.length}명`,
+            detail: watchlist.length > 0 ? '장기 추적 대상이 모여 있습니다.' : '관심 선수를 아직 모으는 단계입니다.',
+            tone: 'accent',
+          },
+        ]}
+        actions={[
+          { label: '스카우트 보기', onClick: () => setTab('scouts'), variant: 'primary' },
+          { label: '리포트 보기', onClick: () => setTab('reports') },
+          { label: '관심 목록 보기', onClick: () => setTab('watchlist'), variant: 'info' },
+        ]}
+        note="상단은 우선순위 정리, 아래 탭은 후보 탐색과 상세 리포트 확인에 집중합니다."
+      />
+
       <div className="fm-tabs">
         <button
           className={`fm-tab ${tab === 'scouts' ? 'fm-tab--active' : ''}`}

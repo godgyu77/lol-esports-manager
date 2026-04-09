@@ -55,6 +55,16 @@
   min-height: 54px;
 }
 
+.intro-action-row {
+  display: flex;
+  gap: var(--fm-cta-row-gap);
+  align-items: stretch;
+}
+
+.intro-action-row > * {
+  flex: 1 1 0;
+}
+
 .intro-back {
   margin-top: 24px;
 }
@@ -133,6 +143,67 @@
 
   .intro-summary-grid {
     grid-template-columns: 1fr;
+  }
+
+  .intro-action-row {
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 1366px), (max-height: 768px) {
+  .intro-page {
+    padding: 24px 18px 42px;
+  }
+
+  .intro-shell {
+    gap: 12px;
+  }
+
+  .intro-hero .fm-panel__body {
+    padding: 20px;
+  }
+
+  .intro-two-column {
+    gap: 12px;
+  }
+
+  .intro-card-grid {
+    gap: 12px;
+  }
+
+  .intro-scroll-panel {
+    max-height: 52vh;
+  }
+
+  .intro-detail-disclosure summary {
+    padding: 14px 16px;
+  }
+
+  .intro-detail-disclosure > div {
+    padding: 16px;
+  }
+
+  .intro-back {
+    margin-top: 16px;
+  }
+}
+
+@media (max-height: 760px) {
+  .intro-page {
+    padding-top: 18px;
+    padding-bottom: 28px;
+  }
+
+  .intro-shell {
+    gap: 10px;
+  }
+
+  .intro-hero .fm-panel__body {
+    padding: 18px;
+  }
+
+  .intro-scroll-panel {
+    max-height: 46vh;
   }
 }
 

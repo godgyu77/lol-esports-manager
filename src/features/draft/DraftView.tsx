@@ -22,6 +22,7 @@ import { useBgm } from '../../hooks/useBgm';
 import { useGameStore } from '../../stores/gameStore';
 import { useMatchStore } from '../../stores/matchStore';
 import type { Player } from '../../types/player';
+import { MainLoopPanel } from '../manager/components/MainLoopPanel';
 import { BanSection } from './BanSection';
 import { ChampionGrid } from './ChampionGrid';
 import { DraftCenterPanel } from './DraftCenterPanel';
@@ -314,6 +315,39 @@ export function DraftView() {
             </div>
           </div>
         </header>
+
+        <MainLoopPanel
+          eyebrow="즉시 판단"
+          title="현재 드래프트 단계와 이번 턴의 우선 행동을 먼저 읽는 허브"
+          subtitle="추천 픽/밴과 입력 상태를 먼저 확인한 뒤, 아래 챔피언 풀과 스왑 배치를 세부 비교하면 됩니다."
+          insights={[
+            {
+              label: '현재 단계',
+              value: stageLabel,
+              detail: `${Math.min(draft.currentStep + 1, 20)} / 20 진행`,
+              tone: draft.phase === 'swap' ? 'warning' : 'accent',
+            },
+            {
+              label: '입력 상태',
+              value: currentIsUser ? '내 선택 차례' : isAiTurn ? 'AI 진행 중' : '대기',
+              detail: currentIsUser ? '추천과 챔피언 풀을 보고 바로 확정할 수 있습니다.' : '상대 턴이 끝나면 다음 행동이 열립니다.',
+              tone: currentIsUser ? 'success' : 'neutral',
+            },
+            {
+              label: '추천 선택',
+              value: recommendations[0]?.championId ?? '추천 대기',
+              detail: recommendations[0]?.reason ?? '아직 추천이 없으면 아래 그리드에서 직접 비교하세요.',
+              tone: 'accent',
+            },
+            {
+              label: '현재 선택',
+              value: selectedChampion ?? '미선택',
+              detail: draft.phase === 'swap' ? '스왑 카드 두 장을 순서대로 눌러 배치를 조정합니다.' : '선택 후 확정하면 즉시 다음 턴으로 넘어갑니다.',
+              tone: selectedChampion ? 'success' : 'neutral',
+            },
+          ]}
+          note="상단은 즉시 판단용, 하단은 챔피언 풀과 스왑 세부 비교용으로 분리했습니다."
+        />
 
         {draft.fearlessMode ? (
           <div className="draft-fearless-banner">

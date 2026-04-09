@@ -12,6 +12,7 @@ import { getAwardsBySeason, getMvpCandidates } from '../../../engine/award/award
 import type { Award } from '../../../types/award';
 import { AWARD_TYPE_LABELS } from '../../../types/award';
 import type { Position } from '../../../types/game';
+import { MainLoopPanel } from '../components/MainLoopPanel';
 
 interface MvpCandidate {
   playerId: string;
@@ -105,6 +106,39 @@ export function AwardsView() {
       </div>
 
       {/* 탭 네비게이션 */}
+      <MainLoopPanel
+        eyebrow="참고 화면"
+        title="시즌 수상 판도와 MVP 흐름을 먼저 읽는 어워드 화면"
+        subtitle="수상 결과 표 전체보다, 현재 시즌에서 가장 중요한 수상과 MVP 경쟁 구도를 먼저 파악할 수 있게 정리했습니다."
+        insights={[
+          {
+            label: '시즌 MVP',
+            value: mvpAward?.playerId ? getPlayerName(mvpAward.playerId) : '대기 중',
+            detail: mvpAward?.teamId ? getTeamName(mvpAward.teamId) : '시즌 종료 후 확정됩니다.',
+            tone: mvpAward ? 'success' : 'warning',
+          },
+          {
+            label: '신인상',
+            value: rookieAward?.playerId ? getPlayerName(rookieAward.playerId) : '대기 중',
+            detail: rookieAward?.teamId ? getTeamName(rookieAward.teamId) : '아직 집계 중입니다.',
+            tone: rookieAward ? 'accent' : 'neutral',
+          },
+          {
+            label: 'All-Pro',
+            value: `${allPro1st.length + allPro2nd.length}명`,
+            detail: `1st ${allPro1st.length}명 / 2nd ${allPro2nd.length}명`,
+            tone: allPro1st.length > 0 ? 'success' : 'neutral',
+          },
+          {
+            label: 'MVP 레이스',
+            value: `${candidates.length}명`,
+            detail: candidates[0] ? `${candidates[0].playerName}가 상단 후보입니다.` : '아직 집계된 후보가 없습니다.',
+            tone: candidates.length > 0 ? 'accent' : 'neutral',
+          },
+        ]}
+        note="어워드 화면은 시즌 마감 감각을 주는 참고형 페이지라, 상단에서 판도를 먼저 읽고 아래에서 세부 수상 결과를 확인하는 흐름입니다."
+      />
+
       <div className="fm-tabs">
         {([
           ['overview', '시즌 어워드'],

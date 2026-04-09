@@ -392,10 +392,10 @@ export async function getRelationshipInfluenceSnapshot(
 
   const summary =
     riskPairs[0]
-      ? `${riskPairs[0].names[0]} and ${riskPairs[0].names[1]} are the main room risk, while ${strongPairs[0]?.names.join(' + ') ?? 'the core'} still stabilizes the squad.`
+      ? `${riskPairs[0].names[0]}와 ${riskPairs[0].names[1]} 조합이 현재 라커룸의 주요 리스크입니다. 그래도 ${strongPairs[0]?.names.join(' + ') ?? '핵심 축'}이 팀 균형을 어느 정도 지탱하고 있습니다.`
       : strongPairs[0]
-        ? `${strongPairs[0].names[0]} and ${strongPairs[0].names[1]} are carrying the room chemistry, with staff trust around ${staffTrust}/100.`
-        : `Relationship signal is still shallow, but staff trust is sitting around ${staffTrust}/100.`;
+        ? `${strongPairs[0].names[0]}와 ${strongPairs[0].names[1]} 조합이 팀 케미스트리를 이끌고 있고, 스태프 신뢰도는 약 ${staffTrust}/100 수준입니다.`
+        : `관계 신호는 아직 옅지만 스태프 신뢰도는 약 ${staffTrust}/100 수준입니다.`;
 
   return {
     teamId,
@@ -412,17 +412,17 @@ export async function getRelationshipInfluenceSnapshot(
 function getStyleClash(region: string, playStyle: string | null): string {
   const styleLabel =
     playStyle === 'aggressive'
-      ? 'early tempo and skirmish control'
+      ? '초반 템포와 교전 주도'
       : playStyle === 'defensive'
-        ? 'slow setup and scaling discipline'
+        ? '느린 준비와 후반 성장 운영'
         : playStyle === 'objective'
-          ? 'objective discipline and map trade timing'
-          : 'balanced setup and mid-game control';
+          ? '오브젝트 규율과 맵 교환 타이밍'
+          : '균형 잡힌 준비와 중반 운영';
 
-  if (region === 'LPL') return `Regional expectation leans toward faster draft priority and volatile tempo. Current identity points to ${styleLabel}.`;
-  if (region === 'LCK') return `Regional expectation leans toward cleaner objective windows and late-game trust. Current identity points to ${styleLabel}.`;
-  if (region === 'LEC') return `Regional expectation leans toward flexible drafts and tempo flips. Current identity points to ${styleLabel}.`;
-  return `Regional expectation leans toward lane pressure and confident reset timings. Current identity points to ${styleLabel}.`;
+  if (region === 'LPL') return `이 리그는 빠른 드래프트 우선순위와 큰 템포 변화를 더 강하게 요구합니다. 현재 팀 정체성은 ${styleLabel} 쪽에 가깝습니다.`;
+  if (region === 'LCK') return `이 리그는 정교한 오브젝트 타이밍과 후반 집중력을 더 중시합니다. 현재 팀 정체성은 ${styleLabel} 쪽에 가깝습니다.`;
+  if (region === 'LEC') return `이 리그는 유연한 드래프트와 템포 전환 대응을 더 요구합니다. 현재 팀 정체성은 ${styleLabel} 쪽에 가깝습니다.`;
+  return `이 리그는 라인 압박과 과감한 리셋 타이밍을 더 요구합니다. 현재 팀 정체성은 ${styleLabel} 쪽에 가깝습니다.`;
 }
 
 export async function getInternationalExpectationSnapshot(
@@ -454,21 +454,21 @@ export async function getInternationalExpectationSnapshot(
   if (boardWantsInternational && (reputation >= 86 || recentDynasty)) level = 'must_deliver';
   if (recentCollapse && level === 'must_deliver') level = 'contender';
 
-  const label = internationalStage ? 'International broadcast desk' : 'Regional pressure check';
+  const label = internationalStage ? '국제 무대 기대 점검' : '지역 기대 압박 점검';
   const summaryLine =
     level === 'must_deliver'
-      ? 'This club is now judged on deep international runs, not just domestic control.'
+      ? '이 구단은 이제 국내 우위만으로는 충분하지 않고, 국제 무대 깊은 진출까지 요구받는 단계입니다.'
       : level === 'contender'
-        ? 'Strong domestic form now carries cross-region expectation and scrutiny.'
-        : 'International pressure is forming, but the club still has room to build before it becomes a season-defining burden.';
+        ? '국내 성과가 쌓이면서 이제는 국제전 기대와 외부 시선도 함께 따라붙고 있습니다.'
+        : '국제전 압박이 서서히 형성되고 있지만, 아직 시즌 전체를 좌우할 단계는 아닙니다.';
   const boardPressureNote =
     boardWantsInternational
-      ? 'The board has already tied credibility to international-level delivery.'
-      : 'The board is not fully demanding international success yet, but strong domestic seasons will raise that bar.';
+      ? '보드진은 이미 국제 무대 성과를 신뢰 기준으로 보기 시작했습니다.'
+      : '보드진이 아직 국제전 성과를 강하게 요구하는 단계는 아니지만, 국내 성과가 쌓이면 기준도 함께 높아집니다.';
   const legacyImpact =
     summary && summary.totalTrophies >= 3
-      ? 'Every international result now feeds directly into dynasty or decline legacy framing.'
-      : 'A first serious international run can still redefine the franchise arc.';
+      ? '이제 국제전 결과 하나하나가 왕조 유지인지 하락세 시작인지 평가받는 단계로 이어집니다.'
+      : '첫 본격적인 국제전 성과만으로도 구단 서사를 새롭게 바꿀 수 있습니다.';
 
   return {
     teamId,

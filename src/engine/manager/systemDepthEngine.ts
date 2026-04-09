@@ -596,15 +596,15 @@ export async function processSystemDepthDailyState(
       seasonId,
       consequenceType: 'morale',
       source: 'complaints',
-      title: 'Role tension in the room',
-      summary: 'An unresolved complaint is starting to drag the mood of the room and can spill into preparation quality.',
+      title: '라커룸 역할 갈등',
+      summary: '해결되지 않은 불만이 팀 분위기를 떨어뜨리기 시작했고, 준비 완성도에도 영향을 줄 수 있습니다.',
       severity: 'medium',
       startedDate: currentDate,
       expiresDate: addDaysIso(currentDate, 7),
       statKey: 'morale',
       statDelta: -3,
     });
-    created.push('A player issue is starting to affect team morale.');
+    created.push('선수 관련 이슈가 팀 사기에 영향을 주기 시작했습니다.');
   }
 
   if (relationshipSnapshot && (relationshipSnapshot.riskPairs.length > 0 || relationshipSnapshot.staffTrust <= 48)) {
@@ -613,7 +613,7 @@ export async function processSystemDepthDailyState(
       seasonId,
       consequenceType: 'staff',
       source: 'relationship_network',
-      title: 'Room chemistry watch',
+      title: '팀 케미스트리 점검',
       summary: relationshipSnapshot.summary,
       severity: relationshipSnapshot.riskPairs.length > 0 ? 'medium' : 'low',
       startedDate: currentDate,
@@ -621,11 +621,11 @@ export async function processSystemDepthDailyState(
       statKey: 'morale',
       statDelta: relationshipSnapshot.riskPairs.length > 0 ? -2 : -1,
     });
-    created.push('Relationship tension is becoming a live management issue.');
+    created.push('관계 긴장이 이제 실제 운영 이슈로 번지고 있습니다.');
   }
 
   if (activeConsequences.length === 0 && pressure.pressureLevel === 'stable' && complaints.length === 0) {
-    created.push('No long-tail issue is currently escalating.');
+    created.push('지금은 장기 리스크로 커지는 이슈가 없습니다.');
   }
 
   return created;
@@ -648,8 +648,8 @@ export async function getMainLoopRiskItems(
 
   const items: TeamLoopRiskItem[] = [
     {
-      title: 'Budget pressure',
-      summary: pressure.topDrivers[0] ?? 'Financial pressure is manageable.',
+      title: '재정 압박',
+      summary: pressure.topDrivers[0] ?? '재정 압박은 현재 관리 가능한 수준입니다.',
       tone:
         pressure.pressureLevel === 'critical'
           ? 'risk'
@@ -677,7 +677,7 @@ export async function getMainLoopRiskItems(
 
   if (relationshipSnapshot) {
     items.push({
-      title: 'Room chemistry',
+      title: '팀 케미스트리',
       summary: relationshipSnapshot.summary,
       tone: relationshipSnapshot.riskPairs.length > 0 ? 'risk' : relationshipSnapshot.strongPairs.length > 0 ? 'positive' : 'neutral',
     });

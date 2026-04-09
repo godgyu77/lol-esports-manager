@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getStandings } from '../../../db/queries';
 import { useGameStore } from '../../../stores/gameStore';
+import { MainLoopPanel } from '../components/MainLoopPanel';
 
 interface Standing {
   teamId: string;
@@ -59,12 +60,47 @@ export function StandingsView() {
     const team = teams.find((t) => t.id === teamId);
     return team?.name ?? teamId;
   };
+  const userRow = sorted.find((row) => row.teamId === save?.userTeamId);
+  const userRank = sorted.findIndex((row) => row.teamId === save?.userTeamId) + 1;
 
   return (
     <div className="fm-animate-in">
       <div className="fm-page-header">
         <h1 className="fm-page-title">리그 순위</h1>
       </div>
+
+      <MainLoopPanel
+        eyebrow="참고 화면"
+        title="현재 순위와 우리 팀 위치를 먼저 읽는 순위표"
+        subtitle="전체 표를 읽기 전에 현재 팀 순위와 승패 흐름을 먼저 파악할 수 있게 상단 요약을 추가했습니다."
+        insights={[
+          {
+            label: '참가 팀',
+            value: `${sorted.length}팀`,
+            detail: '현재 시즌 집계 기준 순위표입니다.',
+            tone: 'neutral',
+          },
+          {
+            label: '우리 팀 순위',
+            value: userRank > 0 ? `${userRank}위` : '미집계',
+            detail: userRow ? `${userRow.wins}승 ${userRow.losses}패` : '아직 팀 순위가 집계되지 않았습니다.',
+            tone: userRank > 0 && userRank <= 3 ? 'success' : userRank > 0 ? 'accent' : 'warning',
+          },
+          {
+            label: '세트 득실',
+            value: userRow ? `${userRow.setWins - userRow.setLosses >= 0 ? '+' : ''}${userRow.setWins - userRow.setLosses}` : '-',
+            detail: userRow ? `${userRow.setWins}승 ${userRow.setLosses}패` : '세트 데이터 없음',
+            tone: userRow && userRow.setWins - userRow.setLosses >= 0 ? 'success' : 'warning',
+          },
+          {
+            label: '선두 팀',
+            value: sorted[0] ? getTeamName(sorted[0].teamId) : '없음',
+            detail: sorted[0] ? `${sorted[0].wins}승 ${sorted[0].losses}패` : '리그 결과가 아직 없습니다.',
+            tone: 'accent',
+          },
+        ]}
+        note="순위표는 경쟁 구도를 읽는 참고형 화면이라, 상단 요약 뒤에 전체 표를 읽는 흐름이 더 잘 맞습니다."
+      />
 
       <div className="fm-panel">
         <div className="fm-panel__body--flush fm-table-wrap">

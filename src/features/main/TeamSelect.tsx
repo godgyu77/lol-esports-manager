@@ -5,6 +5,7 @@ import { LCK_TEAMS, LCS_TEAMS, LEC_TEAMS, LPL_TEAMS } from '../../data/rosterDb'
 import type { TeamData, RosterPlayer } from '../../data/rosterDb';
 import type { Region } from '../../types';
 import { getTeamIntroMeta } from './introMeta';
+import { getDisplayPlayerName } from '../../utils/displayName';
 import './introFlow.css';
 
 interface TeamListItem {
@@ -118,7 +119,7 @@ export function TeamSelect() {
     <div className="fm-content fm-flex-col fm-items-center intro-page">
       <div className="intro-shell">
         <header className="fm-panel intro-hero intro-panel-soft">
-          <div className="fm-panel__body" style={{ padding: 24 }}>
+          <div className="fm-panel__body">
             <div className="fm-text-xs fm-font-semibold fm-text-accent fm-text-upper fm-mb-sm">팀 입단 브리핑</div>
             <h1 className="fm-text-2xl fm-font-bold fm-text-primary" style={{ margin: 0 }}>첫 시즌을 맡을 팀을 선택하세요</h1>
             <p className="fm-text-md fm-text-muted fm-mt-sm" style={{ lineHeight: 1.7 }}>
@@ -216,7 +217,7 @@ export function TeamSelect() {
                           style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-sm)' }}
                         >
                           <span className="fm-text-xs fm-font-bold fm-text-accent" style={{ minWidth: 32 }}>{player.role}</span>
-                          <span className="fm-text-md fm-text-primary fm-flex-1">{player.name}</span>
+                          <span className="fm-text-md fm-text-primary fm-flex-1">{getDisplayPlayerName(player.name)}</span>
                           <span className="fm-text-md fm-font-bold fm-text-primary">{player.stats.ovr}</span>
                         </div>
                       ))}
@@ -239,8 +240,8 @@ export function TeamSelect() {
                       <div className="fm-card" style={{ background: 'rgba(255,255,255,0.02)' }}>
                         <div className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">감독 합류 규칙</div>
                         <p className="fm-text-sm fm-text-secondary" style={{ margin: 0, lineHeight: 1.6 }}>
-                          선택한 팀의 기존 감독 자리는 비워지고, 사용자가 새 감독으로 부임합니다.
-                          기존 코치와 분석 스태프는 팀에 남아 그대로 시즌 운영을 이어갑니다.
+                          선택한 팀의 기존 감독은 수석 코치 성격의 핵심 코치로 남고, 사용자가 새 감독으로 부임합니다.
+                          기존 코치와 분석 스태프도 함께 남아 시즌 운영과 훈련, 전술 조언을 이어갑니다.
                         </p>
                       </div>
                     </div>
@@ -252,8 +253,13 @@ export function TeamSelect() {
                 </div>
               </div>
             ) : (
-              <div className="fm-panel__body fm-flex fm-items-center fm-justify-center fm-text-muted fm-text-lg fm-text-center" style={{ minHeight: 300 }}>
-                <p>팀을 선택하면 난이도, 팬 기대, 주전 5인 요약만 먼저 표시됩니다.</p>
+              <div className="fm-panel__body">
+                <div className="fm-empty-state fm-empty-state--compact">
+                  <div className="fm-empty-state__title">팀을 먼저 선택하세요</div>
+                  <p className="fm-empty-state__copy">
+                    우측 패널에는 난이도, 팬 기대, 주전 5인 요약만 먼저 표시됩니다.
+                  </p>
+                </div>
               </div>
             )}
           </aside>

@@ -229,7 +229,6 @@ export function InboxView() {
           <button className={`fm-btn ${showUnreadOnly ? '' : 'fm-btn--ghost'}`} onClick={() => setShowUnreadOnly((prev) => !prev)} aria-pressed={showUnreadOnly}>
             {showUnreadOnly ? '전체 메시지 보기' : '미확인 메시지만 보기'}
           </button>
-          <button className="fm-btn fm-btn--ghost" onClick={handleMarkAllRead}>모두 읽음 처리</button>
         </div>
       </div>
 
@@ -285,9 +284,15 @@ export function InboxView() {
       {filter === 'fan' && (
         <div role="tabpanel" id={`inbox-panel-${filter}`} aria-labelledby={`inbox-tab-${filter}`}>
           {fanLoading ? (
-            <p className="fm-text-muted fm-text-md">팬레터를 불러오는 중입니다...</p>
+            <div className="fm-empty-state fm-empty-state--compact">
+              <div className="fm-empty-state__title">팬레터를 불러오는 중입니다</div>
+              <p className="fm-empty-state__copy">최근 반응을 정리해서 보여주고 있습니다.</p>
+            </div>
           ) : fanLetters.length === 0 ? (
-            <p className="fm-text-muted fm-text-md">팬레터가 없습니다.</p>
+            <div className="fm-empty-state fm-empty-state--compact">
+              <div className="fm-empty-state__title">도착한 팬레터가 없습니다</div>
+              <p className="fm-empty-state__copy">이번 주 팬 반응은 뉴스와 SNS에서 먼저 확인할 수 있습니다.</p>
+            </div>
           ) : (
             <div className="fm-flex-col fm-gap-sm">
               {fanLetters.map((letter, idx) => (
@@ -362,9 +367,14 @@ export function InboxView() {
       {filter !== 'fan' && (
         <div role="tabpanel" id={`inbox-panel-${filter}`} aria-labelledby={`inbox-tab-${filter}`} className="fm-flex-col fm-gap-md">
           {filtered.length === 0 ? (
-            <p className="fm-text-muted fm-text-md">
-              {showUnreadOnly ? '읽지 않은 메시지가 없습니다.' : '메시지가 없습니다.'}
-            </p>
+            <div className="fm-empty-state fm-empty-state--compact">
+              <div className="fm-empty-state__title">
+                {showUnreadOnly ? '읽지 않은 메시지가 없습니다' : '표시할 메시지가 없습니다'}
+              </div>
+              <p className="fm-empty-state__copy">
+                {showUnreadOnly ? '전체 보기로 전환하면 이미 확인한 메시지까지 함께 볼 수 있습니다.' : '새 메시지가 도착하면 이곳에서 바로 확인할 수 있습니다.'}
+              </p>
+            </div>
           ) : (
             <>
               {actionMessages.length > 0 && (

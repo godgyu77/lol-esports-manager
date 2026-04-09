@@ -1,11 +1,4 @@
-/**
- * 커뮤니티 소셜 피드 페이지
- * - 이적/스태프/경기 이벤트에 대한 커뮤니티 반응 피드
- * - 커뮤니티 소스 필터
- * - 댓글 펼침/접힘
- */
-
-import { useEffect, useState, useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useGameStore } from '../../../stores/gameStore';
 import {
   getRecentReactions,
@@ -14,8 +7,9 @@ import {
 } from '../../../engine/social/socialEngine';
 import type { SocialReaction, SocialComment, CommunitySource, CommentSentiment } from '../../../types/social';
 import { COMMUNITY_LABELS } from '../../../types/social';
+import { MainLoopPanel } from '../components/MainLoopPanel';
 
-const SOURCES: (CommunitySource | 'all')[] = ['all', 'inven', 'dcinside', 'fmkorea', 'reddit', 'twitter'];
+const SOURCES: Array<CommunitySource | 'all'> = ['all', 'inven', 'dcinside', 'fmkorea', 'reddit', 'twitter'];
 
 const SOURCE_FILTER_LABELS: Record<CommunitySource | 'all', string> = {
   all: '전체',
@@ -24,7 +18,7 @@ const SOURCE_FILTER_LABELS: Record<CommunitySource | 'all', string> = {
 
 const EVENT_TYPE_LABELS: Record<string, string> = {
   transfer_rumor: '이적 루머',
-  transfer_official: '이적 오피셜',
+  transfer_official: '이적 확정',
   staff_hire: '스태프 영입',
   staff_fire: '스태프 해고',
   match_result: '경기 결과',
@@ -40,7 +34,7 @@ const SENTIMENT_COLORS: Record<CommentSentiment, string> = {
 };
 
 export function SocialFeedView() {
-  const season = useGameStore((s) => s.season);
+  const season = useGameStore((state) => state.season);
 
   const [reactions, setReactions] = useState<SocialReaction[]>([]);
   const [expandedComments, setExpandedComments] = useState<Record<number, SocialComment[]>>({});
@@ -52,43 +46,50 @@ export function SocialFeedView() {
     if (!season) return;
     setIsLoading(true);
     try {
-      const data = activeFilter === 'all'
-        ? await getRecentReactions(season.year, 50)
-        : await getReactionsBySource(season.year, activeFilter, 50);
+      const data =
+        activeFilter === 'all'
+          ? await getRecentReactions(season.year, 50)
+          : await getReactionsBySource(season.year, activeFilter, 50);
       setReactions(data);
-    } catch (err) {
-      console.error('소셜 피드 로딩 실패:', err);
+    } catch (error) {
+      console.error('커뮤니티 피드 로딩 실패:', error);
     } finally {
       setIsLoading(false);
     }
-  }, [season, activeFilter]);
+  }, [activeFilter, season]);
 
-  useEffect(() => { loadReactions(); }, [loadReactions]);
+  useEffect(() => {
+    void loadReactions();
+  }, [loadReactions]);
 
   const toggleComments = async (reactionId: number) => {
-    const newExpanded = new Set(expandedIds);
-    if (newExpanded.has(reactionId)) {
-      newExpanded.delete(reactionId);
-      setExpandedIds(newExpanded);
+    const nextExpanded = new Set(expandedIds);
+    if (nextExpanded.has(reactionId)) {
+      nextExpanded.delete(reactionId);
+      setExpandedIds(nextExpanded);
       return;
     }
 
-    // 댓글이 아직 로드되지 않았다면 로드
     if (!expandedComments[reactionId]) {
       try {
         const data = await getReactionWithComments(reactionId);
-        setExpandedComments(prev => ({ ...prev, [reactionId]: data.comments }));
-      } catch (err) {
-        console.error('댓글 로딩 실패:', err);
+        setExpandedComments((prev) => ({ ...prev, [reactionId]: data.comments }));
+      } catch (error) {
+        console.error('댓글 로딩 실패:', error);
         return;
       }
     }
 
-    newExpanded.add(reactionId);
-    setExpandedIds(newExpanded);
+    nextExpanded.add(reactionId);
+    setExpandedIds(nextExpanded);
   };
 
-  if (!season) return <p className="fm-text-muted fm-text-md">데이터를 불러오는 중...</p>;
+  if (!season) {
+    return <p className="fm-text-muted fm-text-md">데이터를 불러오는 중입니다...</p>;
+  }
+
+  const leadReaction = reactions[0] ?? null;
+  const hotReaction = reactions.find((reaction) => reaction.commentCount > 0) ?? leadReaction;
 
   return (
     <div className="fm-animate-in">
@@ -96,9 +97,38 @@ export function SocialFeedView() {
         <h1 className="fm-page-title">커뮤니티</h1>
       </div>
 
-      {/* 필터 바 */}
+      <MainLoopPanel
+        eyebrow="여론 흐름"
+        title="반응을 읽고 바로 대응 우선순위를 정하는 화면"
+        subtitle="최근 반응과 뜨거운 주제를 먼저 읽고, 필요한 카드만 열어서 댓글 흐름을 확인하면 됩니다."
+        insights={[
+          {
+            label: '현재 필터',
+            value: SOURCE_FILTER_LABELS[activeFilter],
+            detail: activeFilter === 'all' ? '전체 커뮤니티 흐름을 함께 보고 있습니다.' : '선택한 커뮤니티만 좁혀서 보고 있습니다.',
+            tone: 'accent',
+          },
+          {
+            label: '가장 최근 반응',
+            value: leadReaction?.title ?? '새 반응 대기',
+            detail: leadReaction ? COMMUNITY_LABELS[leadReaction.communitySource] : '아직 생성된 커뮤니티 반응이 없습니다.',
+            tone: leadReaction ? 'accent' : 'neutral',
+          },
+          {
+            label: '뜨거운 주제',
+            value: hotReaction ? `${hotReaction.commentCount} 댓글` : '대기',
+            detail: hotReaction?.content ?? '댓글이 모이면 여기서 바로 확인할 수 있습니다.',
+            tone: hotReaction && hotReaction.commentCount > 3 ? 'warning' : 'neutral',
+          },
+        ]}
+        actions={[
+          { label: '새로고침', onClick: () => void loadReactions(), variant: 'primary' },
+        ]}
+        note="상단은 여론 방향 확인용, 아래는 개별 반응과 댓글 세부 확인용으로 분리했습니다."
+      />
+
       <div className="fm-tabs">
-        {SOURCES.map(source => (
+        {SOURCES.map((source) => (
           <button
             key={source}
             className={`fm-tab ${activeFilter === source ? 'fm-tab--active' : ''}`}
@@ -110,61 +140,48 @@ export function SocialFeedView() {
       </div>
 
       {isLoading ? (
-        <p className="fm-text-muted fm-text-md">피드를 불러오는 중...</p>
+        <p className="fm-text-muted fm-text-md">피드를 불러오는 중입니다...</p>
       ) : reactions.length === 0 ? (
         <div className="fm-panel">
-          <div className="fm-panel__body fm-text-center fm-p-lg">
-            <p className="fm-text-muted fm-text-md fm-mb-sm">아직 커뮤니티 반응이 없습니다.</p>
-            <p className="fm-text-muted fm-text-sm">이적, 스태프 변동, 경기 결과에 따라 반응이 생성됩니다.</p>
+          <div className="fm-panel__body">
+            <div className="fm-empty-state fm-empty-state--compact">
+              <p className="fm-empty-state__title">아직 커뮤니티 반응이 없습니다.</p>
+              <p className="fm-empty-state__copy">이적, 경기 결과, 스태프 변화가 쌓이면 여론 흐름이 여기 모입니다.</p>
+            </div>
           </div>
         </div>
       ) : (
         <div className="fm-flex-col fm-gap-sm">
-          {reactions.map(reaction => (
+          {reactions.map((reaction) => (
             <div key={reaction.id} className="fm-panel">
               <div className="fm-panel__body">
-                {/* 카드 헤더 */}
                 <div className="fm-flex fm-items-center fm-gap-sm fm-mb-md">
-                  <span className="fm-badge fm-badge--info">
-                    {COMMUNITY_LABELS[reaction.communitySource]}
-                  </span>
-                  <span className="fm-badge fm-badge--accent">
-                    {EVENT_TYPE_LABELS[reaction.eventType] ?? reaction.eventType}
-                  </span>
+                  <span className="fm-badge fm-badge--info">{COMMUNITY_LABELS[reaction.communitySource]}</span>
+                  <span className="fm-badge fm-badge--accent">{EVENT_TYPE_LABELS[reaction.eventType] ?? reaction.eventType}</span>
                   <span className="fm-text-sm fm-text-muted" style={{ marginLeft: 'auto' }}>
                     {reaction.eventDate}
                   </span>
                 </div>
 
-                {/* 뉴스 본문 */}
-                <h3 className="fm-text-lg fm-font-bold fm-text-primary fm-mb-sm">
-                  {reaction.title}
-                </h3>
-                <p className="fm-text-md fm-text-secondary fm-mb-md" style={{ lineHeight: '1.5' }}>
+                <h3 className="fm-text-lg fm-font-bold fm-text-primary fm-mb-sm">{reaction.title}</h3>
+                <p className="fm-text-md fm-text-secondary fm-mb-md" style={{ lineHeight: 1.5 }}>
                   {reaction.content}
                 </p>
 
-                {/* 댓글 토글 */}
-                <button
-                  className="fm-btn fm-btn--sm"
-                  onClick={() => toggleComments(reaction.id)}
-                >
-                  {expandedIds.has(reaction.id) ? '댓글 접기' : '댓글 보기'}
+                <button className="fm-btn fm-btn--sm" onClick={() => void toggleComments(reaction.id)}>
+                  {expandedIds.has(reaction.id) ? '댓글 닫기' : '댓글 보기'}
                 </button>
 
-                {/* 댓글 목록 */}
                 {expandedIds.has(reaction.id) && expandedComments[reaction.id] && (
-                  <div className="fm-flex-col fm-gap-sm fm-mt-md" style={{ borderTop: '1px solid var(--border)', paddingTop: '12px' }}>
-                    {expandedComments[reaction.id].map(comment => (
+                  <div className="fm-flex-col fm-gap-sm fm-mt-md" style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+                    {expandedComments[reaction.id].map((comment) => (
                       <div key={comment.id} className="fm-card">
                         <div className="fm-flex fm-items-center fm-gap-sm fm-mb-sm">
-                          <span className="fm-text-base fm-font-semibold fm-text-muted">
-                            {comment.username}
-                          </span>
+                          <span className="fm-text-base fm-font-semibold fm-text-muted">{comment.username}</span>
                           <span
                             style={{
-                              width: '6px',
-                              height: '6px',
+                              width: 6,
+                              height: 6,
                               borderRadius: '50%',
                               background: SENTIMENT_COLORS[comment.sentiment],
                             }}
@@ -173,7 +190,7 @@ export function SocialFeedView() {
                             +{comment.likes}
                           </span>
                         </div>
-                        <p className="fm-text-md" style={{ color: SENTIMENT_COLORS[comment.sentiment], margin: 0, lineHeight: '1.4' }}>
+                        <p className="fm-text-md" style={{ color: SENTIMENT_COLORS[comment.sentiment], margin: 0, lineHeight: 1.4 }}>
                           {comment.comment}
                         </p>
                       </div>

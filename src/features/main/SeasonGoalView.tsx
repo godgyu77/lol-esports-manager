@@ -9,6 +9,7 @@ import { initializeNewGame, loadGameIntoStore } from '../../db/initGame';
 import { getDominantManagerTraits } from '../../engine/manager/managerIdentityEngine';
 import { getSaveSlots } from '../../engine/save/saveEngine';
 import { describePressureTone, getTeamIntroMeta } from './introMeta';
+import { getDisplayPlayerName } from '../../utils/displayName';
 import './introFlow.css';
 
 const TEAM_DATA_MAP: Record<Region, Record<string, TeamData>> = {
@@ -203,7 +204,7 @@ export function SeasonGoalView() {
     <div className="fm-content fm-flex-col fm-items-center intro-page">
       <div className="intro-shell" style={{ maxWidth: 1120 }}>
         <header className="fm-panel intro-hero intro-panel-soft">
-          <div className="fm-panel__body" style={{ padding: 28 }}>
+          <div className="fm-panel__body">
             <div className="fm-text-xs fm-font-semibold fm-text-accent fm-text-upper fm-mb-sm">부임 브리핑</div>
             <h1 className="fm-text-2xl fm-font-bold fm-text-primary" style={{ margin: 0 }}>2026 시즌 부임 브리핑</h1>
             <p className="fm-text-md fm-text-muted fm-mt-sm" style={{ lineHeight: 1.7 }}>
@@ -335,7 +336,7 @@ export function SeasonGoalView() {
               </div>
             )}
 
-            <div className="fm-flex fm-gap-md">
+            <div className="intro-action-row">
               {mode === 'manager' ? (
                 <>
                   <button className="fm-btn fm-btn--primary fm-btn--lg fm-flex-1" onClick={handleAccept} disabled={isLoading}>
@@ -391,7 +392,7 @@ export function SeasonGoalView() {
               <div className="intro-roster-chiplist">
                 {starters.map((player) => (
                   <span key={player.name} className="fm-badge fm-badge--default">
-                    {player.role} {player.name} {player.stats.ovr}
+                    {player.role} {getDisplayPlayerName(player.name)} {player.stats.ovr}
                   </span>
                 ))}
               </div>

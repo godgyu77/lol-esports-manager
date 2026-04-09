@@ -8,6 +8,7 @@ import { AiSetupWizard } from '../../components/AiSetupWizard';
 import { useSettingsStore } from '../../stores/settingsStore';
 import type { AiProvider, Difficulty, Theme } from '../../stores/settingsStore';
 import type { SettingsState } from '../../stores/settingsStore';
+import { isMobileRuntime, normalizeAiProviderForRuntime } from '../../stores/settingsStore';
 import './introFlow.css';
 
 const SPEED_OPTIONS = [
@@ -28,7 +29,7 @@ const DIFFICULTY_OPTIONS: { value: Difficulty; label: string; desc: string; colo
   { value: 'hard', label: '도전', desc: '강한 압박과 빡빡한 의사결정을 요구합니다.', color: '#ef4444' },
 ];
 
-const IS_MOBILE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+const IS_MOBILE = isMobileRuntime();
 
 const AI_PROVIDER_OPTIONS: { value: AiProvider; label: string; desc: string; usage: string }[] = [
   { value: 'template', label: '템플릿만 사용', desc: '설치나 네트워크 없이도 안정적으로 동작합니다.', usage: '가장 가볍고 안정적' },
@@ -43,6 +44,10 @@ const AI_PROVIDER_OPTIONS: { value: AiProvider; label: string; desc: string; usa
   { value: 'gemini', label: '클라우드 Gemini', desc: '속도와 품질의 균형이 좋은 편입니다.', usage: '반응형 고품질' },
   { value: 'grok', label: '클라우드 Grok', desc: '대체 클라우드 옵션으로 사용할 수 있습니다.', usage: '추가 클라우드 선택지' },
 ];
+
+const AVAILABLE_AI_PROVIDER_OPTIONS = AI_PROVIDER_OPTIONS.filter(
+  (option) => normalizeAiProviderForRuntime(option.value) === option.value,
+);
 
 const OPENAI_MODELS = ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'gpt-4.1-nano'];
 const CLAUDE_MODELS = ['claude-haiku-4-5-20251001', 'claude-sonnet-4-5-20250514'];
@@ -319,7 +324,7 @@ export function SettingsView() {
             </div>
             <span className="fm-text-sm fm-font-semibold fm-text-primary">AI 사용 방식</span>
             <div className="fm-grid fm-grid--2 fm-mt-sm">
-              {AI_PROVIDER_OPTIONS.map((option) => (
+              {AVAILABLE_AI_PROVIDER_OPTIONS.map((option) => (
                 <button key={option.value} className={`fm-card fm-card--clickable fm-flex-col fm-items-start fm-gap-xs ${aiProvider === option.value ? 'fm-card--highlight' : ''}`} onClick={() => handleProviderChange(option.value)}>
                   <span className="fm-text-base fm-font-semibold fm-text-primary">{option.label}</span>
                   <span className="fm-text-xs fm-text-accent">{option.usage}</span>

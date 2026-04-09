@@ -718,3 +718,34 @@
     max-height: none;
   }
 }
+
+@media (max-width: 480px) {
+  .draft-stage-shell {
+    gap: 12px;
+  }
+
+  .draft-stage-hero {
+    padding: 14px;
+  }
+
+  .draft-stage-title {
+    font-size: 1.4rem;
+  }
+
+  .draft-main-grid {
+    gap: 12px;
+  }
+
+  .draft-sidebar {
+    gap: 12px;
+  }
+
+  .draft-champ-list {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .draft-swap-phase {
+    padding: 14px;
+  }
+}

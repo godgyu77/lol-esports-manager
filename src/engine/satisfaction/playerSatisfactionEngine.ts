@@ -459,10 +459,10 @@ export async function getRoleExpectationState(
   const mismatchScore = Math.max(0, (ROLE_WEIGHT[expectedRole] - ROLE_WEIGHT[actualRole]) * 18);
   const summary =
     mismatchScore >= 36
-      ? 'Current minutes are well below the role this player is likely expecting.'
+      ? '현재 출전 시간은 이 선수가 기대하는 역할보다 확실히 낮은 편입니다.'
       : mismatchScore >= 18
-        ? 'The player is beginning to notice a gap between expected role and actual usage.'
-        : 'Role usage and expectation are mostly aligned.';
+        ? '선수도 기대 역할과 실제 기용 사이의 차이를 서서히 느끼기 시작했습니다.'
+        : '현재 역할 기대와 실제 기용은 대체로 맞아떨어지고 있습니다.';
 
   return {
     playerId,

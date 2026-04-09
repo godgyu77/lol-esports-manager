@@ -6,6 +6,21 @@ import type { Season } from '../../types/game';
 vi.mock('../../hooks/useBgm', () => ({ useBgm: vi.fn() }));
 vi.mock('../../ai/gameAiService', () => ({ generatePostMatchComment: vi.fn().mockResolvedValue(null) }));
 vi.mock('../../ai/advancedAiService', () => ({ generateLiveChatMessages: vi.fn().mockResolvedValue([]) }));
+vi.mock('../../engine/match/broadcastLineupEngine', () => ({
+  selectBroadcastCrew: vi.fn().mockReturnValue({
+    caster: { name: '전용준' },
+    analystPrimary: { name: '이현우' },
+    analystSecondary: { name: '임주완' },
+    announcer: { name: '윤수빈' },
+    guestAnalyst: null,
+  }),
+}));
+vi.mock('../../engine/news/newsEngine', () => ({
+  generateMatchResultNews: vi.fn().mockResolvedValue(undefined),
+  generateInterviewNews: vi.fn().mockResolvedValue(undefined),
+  generateSocialMediaReaction: vi.fn().mockResolvedValue(undefined),
+  generateFanReactionNews: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock('../../db/queries', () => ({
   getPlayersByTeamId: vi.fn().mockResolvedValue([]),
   getTraitsByTeamId: vi.fn().mockResolvedValue({}),
@@ -21,11 +36,9 @@ vi.mock('../../engine/season/playoffGenerator', () => ({ processPlayoffMatchResu
 vi.mock('../../engine/tournament/tournamentEngine', () => ({ processTournamentMatchResult: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('../../engine/draft/draftEngine', () => ({ accumulateFearlessChampions: vi.fn().mockReturnValue({ blue: [], red: [] }) }));
 vi.mock('./DecisionPopup', () => ({ DecisionPopup: () => <div>DecisionPopup</div> }));
-vi.mock('./CommentaryPanel', () => ({ CommentaryPanel: () => <div>CommentaryPanel</div> }));
 vi.mock('./SeriesResult', () => ({ SeriesResult: () => <div>SeriesResult</div> }));
 vi.mock('./TacticsPanel', () => ({ TacticsPanel: () => <div>TacticsPanel</div> }));
 vi.mock('./BroadcastHud', () => ({ BroadcastHud: () => <div>BroadcastHud</div> }));
-vi.mock('./BroadcastBattlefield', () => ({ BroadcastBattlefield: () => <div>BroadcastBattlefield</div> }));
 vi.mock('./match.css', () => ({}));
 
 const mockSave = {
@@ -83,7 +96,7 @@ describe('LiveMatchView', () => {
       },
     });
 
-    expect(screen.getByText('드래프트가 먼저 필요합니다')).toBeInTheDocument();
+    expect(screen.getByText('드래프트가 먼저 필요합니다.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '밴픽 화면으로 이동' })).toBeInTheDocument();
   });
 });

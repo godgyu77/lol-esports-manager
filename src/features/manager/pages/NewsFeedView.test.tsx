@@ -2,6 +2,7 @@ import { act } from 'react';
 import { renderWithProviders, screen, waitFor, within, resetStores } from '../../../test/testUtils';
 import { NewsFeedView } from './NewsFeedView';
 import type { NewsArticle } from '../../../types/news';
+import { localizeEntityNamesInText } from '../../../utils/displayName';
 
 const {
   mockGetRecentNews,
@@ -108,6 +109,21 @@ const taggedArticle: NewsArticle = {
   narrativeTags: ['legacy', 'international'],
 };
 
+function articleButtonName(title: string) {
+  return `뉴스 기사 열기: ${localizeEntityNamesInText(title)}`;
+}
+
+const seasonState = {
+  id: 1,
+  year: 2026,
+  split: 'spring' as const,
+  currentDate: '2026-03-01',
+  currentWeek: 1,
+  startDate: '2026-01-01',
+  endDate: '2026-06-01',
+  isActive: true,
+};
+
 describe('NewsFeedView', () => {
   beforeEach(() => {
     resetStores();
@@ -124,47 +140,25 @@ describe('NewsFeedView', () => {
 
   it('keeps articles in the list after read and only clears unread state', async () => {
     renderWithProviders(<NewsFeedView />, {
-      gameState: {
-        season: {
-          id: 1,
-          year: 2026,
-          split: 'spring',
-          currentDate: '2026-03-01',
-          currentWeek: 1,
-          startDate: '2026-01-01',
-          endDate: '2026-06-01',
-          isActive: true,
-        },
-      },
+      gameState: { season: seasonState },
     });
 
     expect(await screen.findByRole('heading', { level: 1 })).toBeInTheDocument();
-    expect(await screen.findByRole('button', { name: /뉴스 기사 열기: T1 secure a clean win/i })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: articleButtonName(featureArticle.title) })).toBeInTheDocument();
 
     await act(async () => {
-      screen.getByRole('button', { name: /뉴스 기사 열기: T1 secure a clean win/i }).click();
+      screen.getByRole('button', { name: articleButtonName(featureArticle.title) }).click();
     });
 
     await waitFor(() => {
       expect(mockMarkAsRead).toHaveBeenCalledWith(2);
-      expect(screen.getByRole('button', { name: /뉴스 기사 열기: T1 secure a clean win/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: articleButtonName(featureArticle.title) })).toBeInTheDocument();
     });
   });
 
   it('shows unread briefings only in briefing mode', async () => {
     renderWithProviders(<NewsFeedView />, {
-      gameState: {
-        season: {
-          id: 1,
-          year: 2026,
-          split: 'spring',
-          currentDate: '2026-03-01',
-          currentWeek: 1,
-          startDate: '2026-01-01',
-          endDate: '2026-06-01',
-          isActive: true,
-        },
-      },
+      gameState: { season: seasonState },
     });
 
     await screen.findByRole('heading', { level: 1 });
@@ -174,10 +168,10 @@ describe('NewsFeedView', () => {
       tabs[1].click();
     });
 
-    expect(await screen.findByRole('button', { name: /뉴스 기사 열기: Coach briefing/i })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: articleButtonName(briefingArticle.title) })).toBeInTheDocument();
 
     await act(async () => {
-      screen.getByRole('button', { name: /뉴스 기사 열기: Coach briefing/i }).click();
+      screen.getByRole('button', { name: articleButtonName(briefingArticle.title) }).click();
     });
 
     mockGetUnreadBriefings.mockResolvedValue([]);
@@ -195,18 +189,7 @@ describe('NewsFeedView', () => {
 
   it('supports keyboard navigation across news filters', async () => {
     const { user } = renderWithProviders(<NewsFeedView />, {
-      gameState: {
-        season: {
-          id: 1,
-          year: 2026,
-          split: 'spring',
-          currentDate: '2026-03-01',
-          currentWeek: 1,
-          startDate: '2026-01-01',
-          endDate: '2026-06-01',
-          isActive: true,
-        },
-      },
+      gameState: { season: seasonState },
     });
 
     await screen.findByRole('tablist');
@@ -224,24 +207,13 @@ describe('NewsFeedView', () => {
 
   it('surfaces Korean narrative badges for legacy and international articles', async () => {
     renderWithProviders(<NewsFeedView />, {
-      gameState: {
-        season: {
-          id: 1,
-          year: 2026,
-          split: 'spring',
-          currentDate: '2026-03-01',
-          currentWeek: 1,
-          startDate: '2026-01-01',
-          endDate: '2026-06-01',
-          isActive: true,
-        },
-      },
+      gameState: { season: seasonState },
     });
 
     await screen.findByRole('heading', { level: 1 });
 
     await act(async () => {
-      screen.getByRole('button', { name: /뉴스 기사 열기: Team outlook update/i }).click();
+      screen.getByRole('button', { name: articleButtonName(legacyArticle.title) }).click();
     });
 
     expect((await screen.findAllByText('전통')).length).toBeGreaterThan(0);
@@ -250,24 +222,13 @@ describe('NewsFeedView', () => {
 
   it('detects pressure badges from Korean narrative copy', async () => {
     renderWithProviders(<NewsFeedView />, {
-      gameState: {
-        season: {
-          id: 1,
-          year: 2026,
-          split: 'spring',
-          currentDate: '2026-03-01',
-          currentWeek: 1,
-          startDate: '2026-01-01',
-          endDate: '2026-06-01',
-          isActive: true,
-        },
-      },
+      gameState: { season: seasonState },
     });
 
     await screen.findByRole('heading', { level: 1 });
 
     await act(async () => {
-      screen.getByRole('button', { name: /뉴스 기사 열기: Locker room watch/i }).click();
+      screen.getByRole('button', { name: articleButtonName(pressureArticle.title) }).click();
     });
 
     expect((await screen.findAllByText('압박')).length).toBeGreaterThan(0);
@@ -275,24 +236,13 @@ describe('NewsFeedView', () => {
 
   it('prefers stored narrative tags when articles already carry metadata', async () => {
     renderWithProviders(<NewsFeedView />, {
-      gameState: {
-        season: {
-          id: 1,
-          year: 2026,
-          split: 'spring',
-          currentDate: '2026-03-01',
-          currentWeek: 1,
-          startDate: '2026-01-01',
-          endDate: '2026-06-01',
-          isActive: true,
-        },
-      },
+      gameState: { season: seasonState },
     });
 
     await screen.findByRole('heading', { level: 1 });
 
     await act(async () => {
-      screen.getByRole('button', { name: /뉴스 기사 열기: Franchise desk memo/i }).click();
+      screen.getByRole('button', { name: articleButtonName(taggedArticle.title) }).click();
     });
 
     expect((await screen.findAllByText('전통')).length).toBeGreaterThan(0);

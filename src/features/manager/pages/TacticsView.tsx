@@ -163,6 +163,10 @@ export function TacticsView() {
         </button>
       </div>
 
+      {(aiSuggestion || coachRecommendation || latestPrepRecord) ? (
+        <details className="fm-disclosure fm-mb-md">
+          <summary>전술 브리핑 보기</summary>
+          <div className="fm-disclosure__body">
       {aiSuggestion && (
         <div className="fm-alert fm-alert--info fm-flex-col fm-gap-xs fm-mb-md" style={{ alignItems: 'flex-start' }}>
           <span className="fm-text-xs fm-font-bold fm-text-accent">AI 코치 조언</span>
@@ -282,6 +286,27 @@ export function TacticsView() {
         </div>
       )}
 
+      {latestPrepRecord && (
+        <div className={`fm-alert fm-alert--${getPrepOutcomeTone(latestPrepRecord)} fm-mb-md`} style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '6px' }}>
+          <div className="fm-flex fm-items-center fm-justify-between" style={{ width: '100%' }}>
+            <span className="fm-text-sm fm-font-semibold">준비 추적</span>
+            <span className="fm-badge fm-badge--default">{latestPrepRecord.status}</span>
+          </div>
+          <span className="fm-text-md fm-font-semibold fm-text-primary">{latestPrepRecord.title}</span>
+          <p className="fm-text-xs fm-text-secondary" style={{ margin: 0 }}>
+            {latestPrepRecord.impactSummary ?? latestPrepRecord.summary}
+          </p>
+          <div className="fm-flex fm-gap-xs fm-flex-wrap">
+            {latestPrepRecord.appliedChanges.slice(0, 3).map((change) => (
+              <span key={change} className="fm-badge fm-badge--info">{change}</span>
+            ))}
+          </div>
+        </div>
+      )}
+          </div>
+        </details>
+      ) : null}
+
       {message && (
         <div className={`fm-alert ${message.type === 'success' ? 'fm-alert--success' : 'fm-alert--danger'} fm-mb-md`}>
           <span className="fm-alert__text">{message.text}</span>
@@ -327,24 +352,6 @@ export function TacticsView() {
         ]}
         note={`현재 전술 보정치는 공격 ${bonus.offense}, 수비 ${bonus.defense}, 운영 ${bonus.objective}입니다.`}
       />
-
-      {latestPrepRecord && (
-        <div className={`fm-alert fm-alert--${getPrepOutcomeTone(latestPrepRecord)} fm-mb-md`} style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '6px' }}>
-          <div className="fm-flex fm-items-center fm-justify-between" style={{ width: '100%' }}>
-            <span className="fm-text-sm fm-font-semibold">준비 추적</span>
-            <span className="fm-badge fm-badge--default">{latestPrepRecord.status}</span>
-          </div>
-          <span className="fm-text-md fm-font-semibold fm-text-primary">{latestPrepRecord.title}</span>
-          <p className="fm-text-xs fm-text-secondary" style={{ margin: 0 }}>
-            {latestPrepRecord.impactSummary ?? latestPrepRecord.summary}
-          </p>
-          <div className="fm-flex fm-gap-xs fm-flex-wrap">
-            {latestPrepRecord.appliedChanges.slice(0, 3).map((change) => (
-              <span key={change} className="fm-badge fm-badge--info">{change}</span>
-            ))}
-          </div>
-        </div>
-      )}
 
       <div className="fm-panel fm-mb-lg">
         <div className="fm-panel__header">
@@ -497,11 +504,9 @@ export function TacticsView() {
         </div>
       </div>
 
-      <div className="fm-panel">
-        <div className="fm-panel__header">
-          <span className="fm-panel__title">전술 보정 효과</span>
-        </div>
-        <div className="fm-panel__body">
+      <details className="fm-disclosure">
+        <summary>전술 보정 효과 보기</summary>
+        <div className="fm-disclosure__body">
           <p className="fm-text-xs fm-text-muted fm-mb-md">현재 전술 설정에 따른 경기 보정 수치입니다.</p>
 
           <div className="fm-grid fm-grid--auto fm-mb-md">
@@ -521,7 +526,7 @@ export function TacticsView() {
             </div>
           </div>
         </div>
-      </div>
+      </details>
     </div>
   );
 }

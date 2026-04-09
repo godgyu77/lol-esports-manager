@@ -1,9 +1,9 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGameStore } from '../../stores/gameStore';
 import { useMatchStore, type MatchSpeedPreset } from '../../stores/matchStore';
 import { useBgm } from '../../hooks/useBgm';
-import { LiveMatchEngine, type Decision, type LiveGameState } from '../../engine/match/liveMatch';
+import { LiveMatchEngine, type Decision, type LiveGameState, type LivePlayerStat } from '../../engine/match/liveMatch';
 import { buildLineup } from '../../engine/match/teamRating';
 import { getFormByTeamId, getPlayersByTeamId, getTeamPlayStyle, getTraitsByTeamId } from '../../db/queries';
 import { calculateChemistryBonus } from '../../engine/chemistry/chemistryEngine';
@@ -11,20 +11,28 @@ import { calculateTeamSoloRankBonus } from '../../engine/soloRank/soloRankEngine
 import { saveUserMatchResult } from '../../engine/season/dayAdvancer';
 import { processPlayoffMatchResult } from '../../engine/season/playoffGenerator';
 import { processTournamentMatchResult } from '../../engine/tournament/tournamentEngine';
-import { generatePostMatchComment, type PostMatchComment } from '../../ai/gameAiService';
+import { generatePostMatchComment } from '../../ai/gameAiService';
 import { generateLiveChatMessages, type LiveChatMessage } from '../../ai/advancedAiService';
 import { accumulateFearlessChampions } from '../../engine/draft/draftEngine';
 import type { GameResult, MatchResult } from '../../engine/match/matchSimulator';
-import { CommentaryPanel } from './CommentaryPanel';
+import { generateFanReactionNews, generateInterviewNews, generateMatchResultNews, generateSocialMediaReaction } from '../../engine/news/newsEngine';
+import { selectBroadcastCrew } from '../../engine/match/broadcastLineupEngine';
+import {
+  buildBroadcastHighlight,
+  buildBroadcastLines,
+  buildPostMatchInterviewPackage,
+  determinePom,
+  type BroadcastHighlight,
+  type BroadcastLine,
+  type CoachInterviewTone,
+  type PostMatchInterviewPackage,
+} from '../../engine/match/broadcastPresentation';
+import { getDisplayEntityName } from '../../utils/displayName';
 import { DecisionPopup } from './DecisionPopup';
 import { SeriesResult } from './SeriesResult';
 import { TacticsPanel } from './TacticsPanel';
 import { BroadcastHud } from './BroadcastHud';
 import './match.css';
-
-const BroadcastBattlefield = lazy(() =>
-  import('./BroadcastBattlefield').then((module) => ({ default: module.BroadcastBattlefield })),
-);
 
 const SPEED_PRESETS: Array<{ key: MatchSpeedPreset; label: string }> = [
   { key: 'focus', label: '집중' },
@@ -38,6 +46,12 @@ const PHASE_LABELS: Record<string, string> = {
   mid_game: '중반',
   late_game: '후반',
   finished: '종료',
+};
+
+const COACH_INTERVIEW_TOPICS: Record<CoachInterviewTone, string> = {
+  calm: '준비한 운영이 잘 나왔다',
+  confident: '준비의 결과를 증명했다',
+  reflective: '보완점과 수확을 함께 봤다',
 };
 
 function getTickInterval(speed: number) {
@@ -83,6 +97,77 @@ function toGameResult(state: LiveGameState): GameResult {
   };
 }
 
+function statusLabel(player: LivePlayerStat) {
+  if (player.deaths >= 4 && player.kills === 0) return '집중 필요';
+  if (player.kills + player.assists >= 10) return '활약 중';
+  if (player.comfortPick) return '주력 카드';
+  return '안정적';
+}
+
+function toneClass(tone: BroadcastHighlight['tone']) {
+  switch (tone) {
+    case 'good':
+      return 'match-broadcast-highlight--good';
+    case 'danger':
+      return 'match-broadcast-highlight--danger';
+    default:
+      return 'match-broadcast-highlight--neutral';
+  }
+}
+
+function lineToneClass(tone: BroadcastLine['tone']) {
+  return `match-broadcast-line--${tone}`;
+}
+
+function TeamSideBoard({
+  teamName,
+  teamShortName,
+  side,
+  players,
+}: {
+  teamName: string;
+  teamShortName: string;
+  side: 'home' | 'away';
+  players: LivePlayerStat[];
+}) {
+  const totalDamage = Math.round(players.reduce((sum, player) => sum + player.damageDealt, 0));
+
+  return (
+    <section className={`match-side-board ${side === 'home' ? 'match-side-board--home' : 'match-side-board--away'}`}>
+      <div className="match-side-board__header">
+        <div>
+          <h3 className="match-side-board__title">{teamShortName}</h3>
+          <p className="match-side-board__sub">{teamName}</p>
+        </div>
+        <div className="match-side-board__teamline">
+          <span>{side === 'home' ? '우리 팀' : '상대 팀'}</span>
+          <span>누적 피해 {totalDamage.toLocaleString()}</span>
+        </div>
+      </div>
+      <div className="match-side-board__players">
+        {players.map((player) => (
+          <article key={player.playerId} className="match-side-player">
+            <div className="match-side-player__top">
+              <div>
+                <strong className="match-side-player__name">{getDisplayEntityName(player.playerName)}</strong>
+                <p className="match-side-player__meta">
+                  {player.position} · {player.championId ?? '챔피언 비공개'}
+                </p>
+              </div>
+              <span className="match-side-player__state">{statusLabel(player)}</span>
+            </div>
+            <div className="match-side-player__stats">
+              <span>KDA {player.kills}/{player.deaths}/{player.assists}</span>
+              <span>CS {player.cs}</span>
+              <span>{Math.round(player.goldEarned / 100) / 10}k</span>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export function LiveMatchView() {
   useBgm('match');
   const navigate = useNavigate();
@@ -122,9 +207,11 @@ export function LiveMatchView() {
   const [currentDecision, setCurrentDecision] = useState<Decision | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [seriesComplete, setSeriesComplete] = useState(false);
-  const [postMatchComment, setPostMatchComment] = useState<PostMatchComment | null>(null);
   const [liveChatMessages, setLiveChatMessages] = useState<LiveChatMessage[]>([]);
   const [matchError, setMatchError] = useState<string | null>(null);
+  const [studioPackage, setStudioPackage] = useState<PostMatchInterviewPackage | null>(null);
+  const [selectedCoachTone, setSelectedCoachTone] = useState<CoachInterviewTone>('calm');
+  const [postMatchPublished, setPostMatchPublished] = useState(false);
 
   const commentaryRef = useRef<HTMLDivElement>(null);
   const lastEventCount = useRef(0);
@@ -136,6 +223,18 @@ export function LiveMatchView() {
   const awayTeam = teams.find((team) => team.id === pendingMatch?.teamAwayId);
   const userSide =
     pendingMatch && save?.userTeamId ? (pendingMatch.teamHomeId === save.userTeamId ? 'home' : 'away') : 'home';
+  const broadcastCrew = useMemo(
+    () =>
+      selectBroadcastCrew({
+        seed: `${pendingMatch?.id ?? 'match'}-${currentGameNum}`,
+        matchType: pendingMatch?.matchType,
+        homeTeamId: homeTeam?.id,
+        awayTeamId: awayTeam?.id,
+        homeTeamName: homeTeam?.name,
+        awayTeamName: awayTeam?.name,
+      }),
+    [awayTeam?.id, awayTeam?.name, currentGameNum, homeTeam?.id, homeTeam?.name, pendingMatch?.id, pendingMatch?.matchType],
+  );
 
   useEffect(() => {
     setMatchActive(true);
@@ -155,7 +254,7 @@ export function LiveMatchView() {
     };
     el.addEventListener('scroll', handleScroll);
     return () => el.removeEventListener('scroll', handleScroll);
-  }, [engine]);
+  }, []);
 
   const initGame = useCallback(async () => {
     if (!pendingMatch || !save) return;
@@ -279,9 +378,83 @@ export function LiveMatchView() {
       gameTime: gameState.currentTick,
       count: 3,
     })
-      .then((messages) => setLiveChatMessages((prev) => [...prev, ...messages].slice(-12)))
+      .then((messages) => setLiveChatMessages((prev) => [...prev, ...messages].slice(-10)))
       .catch(() => {});
   }, [awayTeam?.shortName, gameState, homeTeam?.shortName]);
+
+  const publishPostMatchCoverage = useCallback(
+    async (tone: CoachInterviewTone) => {
+      if (!pendingMatch || !studioPackage || postMatchPublished || !homeTeam || !awayTeam) return;
+
+      const didUserWin = seriesScore[userSide] > seriesScore[userSide === 'home' ? 'away' : 'home'];
+      const pomTopic = studioPackage.pomReason.split('.').shift() ?? studioPackage.pomReason;
+
+      await generateMatchResultNews(
+        pendingMatch.seasonId,
+        currentDate,
+        homeTeam.name,
+        awayTeam.name,
+        seriesScore.home,
+        seriesScore.away,
+        {
+          homeTeamId: homeTeam.id,
+          awayTeamId: awayTeam.id,
+          matchType: pendingMatch.matchType,
+        },
+      ).catch(() => {});
+
+      await generateInterviewNews(
+        pendingMatch.seasonId,
+        currentDate,
+        studioPackage.pomName,
+        studioPackage.pomTeamName,
+        pomTopic,
+        didUserWin ? save?.userTeamId ?? null : pendingMatch.teamAwayId,
+        null,
+      ).catch(() => {});
+
+      await generateInterviewNews(
+        pendingMatch.seasonId,
+        currentDate,
+        `${save?.managerName ?? '감독'}`,
+        userSide === 'home' ? homeTeam.name : awayTeam.name,
+        COACH_INTERVIEW_TOPICS[tone],
+        save?.userTeamId ?? null,
+        null,
+      ).catch(() => {});
+
+      await generateSocialMediaReaction(
+        pendingMatch.seasonId,
+        currentDate,
+        studioPackage.socialReaction,
+        save?.userTeamId ?? null,
+      ).catch(() => {});
+
+      await generateFanReactionNews(
+        pendingMatch.seasonId,
+        currentDate,
+        userSide === 'home' ? homeTeam.name : awayTeam.name,
+        didUserWin ? 'win_streak' : 'lose_streak',
+        didUserWin ? 'positive' : 'negative',
+        save?.userTeamId ?? null,
+        studioPackage.fanReaction,
+      ).catch(() => {});
+
+      setPostMatchPublished(true);
+    },
+    [
+      awayTeam,
+      currentDate,
+      homeTeam,
+      pendingMatch,
+      postMatchPublished,
+      save?.managerName,
+      save?.userTeamId,
+      seriesScore,
+      studioPackage,
+      userSide,
+    ],
+  );
 
   useEffect(() => {
     if (!gameState?.isFinished || !pendingMatch || finalizedGame.current === currentGameNum) return;
@@ -346,16 +519,31 @@ export function LiveMatchView() {
         await processTournamentMatchResult(pendingMatch.seasonId, pendingMatch.id, winnerTeamId).catch(() => {});
       }
 
-      await generatePostMatchComment({
+      const pom = determinePom(gameState, homeTeam?.name ?? '홈 팀', awayTeam?.name ?? '원정 팀');
+      const generatedComment = await generatePostMatchComment({
         teamName: userSide === 'home' ? homeTeam?.name ?? '우리 팀' : awayTeam?.name ?? '우리 팀',
         opponentName: userSide === 'home' ? awayTeam?.name ?? '상대 팀' : homeTeam?.name ?? '상대 팀',
         isWin: result.winnerSide === userSide,
         scoreHome: nextScore.home,
         scoreAway: nextScore.away,
+        mvpName: pom.player.playerName,
         duration: result.durationMinutes,
-      })
-        .then(setPostMatchComment)
-        .catch(() => setPostMatchComment(null));
+      }).catch(() => null);
+
+      setStudioPackage(
+        buildPostMatchInterviewPackage({
+          crew: broadcastCrew,
+          gameState,
+          homeTeamId: homeTeam?.id,
+          awayTeamId: awayTeam?.id,
+          homeTeamName: homeTeam?.name ?? '홈 팀',
+          awayTeamName: awayTeam?.name ?? '원정 팀',
+          userTeamName: userSide === 'home' ? homeTeam?.name ?? '우리 팀' : awayTeam?.name ?? '우리 팀',
+          opponentTeamName: userSide === 'home' ? awayTeam?.name ?? '상대 팀' : homeTeam?.name ?? '상대 팀',
+          postMatchComment: generatedComment,
+          matchType: pendingMatch?.matchType,
+        }),
+      );
 
       setSeriesComplete(true);
       setBetweenGames(false);
@@ -365,17 +553,20 @@ export function LiveMatchView() {
 
     void finalize();
   }, [
+    awayTeam?.id,
     awayTeam?.name,
     currentGameNum,
     draftResult,
     gameResults,
     gameState,
     hardFearlessSeries,
+    homeTeam?.id,
     homeTeam?.name,
     pendingMatch,
     save,
     seriesFearlessPool,
     seriesScore,
+    broadcastCrew,
     setBetweenGames,
     setCurrentGameDraftRequired,
     setDayPhase,
@@ -399,29 +590,64 @@ export function LiveMatchView() {
     [engine],
   );
 
-  const handleReturn = useCallback(() => {
+  const handleReturn = useCallback(async () => {
+    if (seriesComplete && !postMatchPublished) {
+      await publishPostMatchCoverage(selectedCoachTone);
+    }
     setPendingUserMatch(null);
     setDraftResult(null);
     setCurrentGameDraftRequired(false);
     resetSeries();
     setDayPhase('idle');
     navigate(basePath);
-  }, [basePath, navigate, resetSeries, setCurrentGameDraftRequired, setDayPhase, setDraftResult, setPendingUserMatch]);
+  }, [
+    basePath,
+    navigate,
+    postMatchPublished,
+    publishPostMatchCoverage,
+    resetSeries,
+    selectedCoachTone,
+    seriesComplete,
+    setCurrentGameDraftRequired,
+    setDayPhase,
+    setDraftResult,
+    setPendingUserMatch,
+  ]);
 
   const lastGameStats = useMemo(() => {
     const lastGame = gameResults[gameResults.length - 1];
     if (!lastGame) return null;
     const homeKda = lastGame.playerStatsHome.reduce(
-      (acc, p) => ({ k: acc.k + p.kills, d: acc.d + p.deaths, a: acc.a + p.assists }),
+      (acc, player) => ({ k: acc.k + player.kills, d: acc.d + player.deaths, a: acc.a + player.assists }),
       { k: 0, d: 0, a: 0 },
     );
     const awayKda = lastGame.playerStatsAway.reduce(
-      (acc, p) => ({ k: acc.k + p.kills, d: acc.d + p.deaths, a: acc.a + p.assists }),
+      (acc, player) => ({ k: acc.k + player.kills, d: acc.d + player.deaths, a: acc.a + player.assists }),
       { k: 0, d: 0, a: 0 },
     );
     const goldDiff = lastGame.goldHome - lastGame.goldAway;
     return { homeKda, awayKda, goldDiff, towersHome: lastGame.towersHome, towersAway: lastGame.towersAway };
   }, [gameResults]);
+
+  const broadcastLines = useMemo(
+    () =>
+      gameState
+        ? buildBroadcastLines(gameState.commentary, broadcastCrew, gameState, {
+            matchType: pendingMatch?.matchType,
+            homeTeamId: homeTeam?.id,
+            awayTeamId: awayTeam?.id,
+            homeTeamName: homeTeam?.name,
+            awayTeamName: awayTeam?.name,
+            currentGameNum,
+            draftResult,
+          })
+        : [],
+    [awayTeam?.id, awayTeam?.name, broadcastCrew, currentGameNum, draftResult, gameState, homeTeam?.id, homeTeam?.name, pendingMatch?.matchType],
+  );
+  const highlight = useMemo(
+    () => (gameState ? buildBroadcastHighlight(gameState) : { title: '중계 대기', detail: '경기 정보를 불러오는 중입니다.', tone: 'neutral' as const }),
+    [gameState],
+  );
 
   if (!pendingMatch) {
     return <p className="fm-text-muted fm-text-md">진행 중인 경기가 없습니다.</p>;
@@ -432,7 +658,7 @@ export function LiveMatchView() {
       <div className="match-container fm-animate-in">
         <div className="fm-panel">
           <div className="fm-panel__body">
-            <h1 className="fm-page-title">드래프트가 먼저 필요합니다</h1>
+            <h1 className="fm-page-title">드래프트가 먼저 필요합니다.</h1>
             <p className="fm-text-secondary fm-mt-sm">다음 세트는 밴픽을 완료한 뒤에만 시작됩니다.</p>
             <button type="button" className="fm-btn fm-btn--primary fm-mt-md" onClick={() => navigate(`${basePath}/draft`)}>
               밴픽 화면으로 이동
@@ -448,9 +674,9 @@ export function LiveMatchView() {
       <div className="match-container fm-animate-in">
         <div className="fm-panel">
           <div className="fm-panel__body">
-            <h1 className="fm-page-title">경기 진행 중 문제가 발생했습니다</h1>
+            <h1 className="fm-page-title">경기 진행 중 문제가 발생했습니다.</h1>
             <p className="fm-text-secondary fm-mt-sm">{matchError}</p>
-            <button type="button" className="fm-btn fm-btn--primary fm-mt-md" onClick={handleReturn}>
+            <button type="button" className="fm-btn fm-btn--primary fm-mt-md" onClick={() => void handleReturn()}>
               대시보드로 돌아가기
             </button>
           </div>
@@ -499,34 +725,86 @@ export function LiveMatchView() {
         phaseLabels={PHASE_LABELS}
       />
 
-      <div className="fm-grid fm-grid--2 fm-mt-md">
-        <div className="fm-flex-col fm-gap-md">
-          <Suspense fallback={<div className="fm-card fm-text-muted">전장을 준비하는 중입니다...</div>}>
-            <BroadcastBattlefield gameState={gameState} />
-          </Suspense>
-          <TacticsPanel engine={engine} onTacticsChanged={() => setGameState({ ...engine.getState() })} />
-        </div>
+      <div className="match-broadcast-layout fm-mt-md">
+        <TeamSideBoard
+          teamName={homeTeam?.name ?? '홈 팀'}
+          teamShortName={homeTeam?.shortName ?? 'HOME'}
+          side="home"
+          players={gameState.playerStatsHome}
+        />
 
         <div className="fm-flex-col fm-gap-md">
-          <CommentaryPanel commentary={gameState.commentary} panelRef={commentaryRef} />
-          <div className="fm-panel">
-            <div className="fm-panel__header">
-              <span className="fm-panel__title">실시간 반응</span>
+          <section className="match-center-stage">
+            <div className="match-center-stage__header">
+              <div>
+                <span className="match-center-stage__eyebrow">라이브 중계 스테이지</span>
+                <h2 className="match-center-stage__title">캐스터와 해설이 경기 흐름을 전달하고 있습니다.</h2>
+              </div>
+              <div className="match-center-stage__meta">
+                <span>{PHASE_LABELS[gameState.phase]}</span>
+                <span>{gameState.currentTick}:00</span>
+              </div>
             </div>
-            <div className="fm-panel__body fm-flex-col fm-gap-sm">
-              {liveChatMessages.length === 0 ? (
-                <p className="fm-text-muted">주요 이벤트가 나오면 반응이 여기에 쌓입니다.</p>
-              ) : (
-                liveChatMessages.map((message, index) => (
-                  <div key={`${message.message}-${index}`} className="fm-card">
-                    <strong className="fm-text-primary">{message.username}</strong>
-                    <div className="fm-text-secondary">{message.message}</div>
+
+            <article className={`match-broadcast-highlight ${toneClass(highlight.tone)}`}>
+              <span className="match-broadcast-highlight__eyebrow">현재 장면</span>
+              <h3 className="match-broadcast-highlight__title">{highlight.title}</h3>
+              <p className="match-broadcast-highlight__detail">{highlight.detail}</p>
+            </article>
+
+            <div className="match-broadcast-lines" ref={commentaryRef}>
+              {broadcastLines.map((line) => (
+                <article key={line.id} className={`match-broadcast-line ${lineToneClass(line.tone)} ${line.highlight ? 'match-broadcast-line--highlight' : ''}`}>
+                  <div className="match-broadcast-line__meta">
+                    <span className="match-broadcast-line__speaker">{line.speaker.name}</span>
+                    <span className="match-broadcast-line__role">{line.roleLabel}</span>
+                    <span className="match-broadcast-line__tick">{line.tickLabel}</span>
                   </div>
-                ))
-              )}
+                  <p className="match-broadcast-line__message">{line.message}</p>
+                </article>
+              ))}
             </div>
+
+            <div className="fm-card" style={{ marginTop: 14 }}>
+              <strong className="fm-text-primary">
+                오늘 중계진: {broadcastCrew.caster.name} · {broadcastCrew.analystPrimary.name} · {broadcastCrew.analystSecondary.name}
+                {broadcastCrew.guestAnalyst ? ` · 특별 해설 ${broadcastCrew.guestAnalyst.name}` : ''}
+              </strong>
+              <div className="fm-text-secondary" style={{ marginTop: 6 }}>
+                진행 {broadcastCrew.announcer.name} 아나운서
+              </div>
+            </div>
+          </section>
+
+          <div className="match-center-bottom">
+            <section className="fm-panel">
+              <div className="fm-panel__header">
+                <span className="fm-panel__title">실시간 채팅 반응</span>
+              </div>
+              <div className="fm-panel__body fm-flex-col fm-gap-sm">
+                {liveChatMessages.length === 0 ? (
+                  <p className="fm-text-muted">큰 장면이 나오면 팬 반응이 여기에 바로 올라옵니다.</p>
+                ) : (
+                  liveChatMessages.map((message, index) => (
+                    <div key={`${message.message}-${index}`} className="fm-card">
+                      <strong className="fm-text-primary">{message.username}</strong>
+                      <div className="fm-text-secondary">{message.message}</div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </section>
+
+            <TacticsPanel engine={engine} onTacticsChanged={() => setGameState({ ...engine.getState() })} />
           </div>
         </div>
+
+        <TeamSideBoard
+          teamName={awayTeam?.name ?? '원정 팀'}
+          teamShortName={awayTeam?.shortName ?? 'AWAY'}
+          side="away"
+          players={gameState.playerStatsAway}
+        />
       </div>
 
       {currentDecision ? <DecisionPopup decision={currentDecision} onDecision={handleDecision} /> : null}
@@ -540,10 +818,10 @@ export function LiveMatchView() {
               <span className="match-result-final">{seriesScore.home} : {seriesScore.away}</span>
               <span className="match-result-team">{awayTeam?.shortName ?? '원정'}</span>
             </div>
-            {seriesScore.home === seriesScore.away && (
-              <p style={{ color: 'var(--warning)', fontWeight: 700, textAlign: 'center', margin: '4px 0 0' }}>결정전</p>
-            )}
-            {lastGameStats && (
+            {seriesScore.home === seriesScore.away ? (
+              <p style={{ color: 'var(--warning)', fontWeight: 700, textAlign: 'center', margin: '4px 0 0' }}>결정전 구도입니다.</p>
+            ) : null}
+            {lastGameStats ? (
               <div className="match-between-result" style={{ marginTop: 12 }}>
                 <div style={{ fontSize: 13 }}>
                   {lastGameStats.homeKda.k}/{lastGameStats.homeKda.d}/{lastGameStats.homeKda.a}
@@ -551,13 +829,14 @@ export function LiveMatchView() {
                   {lastGameStats.awayKda.k}/{lastGameStats.awayKda.d}/{lastGameStats.awayKda.a}
                 </div>
                 <div style={{ color: 'var(--text-muted)', fontSize: 12, marginTop: 4 }}>
-                  골드 차이 {lastGameStats.goldDiff > 0 ? '+' : ''}{(Math.round(lastGameStats.goldDiff / 100) / 10).toFixed(1)}k
-                  &nbsp;·&nbsp;
+                  골드 차이 {lastGameStats.goldDiff > 0 ? '+' : ''}
+                  {(Math.round(lastGameStats.goldDiff / 100) / 10).toFixed(1)}k
+                  <span style={{ margin: '0 8px' }}>·</span>
                   타워 {lastGameStats.towersHome} vs {lastGameStats.towersAway}
                 </div>
               </div>
-            )}
-            <p className="fm-text-secondary" style={{ marginTop: 10 }}>다음 세트 밴픽을 완료하면 경기가 이어집니다.</p>
+            ) : null}
+            <p className="fm-text-secondary" style={{ marginTop: 10 }}>다음 세트 밴픽을 마치면 시리즈가 계속 진행됩니다.</p>
             <button type="button" className="fm-btn fm-btn--primary fm-mt-md" onClick={() => navigate(`${basePath}/draft`)}>
               다음 세트 밴픽으로 이동
             </button>
@@ -572,9 +851,10 @@ export function LiveMatchView() {
           homeTeamName={homeTeam?.name}
           awayTeamName={awayTeam?.name}
           seriesScore={seriesScore}
-          postMatchComment={postMatchComment}
+          studioPackage={studioPackage}
           gameResults={gameResults}
-          onReturn={handleReturn}
+          onSelectCoachTone={setSelectedCoachTone}
+          onReturn={() => void handleReturn()}
         />
       ) : null}
     </div>

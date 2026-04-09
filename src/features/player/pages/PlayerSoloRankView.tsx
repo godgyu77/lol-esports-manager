@@ -9,6 +9,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useGameStore } from '../../../stores/gameStore';
 import { getDatabase } from '../../../db/database';
+import { MainLoopPanel } from '../../manager/components/MainLoopPanel';
 
 interface SoloRankStatus {
   tier: string;
@@ -280,12 +281,46 @@ export function PlayerSoloRankView() {
   // 일간 로그에서 총 승/패 계산
   const totalWins = dailyLogs.reduce((s, d) => s + d.wins, 0);
   const totalLosses = dailyLogs.reduce((s, d) => s + d.losses, 0);
+  const selectedChampion = champions.find((champ) => champ.selected);
 
   return (
     <div>
       <div className="fm-page-header">
         <h1 className="fm-page-title">솔로랭크</h1>
       </div>
+
+      <MainLoopPanel
+        eyebrow="선수 루프"
+        title="현재 티어와 다음 솔랭 목표를 먼저 읽는 랭크 허브"
+        subtitle="LP 그래프와 전체 리더보드를 다 보기 전에, 지금 티어 상태와 연습 챔피언, 최근 흐름을 먼저 파악할 수 있게 정리했습니다."
+        insights={[
+          {
+            label: '현재 티어',
+            value: `${tierLabel} ${status.lp}LP`,
+            detail: `서버 순위 #${status.rank}`,
+            tone: 'accent',
+          },
+          {
+            label: '최근 흐름',
+            value: `${winRate}%`,
+            detail: `${totalWins}승 ${totalLosses}패 / 최근 기록 기준`,
+            tone: status.recentWinRate >= 0.5 ? 'success' : 'warning',
+          },
+          {
+            label: '연습 챔피언',
+            value: selectedChampion?.name ?? '미선택',
+            detail: selectedChampion ? `숙련도 ${selectedChampion.proficiency} / ${selectedChampion.gamesPlayed}게임` : '아래에서 집중 연습할 챔피언을 고를 수 있습니다.',
+            tone: selectedChampion ? 'success' : 'neutral',
+          },
+          {
+            label: '다음 액션',
+            value: leaderboard.length > 0 ? '리더보드 확인' : '연습 챔피언 선택',
+            detail: '상단 상태를 읽은 뒤 아래에서 LP 추이, 챔피언 선택, 최근 기록을 차례로 확인하면 됩니다.',
+            tone: 'accent',
+          },
+        ]}
+        note="상단은 현재 랭크 상태를 읽는 용도, 아래는 그래프와 리더보드 같은 참고 정보입니다."
+      />
 
       {/* 랭크 상태 카드 */}
       <div className="fm-panel">

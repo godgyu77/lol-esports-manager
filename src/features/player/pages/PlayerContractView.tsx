@@ -10,6 +10,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useGameStore } from '../../../stores/gameStore';
 import { getDatabase } from '../../../db/database';
+import { MainLoopPanel } from '../../manager/components/MainLoopPanel';
 import type { ClauseType } from '../../../types/contract';
 import { CLAUSE_TYPE_LABELS } from '../../../types/contract';
 import type { ContractNegotiation } from '../../../types/contract';
@@ -393,6 +394,43 @@ export function PlayerContractView() {
           <span className="fm-alert__text">{message.text}</span>
         </div>
       )}
+
+      <MainLoopPanel
+        eyebrow="선수 루프"
+        title="계약 안정성과 다음 협상 선택을 먼저 읽는 계약 허브"
+        subtitle="계약 상세 조항을 전부 읽기 전에, 지금 내 계약이 안정적인지와 어떤 협상 액션이 열려 있는지 먼저 파악할 수 있게 정리했습니다."
+        insights={[
+          {
+            label: '현재 계약',
+            value: `${contract.teamName} / ${formatSalary(contract.salary)}`,
+            detail: `시즌 ${contract.startSeason} ~ ${contract.endSeason}`,
+            tone: isExpiring ? 'warning' : 'accent',
+          },
+          {
+            label: '계약 안정성',
+            value: isExpiring ? '만료 임박' : '유지 중',
+            detail: `충성도 ${contract.loyalty}% (${getLoyaltyLabel(contract.loyalty)})`,
+            tone: isExpiring ? 'danger' : contract.loyalty >= 60 ? 'success' : 'warning',
+          },
+          {
+            label: '진행 중 협상',
+            value: `${pendingFromTeam.length}건`,
+            detail: pendingFromTeam.length > 0 ? '팀이 보낸 제안을 우선 확인할 수 있습니다.' : '진행 중인 팀 제안은 없습니다.',
+            tone: pendingFromTeam.length > 0 ? 'accent' : 'neutral',
+          },
+          {
+            label: '받은 제안',
+            value: `${offers.length}건`,
+            detail: offers.length > 0 ? `${offers[0].teamName} 제안이 가장 높습니다.` : '현재 외부 팀 제안은 없습니다.',
+            tone: offers.length > 0 ? 'success' : 'neutral',
+          },
+        ]}
+        actions={[
+          { label: '계약 요청', onClick: () => setShowRequestModal(true), variant: 'primary', disabled: !contract.teamId },
+          { label: '이적 요청', onClick: () => void handleTransferRequest(), disabled: transferRequested || !canRequestTransfer },
+        ]}
+        note="상단은 계약 판단용 요약, 아래는 조항과 협상 기록을 읽는 상세 영역입니다."
+      />
 
       {/* 현재 계약 정보 */}
       <div className="fm-panel">

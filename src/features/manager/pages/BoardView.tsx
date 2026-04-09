@@ -15,6 +15,7 @@ import {
 } from '../../../engine/board/boardEngine';
 import { getTeamWithRoster } from '../../../db/queries';
 import type { BoardExpectation, FanReaction } from '../../../types/board';
+import { MainLoopPanel } from '../components/MainLoopPanel';
 
 const EVENT_TYPE_LABELS: Record<string, string> = {
   match_win: '경기 승리',
@@ -89,6 +90,39 @@ export function BoardView() {
       <div className="fm-page-header">
         <h1 className="fm-page-title">보드 관리</h1>
       </div>
+
+      <MainLoopPanel
+        eyebrow="참고 화면"
+        title="보드 기대치와 최근 반응을 먼저 읽는 요약 화면"
+        subtitle="세부 로그를 길게 읽기 전에 시즌 목표, 만족도, 경고 상태부터 한눈에 파악할 수 있게 정리했습니다."
+        insights={[
+          {
+            label: '목표 순위',
+            value: `${expectations.targetStanding}위`,
+            detail: `플레이오프 ${expectations.targetPlayoff ? '필수' : '선택'} / 국제전 ${expectations.targetInternational ? '필수' : '선택'}`,
+            tone: 'accent',
+          },
+          {
+            label: '보드 만족도',
+            value: `${expectations.satisfaction}`,
+            detail: `팬 행복도 ${expectations.fanHappiness}`,
+            tone: expectations.satisfaction >= 70 ? 'success' : expectations.satisfaction >= 40 ? 'warning' : 'danger',
+          },
+          {
+            label: '경고 상태',
+            value: expectations.warningCount > 0 ? `${expectations.warningCount}회` : '안정',
+            detail: expectations.isFired ? '해고 상태입니다.' : '최근 누적 경고를 확인할 수 있습니다.',
+            tone: expectations.isFired ? 'danger' : expectations.warningCount > 0 ? 'warning' : 'success',
+          },
+          {
+            label: '최근 반응',
+            value: reactions[0] ? getEventLabel(reactions[0].eventType) : '기록 없음',
+            detail: reactions[0]?.message ?? '최근 팬 반응 로그가 아직 없습니다.',
+            tone: 'neutral',
+          },
+        ]}
+        note="이 화면은 조작보다 상태 확인이 중심인 페이지라, 상단 요약 뒤에 세부 로그를 읽는 흐름으로 맞췄습니다."
+      />
 
       <div className="fm-panel fm-mb-md">
         <div className="fm-panel__header">

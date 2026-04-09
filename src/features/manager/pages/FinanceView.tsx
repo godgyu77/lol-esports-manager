@@ -454,33 +454,6 @@ export function FinanceView() {
 
       <div className="fm-panel fm-mb-lg">
         <div className="fm-panel__header">
-          <span className="fm-panel__title">스폰서 전략</span>
-        </div>
-        <div className="fm-panel__body">
-          <div className="fm-grid fm-grid--3 fm-mb-md">
-            {STRATEGY_CARDS.map((card) => (
-              <div key={card.title} className="fm-card fm-flex-col fm-gap-sm">
-                <div className="fm-flex fm-justify-between fm-items-center fm-gap-sm">
-                  <span className="fm-text-primary fm-font-semibold">{card.title}</span>
-                  <span className="fm-badge fm-badge--info">{card.badge}</span>
-                </div>
-                <p className="fm-text-secondary" style={{ margin: 0 }}>{card.detail}</p>
-              </div>
-            ))}
-          </div>
-
-          <div className="fm-card">
-            <div className="fm-flex fm-justify-between fm-items-center fm-gap-sm">
-              <span className="fm-text-primary fm-font-semibold">협상 지표</span>
-              <span className="fm-badge fm-badge--default">{effectiveReputation}</span>
-            </div>
-            <p className="fm-text-secondary fm-mt-sm" style={{ marginBottom: 0 }}>{negotiationSummary}</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="fm-panel fm-mb-lg">
-        <div className="fm-panel__header">
           <span className="fm-panel__title">스폰서 관리</span>
         </div>
         <div className="fm-panel__body">
@@ -633,46 +606,78 @@ export function FinanceView() {
         </div>
       </div>
 
-      <div className="fm-panel">
-        <div className="fm-panel__header">
-          <span className="fm-panel__title">재정 로그</span>
-        </div>
-        <div className="fm-panel__body--flush">
-          {summary.logs.length === 0 ? (
-            <p className="fm-text-muted fm-text-md fm-p-md">아직 기록된 재정 로그가 없습니다.</p>
-          ) : (
-            <div className="fm-table-wrap">
-              <table className="fm-table fm-table--striped">
-                <thead>
-                  <tr>
-                    <th>날짜</th>
-                    <th>구분</th>
-                    <th>항목</th>
-                    <th>금액</th>
-                    <th>설명</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {summary.logs.map((log: FinanceLog) => (
-                    <tr key={log.id}>
-                      <td>{log.gameDate}</td>
-                      <td className={log.type === 'income' ? 'fm-cell--green' : 'fm-cell--red'}>
-                        {log.type === 'income' ? '수입' : '지출'}
-                      </td>
-                      <td>{getCategoryLabel(log.category)}</td>
-                      <td className={log.type === 'income' ? 'fm-cell--green' : 'fm-cell--red'}>
-                        {log.type === 'income' ? '+' : '-'}
-                        {formatAmount(log.amount)}
-                      </td>
-                      <td className="fm-text-secondary">{log.description ?? '-'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+      <details className="fm-disclosure">
+        <summary>스폰서 전략과 재정 로그 보기</summary>
+        <div className="fm-disclosure__body">
+          <div className="fm-panel fm-mb-lg">
+            <div className="fm-panel__header">
+              <span className="fm-panel__title">스폰서 전략</span>
             </div>
-          )}
+            <div className="fm-panel__body">
+              <div className="fm-grid fm-grid--3 fm-mb-md">
+                {STRATEGY_CARDS.map((card) => (
+                  <div key={card.title} className="fm-card fm-flex-col fm-gap-sm">
+                    <div className="fm-flex fm-justify-between fm-items-center fm-gap-sm">
+                      <span className="fm-text-primary fm-font-semibold">{card.title}</span>
+                      <span className="fm-badge fm-badge--info">{card.badge}</span>
+                    </div>
+                    <p className="fm-text-secondary" style={{ margin: 0 }}>{card.detail}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="fm-card">
+                <div className="fm-flex fm-justify-between fm-items-center fm-gap-sm">
+                  <span className="fm-text-primary fm-font-semibold">협상 지표</span>
+                  <span className="fm-badge fm-badge--default">{effectiveReputation}</span>
+                </div>
+                <p className="fm-text-secondary fm-mt-sm" style={{ marginBottom: 0 }}>{negotiationSummary}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="fm-panel">
+            <div className="fm-panel__header">
+              <span className="fm-panel__title">재정 로그</span>
+            </div>
+            <div className="fm-panel__body--flush">
+              {summary.logs.length === 0 ? (
+                <p className="fm-text-muted fm-text-md fm-p-md">아직 기록된 재정 로그가 없습니다.</p>
+              ) : (
+                <div className="fm-table-wrap">
+                  <table className="fm-table fm-table--striped">
+                    <thead>
+                      <tr>
+                        <th>날짜</th>
+                        <th>구분</th>
+                        <th>항목</th>
+                        <th>금액</th>
+                        <th>설명</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {summary.logs.map((log: FinanceLog) => (
+                        <tr key={log.id}>
+                          <td>{log.gameDate}</td>
+                          <td className={log.type === 'income' ? 'fm-cell--green' : 'fm-cell--red'}>
+                            {log.type === 'income' ? '수입' : '지출'}
+                          </td>
+                          <td>{getCategoryLabel(log.category)}</td>
+                          <td className={log.type === 'income' ? 'fm-cell--green' : 'fm-cell--red'}>
+                            {log.type === 'income' ? '+' : '-'}
+                            {formatAmount(log.amount)}
+                          </td>
+                          <td className="fm-text-secondary">{log.description ?? '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
-      </div>
+      </details>
     </div>
   );
 }

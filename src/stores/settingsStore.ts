@@ -2,8 +2,6 @@ import { create } from 'zustand';
 import type { StateCreator } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { soundManager } from '../audio/soundManager';
-import { Client, Stronghold } from '@tauri-apps/plugin-stronghold';
-import { appDataDir } from '@tauri-apps/api/path';
 
 export type Difficulty = 'easy' | 'normal' | 'hard';
 
@@ -12,9 +10,30 @@ export type WindowMode = 'windowed' | 'fullscreen' | 'borderless';
 export type AiProvider = 'ollama' | 'openai' | 'claude' | 'gemini' | 'grok' | 'template';
 type CloudAiProvider = Exclude<AiProvider, 'ollama' | 'template'>;
 
+interface StrongholdStoreLike {
+  insert: (record: string, data: number[]) => Promise<void>;
+  get: (record: string) => Promise<number[] | null>;
+  remove: (record: string) => Promise<void>;
+}
+
+interface StrongholdClientLike {
+  getStore: () => StrongholdStoreLike;
+}
+
+interface StrongholdInstanceLike {
+  loadClient: (name: string) => Promise<StrongholdClientLike>;
+  createClient: (name: string) => Promise<StrongholdClientLike>;
+  save: () => Promise<void>;
+}
+
+export const isTauriRuntime = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  return '__TAURI_INTERNALS__' in window || '__TAURI__' in window;
+};
+
 export const isMobileRuntime = (): boolean => {
   if (typeof window === 'undefined') return false;
-  return /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth <= 480;
+  return /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent);
 };
 
 const VAULT_PASSWORD = 'lol-esports-manager';
@@ -26,14 +45,57 @@ const API_KEY_RECORDS: Record<CloudAiProvider, string> = {
   grok: 'grok-api-key',
 };
 
-let strongholdInstance: Stronghold | null = null;
-let strongholdClient: Client | null = null;
+export function normalizeAiProviderForRuntime(provider: AiProvider): AiProvider {
+  if (isMobileRuntime() && provider === 'ollama') {
+    return 'template';
+  }
+  return provider;
+}
 
-async function getStrongholdClient(): Promise<Client> {
+let strongholdInstance: StrongholdInstanceLike | null = null;
+let strongholdClient: StrongholdClientLike | null = null;
+
+function getApiKeyStorageKey(provider: CloudAiProvider): string {
+  return `lol-esports-manager:${provider}:api-key`;
+}
+
+function getApiKeyFromLocalStorage(provider: CloudAiProvider): string {
+  if (typeof window === 'undefined') return '';
+  try {
+    return window.localStorage.getItem(getApiKeyStorageKey(provider)) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function setApiKeyToLocalStorage(provider: CloudAiProvider, key: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(getApiKeyStorageKey(provider), key);
+  } catch {
+    // ignore storage failures and keep runtime stable
+  }
+}
+
+function removeApiKeyFromLocalStorage(provider: CloudAiProvider): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.removeItem(getApiKeyStorageKey(provider));
+  } catch {
+    // ignore storage failures and keep runtime stable
+  }
+}
+
+async function getStrongholdClient(): Promise<StrongholdClientLike> {
   if (strongholdClient) return strongholdClient;
+  if (!isTauriRuntime() || isMobileRuntime()) {
+    throw new Error('Stronghold unavailable');
+  }
 
+  const { appDataDir } = await import('@tauri-apps/api/path');
+  const { Stronghold } = await import('@tauri-apps/plugin-stronghold');
   const vaultPath = `${await appDataDir()}/vault.hold`;
-  strongholdInstance = await Stronghold.load(vaultPath, VAULT_PASSWORD);
+  strongholdInstance = (await Stronghold.load(vaultPath, VAULT_PASSWORD)) as StrongholdInstanceLike;
 
   try {
     strongholdClient = await strongholdInstance.loadClient(CLIENT_NAME);
@@ -52,6 +114,10 @@ function resolveApiKeyRecord(provider: AiProvider): string | null {
 async function storeApiKeyToVault(provider: AiProvider, key: string): Promise<void> {
   const record = resolveApiKeyRecord(provider);
   if (!record) return;
+  if (!isTauriRuntime() || isMobileRuntime()) {
+    setApiKeyToLocalStorage(provider, key);
+    return;
+  }
   const client = await getStrongholdClient();
   const store = client.getStore();
   const data = Array.from(new TextEncoder().encode(key));
@@ -64,6 +130,9 @@ async function storeApiKeyToVault(provider: AiProvider, key: string): Promise<vo
 async function getApiKeyFromVault(provider: AiProvider): Promise<string> {
   const record = resolveApiKeyRecord(provider);
   if (!record) return '';
+  if (!isTauriRuntime() || isMobileRuntime()) {
+    return getApiKeyFromLocalStorage(provider);
+  }
   try {
     const client = await getStrongholdClient();
     const store = client.getStore();
@@ -78,6 +147,10 @@ async function getApiKeyFromVault(provider: AiProvider): Promise<string> {
 async function deleteApiKeyFromVault(provider: AiProvider): Promise<void> {
   const record = resolveApiKeyRecord(provider);
   if (!record) return;
+  if (!isTauriRuntime() || isMobileRuntime()) {
+    removeApiKeyFromLocalStorage(provider);
+    return;
+  }
   try {
     const client = await getStrongholdClient();
     const store = client.getStore();
@@ -165,7 +238,7 @@ const createSettingsState: StateCreator<SettingsState, [], [], SettingsState> = 
       setTheme: (theme) => set({ theme }),
       setWindowMode: (mode) => set({ windowMode: mode }),
       setAiProvider: (provider) => {
-        const nextProvider = isMobileRuntime() && provider === 'ollama' ? 'template' : provider;
+        const nextProvider = normalizeAiProviderForRuntime(provider);
         set({ aiProvider: nextProvider });
         void getApiKeyFromVault(nextProvider).then((key) => {
           set({ hasApiKey: !!key });
@@ -214,9 +287,13 @@ export const useSettingsStore = create<SettingsState>()(
       }),
       onRehydrateStorage: () => (state) => {
         if (state) {
+          const normalizedProvider = normalizeAiProviderForRuntime(state.aiProvider);
+          if (normalizedProvider !== state.aiProvider) {
+            state.setAiProvider(normalizedProvider);
+          }
           soundManager.setEnabled(state.soundEnabled);
           soundManager.setVolume(state.soundVolume);
-          state.initApiKeyStatus().catch(() => {});
+          state.initApiKeyStatus(normalizedProvider).catch(() => {});
         }
       },
     },

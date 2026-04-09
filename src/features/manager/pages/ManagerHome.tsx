@@ -58,6 +58,21 @@ interface DisplayRiskItem {
   summary: string;
 }
 
+function localizeLoopRiskText(text: string): string {
+  return text
+    .replace('Budget pressure', '재정 압박')
+    .replace('Room chemistry watch', '팀 케미스트리 점검')
+    .replace('Room chemistry', '팀 케미스트리')
+    .replace('Regional pressure check', '지역 기대 압박 점검')
+    .replace('International broadcast desk', '국제 무대 압박 점검')
+    .replace('Financial pressure is manageable.', '재정 압박은 아직 관리 가능한 수준입니다.')
+    .replace('International pressure is forming, but the club still has room to build before it becomes a season-defining burden.', '국제 기대가 형성되고 있지만 아직은 시즌 전체를 짓누를 단계는 아닙니다.')
+    .replace('Relationship signal is still shallow, but staff trust is sitting around', '관계 신호는 아직 옅지만 스태프 신뢰도는 현재')
+    .replace('The board has already tied credibility to international-level delivery.', '보드는 이미 국제 무대 성과를 신뢰 기준으로 보기 시작했습니다.')
+    .replace('The board is not fully demanding international success yet, but strong domestic seasons will raise that bar.', '보드가 아직 국제 성과를 강하게 요구하지는 않지만, 국내 성적이 쌓이면 기준은 더 높아집니다.')
+    .trim();
+}
+
 function getUrgencyLabel(urgency: 'high' | 'medium' | 'low') {
   if (urgency === 'high') return '긴급';
   if (urgency === 'medium') return '주의';
@@ -165,6 +180,10 @@ export function ManagerHome() {
           [...risks, ...prep, ...consequences]
             .map((item) => normalizeRiskItem(item))
             .filter((item): item is DisplayRiskItem => item !== null)
+            .map((item) => ({
+              title: localizeLoopRiskText(item.title),
+              summary: localizeLoopRiskText(item.summary),
+            }))
             .slice(0, 4),
         );
         setManagerIdentity(identity);

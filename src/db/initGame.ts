@@ -31,7 +31,7 @@ import { initializeTeamChemistry } from '../engine/chemistry/chemistryEngine';
 import { generatePlayerGoals } from '../engine/playerGoal/playerGoalEngine';
 import { initializeKnowledgeBase } from '../ai/rag/ragEngine';
 import { initGlobalRng } from '../utils/random';
-import { seedAllTeamsStaff } from '../engine/staff/staffEngine';
+import { seedAllTeamsStaff, transitionUserTeamHeadCoachToLeadCoach } from '../engine/staff/staffEngine';
 import { ensureInitialCoachBriefingNews } from '../engine/manager/managerSetupEngine';
 
 const BACKGROUND_STATS: Record<
@@ -348,6 +348,7 @@ export async function initializeNewGame(
   }
 
   if (mode === 'manager') {
+    await transitionUserTeamHeadCoachToLeadCoach(teamId);
     const activeSeason = await getActiveSeason();
     await ensureInitialCoachBriefingNews(
       teamId,

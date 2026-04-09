@@ -9,6 +9,7 @@
 import { useState, useEffect } from 'react';
 import { useGameStore } from '../../../stores/gameStore';
 import { getDatabase } from '../../../db/database';
+import { MainLoopPanel } from '../../manager/components/MainLoopPanel';
 
 interface CareerStats {
   totalGames: number;
@@ -301,12 +302,47 @@ export function PlayerStatsView() {
   const overallKda = career && career.totalDeaths > 0
     ? ((career.totalKills + career.totalAssists) / career.totalDeaths).toFixed(2)
     : career ? '퍼펙트' : '-';
+  const recentGameLabel = recentGames[0]?.matchDate ? recentGames[0].matchDate.slice(0, 10) : '기록 없음';
+  const championLead = championPool[0];
 
   return (
     <div>
       <div className="fm-page-header">
         <h1 className="fm-page-title">선수 통계</h1>
       </div>
+
+      <MainLoopPanel
+        eyebrow="선수 루프"
+        title="최근 폼과 강점을 먼저 읽는 통계 허브"
+        subtitle="커리어 누적치와 탭 전체를 한 번에 보기보다, 지금 확인해야 할 최근 흐름과 대표 지표를 먼저 읽도록 정리했습니다."
+        insights={[
+          {
+            label: '커리어 핵심',
+            value: career ? `${career.totalGames}경기 / KDA ${overallKda}` : '기록 없음',
+            detail: career ? `${career.totalKills}/${career.totalDeaths}/${career.totalAssists}` : '경기 데이터가 쌓이면 여기서 핵심 흐름을 볼 수 있습니다.',
+            tone: career ? 'accent' : 'warning',
+          },
+          {
+            label: '최근 흐름',
+            value: recentGames.length > 0 ? `${recentGames.length}경기 집계` : '최근 경기 없음',
+            detail: recentGames.length > 0 ? `가장 최근 기록 ${recentGameLabel}` : '최근 경기 데이터가 아직 없습니다.',
+            tone: recentGames.length > 0 ? 'success' : 'warning',
+          },
+          {
+            label: '대표 챔피언',
+            value: championLead?.name ?? '데이터 없음',
+            detail: championLead ? `숙련도 ${championLead.proficiency} / ${championLead.games}게임` : '챔피언 풀이 쌓이면 강점을 더 빠르게 읽을 수 있습니다.',
+            tone: championLead ? 'accent' : 'neutral',
+          },
+          {
+            label: '현재 보기',
+            value: activeTab === 'recent' ? '최근 경기' : activeTab === 'champions' ? '챔피언 풀' : '리그 평균 비교',
+            detail: '아래 탭에서 최근 경기, 챔피언 숙련도, 리그 평균 비교를 이어서 볼 수 있습니다.',
+            tone: 'accent',
+          },
+        ]}
+        note="상단은 현재 폼을 읽는 용도, 아래 탭은 상세 기록을 비교하는 용도로 나눴습니다."
+      />
 
       {/* 커리어 요약 카드 */}
       {career ? (

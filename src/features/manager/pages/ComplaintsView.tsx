@@ -17,7 +17,6 @@ import {
 } from '../../../engine/satisfaction/playerSatisfactionEngine';
 import { getPlayerById } from '../../../db/queries';
 import { NOTIFICATIONS_INVALIDATED_EVENT } from '../../../engine/news/newsEvents';
-import { MainLoopPanel } from '../components/MainLoopPanel';
 import type { PlayerComplaint } from '../../../types/complaint';
 import { COMPLAINT_TYPE_LABELS, COMPLAINT_SEVERITY_LABELS } from '../../../types/complaint';
 
@@ -86,11 +85,11 @@ export function ComplaintsView() {
       window.dispatchEvent(new Event(NOTIFICATIONS_INVALIDATED_EVENT));
 
       const allComplaints = [...active, ...history];
-      const uniquePlayerIds = [...new Set(allComplaints.map((c) => c.playerId))];
+      const uniquePlayerIds = [...new Set(allComplaints.map((complaint) => complaint.playerId))];
       const names: Record<string, string> = {};
-      for (const pid of uniquePlayerIds) {
-        const player = await getPlayerById(pid);
-        if (player) names[pid] = player.name;
+      for (const playerId of uniquePlayerIds) {
+        const player = await getPlayerById(playerId);
+        if (player) names[playerId] = player.name;
       }
       setPlayerNames(names);
     } catch (err) {
@@ -178,33 +177,39 @@ export function ComplaintsView() {
         <h1 className="fm-page-title">선수 관리</h1>
       </div>
 
-      <MainLoopPanel
-        eyebrow="불만 관리"
-        title="활성 불만과 누적 이력을 한 화면에서 보고 바로 조치할 수 있게 정리했습니다."
-        subtitle="메뉴 배지와 실제 목록이 최대한 같은 타이밍에 맞춰지도록 로딩 시점을 맞췄고, 지금 처리할 항목이 먼저 보이게 구성했습니다."
-        insights={[
-          {
-            label: '활성 불만',
-            value: `${activeComplaints.length}건`,
-            detail: activeComplaints[0] ? `${playerNames[activeComplaints[0].playerId] ?? '선수'}의 이슈가 가장 먼저 확인됩니다.` : '현재 활성 불만은 없습니다.',
-            tone: activeComplaints.length > 0 ? 'warning' : 'success',
-          },
-          {
-            label: '최근 기록',
-            value: `${historyComplaints.length}건`,
-            detail: historyComplaints.length > 0 ? '해결과 무시 기록을 함께 보며 대응 방식을 점검할 수 있습니다.' : '아직 이번 시즌 이력이 많지 않습니다.',
-            tone: 'accent',
-          },
-          {
-            label: '우선 확인',
-            value: activeComplaints[0] ? COMPLAINT_TYPE_LABELS[activeComplaints[0].complaintType] : '안정',
-            detail: activeComplaints[0] ? activeComplaints[0].description : '즉시 대응이 필요한 불만이 없습니다.',
-            tone: activeComplaints[0] ? 'danger' : 'success',
-          },
-        ]}
-        actions={[]}
-        note="이 화면은 선수와 직접 관련된 처리 허브입니다. 뉴스는 읽는 곳, 받은편지는 운영 메시지 처리용으로 역할을 분리했습니다."
-      />
+      <div className="fm-grid fm-grid--3 fm-mb-md">
+        <div className="fm-card">
+          <div className="fm-stat">
+            <span className="fm-stat__label">활성 불만</span>
+            <span className="fm-stat__value">{activeComplaints.length}건</span>
+          </div>
+          <p className="fm-text-xs fm-text-secondary fm-mt-xs" style={{ marginBottom: 0 }}>
+            {activeComplaints[0]
+              ? `${playerNames[activeComplaints[0].playerId] ?? '선수'} 이슈부터 확인하세요.`
+              : '현재 바로 대응할 불만은 없습니다.'}
+          </p>
+        </div>
+        <div className="fm-card">
+          <div className="fm-stat">
+            <span className="fm-stat__label">최근 기록</span>
+            <span className="fm-stat__value">{historyComplaints.length}건</span>
+          </div>
+          <p className="fm-text-xs fm-text-secondary fm-mt-xs" style={{ marginBottom: 0 }}>
+            {historyComplaints.length > 0 ? '해결과 무시 기록을 함께 확인할 수 있습니다.' : '아직 이번 시즌 기록이 많지 않습니다.'}
+          </p>
+        </div>
+        <div className="fm-card">
+          <div className="fm-stat">
+            <span className="fm-stat__label">우선 확인</span>
+            <span className="fm-stat__value">
+              {activeComplaints[0] ? COMPLAINT_TYPE_LABELS[activeComplaints[0].complaintType] : '안정'}
+            </span>
+          </div>
+          <p className="fm-text-xs fm-text-secondary fm-mt-xs" style={{ marginBottom: 0 }}>
+            {activeComplaints[0] ? activeComplaints[0].description : '즉시 대응이 필요한 불만은 없습니다.'}
+          </p>
+        </div>
+      </div>
 
       <div className="fm-tabs">
         <button className={`fm-tab ${tab === 'active' ? 'fm-tab--active' : ''}`} onClick={() => setTab('active')}>
@@ -216,10 +221,10 @@ export function ComplaintsView() {
       </div>
 
       {displayComplaints.length === 0 ? (
-        <div className="fm-card fm-text-center fm-p-lg">
-          <p className="fm-text-muted fm-text-lg">
+        <div className="fm-empty-state fm-empty-state--compact">
+          <div className="fm-empty-state__title">
             {tab === 'active' ? '현재 활성 불만이 없습니다.' : '이번 시즌 불만 이력이 없습니다.'}
-          </p>
+          </div>
         </div>
       ) : (
         <div className="fm-flex-col fm-gap-md">

@@ -16,6 +16,7 @@ import type {
 } from '../../types/staff';
 import type { Region } from '../../types/game';
 import { pickRandom, randomInt } from '../../utils/random';
+import { getDisplayStaffName } from '../../utils/displayName';
 import { getPlayerManagementInsights, type PlayerManagementInsight } from '../satisfaction/playerSatisfactionEngine';
 import { getActiveComplaints } from '../complaint/complaintEngine';
 import type { StaffFitSummary } from '../../types/systemDepth';
@@ -95,7 +96,7 @@ function mapRowToStaff(row: StaffRow): Staff {
   return {
     id: row.id,
     teamId: row.team_id,
-    name: row.name,
+    name: getDisplayStaffName(row.name),
     role: row.role as StaffRole,
     ability: row.ability,
     specialty: row.specialty as StaffSpecialty | null,
@@ -530,7 +531,7 @@ export async function seedAllTeamsStaff(seasonYear: number): Promise<void> {
   }
 }
 
-export async function releaseUserTeamHeadCoach(teamId: string): Promise<void> {
+export async function transitionUserTeamHeadCoachToLeadCoach(teamId: string): Promise<void> {
   const db = await getDatabase();
   const rows = await db.select<StaffRow[]>(
     'SELECT * FROM staff WHERE team_id = $1 AND role = $2 ORDER BY ability DESC LIMIT 1',
@@ -541,9 +542,8 @@ export async function releaseUserTeamHeadCoach(teamId: string): Promise<void> {
 
   await db.execute(
     `UPDATE staff
-     SET team_id = NULL,
-         role = 'coach',
-         is_free_agent = 1,
+     SET role = 'coach',
+         is_free_agent = 0,
          preferred_role = COALESCE(preferred_role, 'head_coach'),
          role_flexibility = COALESCE(role_flexibility, 'strict'),
          career_origin = COALESCE(career_origin, 'head_coach')

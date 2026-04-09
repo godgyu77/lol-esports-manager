@@ -11,6 +11,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useGameStore } from '../../../stores/gameStore';
 import { getMatchesBySeason } from '../../../db/queries';
 import type { Match } from '../../../types/match';
+import { MainLoopPanel } from '../components/MainLoopPanel';
 
 // ─────────────────────────────────────────
 // 타입
@@ -228,6 +229,44 @@ export function CalendarView() {
       </div>
 
       {/* 범례 */}
+      <MainLoopPanel
+        eyebrow="참고 화면"
+        title="이번 달 일정 밀도를 먼저 읽는 캘린더"
+        subtitle="달력 전체를 세세하게 보기 전에, 이번 달 경기 수와 다음 일정, 현재 보고 있는 월을 먼저 확인할 수 있게 정리했습니다."
+        insights={[
+          {
+            label: '현재 보기',
+            value: `${viewYear}년 ${viewMonth + 1}월`,
+            detail: '좌우 이동으로 다른 달도 바로 확인할 수 있습니다.',
+            tone: 'accent',
+          },
+          {
+            label: '이번 달 경기',
+            value: `${cells.filter((cell) => cell.isCurrentMonth && cell.matches.length > 0).length}일`,
+            detail: '경기가 있는 날짜 기준으로 집계합니다.',
+            tone: 'neutral',
+          },
+          {
+            label: '다음 경기',
+            value: (cells.find((cell) => cell.matches.length > 0 && cell.date >= currentDate)?.date) ?? '일정 대기',
+            detail: (() => {
+              const nextMatch = cells.find((cell) => cell.matches.length > 0 && cell.date >= currentDate);
+              return nextMatch?.matches[0]
+                ? `${nextMatch.matches[0].isHome ? 'vs' : '@'} ${nextMatch.matches[0].opponentShortName}`
+                : '앞으로 잡힌 경기 일정이 없습니다.';
+            })(),
+            tone: cells.find((cell) => cell.matches.length > 0 && cell.date >= currentDate) ? 'success' : 'warning',
+          },
+          {
+            label: '오늘 위치',
+            value: currentDate,
+            detail: '오늘 버튼으로 현재 날짜가 포함된 달로 바로 돌아올 수 있습니다.',
+            tone: 'accent',
+          },
+        ]}
+        note="캘린더는 탐색형 참고 화면이라, 상단에서 월별 흐름을 먼저 읽고 아래 격자에서 세부 날짜를 보는 구조가 더 잘 맞습니다."
+      />
+
       <div className="fm-flex fm-flex-wrap fm-gap-md fm-mb-md">
         {([
           ['match_day', '경기일'],

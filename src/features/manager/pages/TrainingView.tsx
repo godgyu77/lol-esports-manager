@@ -9,7 +9,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGameStore } from '../../../stores/gameStore';
-import { MainLoopPanel } from '../components/MainLoopPanel';
 import {
   getTrainingSchedule,
   setTrainingSchedule,
@@ -225,45 +224,53 @@ export function TrainingView() {
         </div>
       )}
 
-      <MainLoopPanel
-        eyebrow="훈련 루프"
-        title="훈련 화면을 메인 루프 기준으로 바로 읽히게 정리했습니다"
-        subtitle="지금 주간 계획이 다음 경기와 팀 컨디션에 어떤 영향을 주는지 먼저 보고, 그 아래에서 세부 조정을 이어가는 구조입니다."
-        insights={[
-          {
-            label: '오늘의 핵심 일정',
-            value: tab === 'schedule' ? '주간 스케줄 점검' : tab === 'individual' ? '개별 훈련 조정' : tab === 'logs' ? '훈련 결과 확인' : '멘토링 조정',
-            detail: currentScheduleSummary
+      <div className="fm-grid fm-grid--3 fm-mb-md">
+        <div className="fm-card">
+          <div className="fm-stat">
+            <span className="fm-stat__label">현재 초점</span>
+            <span className="fm-stat__value">
+              {tab === 'schedule' ? '주간 스케줄' : tab === 'individual' ? '개별 훈련' : tab === 'logs' ? '훈련 이력' : '멘토링'}
+            </span>
+          </div>
+          <p className="fm-text-xs fm-text-secondary fm-mt-xs" style={{ marginBottom: 0 }}>
+            {currentScheduleSummary
               ? `${TRAINING_ACTIVITY_LABELS[currentScheduleSummary.activityType]} / ${TRAINING_TYPE_LABELS[currentScheduleSummary.trainingType]} / 강도 ${currentScheduleSummary.intensity}`
-              : '아직 구성된 훈련 루틴이 없습니다.',
-            tone: 'accent',
-          },
-          {
-            label: '가장 큰 리스크',
-            value: scrimRecommendation ? '스크림 기반 경고' : coachRecommendation ? '코치 피드백' : '안정',
-            detail: scrimRecommendation?.reason ?? coachRecommendation?.summary ?? '즉시 수정이 필요한 훈련 리스크는 없습니다.',
-            tone: scrimRecommendation || coachRecommendation ? 'danger' : 'success',
-          },
-          {
-            label: '다음 경기',
-            value: pendingMatch ? `${pendingMatch.matchDate ?? season?.currentDate ?? '일정'} vs ${nextOpponent}` : '시즌 진행 화면에서 일정 확인',
-            detail: pendingMatch ? '경기 전까지 훈련 강도와 방향을 맞추면 선수 기세 결정에도 직접 영향을 줍니다.' : '가까운 경기 일정이 잡히면 이 화면 설정이 바로 준비 루프로 이어집니다.',
-            tone: 'accent',
-          },
-          {
-            label: '코치 조언',
-            value: coachRecommendation?.authorName ?? '데일리 브리핑',
-            detail: coachRecommendation?.headline ?? scrimRecommendation?.reason ?? '훈련 로그와 스크림 피드백을 보고 다음 조정 방향을 선택하세요.',
-            tone: 'success',
-          },
-        ]}
-        actions={[
-          { label: '시즌 진행으로 돌아가기', onClick: () => navigate('/manager/day'), variant: 'primary' },
-          { label: '전술 정리', onClick: () => navigate('/manager/tactics') },
-          { label: '뉴스 브리핑 보기', onClick: () => navigate('/manager/news'), variant: 'info' },
-        ]}
-        note="훈련은 별도 하위 화면이 아니라 메인 루프 준비 단계라는 점이 바로 읽히도록 상단 요약을 추가했습니다."
-      />
+              : '아직 구성된 훈련 루틴이 없습니다.'}
+          </p>
+        </div>
+        <div className="fm-card">
+          <div className="fm-stat">
+            <span className="fm-stat__label">다음 경기</span>
+            <span className="fm-stat__value">
+              {pendingMatch ? `${pendingMatch.matchDate ?? season?.currentDate ?? '일정'} vs ${nextOpponent}` : '일정 확인 필요'}
+            </span>
+          </div>
+          <p className="fm-text-xs fm-text-secondary fm-mt-xs" style={{ marginBottom: 0 }}>
+            {scrimRecommendation?.reason ?? coachRecommendation?.summary ?? '훈련 강도와 방향을 먼저 맞추면 다음 경기 준비가 빨라집니다.'}
+          </p>
+        </div>
+        <div className="fm-card">
+          <div className="fm-stat">
+            <span className="fm-stat__label">코치 메모</span>
+            <span className="fm-stat__value">{coachRecommendation?.authorName ?? '데일리 브리핑'}</span>
+          </div>
+          <p className="fm-text-xs fm-text-secondary fm-mt-xs" style={{ marginBottom: 0 }}>
+            {coachRecommendation?.headline ?? '스크림 피드백과 주간 스케줄을 보고 세부 조정을 이어가세요.'}
+          </p>
+        </div>
+      </div>
+
+      <div className="fm-flex fm-gap-sm fm-flex-wrap fm-mb-md">
+        <button className="fm-btn fm-btn--primary" onClick={() => navigate('/manager/day')}>
+          시즌 진행으로 돌아가기
+        </button>
+        <button className="fm-btn" onClick={() => navigate('/manager/tactics')}>
+          전술 정리
+        </button>
+        <button className="fm-btn fm-btn--info" onClick={() => navigate('/manager/news')}>
+          뉴스 브리핑 보기
+        </button>
+      </div>
 
       <div className="fm-tabs" role="tablist" aria-label="훈련 화면 섹션" aria-orientation="horizontal">
         <button className={`fm-tab ${tab === 'schedule' ? 'fm-tab--active' : ''}`}
@@ -298,7 +305,11 @@ export function TrainingView() {
 
       <div role="tabpanel" id={`training-panel-${tab}`} aria-labelledby={`training-tab-${tab}`}>
 
-      {coachRecommendation && tab === 'schedule' && (
+      {tab === 'schedule' && (coachRecommendation || scrimRecommendation || latestPrepRecord) ? (
+        <details className="fm-disclosure fm-mb-md">
+          <summary>훈련 브리핑 보기</summary>
+          <div className="fm-disclosure__body">
+      {coachRecommendation && (
         <div className="fm-alert fm-alert--info fm-mb-md" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '6px' }}>
           <div className="fm-flex fm-items-center fm-gap-xs">
             <span className="fm-text-md fm-font-semibold fm-text-accent">코치 브리핑</span>
@@ -352,7 +363,7 @@ export function TrainingView() {
       )}
 
       {/* 스크림 기반 추천 배너 */}
-      {scrimRecommendation && tab === 'schedule' && (
+      {scrimRecommendation && (
         <div className="fm-alert fm-alert--warning fm-mb-md" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '6px' }}>
           <div className="fm-flex fm-items-center fm-gap-xs">
             <span className="fm-text-lg">&#9733;</span>
@@ -425,7 +436,7 @@ export function TrainingView() {
         </div>
       )}
 
-      {tab === 'schedule' && latestPrepRecord && (
+      {latestPrepRecord && (
         <div className={`fm-alert fm-alert--${getPrepOutcomeTone(latestPrepRecord)} fm-mb-md`} style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '6px' }}>
           <div className="fm-flex fm-items-center fm-justify-between" style={{ width: '100%' }}>
             <span className="fm-text-sm fm-font-semibold">
@@ -444,6 +455,9 @@ export function TrainingView() {
           </div>
         </div>
       )}
+          </div>
+        </details>
+      ) : null}
 
       {/* 주간 스케줄 */}
       {tab === 'schedule' && (
@@ -511,18 +525,16 @@ export function TrainingView() {
             </div>
           </div>
 
-          <div className="fm-panel fm-mt-md">
-            <div className="fm-panel__header">
-              <span className="fm-panel__title">강도별 효과</span>
-            </div>
-            <div className="fm-panel__body">
+          <details className="fm-disclosure fm-mt-md">
+            <summary>강도별 효과 보기</summary>
+            <div className="fm-disclosure__body">
               <div className="fm-flex-col fm-gap-xs fm-text-xs fm-text-secondary">
                 <div><strong style={{ color: '#4ecdc4' }}>가벼움:</strong> 스킬 성장 x0.5 / 스태미나 -4 / 사기 +2</div>
                 <div><strong style={{ color: 'var(--accent)' }}>보통:</strong> 스킬 성장 x1.0 / 스태미나 -8 / 사기 +5</div>
                 <div><strong style={{ color: 'var(--danger)' }}>강도 높음:</strong> 스킬 성장 x1.5 / 스태미나 -15 / 사기 +8</div>
               </div>
             </div>
-          </div>
+          </details>
         </div>
       )}
 

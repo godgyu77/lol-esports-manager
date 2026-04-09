@@ -56,13 +56,20 @@ function average(values: number[]): number {
 }
 
 function chooseRecommendationAuthor(staffList: Staff[], preferredRoles: StaffRole[]): Staff | null {
+  const scoreCoachInfluence = (staff: Staff): number => {
+    let score = staff.ability;
+    if (staff.careerOrigin === 'head_coach') score += 12;
+    if (staff.preferredRole === 'head_coach') score += 6;
+    return score;
+  };
+
   for (const role of preferredRoles) {
     const candidate = staffList
       .filter((staff) => staff.role === role)
-      .sort((left, right) => right.ability - left.ability)[0];
+      .sort((left, right) => scoreCoachInfluence(right) - scoreCoachInfluence(left))[0];
     if (candidate) return candidate;
   }
-  return staffList.sort((left, right) => right.ability - left.ability)[0] ?? null;
+  return [...staffList].sort((left, right) => scoreCoachInfluence(right) - scoreCoachInfluence(left))[0] ?? null;
 }
 
 function buildTrainingSchedule(trainingType: TrainingType, intensity: TrainingIntensity): TrainingScheduleEntry[] {
