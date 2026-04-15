@@ -13,6 +13,7 @@ export interface SocialReaction {
   relatedPlayerId: string | null;
   relatedStaffId: number | null;
   communitySource: CommunitySource;
+  commentCount: number;
 }
 
 export interface SocialComment {

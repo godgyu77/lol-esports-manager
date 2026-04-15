@@ -35,7 +35,11 @@ import {
   processAIFreeAgentSignings,
   processAITransfers,
 } from './transferAi';
-import { recordNegotiationExpense } from '../manager/systemDepthEngine';
+import {
+  createOngoingConsequence,
+  getBudgetPressureSnapshot,
+  recordNegotiationExpense,
+} from '../manager/systemDepthEngine';
 import { getRelationshipInfluenceSnapshot } from '../manager/releaseDepthEngine';
 
 export {
@@ -85,6 +89,12 @@ export function calculateFailureCost(contactCost: number): number {
   return Math.max(200, Math.round(contactCost * 0.85));
 }
 
+function addDaysIso(date: string, days: number): string {
+  const value = new Date(`${date}T00:00:00`);
+  value.setDate(value.getDate() + days);
+  return value.toISOString().slice(0, 10);
+}
+
 type SellingClubStance = 'closed' | 'reluctant' | 'open';
 
 interface ContractTransferContext {
@@ -93,6 +103,109 @@ interface ContractTransferContext {
   salaryMultiplier: number;
   minimumYears: number;
   reason: string;
+}
+
+interface FinancialTransferContext {
+  stanceOverride?: SellingClubStance;
+  premiumMultiplier: number;
+  salaryMultiplier: number;
+  reasonSuffix: string;
+}
+
+async function describeNegotiationAftermath(
+  teamId: string,
+  playerId: string,
+  outcome: 'success' | 'failed',
+): Promise<string> {
+  const activeSeason = await getActiveSeason().catch(() => null);
+  const [budgetPressure, relationshipSnapshot, player] = await Promise.all([
+    activeSeason ? getBudgetPressureSnapshot(teamId, activeSeason.id).catch(() => null) : Promise.resolve(null),
+    getRelationshipInfluenceSnapshot(teamId).catch(() => null),
+    getPlayerById(playerId).catch(() => null),
+  ]);
+
+  const aftermathNotes: string[] = [];
+  const playerName = player?.name ?? '';
+  const involvedRiskPair =
+    playerName && relationshipSnapshot
+      ? relationshipSnapshot.riskPairs.some((pair) => pair.names.includes(playerName))
+      : false;
+
+  if (outcome === 'failed') {
+    if (budgetPressure?.pressureLevel === 'critical') {
+      aftermathNotes.push('보드와 재정팀이 이번 실패 비용을 바로 문제로 보기 시작합니다.');
+    } else if (budgetPressure?.pressureLevel === 'watch') {
+      aftermathNotes.push('보드가 협상 실패 비용이 반복되는지 주시하고 있습니다.');
+    }
+
+    if (involvedRiskPair || (relationshipSnapshot?.staffTrust ?? 100) <= 48) {
+      aftermathNotes.push('선수단 내부에서도 협상 소음이 피로감으로 남고 있습니다.');
+    }
+  } else {
+    if (budgetPressure?.pressureLevel === 'stable' && (budgetPressure.boardSatisfaction ?? 0) >= 65) {
+      aftermathNotes.push('보드가 이번 움직임을 시장 주도권 확보 신호로 받아들입니다.');
+    }
+
+    if (playerName && relationshipSnapshot?.strongPairs.some((pair) => pair.names.includes(playerName))) {
+      aftermathNotes.push('팀 내부에서는 핵심 축을 지키거나 보강하려는 방향으로 읽히고 있습니다.');
+    }
+  }
+
+  return aftermathNotes.join(' ');
+}
+
+async function recordNegotiationAftermath(params: {
+  teamId: string;
+  playerId: string;
+  seasonId: number;
+  gameDate: string;
+}): Promise<void> {
+  const [budgetPressure, relationshipSnapshot, player] = await Promise.all([
+    getBudgetPressureSnapshot(params.teamId, params.seasonId).catch(() => null),
+    getRelationshipInfluenceSnapshot(params.teamId).catch(() => null),
+    getPlayerById(params.playerId).catch(() => null),
+  ]);
+
+  if (budgetPressure && (budgetPressure.pressureLevel === 'critical' || budgetPressure.pressureLevel === 'watch')) {
+    await createOngoingConsequence({
+      teamId: params.teamId,
+      seasonId: params.seasonId,
+      consequenceType: 'budget',
+      source: 'transfer_market',
+      title: '이적 협상 낭비',
+      summary:
+        budgetPressure.pressureLevel === 'critical'
+          ? '협상 실패 비용이 누적돼 보드와 재정팀이 이적 접근 자체를 다시 따져보기 시작했습니다.'
+          : '협상 실패 비용이 쌓이면서 이적 시장 접근이 이전보다 더 까다롭게 보이기 시작했습니다.',
+      severity: budgetPressure.pressureLevel === 'critical' ? 'medium' : 'low',
+      startedDate: params.gameDate,
+      expiresDate: addDaysIso(params.gameDate, budgetPressure.pressureLevel === 'critical' ? 8 : 5),
+      statKey: 'budget_pressure',
+      statDelta: budgetPressure.pressureLevel === 'critical' ? 3 : 1,
+    });
+  }
+
+  const playerName = player?.name ?? '';
+  const hasLockerRoomRisk =
+    !!relationshipSnapshot &&
+    ((relationshipSnapshot.staffTrust <= 48) ||
+      (playerName.length > 0 && relationshipSnapshot.riskPairs.some((pair) => pair.names.includes(playerName))));
+
+  if (hasLockerRoomRisk) {
+    await createOngoingConsequence({
+      teamId: params.teamId,
+      seasonId: params.seasonId,
+      consequenceType: 'staff',
+      source: 'transfer_market',
+      title: '이적 협상 여진',
+      summary: '협상 실패가 팀 내부 피로와 긴장으로 남아, 다음 의사결정에서도 잡음을 키우고 있습니다.',
+      severity: relationshipSnapshot && relationshipSnapshot.staffTrust <= 40 ? 'medium' : 'low',
+      startedDate: params.gameDate,
+      expiresDate: addDaysIso(params.gameDate, 6),
+      statKey: 'morale',
+      statDelta: relationshipSnapshot && relationshipSnapshot.staffTrust <= 40 ? -2 : -1,
+    });
+  }
 }
 
 function getPlayerRelationshipTransferModifier(
@@ -209,6 +322,77 @@ async function getContractTransferContext(teamId: string, playerId: string): Pro
   };
 }
 
+async function getFinancialTransferContext(teamId: string): Promise<FinancialTransferContext> {
+  const activeSeason = await getActiveSeason().catch(() => null);
+  if (!activeSeason) {
+    return {
+      premiumMultiplier: 1,
+      salaryMultiplier: 1,
+      reasonSuffix: '',
+    };
+  }
+
+  const [budgetPressure, payrollSnapshot] = await Promise.all([
+    getBudgetPressureSnapshot(teamId, activeSeason.id).catch(() => null),
+    getTeamPayrollSnapshot(teamId).catch(() => null),
+  ]);
+
+  if (!budgetPressure || !payrollSnapshot) {
+    return {
+      premiumMultiplier: 1,
+      salaryMultiplier: 1,
+      reasonSuffix: '',
+    };
+  }
+
+  const severePressure =
+    budgetPressure.pressureLevel === 'critical' ||
+    payrollSnapshot.pressureBand === 'hard_stop' ||
+    (budgetPressure.boardSatisfaction ?? 100) <= 40;
+  if (severePressure) {
+    return {
+      stanceOverride: 'reluctant',
+      premiumMultiplier: 0.82,
+      salaryMultiplier: 0.94,
+      reasonSuffix:
+        ' 재정 압박과 보드 경고가 커져 있어서, 이번 창에서는 강경하게 버티기보다 현금화 여지를 함께 따져보고 있습니다.',
+    };
+  }
+
+  const watchPressure =
+    budgetPressure.pressureLevel === 'watch' ||
+    payrollSnapshot.pressureBand === 'warning' ||
+    payrollSnapshot.pressureBand === 'taxed' ||
+    (budgetPressure.boardSatisfaction ?? 100) <= 52;
+  if (watchPressure) {
+    return {
+      premiumMultiplier: 0.92,
+      salaryMultiplier: 0.98,
+      reasonSuffix:
+        ' 보드와 재정팀이 지출 흐름을 주시하고 있어, 이전보다 조금 더 현실적인 협상선을 보고 있습니다.',
+    };
+  }
+
+  const stablePressure =
+    budgetPressure.pressureLevel === 'stable' &&
+    payrollSnapshot.pressureBand === 'safe' &&
+    (budgetPressure.boardSatisfaction ?? 0) >= 68;
+  if (stablePressure) {
+    return {
+      premiumMultiplier: 1.08,
+      salaryMultiplier: 1.03,
+      reasonSuffix:
+        ' 재정 여유와 보드 신뢰가 유지되고 있어, 굳이 서둘러 핵심 전력을 내줄 이유는 없습니다.',
+    };
+  }
+
+  return {
+    premiumMultiplier: 1,
+    salaryMultiplier: 1,
+    reasonSuffix: '',
+  };
+}
+
 async function getNegotiationThresholds(teamId: string, playerId: string): Promise<{
   stance: SellingClubStance;
   minTransferFee: number;
@@ -231,18 +415,27 @@ async function getNegotiationThresholds(teamId: string, playerId: string): Promi
     };
   }
 
-  const contractContext = await getContractTransferContext(teamId, playerId);
+  const [contractContext, financialContext] = await Promise.all([
+    getContractTransferContext(teamId, playerId),
+    getFinancialTransferContext(teamId),
+  ]);
   const marketValue = calculatePlayerValue(player);
   const fairSalary = calculateFairSalary(player);
   const samePositionCount = roster.filter((candidate) => candidate.position === player.position).length;
   const scarcityMultiplier = samePositionCount <= 1 ? 1.35 : samePositionCount === 2 ? 1.18 : 1.0;
+  const stance =
+    contractContext.stance === 'closed' && financialContext.stanceOverride === 'reluctant'
+      ? 'reluctant'
+      : contractContext.stance;
 
   return {
-    stance: contractContext.stance,
-    minTransferFee: roundOfferAmount(marketValue * scarcityMultiplier * contractContext.premiumMultiplier),
-    minSalary: roundOfferAmount(fairSalary * contractContext.salaryMultiplier),
+    stance,
+    minTransferFee: roundOfferAmount(
+      marketValue * scarcityMultiplier * contractContext.premiumMultiplier * financialContext.premiumMultiplier,
+    ),
+    minSalary: roundOfferAmount(fairSalary * contractContext.salaryMultiplier * financialContext.salaryMultiplier),
     contractYears: Math.max(contractContext.minimumYears, 2),
-    reason: contractContext.reason,
+    reason: `${contractContext.reason}${financialContext.reasonSuffix}`,
   };
 }
 
@@ -275,6 +468,16 @@ export async function evaluateIncomingTransferOffer(offer: {
     transferFee: roundOfferAmount(Math.max(offer.transferFee, thresholds.minTransferFee)),
     offeredSalary: roundOfferAmount(Math.max(offer.offeredSalary, thresholds.minSalary)),
     contractYears: Math.max(offer.contractYears, thresholds.contractYears),
+  };
+
+  const negotiationReason = severeLowball
+    ? '?꾩옱 ?쒖븞? ?쒖옣媛蹂대떎 ??븘 諛붾줈 ?섎씫?섍린 ?대졄?듬땲?? ???믪? ?댁쟻猷뚭? ?꾩슂?⑸땲??'
+    : '議곌굔??議곌툑 ???щ━硫??묒긽??媛?ν빀?덈떎.';
+
+  return {
+    accepted: false,
+    reason: `${negotiationReason} ${thresholds.reason}`.trim(),
+    counterOffer,
   };
 
   return {
@@ -505,9 +708,16 @@ export async function offerFreeAgent(params: {
       category: 'failed_negotiation',
       description: `Failed free-agent negotiation with ${params.playerId}`,
     });
+    await recordNegotiationAftermath({
+      teamId: params.fromTeamId,
+      playerId: params.playerId,
+      seasonId: params.seasonId,
+      gameDate: params.offerDate,
+    });
+    const aftermath = await describeNegotiationAftermath(params.fromTeamId, params.playerId, 'failed');
     return {
       success: false,
-      reason: agentResult.message,
+      reason: [agentResult.message, aftermath].filter(Boolean).join(' '),
       agentMessage: `Agent counter salary: ${agentResult.counterOffer.toLocaleString()}`,
     };
   }
@@ -523,7 +733,13 @@ export async function offerFreeAgent(params: {
     offerDate: params.offerDate,
   });
 
-  return { success: true, offerId, agentMessage: agentResult.message };
+  const aftermath = await describeNegotiationAftermath(params.fromTeamId, params.playerId, 'success');
+  return {
+    success: true,
+    offerId,
+    reason: aftermath || undefined,
+    agentMessage: agentResult.message,
+  };
 }
 
 export async function offerTransfer(params: {
@@ -569,9 +785,16 @@ export async function offerTransfer(params: {
       category: 'failed_negotiation',
       description: `Failed transfer negotiation with ${params.playerId}`,
     });
+    await recordNegotiationAftermath({
+      teamId: params.fromTeamId,
+      playerId: params.playerId,
+      seasonId: params.seasonId,
+      gameDate: params.offerDate,
+    });
+    const aftermath = await describeNegotiationAftermath(params.fromTeamId, params.playerId, 'failed');
     return {
       success: false,
-      reason: agentResult.message,
+      reason: [agentResult.message, aftermath].filter(Boolean).join(' '),
       agentMessage: `Agent counter salary: ${agentResult.counterOffer.toLocaleString()}`,
     };
   }
@@ -587,7 +810,13 @@ export async function offerTransfer(params: {
     offerDate: params.offerDate,
   });
 
-  return { success: true, offerId, agentMessage: agentResult.message };
+  const aftermath = await describeNegotiationAftermath(params.fromTeamId, params.playerId, 'success');
+  return {
+    success: true,
+    offerId,
+    reason: aftermath || undefined,
+    agentMessage: agentResult.message,
+  };
 }
 
 const NATIONALITY_TO_REGION: Record<string, Region> = {

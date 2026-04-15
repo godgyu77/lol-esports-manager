@@ -31,6 +31,7 @@ interface ReactionRow {
   related_player_id: string | null;
   related_staff_id: number | null;
   community_source: string;
+  comment_count?: number;
 }
 
 interface CommentRow {
@@ -54,6 +55,7 @@ function mapRowToReaction(row: ReactionRow): SocialReaction {
     relatedPlayerId: row.related_player_id,
     relatedStaffId: row.related_staff_id,
     communitySource: row.community_source as CommunitySource,
+    commentCount: row.comment_count ?? 0,
   };
 }
 
@@ -539,7 +541,12 @@ export async function generateMatchReaction(
 export async function getRecentReactions(seasonId: number, limit: number = 20): Promise<SocialReaction[]> {
   const db = await getDatabase();
   const rows = await db.select<ReactionRow[]>(
-    'SELECT * FROM social_reactions WHERE season_id = $1 ORDER BY event_date DESC, id DESC LIMIT $2',
+    `SELECT sr.*,
+            (SELECT COUNT(*) FROM social_comments sc WHERE sc.reaction_id = sr.id) AS comment_count
+     FROM social_reactions sr
+     WHERE sr.season_id = $1
+     ORDER BY sr.event_date DESC, sr.id DESC
+     LIMIT $2`,
     [seasonId, limit],
   );
   return rows.map(mapRowToReaction);
@@ -549,7 +556,10 @@ export async function getRecentReactions(seasonId: number, limit: number = 20): 
 export async function getReactionWithComments(reactionId: number): Promise<{ reaction: SocialReaction; comments: SocialComment[] }> {
   const db = await getDatabase();
   const reactionRows = await db.select<ReactionRow[]>(
-    'SELECT * FROM social_reactions WHERE id = $1',
+    `SELECT sr.*,
+            (SELECT COUNT(*) FROM social_comments sc WHERE sc.reaction_id = sr.id) AS comment_count
+     FROM social_reactions sr
+     WHERE sr.id = $1`,
     [reactionId],
   );
   if (reactionRows.length === 0) {
@@ -573,7 +583,12 @@ export async function getReactionsBySource(
 ): Promise<SocialReaction[]> {
   const db = await getDatabase();
   const rows = await db.select<ReactionRow[]>(
-    'SELECT * FROM social_reactions WHERE season_id = $1 AND community_source = $2 ORDER BY event_date DESC, id DESC LIMIT $3',
+    `SELECT sr.*,
+            (SELECT COUNT(*) FROM social_comments sc WHERE sc.reaction_id = sr.id) AS comment_count
+     FROM social_reactions sr
+     WHERE sr.season_id = $1 AND sr.community_source = $2
+     ORDER BY sr.event_date DESC, sr.id DESC
+     LIMIT $3`,
     [seasonId, source, limit],
   );
   return rows.map(mapRowToReaction);

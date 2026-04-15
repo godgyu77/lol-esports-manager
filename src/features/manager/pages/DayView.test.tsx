@@ -9,24 +9,30 @@ const {
   mockNavigate,
   mockAdvanceDay,
   mockSkipToNextMatchDay,
+  mockGetInboxMessages,
   mockGetManagerSetupStatus,
   mockGenerateInitialCoachRecommendations,
   mockGetBudgetPressureSnapshot,
   mockGetActiveConsequences,
+  mockGetMainLoopRiskItems,
   mockGetPrepRecommendationRecords,
   mockGetCareerArcEvents,
   mockGetDatabase,
+  mockGetMatchesByTeam,
 } = vi.hoisted(() => ({
   mockNavigate: vi.fn(),
   mockAdvanceDay: vi.fn(),
   mockSkipToNextMatchDay: vi.fn(),
+  mockGetInboxMessages: vi.fn(),
   mockGetManagerSetupStatus: vi.fn(),
   mockGenerateInitialCoachRecommendations: vi.fn(),
   mockGetBudgetPressureSnapshot: vi.fn(),
   mockGetActiveConsequences: vi.fn(),
+  mockGetMainLoopRiskItems: vi.fn(),
   mockGetPrepRecommendationRecords: vi.fn(),
   mockGetCareerArcEvents: vi.fn(),
   mockGetDatabase: vi.fn(),
+  mockGetMatchesByTeam: vi.fn(),
 }));
 
 vi.mock('react-router-dom', async () => {
@@ -44,10 +50,15 @@ vi.mock('../../../engine/season/dayAdvancer', () => ({
 
 vi.mock('../../../db/queries', () => ({
   getActiveSeason: vi.fn().mockResolvedValue(null),
+  getMatchesByTeam: mockGetMatchesByTeam,
 }));
 
 vi.mock('../../../db/database', () => ({
   getDatabase: mockGetDatabase,
+}));
+
+vi.mock('../../../engine/inbox/inboxEngine', () => ({
+  getInboxMessages: mockGetInboxMessages,
 }));
 
 vi.mock('../../../engine/manager/managerIdentityEngine', () => ({
@@ -76,6 +87,7 @@ vi.mock('../../../engine/manager/managerSetupEngine', () => ({
 vi.mock('../../../engine/manager/systemDepthEngine', () => ({
   getBudgetPressureSnapshot: mockGetBudgetPressureSnapshot,
   getActiveConsequences: mockGetActiveConsequences,
+  getMainLoopRiskItems: mockGetMainLoopRiskItems,
   getPrepRecommendationRecords: mockGetPrepRecommendationRecords,
 }));
 
@@ -170,14 +182,17 @@ describe('DayView', () => {
       isReadyToAdvance: true,
       blockingReasons: [],
     });
+    mockGetInboxMessages.mockResolvedValue([]);
     mockGenerateInitialCoachRecommendations.mockResolvedValue([]);
     mockGetBudgetPressureSnapshot.mockResolvedValue(stableBudgetPressure);
     mockGetActiveConsequences.mockResolvedValue([]);
+    mockGetMainLoopRiskItems.mockResolvedValue([]);
     mockGetPrepRecommendationRecords.mockResolvedValue([]);
     mockGetCareerArcEvents.mockResolvedValue([]);
     mockGetDatabase.mockResolvedValue({
       select: vi.fn().mockResolvedValue([]),
     });
+    mockGetMatchesByTeam.mockResolvedValue([]);
   });
 
   it('moves to pre-match when advancing reaches a user match', async () => {
@@ -295,5 +310,95 @@ describe('DayView', () => {
 
     expect(await screen.findByTestId('dayview-primary-setup-training')).toBeInTheDocument();
     expect(screen.getByTestId('dayview-skip-action')).toBeDisabled();
+  });
+
+  it('opens pre-match directly when today already has a scheduled user match', async () => {
+    mockGetMatchesByTeam.mockResolvedValue([
+      {
+        ...userMatch,
+        matchDate: '2025-01-15',
+      },
+    ]);
+
+    renderWithProviders(<DayView />, {
+      gameState: { save: mockSave, season: mockSeason, teams: [mockTeam, { ...mockTeam, id: 'team-away', name: 'Gen.G', shortName: 'GEN' }] },
+    });
+
+    const prepButton = await screen.findByTestId('dayview-primary-match-prep');
+    prepButton.click();
+
+    await waitFor(() => {
+      expect(useGameStore.getState().pendingUserMatch?.id).toBe('match-1');
+      expect(useGameStore.getState().dayPhase).toBe('banpick');
+      expect(useMatchStore.getState().boFormat).toBe('Bo3');
+      expect(mockNavigate).toHaveBeenCalledWith('/manager/pre-match');
+    });
+  });
+
+  it('prioritizes the latest match follow-up memo on the day loop', async () => {
+    mockGetInboxMessages.mockResolvedValue([
+      {
+        id: 1,
+        teamId: 'team-user',
+        type: 'general',
+        title: '[경기 결과] T1 vs GEN',
+        content: '다음 권장 행동은 전술 재검토입니다.',
+        isRead: false,
+        createdAt: '2025-01-15T10:00:00.000Z',
+        actionRoute: '/manager/tactics',
+        relatedId: 'match_result:match-1',
+      },
+    ]);
+
+    renderWithProviders(<DayView />, {
+      gameState: { save: mockSave, season: mockSeason, teams: [mockTeam] },
+    });
+
+    const followUpButton = await screen.findByTestId('dayview-primary-followup');
+    expect(followUpButton).toHaveTextContent('방금 경기 정리');
+    followUpButton.click();
+
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith('/manager/tactics');
+    });
+  });
+
+  it('turns board and international loop risks into direct day actions', async () => {
+    mockGetMainLoopRiskItems.mockResolvedValue([
+      {
+        title: '국제전 압박',
+        summary: '이번 시리즈는 시즌 평가를 바꿀 수 있어 프리매치에서 준비 체인을 다시 점검해야 합니다.',
+        tone: 'risk',
+      },
+    ]);
+
+    renderWithProviders(<DayView />, {
+      gameState: { save: mockSave, season: mockSeason, teams: [mockTeam] },
+    });
+
+    const riskButton = await screen.findByTestId('dayview-primary-loop-risk');
+    expect(riskButton).toHaveTextContent('국제전 압박 점검');
+    riskButton.click();
+
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith('/manager/pre-match');
+    });
+  });
+
+  it('shows a spotlight action that invites exploration around the day flow', async () => {
+    mockGetMatchesByTeam.mockResolvedValue([
+      {
+        ...userMatch,
+        matchDate: '2025-01-16',
+      },
+    ]);
+
+    renderWithProviders(<DayView />, {
+      gameState: { save: mockSave, season: mockSeason, teams: [mockTeam, { ...mockTeam, id: 'team-away', name: 'Gen.G', shortName: 'GEN' }] },
+    });
+
+    expect(await screen.findByTestId('dayview-spotlight-panel')).toBeInTheDocument();
+    expect(screen.getByText('오늘 가장 재밌는 선택')).toBeInTheDocument();
+    expect(screen.getByText(/GEN전 흐름 미리 보기|방금 경기 여론 따라가기|오늘 팀 분위기 둘러보기/)).toBeInTheDocument();
   });
 });

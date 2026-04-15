@@ -205,10 +205,10 @@ export function SeasonGoalView() {
       <div className="intro-shell" style={{ maxWidth: 1120 }}>
         <header className="fm-panel intro-hero intro-panel-soft">
           <div className="fm-panel__body">
-            <div className="fm-text-xs fm-font-semibold fm-text-accent fm-text-upper fm-mb-sm">부임 브리핑</div>
-            <h1 className="fm-text-2xl fm-font-bold fm-text-primary" style={{ margin: 0 }}>2026 시즌 부임 브리핑</h1>
+            <div className="fm-text-xs fm-font-semibold fm-text-accent fm-text-upper fm-mb-sm">빠른 시작</div>
+            <h1 className="fm-text-2xl fm-font-bold fm-text-primary" style={{ margin: 0 }}>시즌 목표를 확인하고 바로 시작하세요</h1>
             <p className="fm-text-md fm-text-muted fm-mt-sm" style={{ lineHeight: 1.7 }}>
-              이번 화면에서는 시즌 목표를 확인하고 바로 시작하면 됩니다. 부가 브리핑은 아래 상세 보기로 접어두었습니다.
+              설명은 최소화하고, 목표와 저장 슬롯만 빠르게 고르면 됩니다. 부가 브리핑은 아래 상세 보기로 접어두었습니다.
             </p>
           </div>
         </header>
@@ -280,6 +280,14 @@ export function SeasonGoalView() {
                 <span className="fm-panel__title">시즌 시작 준비</span>
               </div>
               <div className="fm-panel__body fm-flex-col fm-gap-sm">
+                <div className="fm-card" style={{ background: 'rgba(255,255,255,0.02)' }}>
+                  <div className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">빠른 시작 체크</div>
+                  <div className="fm-flex-col fm-gap-xs">
+                    <div className="fm-text-sm fm-text-primary">1. 목표를 확인합니다.</div>
+                    <div className="fm-text-sm fm-text-primary">2. 세이브 슬롯만 고르면 바로 시즌으로 들어갑니다.</div>
+                    <div className="fm-text-sm fm-text-primary">3. 자세한 브리핑은 시작 후에도 다시 확인할 수 있습니다.</div>
+                  </div>
+                </div>
                 <div className="fm-info-row">
                   <span className="fm-info-row__label">보드 요구</span>
                   <span className="fm-info-row__value fm-text-accent">{currentGoal.label}</span>
@@ -301,6 +309,25 @@ export function SeasonGoalView() {
                     <span className="fm-alert__text">목표를 한 단계 낮춘 대신 시즌 초반 보드 만족도는 줄어듭니다.</span>
                   </div>
                 )}
+              </div>
+            </section>
+
+            <section className="fm-panel" data-testid="seasongoal-first-session-route">
+              <div className="fm-panel__header">
+                <span className="fm-panel__title">시작 직후 루트</span>
+              </div>
+              <div className="fm-panel__body fm-flex-col fm-gap-sm">
+                <div className="fm-card" style={{ background: 'rgba(255,255,255,0.02)' }}>
+                  <div className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">첫 10분에 할 일</div>
+                  <div className="fm-flex-col fm-gap-xs">
+                    <div className="fm-text-sm fm-text-primary">1. 홈에서 지금 할 일과 방금 경기 또는 다음 경기 메모를 확인합니다.</div>
+                    <div className="fm-text-sm fm-text-primary">2. DayView에서 오늘 일정과 우선 행동을 보고 경기 준비로 이어갑니다.</div>
+                    <div className="fm-text-sm fm-text-primary">3. 프리매치와 드래프트에서 첫 경기의 전술 감각을 익힙니다.</div>
+                  </div>
+                </div>
+                <div className="fm-text-sm fm-text-muted" style={{ lineHeight: 1.7 }}>
+                  자세한 브리핑은 시즌 시작 후에도 다시 볼 수 있습니다. 지금은 루프를 한 번 빠르게 도는 게 더 중요합니다.
+                </div>
               </div>
             </section>
 
@@ -340,7 +367,7 @@ export function SeasonGoalView() {
               {mode === 'manager' ? (
                 <>
                   <button className="fm-btn fm-btn--primary fm-btn--lg fm-flex-1" onClick={handleAccept} disabled={isLoading}>
-                    {isLoading ? '시즌 준비 중...' : '시즌 목표 수락'}
+                    {isLoading ? '시즌 준비 중...' : '이 목표로 시작'}
                   </button>
                   {!negotiated && (
                     <button className="fm-btn fm-btn--lg fm-flex-1" onClick={() => setNegotiated(true)}>
@@ -350,7 +377,7 @@ export function SeasonGoalView() {
                 </>
               ) : (
                 <button className="fm-btn fm-btn--primary fm-btn--lg fm-flex-1" onClick={handleAccept} disabled={isLoading}>
-                  {isLoading ? '커리어 준비 중...' : '커리어 시작'}
+                  {isLoading ? '커리어 준비 중...' : '바로 시작'}
                 </button>
               )}
             </div>

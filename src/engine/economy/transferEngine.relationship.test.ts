@@ -5,6 +5,8 @@ const mockGetActiveSeason = vi.fn();
 const mockGetPlayersByTeamId = vi.fn();
 const mockGetDatabase = vi.fn();
 const mockRelationshipSnapshot = vi.fn();
+const mockGetBudgetPressureSnapshot = vi.fn();
+const mockGetTeamPayrollSnapshot = vi.fn();
 
 vi.mock('../../db/queries', () => ({
   getPlayerById: (...args: unknown[]) => mockGetPlayerById(...args),
@@ -26,7 +28,7 @@ vi.mock('../agent/agentEngine', () => ({ agentNegotiate: vi.fn() }));
 vi.mock('../rules/leagueRulesEngine', () => ({ canSignForeignPlayer: vi.fn() }));
 vi.mock('./payrollEngine', () => ({
   evaluatePayrollImpact: vi.fn().mockReturnValue({ pressureBand: 'safe' }),
-  getTeamPayrollSnapshot: vi.fn(),
+  getTeamPayrollSnapshot: (...args: unknown[]) => mockGetTeamPayrollSnapshot(...args),
 }));
 vi.mock('./transferTransactions', () => ({
   acceptFreeAgentOffer: vi.fn(),
@@ -44,6 +46,7 @@ vi.mock('./transferAi', () => ({
 }));
 vi.mock('../manager/systemDepthEngine', () => ({
   recordNegotiationExpense: vi.fn(),
+  getBudgetPressureSnapshot: (...args: unknown[]) => mockGetBudgetPressureSnapshot(...args),
 }));
 
 import { evaluateIncomingTransferOffer } from './transferEngine';
@@ -93,6 +96,41 @@ describe('evaluateIncomingTransferOffer relationship modifiers', () => {
     mockGetPlayerById.mockResolvedValue(player);
     mockGetActiveSeason.mockResolvedValue({ id: 3 });
     mockGetPlayersByTeamId.mockResolvedValue([player]);
+    mockGetBudgetPressureSnapshot.mockResolvedValue({
+      currentBudget: 180000,
+      weeklyRecurringExpenses: 12000,
+      monthlyRecurringExpenses: 48000,
+      recentNegotiationCosts: 0,
+      failedNegotiations: 0,
+      playerSalaryTotal: 28000,
+      staffSalaryTotal: 6000,
+      effectiveStaffPayroll: 4800,
+      salaryCap: 42000,
+      totalPayroll: 32800,
+      capRoom: 9200,
+      luxuryTax: 0,
+      runwayWeeks: 15,
+      pressureBand: 'safe',
+      boardSatisfaction: 70,
+      boardRisk: 6,
+      pressureScore: 18,
+      pressureLevel: 'stable',
+      boardPressureNote: '',
+      topDrivers: [],
+    });
+    mockGetTeamPayrollSnapshot.mockResolvedValue({
+      teamId: 'team_1',
+      currentBudget: 180000,
+      salaryCap: 42000,
+      playerSalaryTotal: 28000,
+      staffSalaryTotal: 6000,
+      effectiveStaffPayroll: 4800,
+      totalPayroll: 32800,
+      capRoom: 9200,
+      overage: 0,
+      luxuryTax: 0,
+      pressureBand: 'safe',
+    });
     mockRelationshipSnapshot.mockResolvedValue({
       teamId: 'team_1',
       strongPairs: [],
@@ -174,5 +212,168 @@ describe('evaluateIncomingTransferOffer relationship modifiers', () => {
     expect(neutralResult.counterOffer).toBeDefined();
     expect(conflictResult.counterOffer).toBeDefined();
     expect(conflictResult.counterOffer?.transferFee).toBeLessThan(neutralResult.counterOffer?.transferFee ?? 0);
+  });
+
+  it('softens a locked stance when the club is under severe financial pressure', async () => {
+    mockGetPlayerById.mockResolvedValueOnce({
+      ...player,
+      division: 'main',
+      contract: {
+        ...player.contract,
+        contractEndSeason: 6,
+      },
+    });
+    mockGetPlayersByTeamId.mockResolvedValueOnce([
+      {
+        ...player,
+        division: 'main',
+        contract: {
+          ...player.contract,
+          contractEndSeason: 6,
+        },
+      },
+    ]);
+    mockGetBudgetPressureSnapshot.mockResolvedValueOnce({
+      currentBudget: 12000,
+      weeklyRecurringExpenses: 9500,
+      monthlyRecurringExpenses: 38000,
+      recentNegotiationCosts: 5600,
+      failedNegotiations: 3,
+      playerSalaryTotal: 30000,
+      staffSalaryTotal: 7000,
+      effectiveStaffPayroll: 5600,
+      salaryCap: 36000,
+      totalPayroll: 39800,
+      capRoom: -3800,
+      luxuryTax: 2200,
+      runwayWeeks: 1.2,
+      pressureBand: 'hard_stop',
+      boardSatisfaction: 38,
+      boardRisk: 26,
+      pressureScore: 78,
+      pressureLevel: 'critical',
+      boardPressureNote: 'Budget emergency.',
+      topDrivers: ['Budget emergency.'],
+    });
+    mockGetTeamPayrollSnapshot.mockResolvedValueOnce({
+      teamId: 'team_1',
+      currentBudget: 12000,
+      salaryCap: 36000,
+      playerSalaryTotal: 30000,
+      staffSalaryTotal: 7000,
+      effectiveStaffPayroll: 5600,
+      totalPayroll: 39800,
+      capRoom: -3800,
+      overage: 3800,
+      luxuryTax: 2200,
+      pressureBand: 'hard_stop',
+    });
+
+    const result = await evaluateIncomingTransferOffer({
+      teamId: 'team_1',
+      playerId: 'player_1',
+      transferFee: 18000,
+      offeredSalary: 3500,
+      contractYears: 2,
+    });
+
+    expect(result.accepted).toBe(false);
+    expect(result.counterOffer).toBeDefined();
+    expect(result.reason).toContain('재정 압박');
+  });
+
+  it('keeps the asking price higher when board trust and finances are stable', async () => {
+    mockGetBudgetPressureSnapshot
+      .mockResolvedValueOnce({
+        currentBudget: 180000,
+        weeklyRecurringExpenses: 12000,
+        monthlyRecurringExpenses: 48000,
+        recentNegotiationCosts: 0,
+        failedNegotiations: 0,
+        playerSalaryTotal: 28000,
+        staffSalaryTotal: 6000,
+        effectiveStaffPayroll: 4800,
+        salaryCap: 42000,
+        totalPayroll: 32800,
+        capRoom: 9200,
+        luxuryTax: 0,
+        runwayWeeks: 15,
+        pressureBand: 'safe',
+        boardSatisfaction: 74,
+        boardRisk: 4,
+        pressureScore: 12,
+        pressureLevel: 'stable',
+        boardPressureNote: '',
+        topDrivers: [],
+      })
+      .mockResolvedValueOnce({
+        currentBudget: 10000,
+        weeklyRecurringExpenses: 9200,
+        monthlyRecurringExpenses: 36800,
+        recentNegotiationCosts: 5000,
+        failedNegotiations: 3,
+        playerSalaryTotal: 30000,
+        staffSalaryTotal: 7000,
+        effectiveStaffPayroll: 5600,
+        salaryCap: 36000,
+        totalPayroll: 39800,
+        capRoom: -3800,
+        luxuryTax: 2200,
+        runwayWeeks: 1,
+        pressureBand: 'hard_stop',
+        boardSatisfaction: 39,
+        boardRisk: 25,
+        pressureScore: 80,
+        pressureLevel: 'critical',
+        boardPressureNote: '',
+        topDrivers: [],
+      });
+    mockGetTeamPayrollSnapshot
+      .mockResolvedValueOnce({
+        teamId: 'team_1',
+        currentBudget: 180000,
+        salaryCap: 42000,
+        playerSalaryTotal: 28000,
+        staffSalaryTotal: 6000,
+        effectiveStaffPayroll: 4800,
+        totalPayroll: 32800,
+        capRoom: 9200,
+        overage: 0,
+        luxuryTax: 0,
+        pressureBand: 'safe',
+      })
+      .mockResolvedValueOnce({
+        teamId: 'team_1',
+        currentBudget: 10000,
+        salaryCap: 36000,
+        playerSalaryTotal: 30000,
+        staffSalaryTotal: 7000,
+        effectiveStaffPayroll: 5600,
+        totalPayroll: 39800,
+        capRoom: -3800,
+        overage: 3800,
+        luxuryTax: 2200,
+        pressureBand: 'hard_stop',
+      });
+
+    const stableResult = await evaluateIncomingTransferOffer({
+      teamId: 'team_1',
+      playerId: 'player_1',
+      transferFee: 10000,
+      offeredSalary: 3000,
+      contractYears: 2,
+    });
+
+    const distressedResult = await evaluateIncomingTransferOffer({
+      teamId: 'team_1',
+      playerId: 'player_1',
+      transferFee: 10000,
+      offeredSalary: 3000,
+      contractYears: 2,
+    });
+
+    expect(stableResult.counterOffer).toBeDefined();
+    expect(distressedResult.counterOffer).toBeDefined();
+    expect(stableResult.counterOffer?.transferFee).toBeGreaterThan(distressedResult.counterOffer?.transferFee ?? 0);
   });
 });

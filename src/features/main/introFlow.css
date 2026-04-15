@@ -50,6 +50,10 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.intro-card-grid--3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .intro-cta {
   width: 100%;
   min-height: 54px;
@@ -131,6 +135,7 @@
 
   .intro-two-column--wide,
   .intro-two-column--balanced,
+  .intro-card-grid--3,
   .intro-card-grid--2 {
     grid-template-columns: 1fr;
   }

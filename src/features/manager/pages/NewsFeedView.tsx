@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useGameStore } from '../../../stores/gameStore';
 import type { NewsArticle, NewsCategory } from '../../../types/news';
 import { NEWS_CATEGORY_LABELS } from '../../../types/news';
@@ -9,9 +10,20 @@ import {
   getUnreadCount,
   markAllAsRead,
   markAsRead,
+  MATCH_RESULT_FOLLOW_UP_ACTION_LABEL,
+  MATCH_RESULT_FOLLOW_UP_BADGE_LABEL,
+  buildMatchResultFollowUpHeadline,
+  MATCH_RESULT_FOLLOW_UP_TITLE,
+  MATCH_RESULT_FOLLOW_UP_STORY_TAG,
 } from '../../../engine/news/newsEngine';
+import {
+  getInboxMessages,
+  getLatestMatchResultInboxMessage,
+} from '../../../engine/inbox/inboxEngine';
+import { getMainLoopRiskItems } from '../../../engine/manager/systemDepthEngine';
 import { useToolbarNavigation } from '../hooks/useToolbarNavigation';
 import { localizeEntityNamesInText } from '../../../utils/displayName';
+import { getLoopRiskActionLabel, getLoopRiskRoute } from '../utils/loopRiskRouting';
 import './NewsFeedView.css';
 
 const PAGE_SIZE = 20;
@@ -111,7 +123,9 @@ function ImportanceBadge({ importance }: { importance: number }) {
 }
 
 export function NewsFeedView() {
+  const navigate = useNavigate();
   const season = useGameStore((s) => s.season);
+  const save = useGameStore((s) => s.save);
 
   const [articles, setArticles] = useState<NewsArticle[]>([]);
   const [loading, setLoading] = useState(true);
@@ -119,6 +133,18 @@ export function NewsFeedView() {
   const [filter, setFilter] = useState<NewsCategory | 'all' | 'briefing'>('all');
   const [unreadCount, setUnreadCount] = useState(0);
   const [selectedArticleId, setSelectedArticleId] = useState<number | null>(null);
+  const [featuredMatchFollowUp, setFeaturedMatchFollowUp] = useState<{
+    title: string;
+    headline: string | null;
+    summary: string;
+    actionRoute: string | null;
+  } | null>(null);
+  const [topLoopRisk, setTopLoopRisk] = useState<{
+    title: string;
+    summary: string;
+    route: string;
+    tone?: 'risk' | 'neutral' | 'positive';
+  } | null>(null);
 
   const { getItemProps } = useToolbarNavigation({
     items: FILTER_TABS.map((tab) => tab.key),
@@ -167,6 +193,70 @@ export function NewsFeedView() {
     void loadUnread();
   }, [filter, loadArticles, loadUnread]);
 
+  useEffect(() => {
+    if (!save?.userTeamId) return;
+
+    let cancelled = false;
+    const loadLatestMatchFollowUp = async () => {
+      try {
+        const inboxMessages = await getInboxMessages(save.userTeamId, 12, false).catch(() => []);
+        if (cancelled) return;
+
+        const latestMatchFollowUp = getLatestMatchResultInboxMessage(inboxMessages);
+        setFeaturedMatchFollowUp(
+          latestMatchFollowUp
+            ? {
+                title: MATCH_RESULT_FOLLOW_UP_TITLE,
+                headline: buildMatchResultFollowUpHeadline({
+                  followUpSummary: latestMatchFollowUp.content,
+                }),
+                summary: latestMatchFollowUp.content,
+                actionRoute: latestMatchFollowUp.actionRoute,
+              }
+            : null,
+        );
+      } catch {
+        if (!cancelled) setFeaturedMatchFollowUp(null);
+      }
+    };
+
+    void loadLatestMatchFollowUp();
+    return () => {
+      cancelled = true;
+    };
+  }, [save?.userTeamId]);
+
+  useEffect(() => {
+    if (!save?.userTeamId || !season) return;
+
+    let cancelled = false;
+    const loadLoopRisk = async () => {
+      try {
+        const items = await getMainLoopRiskItems(save.userTeamId, season.id, season.currentDate, save.id).catch(() => []);
+        if (cancelled) return;
+
+        const first = items[0] ?? null;
+        setTopLoopRisk(
+          first
+            ? {
+                title: first.title,
+                summary: first.summary,
+                route: getLoopRiskRoute(first.title, first.summary),
+                tone: first.tone,
+              }
+            : null,
+        );
+      } catch {
+        if (!cancelled) setTopLoopRisk(null);
+      }
+    };
+
+    void loadLoopRisk();
+    return () => {
+      cancelled = true;
+    };
+  }, [save?.id, save?.userTeamId, season]);
+
   const selectedArticle = useMemo(
     () => articles.find((article) => article.id === selectedArticleId) ?? null,
     [articles, selectedArticleId],
@@ -202,6 +292,76 @@ export function NewsFeedView() {
   }, [articles, getPresentation, selectedArticle]);
 
   const articleParagraphs = selectedArticle ? buildArticleParagraphs(localizeEntityNamesInText(selectedArticle.content)) : [];
+  const spotlightRead = useMemo(() => {
+    if (featuredMatchFollowUp) {
+      return {
+        title: '방금 경기의 여론과 후속 보기',
+        summary: '결과 기사만 읽지 말고 팬 반응과 후속 조치까지 보면 시즌 드라마가 더 선명해집니다.',
+        route: featuredMatchFollowUp.actionRoute ?? '/manager/inbox',
+        cta: MATCH_RESULT_FOLLOW_UP_ACTION_LABEL,
+      };
+    }
+
+    if (topLoopRisk) {
+      return {
+        title: getLoopRiskActionLabel(topLoopRisk.title),
+        summary: `${topLoopRisk.title}: ${topLoopRisk.summary}`,
+        route: topLoopRisk.route,
+        cta: '리스크 바로 보기',
+      };
+    }
+
+    if (leadArticle) {
+      return {
+        title: '오늘 가장 화제인 기사 따라가기',
+        summary: `지금은 ${localizeEntityNamesInText(leadArticle.title)} 쪽이 가장 주목을 받고 있습니다.`,
+        route: '/manager/news',
+        cta: '헤드라인 따라 읽기',
+      };
+    }
+
+    return {
+      title: '팀 분위기부터 둘러보기',
+      summary: '아직 읽을 거리가 많지 않다면 인박스와 메모부터 훑는 편이 전체 흐름을 파악하기 좋습니다.',
+      route: '/manager/inbox',
+      cta: '인박스 보기',
+    };
+  }, [featuredMatchFollowUp, leadArticle, topLoopRisk]);
+
+  const normalizedSpotlightRead = useMemo(() => {
+    if (featuredMatchFollowUp) {
+      return {
+        ...spotlightRead,
+        title: '방금 경기 여론 따라가기',
+        summary: '결과 기사만 읽지 말고 팬 반응과 후속 조치까지 보면 시즌 드라마가 더 선명해집니다.',
+      };
+    }
+
+    if (topLoopRisk) {
+      return {
+        ...spotlightRead,
+        title: getLoopRiskActionLabel(topLoopRisk.title),
+        summary: `${topLoopRisk.title}: ${topLoopRisk.summary}`,
+        cta: '리스크 바로 보기',
+      };
+    }
+
+    if (leadArticle) {
+      return {
+        ...spotlightRead,
+        title: '오늘 화제인 기사 따라가기',
+        summary: `지금은 ${localizeEntityNamesInText(leadArticle.title)} 쪽이 가장 주목을 받고 있습니다.`,
+        cta: '헤드라인 따라 읽기',
+      };
+    }
+
+    return {
+      ...spotlightRead,
+      title: '오늘 팀 분위기 둘러보기',
+      summary: '아직 읽을 거리가 많지 않다면 뉴스와 메모부터 훑는 편이 전체 흐름을 파악하기 좋습니다.',
+      cta: '브리핑 보기',
+    };
+  }, [featuredMatchFollowUp, leadArticle, spotlightRead, topLoopRisk]);
 
   const handleOpenArticle = useCallback(async (article: NewsArticle) => {
     setSelectedArticleId(article.id);
@@ -278,6 +438,23 @@ export function NewsFeedView() {
             <div className="fm-text-sm fm-text-secondary">받은편지에서 직접 처리할 메시지를 제외한 기사와 브리핑만 모아 보여줍니다.</div>
             <button className="fm-btn" onClick={() => void handleMarkAllRead()} disabled={unreadCount === 0}>
               전체 읽음 처리
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="fm-panel fm-mb-md" data-testid="news-spotlight-panel">
+        <div className="fm-panel__header">
+          <span className="fm-panel__title">오늘 더 파고들 선택</span>
+        </div>
+        <div className="fm-panel__body">
+          <div className="fm-flex fm-items-center fm-justify-between fm-gap-md fm-flex-wrap">
+            <div>
+              <div className="fm-text-primary fm-font-semibold fm-mb-xs">{normalizedSpotlightRead.title}</div>
+              <div className="fm-text-sm fm-text-secondary">{normalizedSpotlightRead.summary}</div>
+            </div>
+            <button className="fm-btn fm-btn--info" onClick={() => navigate(normalizedSpotlightRead.route)}>
+              {normalizedSpotlightRead.cta}
             </button>
           </div>
         </div>
@@ -444,6 +621,28 @@ export function NewsFeedView() {
               </div>
 
               <div className="newsfeed-reader-body">
+                {selectedArticle.category === 'match_result' && featuredMatchFollowUp ? (
+                  <div className="fm-card fm-mb-md" data-testid="news-followup-panel">
+                    <div className="fm-flex fm-items-center fm-justify-between fm-gap-sm fm-flex-wrap">
+                      <div>
+                        <div className="fm-text-xs fm-text-muted fm-mb-xs">{MATCH_RESULT_FOLLOW_UP_STORY_TAG}</div>
+                        <div className="fm-text-xs fm-text-muted fm-mb-xs">{MATCH_RESULT_FOLLOW_UP_BADGE_LABEL}</div>
+                        <div className="fm-text-primary fm-font-semibold">{featuredMatchFollowUp.title}</div>
+                        {featuredMatchFollowUp.headline ? (
+                          <div className="fm-text-sm fm-text-secondary">{featuredMatchFollowUp.headline}</div>
+                        ) : null}
+                        <div className="fm-text-sm fm-text-secondary">{featuredMatchFollowUp.summary}</div>
+                      </div>
+                      <button
+                        className="fm-btn fm-btn--info"
+                        onClick={() => navigate(featuredMatchFollowUp.actionRoute ?? '/manager/inbox')}
+                      >
+                        {MATCH_RESULT_FOLLOW_UP_ACTION_LABEL}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
                 {articleParagraphs.map((paragraph, index) => (
                   <p key={`${selectedArticle.id}-${index}`}>{paragraph}</p>
                 ))}

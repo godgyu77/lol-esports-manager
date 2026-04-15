@@ -3,6 +3,7 @@ import { Skeleton, SkeletonTable } from '../../../components/Skeleton';
 import { getFreeAgents, getPlayersByTeamId, getTeamRecentWinRate, getTeamTotalSalary, type TransferOffer } from '../../../db/queries';
 import { aiPlayerRespondToOffer, calculateRenewalOffer, createNegotiation, finalizeNegotiation, generateDecisionFactors, getTeamNegotiations } from '../../../engine/economy/contractEngine';
 import { acceptFreeAgentOffer, acceptTransferOffer, calculateFairSalary, calculatePlayerValue, cancelTransferOffer, evaluateOutgoingTransferCounter, getTeamTransferOffers, offerFreeAgent, offerTransfer, respondToIncomingTransferOffer } from '../../../engine/economy/transferEngine';
+import { getBudgetPressureSnapshot } from '../../../engine/manager/systemDepthEngine';
 import { useGameStore } from '../../../stores/gameStore';
 import type { ContractNegotiation } from '../../../types/contract';
 import type { Player } from '../../../types/player';
@@ -13,6 +14,14 @@ type Tab = 'freeAgents' | 'targets' | 'offers' | 'renewal';
 type Mode = 'freeAgent' | 'target' | 'incomingCounter';
 type MarketPlayer = Player & { sellerTeamId: string };
 type DraftOffer = { transferFee: number; offeredSalary: number; contractYears: number };
+type TransferMarketContext = { title: string; summary: string; tone: 'positive' | 'neutral' | 'risk' };
+type TransferCapSummary = {
+  salaryCap: number;
+  totalPayroll: number;
+  capRoom: number;
+  pressureBand: 'safe' | 'taxed' | 'warning' | 'hard_stop';
+  recommendation: string;
+};
 
 const POSITIONS = ['all', 'top', 'jungle', 'mid', 'adc', 'support'] as const;
 const POS_CLASS: Record<string, string> = { top: 'fm-pos-badge--top', jungle: 'fm-pos-badge--jgl', mid: 'fm-pos-badge--mid', adc: 'fm-pos-badge--adc', support: 'fm-pos-badge--sup' };
@@ -38,6 +47,8 @@ export function TransferView() {
   const [teamWinRate, setTeamWinRate] = useState(0.5);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const [marketContext, setMarketContext] = useState<TransferMarketContext | null>(null);
+  const [capSummary, setCapSummary] = useState<TransferCapSummary | null>(null);
   const [modalMode, setModalMode] = useState<Mode | null>(null);
   const [modalPlayer, setModalPlayer] = useState<Player | null>(null);
   const [modalOffer, setModalOffer] = useState<TransferOffer | null>(null);
@@ -51,13 +62,14 @@ export function TransferView() {
     if (!season || !save) return;
     setLoading(true);
     try {
-      const [agents, salary, offers, roster, negotiations, winRate] = await Promise.all([
+      const [agents, salary, offers, roster, negotiations, winRate, budgetPressure] = await Promise.all([
         getFreeAgents(),
         getTeamTotalSalary(save.userTeamId),
         getTeamTransferOffers(season.id, save.userTeamId),
         getPlayersByTeamId(save.userTeamId),
         getTeamNegotiations(save.userTeamId, season.id),
         getTeamRecentWinRate(save.userTeamId, season.id),
+        getBudgetPressureSnapshot(save.userTeamId, season.id),
       ]);
       setFreeAgents(agents);
       setTeamSalary(salary);
@@ -66,6 +78,39 @@ export function TransferView() {
       setRosterPlayers(roster);
       setActiveNegotiations(negotiations);
       setTeamWinRate(winRate);
+      setMarketContext(
+        budgetPressure.pressureLevel === 'critical'
+          ? {
+              title: '현금화 압박이 걸린 이적 시장',
+              summary: `${budgetPressure.boardPressureNote} 지금은 판매 협상선이 평소보다 빨리 내려갈 수 있지만, 실패한 협상 비용도 더 아프게 남습니다.`,
+              tone: 'risk',
+            }
+          : budgetPressure.pressureLevel === 'watch'
+            ? {
+                title: '보드가 지켜보는 협상 구간',
+                summary: `${budgetPressure.topDrivers[0] ?? budgetPressure.boardPressureNote} 이번 창에서는 무리한 오퍼보다 현실적인 가격 조정이 더 잘 먹힐 수 있습니다.`,
+                tone: 'neutral',
+              }
+            : {
+                title: '여유 있게 버틸 수 있는 시장',
+                summary: '재정 여유가 있어 핵심 전력을 헐값에 보낼 이유가 없습니다. 급한 영입보다 확실한 업그레이드만 노리는 편이 좋습니다.',
+                tone: 'positive',
+              },
+      );
+      setCapSummary({
+        salaryCap: budgetPressure.salaryCap,
+        totalPayroll: budgetPressure.totalPayroll,
+        capRoom: budgetPressure.capRoom,
+        pressureBand: budgetPressure.pressureBand,
+        recommendation:
+          budgetPressure.pressureBand === 'hard_stop'
+            ? '새 영입보다 방출·재계약 조정이 먼저 필요합니다.'
+            : budgetPressure.pressureBand === 'warning'
+              ? '즉시전력감 1명 정도만 노리고, 장기 계약은 보수적으로 보세요.'
+              : budgetPressure.pressureBand === 'taxed'
+                ? '영입은 가능하지만 추가 오퍼를 연달아 던지기 전에 cap room을 같이 보세요.'
+                : '즉시전력 영입을 노려도 되는 구간입니다.',
+      });
     } catch (error) {
       console.error('failed to load transfer page:', error);
       setMessage({ text: '이적 화면 데이터를 불러오지 못했습니다.', type: 'error' });
@@ -174,6 +219,8 @@ export function TransferView() {
         <span className="fm-text-secondary">총 연봉: <strong className="fm-text-primary">{formatAmount(teamSalary)}</strong></span>
         <span className="fm-text-secondary">받은 제안: <strong className="fm-text-warning">{receivedOffers.filter((offer) => offer.status === 'pending').length}건</strong></span>
       </div></div>
+      {marketContext && <div className={`fm-alert ${marketContext.tone === 'risk' ? 'fm-alert--danger' : marketContext.tone === 'positive' ? 'fm-alert--success' : 'fm-alert--info'} fm-mb-md`}><span className="fm-alert__text"><strong>{marketContext.title}</strong> {marketContext.summary}</span></div>}
+      {capSummary && <div className="fm-panel fm-mb-md" data-testid="transfer-cap-summary"><div className="fm-panel__body--compact fm-flex fm-gap-lg fm-flex-wrap fm-text-md"><span className="fm-text-secondary">샐캡: <strong className="fm-text-primary">{formatAmount(capSummary.salaryCap)}</strong></span><span className="fm-text-secondary">예상 페이롤: <strong className="fm-text-primary">{formatAmount(capSummary.totalPayroll)}</strong></span><span className="fm-text-secondary">샐캡 여유: <strong className={capSummary.capRoom < 0 ? 'fm-text-danger' : capSummary.capRoom < 3000 ? 'fm-text-warning' : 'fm-text-success'}>{formatAmount(capSummary.capRoom)}</strong></span><span className="fm-text-secondary">위험도: <strong className={capSummary.pressureBand === 'hard_stop' ? 'fm-text-danger' : capSummary.pressureBand === 'warning' ? 'fm-text-warning' : 'fm-text-primary'}>{capSummary.pressureBand === 'hard_stop' ? '차단' : capSummary.pressureBand === 'warning' ? '경고' : capSummary.pressureBand === 'taxed' ? '사치세' : '안정'}</strong></span></div><div className="fm-panel__body--compact" style={{ paddingTop: 0 }}><p className="fm-text-xs fm-text-secondary" style={{ margin: 0 }}>{capSummary.recommendation}</p></div></div>}
       {message && <div className={`fm-alert ${message.type === 'success' ? 'fm-alert--success' : 'fm-alert--danger'} fm-mb-md`}><span className="fm-alert__text">{message.text}</span></div>}
       <div className="fm-tabs">
         <button className={`fm-tab ${tab === 'freeAgents' ? 'fm-tab--active' : ''}`} onClick={() => setTab('freeAgents')}>자유계약</button>

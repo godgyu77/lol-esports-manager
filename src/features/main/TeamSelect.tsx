@@ -15,6 +15,15 @@ interface TeamListItem {
   region: Region;
 }
 
+interface StarterPath {
+  key: 'contender' | 'darkhorse' | 'rebuild';
+  label: string;
+  title: string;
+  summary: string;
+  audience: string;
+  team: TeamListItem;
+}
+
 function buildTeamList(
   teams: Record<string, { teamName: string }>,
   region: Region,
@@ -76,6 +85,72 @@ function getStarterRoster(roster: RosterPlayer[]): RosterPlayer[] {
   return roster.filter((player) => player.div === '1군' && player.name !== 'VACANT' && player.role !== 'SUB');
 }
 
+function getAverageStarterOvr(team: TeamListItem): number {
+  const teamData = getTeamData(team);
+  if (!teamData) return 0;
+  const starters = getStarterRoster(teamData.roster);
+  if (starters.length === 0) return 0;
+  return Math.round(starters.reduce((sum, player) => sum + ovrToNumber(player.stats.ovr), 0) / starters.length);
+}
+
+function buildStarterPaths(): StarterPath[] {
+  const usedTeamIds = new Set<string>();
+  const sortedByOvr = [...ALL_TEAMS].sort((left, right) => getAverageStarterOvr(right) - getAverageStarterOvr(left));
+  const contender = sortedByOvr.find((team) => {
+    const teamData = getTeamData(team);
+    return teamData?.financialTier === 'S';
+  }) ?? sortedByOvr[0];
+
+  usedTeamIds.add(contender.id);
+
+  const darkhorsePool = sortedByOvr.filter((team) => {
+    const teamData = getTeamData(team);
+    const avgOvr = getAverageStarterOvr(team);
+    return !usedTeamIds.has(team.id)
+      && teamData
+      && (teamData.financialTier === 'A' || teamData.financialTier === 'B')
+      && avgOvr >= 76
+      && avgOvr <= 88;
+  });
+  const darkhorse = darkhorsePool[Math.floor(darkhorsePool.length / 2)] ?? sortedByOvr.find((team) => !usedTeamIds.has(team.id)) ?? contender;
+
+  usedTeamIds.add(darkhorse.id);
+
+  const rebuild = [...ALL_TEAMS]
+    .sort((left, right) => getAverageStarterOvr(left) - getAverageStarterOvr(right))
+    .find((team) => !usedTeamIds.has(team.id))
+    ?? contender;
+
+  return [
+    {
+      key: 'contender',
+      label: '빠른 시작',
+      title: `${contender.name}로 바로 출발`,
+      summary: '전력이 탄탄한 팀으로 첫 10분을 압축해서 익히기 좋습니다.',
+      audience: '강한 전력으로 루프를 빠르게 익히고 싶은 유저',
+      team: contender,
+    },
+    {
+      key: 'darkhorse',
+      label: '균형 시작',
+      title: `${darkhorse.name}로 리듬 잡기`,
+      summary: '운영과 결과를 함께 보는 팀으로 시작하면 부담이 적습니다.',
+      audience: '균형 있는 시즌 운영을 먼저 익히고 싶은 유저',
+      team: darkhorse,
+    },
+    {
+      key: 'rebuild',
+      label: '도전 시작',
+      title: `${rebuild.name}로 천천히 쌓기`,
+      summary: '리빌딩 팀으로 출발하면 성장과 재건 흐름이 더 선명합니다.',
+      audience: '장기 성장과 팀 재건을 즐기는 유저',
+      team: rebuild,
+    },
+  ];
+}
+
+const STARTER_PATHS = buildStarterPaths();
+
 export function TeamSelect() {
   const navigate = useNavigate();
   const mode = useGameStore((s) => s.mode);
@@ -83,6 +158,11 @@ export function TeamSelect() {
 
   const [selectedRegion, setSelectedRegion] = useState<Region>('LCK');
   const [selectedTeam, setSelectedTeam] = useState<TeamListItem | null>(null);
+
+  const handleStarterPath = (team: TeamListItem) => {
+    setSelectedRegion(team.region);
+    setSelectedTeam(team);
+  };
 
   const teamData = selectedTeam ? getTeamData(selectedTeam) : null;
   const filteredTeams = useMemo(
@@ -121,14 +201,47 @@ export function TeamSelect() {
         <header className="fm-panel intro-hero intro-panel-soft">
           <div className="fm-panel__body">
             <div className="fm-text-xs fm-font-semibold fm-text-accent fm-text-upper fm-mb-sm">팀 입단 브리핑</div>
-            <h1 className="fm-text-2xl fm-font-bold fm-text-primary" style={{ margin: 0 }}>첫 시즌을 맡을 팀을 선택하세요</h1>
+            <h1 className="fm-text-2xl fm-font-bold fm-text-primary" style={{ margin: 0 }}>첫 10분에 고를 팀부터 정해보세요</h1>
             <p className="fm-text-md fm-text-muted fm-mt-sm" style={{ lineHeight: 1.7 }}>
               {mode === 'manager'
-                ? '어떤 팀을 맡느냐에 따라 시즌 압박, 팬 기대, 보드 목표가 모두 달라집니다.'
+                ? '위의 추천 패스를 누르면 시즌 목표와 운영 리듬이 바로 이어집니다.'
                 : '어떤 팀에서 커리어를 시작하느냐에 따라 성장 속도와 경쟁 환경이 크게 달라집니다.'}
             </p>
           </div>
         </header>
+
+        <section className="fm-panel">
+          <div className="fm-panel__header">
+            <span className="fm-panel__title">추천 스타트 패스</span>
+          </div>
+          <div className="fm-panel__body">
+            <div className="intro-card-grid intro-card-grid--3">
+              {STARTER_PATHS.map((path) => (
+                <button
+                  key={path.key}
+                  type="button"
+                  className={`fm-card fm-card--clickable fm-flex-col fm-gap-sm ${
+                    selectedTeam?.id === path.team.id ? 'fm-card--highlight' : ''
+                  }`}
+                  onClick={() => handleStarterPath(path.team)}
+                  aria-label={`${path.label} ${path.team.name}`}
+                >
+                  <div className="fm-flex fm-items-center fm-justify-between fm-gap-sm" style={{ flexWrap: 'wrap' }}>
+                    <span className="fm-badge fm-badge--accent">{path.label}</span>
+                    <span className="fm-text-xs fm-text-muted">{path.team.region}</span>
+                  </div>
+                  <div className="fm-text-lg fm-font-semibold fm-text-primary">{path.title}</div>
+                  <p className="fm-text-sm fm-text-muted" style={{ margin: 0, lineHeight: 1.6 }}>
+                    {path.summary}
+                  </p>
+                  <p className="fm-text-xs fm-text-secondary" style={{ margin: 0, lineHeight: 1.6 }}>
+                    추천: {path.audience}
+                  </p>
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
 
         <div className="fm-tabs">
           {REGIONS.map((region) => (
@@ -207,6 +320,15 @@ export function TeamSelect() {
                     </div>
                   </div>
 
+                  <div className="fm-card" data-testid="teamselect-first-session-route">
+                    <div className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">첫 10분 루트</div>
+                    <div className="fm-flex-col fm-gap-xs">
+                      <div className="fm-text-sm fm-text-primary">1. 이 팀으로 시작하고 시즌 목표를 빠르게 확인합니다.</div>
+                      <div className="fm-text-sm fm-text-primary">2. 홈과 DayView에서 오늘 할 일과 다음 경기를 바로 봅니다.</div>
+                      <div className="fm-text-sm fm-text-primary">3. 프리매치로 들어가 첫 경기 준비와 드래프트 흐름을 익힙니다.</div>
+                    </div>
+                  </div>
+
                   <div className="fm-card">
                     <div className="fm-text-xs fm-font-semibold fm-text-muted fm-text-upper fm-mb-sm">주전 5인 요약</div>
                     <div className="fm-flex-col fm-gap-xs">
@@ -248,16 +370,16 @@ export function TeamSelect() {
                   </details>
 
                   <button className="fm-btn fm-btn--primary fm-btn--lg" style={{ width: '100%' }} onClick={handleStart}>
-                    이 팀으로 부임 준비
+                    이 팀으로 빠르게 시작
                   </button>
                 </div>
               </div>
             ) : (
               <div className="fm-panel__body">
                 <div className="fm-empty-state fm-empty-state--compact">
-                  <div className="fm-empty-state__title">팀을 먼저 선택하세요</div>
+                  <div className="fm-empty-state__title">팀을 먼저 골라주세요</div>
                   <p className="fm-empty-state__copy">
-                    우측 패널에는 난이도, 팬 기대, 주전 5인 요약만 먼저 표시됩니다.
+                    위 추천 패스를 눌러도 되고, 목록에서 직접 골라도 됩니다.
                   </p>
                 </div>
               </div>

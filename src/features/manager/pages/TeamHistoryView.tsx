@@ -212,6 +212,8 @@ export function TeamHistoryView() {
   const legacyReport = buildTeamLegacyReport({ team: userTeam, history, legends });
   const rivalryLedger = ledger.filter((entry) => entry.ledgerType === 'rivalry_record').slice(0, 4);
   const lineageLedger = ledger.filter((entry) => entry.ledgerType !== 'rivalry_record').slice(0, 6);
+  const legacySummary = `${legacyReport.identity} ${legacyReport.timelineHook}`;
+  const latestLedgerNote = ledger[0]?.note ?? `${ledger[0]?.subjectName ?? userTeam.name} 관련 기록이 최근 팀 히스토리에 남아 있습니다.`;
 
   return (
     <div className="fm-animate-in">
@@ -240,13 +242,13 @@ export function TeamHistoryView() {
           {
             label: '누적 승률',
             value: `${winRate}%`,
-            detail: legacyReport.headline,
+            detail: legacySummary,
             tone: Number(winRate) >= 50 ? 'success' : 'warning',
           },
           {
             label: '히스토리 메모',
             value: `${ledger.length}건`,
-            detail: ledger[0]?.summary ?? '최근 레거시 기록이 아직 많지 않습니다.',
+            detail: latestLedgerNote,
             tone: 'neutral',
           },
         ]}

@@ -59,6 +59,8 @@ describe('buildPostMatchInsightReport', () => {
     expect(report.headline).not.toHaveLength(0);
     expect(report.reasons.every((reason) => reason.title.length > 0)).toBe(true);
     expect(report.recommendedActions.length).toBeGreaterThan(0);
+    expect(report.followUps.length).toBeGreaterThan(0);
+    expect(report.followUps.every((followUp) => followUp.summary.length > 0)).toBe(true);
   });
 
   it('flips the narrative when the same result is viewed from the winning side', () => {
@@ -68,5 +70,7 @@ describe('buildPostMatchInsightReport', () => {
     expect(report.headline).not.toHaveLength(0);
     expect(report.reasons.length).toBeGreaterThanOrEqual(3);
     expect(report.reasons.every((reason) => reason.title.length > 0)).toBe(true);
+    expect(report.followUps.length).toBeGreaterThan(0);
+    expect(report.followUps.every((followUp) => followUp.summary.length > 0)).toBe(true);
   });
 });

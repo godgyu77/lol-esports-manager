@@ -66,7 +66,7 @@ function getDecisionLabel(decision: StaffCandidateView['decision']): string {
 
 function buildBonusSourceLabel(staffList: Staff[], roles: StaffRole[]): string {
   const matching = staffList.filter((staff) => roles.includes(staff.role));
-  if (matching.length === 0) return '현재 해당 역할의 스태프가 없습니다.';
+  if (matching.length === 0) return '현재 해당 역할을 맡은 스태프가 없습니다.';
   return matching.map((staff) => `${staff.name}(${STAFF_ROLE_LABELS[staff.role]})`).join(', ');
 }
 
@@ -76,14 +76,14 @@ function localizeNarrative(text: string | null | undefined): string {
   return text
     .replace('Room chemistry is balanced', '스태프 관계 분위기는 대체로 안정적입니다.')
     .replace(
-      '0 tracked links 쨌 average affinity 50/100 쨌 5 young players in the mix',
-      '아직 강하게 묶인 관계는 없지만 평균 친화도는 무난하고 성장 자원도 충분합니다.',
-    )
-    .replace(
       '0 tracked links 夷?average affinity 50/100 夷?5 young players in the mix',
       '아직 강하게 묶인 관계는 없지만 평균 친화도는 무난하고 성장 자원도 충분합니다.',
     )
-    .replace('No standout duo yet', '아직 두드러지는 핵심 조합은 없습니다.')
+    .replace(
+      '0 tracked links 鸚?average affinity 50/100 鸚?5 young players in the mix',
+      '아직 강하게 묶인 관계는 없지만 평균 친화도는 무난하고 성장 자원도 충분합니다.',
+    )
+    .replace('No standout duo yet', '아직 특별히 돋보이는 핵심 조합은 없습니다.')
     .replace('No obvious fault line yet', '지금 당장 드러나는 갈등 축은 없습니다.')
     .replace(
       'Park Jinseok sets the tone, and the staff room is currently stable enough to support a long arc.',
@@ -100,11 +100,11 @@ function localizeStaffUiNarrative(text: string | null | undefined): string {
     .replace('Regional pressure check', '지역 기대 압박 점검')
     .replace(
       'Relationship signal is still shallow, but staff trust is sitting around',
-      '관계 신호는 아직 얕지만 스태프 신뢰도는 현재',
+      '관계 신호는 아직 약하지만 스태프 신뢰도는 현재',
     )
     .replace(
       'The board has already tied credibility to international-level delivery.',
-      '보드진은 이미 국제 무대 성과를 신뢰 기준으로 보기 시작했습니다.',
+      '보드는 이미 국제 무대 성과를 신뢰 기준으로 보기 시작했습니다.',
     )
     .replace(
       'International pressure is forming, but the club still has room to build before it becomes a season-defining burden.',
@@ -140,6 +140,20 @@ function StaffCard({ staff, onFire }: { staff: Staff; onFire: (staff: Staff) => 
       <button className="fm-btn fm-btn--sm" onClick={() => onFire(staff)}>
         방출
       </button>
+    </div>
+  );
+}
+
+function PriorityCard({ label, value, summary }: { label: string; value: string; summary: string }) {
+  return (
+    <div className="fm-panel">
+      <div className="fm-panel__header">
+        <span className="fm-panel__title">{label}</span>
+      </div>
+      <div className="fm-panel__body">
+        <strong className="fm-text-lg">{value}</strong>
+        <p className="fm-text-muted fm-text-sm fm-mt-xs">{summary}</p>
+      </div>
     </div>
   );
 }
@@ -223,7 +237,7 @@ export function StaffView() {
 
     if (candidate.decision === 'reject') {
       setMessage({
-        text: `${candidate.staff.name} 영입 제안이 거절되었습니다. ${candidate.reasons[0] ?? ''}`.trim(),
+        text: `${candidate.staff.name} 영입 제안은 거절됐습니다. ${candidate.reasons[0] ?? ''}`.trim(),
         type: 'error',
       });
       return;
@@ -239,14 +253,10 @@ export function StaffView() {
 
     try {
       await hireStaffByOffer(candidate.staff.id, userTeamId, candidate.offeredRole, season.year + 2);
-      const teamRows = await import('../../../db/database')
-        .then((module) => module.getDatabase())
-        .then((db) => db.select<{ name: string }[]>('SELECT name FROM teams WHERE id = $1', [userTeamId]));
-      const teamName = teamRows[0]?.name ?? userTeamId;
-      await generateStaffReaction(season.year, season.currentDate, candidate.staff.name, teamName, true);
+      await generateStaffReaction(season.year, season.currentDate, candidate.staff.name, userTeam?.name ?? userTeamId, true);
 
       setMessage({
-        text: `${candidate.staff.name} 영입을 완료했습니다. 역할: ${STAFF_ROLE_LABELS[candidate.offeredRole]}`,
+        text: `${candidate.staff.name} 영입이 완료됐습니다. 역할: ${STAFF_ROLE_LABELS[candidate.offeredRole]}`,
         type: 'success',
       });
       setShowFAModal(false);
@@ -261,13 +271,9 @@ export function StaffView() {
     try {
       await fireStaff(staff.id);
       if (season) {
-        const teamRows = await import('../../../db/database')
-          .then((module) => module.getDatabase())
-          .then((db) => db.select<{ name: string }[]>('SELECT name FROM teams WHERE id = $1', [userTeamId]));
-        const teamName = teamRows[0]?.name ?? userTeamId;
-        await generateStaffReaction(season.year, season.currentDate, staff.name, teamName, false);
+        await generateStaffReaction(season.year, season.currentDate, staff.name, userTeam?.name ?? userTeamId, false);
       }
-      setMessage({ text: `${staff.name} 방출을 완료했습니다.`, type: 'success' });
+      setMessage({ text: `${staff.name} 방출이 완료됐습니다.`, type: 'success' });
       await loadData();
     } catch (err) {
       console.error('failed to fire staff:', err);
@@ -320,6 +326,20 @@ export function StaffView() {
       ]
     : [];
 
+  const openSlots = Math.max(TEAM_STAFF_LIMIT - staffList.length, 0);
+  const biggestRiskLabel = headCoach ? (openSlots > 0 ? '지원 공백' : '안정적') : '감독 부재';
+  const biggestRiskSummary = headCoach
+    ? openSlots > 0
+      ? `${openSlots}개의 스태프 슬롯이 비어 있어 지원 공백이 있습니다.`
+      : '핵심 스태프 구조는 안정적입니다.'
+    : '감독 공백으로 운영 방향과 훈련 일관성이 흔들릴 수 있습니다.';
+  const nextActionTitle = headCoach ? (openSlots > 0 ? 'FA 보강' : '스태프 유지 점검') : '감독 선임';
+  const nextActionSummary = headCoach
+    ? openSlots > 0
+      ? 'FA 시장에서 부족한 역할을 우선 보강하세요.'
+      : '현재 구성의 계약 만료와 역할 중복을 점검하세요.'
+    : '감독 또는 수석 코치부터 먼저 영입해 운영 축을 세우세요.';
+
   if (!save || !season) return <p className="fm-text-muted fm-text-md">데이터를 불러오는 중입니다...</p>;
   if (isLoading) return <p className="fm-text-muted fm-text-md">스태프 정보를 정리하는 중입니다...</p>;
 
@@ -327,7 +347,22 @@ export function StaffView() {
     <div className="fm-animate-in">
       <div className="fm-page-header">
         <h1 className="fm-page-title">스태프 관리</h1>
-        <p className="fm-page-subtitle">현재 팀 스태프와 영입 후보를 비교하고 필요한 자리만 바로 보강할 수 있습니다.</p>
+        <p className="fm-page-subtitle">현재 팀 스태프와 영입 후보를 비교하고 필요한 자리를 바로 보강할 수 있습니다.</p>
+      </div>
+
+      <div className="fm-grid fm-grid--4 fm-mb-md" data-testid="staff-priority-strip">
+        <PriorityCard
+          label="핵심 코치 상태"
+          value={headCoach ? headCoach.name : '감독 공백'}
+          summary={headCoach ? '현재 헤드 코치 체계가 운영을 주도합니다.' : '헤드 코치가 없어 시즌 운영 축이 비어 있습니다.'}
+        />
+        <PriorityCard
+          label="남은 슬롯"
+          value={`${openSlots}칸`}
+          summary={`전체 ${TEAM_STAFF_LIMIT}칸 중 현재 ${staffList.length}칸이 채워져 있습니다.`}
+        />
+        <PriorityCard label="가장 큰 리스크" value={biggestRiskLabel} summary={biggestRiskSummary} />
+        <PriorityCard label="다음 행동" value={nextActionTitle} summary={nextActionSummary} />
       </div>
 
       {message ? (
@@ -351,26 +386,30 @@ export function StaffView() {
               <div className="fm-text-lg fm-font-semibold fm-text-primary">{leadCoach ? leadCoach.name : '공석'}</div>
               <div className="fm-text-xs fm-text-muted fm-mt-xs">
                 {headCoach
-                  ? '정식 헤드코치 체제로 운영 중입니다.'
+                  ? '정식 헤드 코치 체제로 운영 중입니다.'
                   : leadCoach?.careerOrigin === 'head_coach'
-                    ? '감독 부임 후 기존 감독이 핵심 코치로 전환되었습니다.'
+                    ? '감독 부재를 기존 감독 출신 코치가 메우고 있습니다.'
                     : '코치진 중심 체제로 운영 중입니다.'}
               </div>
             </div>
             <div className="fm-card">
               <div className="fm-text-xs fm-text-muted fm-mb-xs">코칭 스태프</div>
               <div className="fm-text-lg fm-font-semibold fm-text-primary">{currentCoaches.length}명</div>
-              <div className="fm-text-xs fm-text-muted fm-mt-xs">전체 스태프 {staffList.length} / {TEAM_STAFF_LIMIT}</div>
+              <div className="fm-text-xs fm-text-muted fm-mt-xs">
+                전체 스태프 {staffList.length} / {TEAM_STAFF_LIMIT}
+              </div>
             </div>
             <div className="fm-card">
               <div className="fm-text-xs fm-text-muted fm-mb-xs">분석 / 메디컬</div>
-              <div className="fm-text-lg fm-font-semibold fm-text-primary">{analysisStaff.length} / {medicalStaff.length}</div>
+              <div className="fm-text-lg fm-font-semibold fm-text-primary">
+                {analysisStaff.length} / {medicalStaff.length}
+              </div>
               <div className="fm-text-xs fm-text-muted fm-mt-xs">총 운영비 {totalSalary.toLocaleString()}만</div>
             </div>
           </div>
           <div className="fm-flex fm-items-center fm-justify-between fm-gap-sm fm-flex-wrap">
             <div className="fm-text-sm fm-text-secondary">
-              감독 체제와 코치진, 전문 스태프를 분리해서 보고 필요한 자리만 빠르게 보강할 수 있습니다.
+              감독 체제와 코치진, 전문 스태프를 분리해서 보고 필요한 자리를 빠르게 보강할 수 있습니다.
             </div>
             <button className="fm-btn fm-btn--primary" onClick={openFAModal}>
               FA 스태프 시장 보기
@@ -432,7 +471,9 @@ export function StaffView() {
                     <p className="fm-text-secondary fm-mb-sm" style={{ marginTop: 0 }}>
                       현재 역할 {STAFF_ROLE_LABELS[item.role as StaffRole]} / 선호 역할 {STAFF_ROLE_LABELS[item.preferredRole as StaffRole]}
                     </p>
-                    <p className="fm-text-xs fm-text-muted" style={{ margin: 0 }}>{item.summary}</p>
+                    <p className="fm-text-xs fm-text-muted" style={{ margin: 0 }}>
+                      {item.summary}
+                    </p>
                   </div>
                 ))}
               </div>
@@ -453,7 +494,9 @@ export function StaffView() {
                       <strong className="fm-text-primary">{summary.label}</strong>
                       <span className="fm-badge fm-badge--accent">{summary.value}</span>
                     </div>
-                    <p className="fm-text-secondary" style={{ margin: 0 }}>{summary.source}</p>
+                    <p className="fm-text-secondary" style={{ margin: 0 }}>
+                      {summary.source}
+                    </p>
                   </div>
                 ))}
               </div>
@@ -465,7 +508,7 @@ export function StaffView() {
       {headCoach ? (
         <div className="fm-panel fm-mb-lg">
           <div className="fm-panel__header">
-            <span className="fm-panel__title">헤드코치</span>
+            <span className="fm-panel__title">헤드 코치</span>
           </div>
           <div className="fm-panel__body">
             <StaffCard staff={headCoach} onFire={handleFire} />
@@ -481,11 +524,13 @@ export function StaffView() {
           <div className="fm-panel__body">
             {currentCoaches.length === 0 ? (
               <div className="fm-alert fm-alert--warning">
-                <span className="fm-alert__text">전담 코치가 없습니다. 훈련 효율과 선수 조언 품질이 함께 떨어질 수 있습니다.</span>
+                <span className="fm-alert__text">전담 코치가 없습니다. 훈련 효율과 선수 조언 품질이 떨어질 수 있습니다.</span>
               </div>
             ) : (
               <div className="fm-flex-col fm-gap-sm">
-                {currentCoaches.map((staff) => <StaffCard key={staff.id} staff={staff} onFire={handleFire} />)}
+                {currentCoaches.map((staff) => (
+                  <StaffCard key={staff.id} staff={staff} onFire={handleFire} />
+                ))}
               </div>
             )}
           </div>
@@ -502,7 +547,9 @@ export function StaffView() {
               </div>
             ) : (
               <div className="fm-flex-col fm-gap-sm">
-                {currentSpecialists.map((staff) => <StaffCard key={staff.id} staff={staff} onFire={handleFire} />)}
+                {currentSpecialists.map((staff) => (
+                  <StaffCard key={staff.id} staff={staff} onFire={handleFire} />
+                ))}
               </div>
             )}
           </div>
@@ -514,7 +561,9 @@ export function StaffView() {
           <div className="fm-modal" style={{ width: '960px', maxWidth: '96vw' }} onClick={(event) => event.stopPropagation()}>
             <div className="fm-modal__header">
               <span className="fm-modal__title">FA 스태프 시장</span>
-              <button className="fm-modal__close" onClick={() => setShowFAModal(false)}>&times;</button>
+              <button className="fm-modal__close" onClick={() => setShowFAModal(false)}>
+                &times;
+              </button>
             </div>
             <div className="fm-modal__body">
               <div className="fm-flex fm-gap-xs fm-flex-wrap fm-mb-md">

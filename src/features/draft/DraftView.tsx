@@ -5,6 +5,7 @@ import { generateDraftAdvice, type DraftAdvice } from '../../ai/advancedAiServic
 import { PlayerIdentityCard } from '../../components/PlayerIdentityCard';
 import { CHAMPION_DB } from '../../data/championDb';
 import { getPlayersByTeamId } from '../../db/queries';
+import { getInboxMessages } from '../../engine/inbox/inboxEngine';
 import {
   aiSelectBan,
   aiSelectPick,
@@ -63,6 +64,16 @@ function buildSwapTags(player: Player | undefined, championId: string): string[]
   return tags;
 }
 
+interface MatchFollowUpSummary {
+  title: string;
+  summary: string;
+  actionRoute: string | null;
+}
+
+function isMatchResultInboxMessage(message: { relatedId: string | null; title: string }): boolean {
+  return message.relatedId?.startsWith('match_result:') || message.title.startsWith('[경기 결과]');
+}
+
 export function DraftView() {
   useBgm('draft');
 
@@ -91,6 +102,7 @@ export function DraftView() {
   const [aiAdvice, setAiAdvice] = useState<DraftAdvice | null>(null);
   const [aiAdviceLoading, setAiAdviceLoading] = useState(false);
   const [swapSelection, setSwapSelection] = useState<number | null>(null);
+  const [featuredMatchFollowUp, setFeaturedMatchFollowUp] = useState<MatchFollowUpSummary | null>(null);
 
   const userTeamId = save?.userTeamId ?? '';
   const isUserBlue = pendingMatch?.teamHomeId === userTeamId;
@@ -124,6 +136,36 @@ export function DraftView() {
 
     void init();
   }, [currentGameNum, fearlessPool, hardFearlessSeries, pendingMatch, seriesFearlessPool]);
+
+  useEffect(() => {
+    if (!save?.userTeamId) return;
+
+    let cancelled = false;
+    const loadLatestMatchFollowUp = async () => {
+      try {
+        const inboxMessages = await getInboxMessages(save.userTeamId, 12, false).catch(() => []);
+        if (cancelled) return;
+
+        const latestMatchFollowUp = inboxMessages.find(isMatchResultInboxMessage) ?? null;
+        setFeaturedMatchFollowUp(
+          latestMatchFollowUp
+            ? {
+                title: latestMatchFollowUp.title,
+                summary: latestMatchFollowUp.content,
+                actionRoute: latestMatchFollowUp.actionRoute,
+              }
+            : null,
+        );
+      } catch {
+        if (!cancelled) setFeaturedMatchFollowUp(null);
+      }
+    };
+
+    void loadLatestMatchFollowUp();
+    return () => {
+      cancelled = true;
+    };
+  }, [save?.userTeamId]);
 
   useEffect(() => {
     if (!draft || !blueInfo || !redInfo || draft.isComplete) return;
@@ -348,6 +390,26 @@ export function DraftView() {
           ]}
           note="상단은 즉시 판단용, 하단은 챔피언 풀과 스왑 세부 비교용으로 분리했습니다."
         />
+
+        {featuredMatchFollowUp ? (
+          <div className="fm-card" data-testid="draft-followup-panel" style={{ marginBottom: 16 }}>
+            <div className="fm-flex fm-items-center fm-justify-between fm-gap-md" style={{ flexWrap: 'wrap' }}>
+              <div className="fm-flex-col fm-gap-xs">
+                <span className="fm-text-sm fm-text-muted">직전 경기 후속</span>
+                <strong className="fm-text-primary">{featuredMatchFollowUp.title}</strong>
+                <p className="fm-text-sm fm-text-secondary" style={{ margin: 0 }}>
+                  {featuredMatchFollowUp.summary}
+                </p>
+              </div>
+              <button
+                className="fm-btn fm-btn--info"
+                onClick={() => navigate(featuredMatchFollowUp.actionRoute ?? `${basePath}/inbox`)}
+              >
+                직전 경기 정리하러 가기
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         {draft.fearlessMode ? (
           <div className="draft-fearless-banner">

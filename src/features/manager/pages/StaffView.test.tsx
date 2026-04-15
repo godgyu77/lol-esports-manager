@@ -12,7 +12,6 @@ const {
   mockHireStaffByOffer,
   mockFireStaff,
   mockGenerateStaffReaction,
-  mockDbSelect,
 } = vi.hoisted(() => ({
   mockGetTeamStaff: vi.fn(),
   mockCalculateStaffBonuses: vi.fn(),
@@ -22,7 +21,6 @@ const {
   mockHireStaffByOffer: vi.fn(),
   mockFireStaff: vi.fn(),
   mockGenerateStaffReaction: vi.fn(),
-  mockDbSelect: vi.fn(),
 }));
 
 vi.mock('../../../engine/staff/staffEngine', () => ({
@@ -42,12 +40,6 @@ vi.mock('../../../engine/social/socialEngine', () => ({
 
 vi.mock('../../../engine/manager/franchiseNarrativeEngine', () => ({
   buildRelationshipNetworkReport: vi.fn().mockResolvedValue(null),
-}));
-
-vi.mock('../../../db/database', () => ({
-  getDatabase: vi.fn().mockResolvedValue({
-    select: mockDbSelect,
-  }),
 }));
 
 const mockSave = {
@@ -73,7 +65,6 @@ describe('StaffView', () => {
     resetStores();
     vi.clearAllMocks();
 
-    mockDbSelect.mockResolvedValue([{ name: 'T1' }]);
     mockCalculateStaffBonuses.mockResolvedValue({
       trainingEfficiency: 1.15,
       moraleBoost: 3,
@@ -119,6 +110,11 @@ describe('StaffView', () => {
     });
 
     expect(await screen.findByText('Coach Kim')).toBeInTheDocument();
+    expect(screen.getByTestId('staff-priority-strip')).toBeInTheDocument();
+    expect(screen.getByText('핵심 코치 상태')).toBeInTheDocument();
+    expect(screen.getByText('남은 슬롯')).toBeInTheDocument();
+    expect(screen.getByText('가장 큰 리스크')).toBeInTheDocument();
+    expect(screen.getByText('다음 행동')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /방출/i })).toBeInTheDocument();
   });
 

@@ -1,6 +1,8 @@
 import type { GameResult, PlayerGameStatLine } from '../../engine/match/matchSimulator';
 import type { PostMatchInsightReport } from '../../engine/analysis/postMatchInsightEngine';
 import type { DragonType } from '../../types/match';
+import { useNavigate } from 'react-router-dom';
+import { getFollowUpRoute } from './postMatchFollowUp';
 
 const DRAGON_ICONS: Record<DragonType, string> = {
   infernal: 'F',
@@ -23,6 +25,12 @@ const IMPACT_LABELS: Record<string, string> = {
   low: '참고',
 };
 
+const FOLLOW_UP_LABELS: Record<string, string> = {
+  high: '우선',
+  medium: '다음',
+  low: '참고',
+};
+
 function formatGold(value: number): string {
   return `${(value / 1000).toFixed(1)}k`;
 }
@@ -37,6 +45,98 @@ function sumKda(stats: PlayerGameStatLine[]) {
     },
     { k: 0, d: 0, a: 0 },
   );
+}
+
+function buildEmotionalSummary(gameResult: GameResult, homeTeamName: string, awayTeamName: string) {
+  const isHomeWin = gameResult.winnerSide === 'home';
+  const winnerName = isHomeWin ? homeTeamName : awayTeamName;
+  const loserName = isHomeWin ? awayTeamName : homeTeamName;
+  const killGap = Math.abs(gameResult.killsHome - gameResult.killsAway);
+  const towerGap = Math.abs((gameResult.towersHome ?? 0) - (gameResult.towersAway ?? 0));
+  const goldGap = Math.abs((gameResult.goldHome ?? 0) - (gameResult.goldAway ?? 0));
+
+  if (killGap >= 8 || towerGap >= 5) {
+    return {
+      label: isHomeWin ? '완승의 흐름' : '무너진 흐름',
+      title: isHomeWin ? `${winnerName}이 경기 전체를 지배했습니다` : `${loserName}이 흐름을 끝내 되찾지 못했습니다`,
+      summary: isHomeWin
+        ? '한타와 오브젝트를 거의 놓치지 않으면서 상대가 반격할 틈을 주지 않았습니다. 숫자보다 체감이 더 크게 남는 승리입니다.'
+        : '초중반 실수가 경기 내내 따라붙었고, 한 번 밀린 흐름을 끝내 되돌리지 못했습니다. 복기 가치가 큰 패배입니다.',
+    };
+  }
+
+  if (goldGap <= 2500) {
+    return {
+      label: '끝까지 팽팽한 승부',
+      title: `${winnerName}이 마지막 집중력으로 웃었습니다`,
+      summary: '한 번의 교전과 마지막 판단이 승패를 갈랐습니다. 결과는 났지만 다시 붙어도 이상하지 않은 경기였습니다.',
+    };
+  }
+
+  return {
+    label: isHomeWin ? '주도권 유지' : '추격 실패',
+    title: isHomeWin ? `${winnerName}이 우세를 결과로 바꿨습니다` : `${loserName}은 추격의 계기를 만들지 못했습니다`,
+    summary: isHomeWin
+      ? '앞서 만든 이득을 무리 없이 굴려내며 정리한 경기였습니다. 준비한 플랜이 비교적 선명하게 드러났습니다.'
+      : '몇 차례 버틸 구간은 있었지만, 흐름을 뒤집을 만큼 큰 전환점은 만들지 못했습니다. 다음 준비의 방향이 또렷해진 경기입니다.',
+  };
+}
+
+function buildSignatureMoment(gameResult: GameResult, homeTeamName: string, awayTeamName: string) {
+  const baronHome = gameResult.events.filter((event) => event.type === 'baron' && event.side === 'home').length;
+  const baronAway = gameResult.events.filter((event) => event.type === 'baron' && event.side === 'away').length;
+  const heraldHome = gameResult.events.filter((event) => event.type === 'rift_herald' && event.side === 'home').length;
+  const heraldAway = gameResult.events.filter((event) => event.type === 'rift_herald' && event.side === 'away').length;
+  const homeCarry = [...gameResult.playerStatsHome].sort((a, b) => b.damageDealt - a.damageDealt)[0];
+  const awayCarry = [...gameResult.playerStatsAway].sort((a, b) => b.damageDealt - a.damageDealt)[0];
+  const isHomeWin = gameResult.winnerSide === 'home';
+
+  if (baronHome + baronAway > 0) {
+    const side = baronHome > baronAway ? homeTeamName : awayTeamName;
+    return {
+      label: '기억할 장면',
+      title: `${side}의 바론 장악`,
+      summary: '바론 주도권을 잡은 순간부터 경기 리듬이 한쪽으로 기울었습니다. 이번 게임의 가장 또렷한 전환점입니다.',
+    };
+  }
+
+  if (heraldHome + heraldAway > 0) {
+    const side = heraldHome > heraldAway ? homeTeamName : awayTeamName;
+    return {
+      label: '기억할 장면',
+      title: `${side}의 초반 오브젝트 설계`,
+      summary: '전령과 라인 압박이 맞물리면서 초반 설계가 그대로 경기 전체 흐름으로 이어졌습니다.',
+    };
+  }
+
+  const carry = isHomeWin ? homeCarry : awayCarry;
+  const teamName = isHomeWin ? homeTeamName : awayTeamName;
+  return {
+    label: '기억할 장면',
+    title: `${teamName} ${carry?.position.toUpperCase() ?? '핵심 라인'}의 화력 폭발`,
+    summary: '가장 많은 피해를 만든 포지션이 교전의 중심에 섰습니다. 이 한 축이 경기 체감 난이도를 크게 갈랐습니다.',
+  };
+}
+
+function buildPlayerSpotlight(gameResult: GameResult, homeTeamName: string, awayTeamName: string) {
+  const isHomeWin = gameResult.winnerSide === 'home';
+  const winningPlayers = isHomeWin ? gameResult.playerStatsHome : gameResult.playerStatsAway;
+  const losingPlayers = isHomeWin ? gameResult.playerStatsAway : gameResult.playerStatsHome;
+  const winningTeamName = isHomeWin ? homeTeamName : awayTeamName;
+  const losingTeamName = isHomeWin ? awayTeamName : homeTeamName;
+  const standout = [...winningPlayers].sort((a, b) => b.damageDealt - a.damageDealt)[0];
+  const burden = [...losingPlayers].sort((a, b) => b.deaths - a.deaths || a.damageDealt - b.damageDealt)[0];
+  const standoutLabel = POSITION_LABELS[standout?.position ?? ''] ?? standout?.position?.toUpperCase() ?? '-';
+  const burdenLabel = POSITION_LABELS[burden?.position ?? ''] ?? burden?.position?.toUpperCase() ?? '-';
+
+  return {
+    label: '시리즈의 얼굴',
+    title: `${winningTeamName} ${standoutLabel} 라인이 가장 강하게 남았습니다`,
+    summary:
+      standout && burden
+        ? `${winningTeamName}의 ${standoutLabel} 라인은 교전마다 흐름을 만들었고, ${losingTeamName} ${burdenLabel} 라인은 ${burden.deaths}데스로 압박을 오래 버티지 못했습니다.`
+        : '이번 경기는 한 라인의 주도권과 무너진 대응이 전체 흐름을 바꾼 경기였습니다.',
+  };
 }
 
 interface PostGameStatsProps {
@@ -54,6 +154,7 @@ export function PostGameStats({
   gameNumber,
   insightReport,
 }: PostGameStatsProps) {
+  const navigate = useNavigate();
   const isHomeWin = gameResult.winnerSide === 'home';
   const homeKda = sumKda(gameResult.playerStatsHome);
   const awayKda = sumKda(gameResult.playerStatsAway);
@@ -65,6 +166,22 @@ export function PostGameStats({
   const maxDamage = Math.max(...allDamage, 1);
   const goldHistory = gameResult.goldHistory ?? [];
   const maxAbsDiff = Math.max(...goldHistory.map((point) => Math.abs(point.diff)), 1000);
+  const emotionalSummary = buildEmotionalSummary(gameResult, homeTeamName, awayTeamName);
+  const signatureMoment = buildSignatureMoment(gameResult, homeTeamName, awayTeamName);
+  const playerSpotlight = buildPlayerSpotlight(gameResult, homeTeamName, awayTeamName);
+  const normalizedEmotionalSummary = {
+    ...emotionalSummary,
+    label: '팬이 기억할 한 문장',
+  };
+  const normalizedSignatureMoment = {
+    ...signatureMoment,
+    label: '팬이 기억할 장면',
+  };
+
+  const normalizedPlayerSpotlight = {
+    ...playerSpotlight,
+    label: '시리즈의 얼굴',
+  };
 
   return (
     <div className="pgs-container">
@@ -88,6 +205,29 @@ export function PostGameStats({
             <span className="pgs-section-title">{insightReport.outcomeLabel}</span>
             <h4 className="pgs-insight-headline">{insightReport.headline}</h4>
           </div>
+          <div className="pgs-insight-grid" style={{ marginBottom: 12 }}>
+            <div className="pgs-insight-card pgs-insight-card--high" data-testid="postgame-emotion-card">
+              <div className="pgs-insight-card__top">
+                <span className="pgs-insight-impact">{normalizedEmotionalSummary.label}</span>
+                <span className="pgs-insight-title">{normalizedEmotionalSummary.title}</span>
+              </div>
+              <p className="pgs-insight-copy">{normalizedEmotionalSummary.summary}</p>
+            </div>
+            <div className="pgs-insight-card pgs-insight-card--medium" data-testid="postgame-signature-card">
+              <div className="pgs-insight-card__top">
+                <span className="pgs-insight-impact">{normalizedSignatureMoment.label}</span>
+                <span className="pgs-insight-title">{normalizedSignatureMoment.title}</span>
+              </div>
+              <p className="pgs-insight-copy">{normalizedSignatureMoment.summary}</p>
+            </div>
+            <div className="pgs-insight-card pgs-insight-card--medium" data-testid="postgame-player-spotlight-card">
+              <div className="pgs-insight-card__top">
+                <span className="pgs-insight-impact">{normalizedPlayerSpotlight.label}</span>
+                <span className="pgs-insight-title">{normalizedPlayerSpotlight.title}</span>
+              </div>
+              <p className="pgs-insight-copy">{normalizedPlayerSpotlight.summary}</p>
+            </div>
+          </div>
           <div className="pgs-insight-grid">
             {insightReport.reasons.map((reason) => (
               <div
@@ -110,6 +250,30 @@ export function PostGameStats({
               </span>
             ))}
           </div>
+          {insightReport.followUps.length > 0 && (
+            <div className="pgs-insight-grid" style={{ marginTop: 12 }}>
+              {insightReport.followUps.map((followUp, index) => (
+                <div
+                  key={`${followUp.action}-${followUp.priority}`}
+                  className={`pgs-insight-card pgs-insight-card--${followUp.priority}`}
+                >
+                  <div className="pgs-insight-card__top">
+                    <span className="pgs-insight-impact">{FOLLOW_UP_LABELS[followUp.priority] ?? '참고'}</span>
+                    <span className="pgs-insight-title">{followUp.action}</span>
+                  </div>
+                  <p className="pgs-insight-copy">{followUp.summary}</p>
+                  <button
+                    type="button"
+                    className="pgs-action-pill"
+                    data-testid={`postgame-followup-action-${index}`}
+                    onClick={() => navigate(getFollowUpRoute(followUp.action))}
+                  >
+                    바로 이동
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

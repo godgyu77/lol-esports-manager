@@ -1,0 +1,9 @@
+{
+  "identifier": "desktop-stronghold",
+  "description": "Desktop-only stronghold access",
+  "windows": ["main"],
+  "platforms": ["windows", "macOS", "linux"],
+  "permissions": [
+    "stronghold:default"
+  ]
+}

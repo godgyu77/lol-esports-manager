@@ -3,16 +3,28 @@ import { useNavigate } from 'react-router-dom';
 import { useGameStore } from '../../../stores/gameStore';
 import {
   getInboxMessages,
+  getLatestMatchResultInboxMessage,
   getUnreadInboxCount,
   markInboxRead,
   markAllInboxRead,
+  isMatchResultInboxMessage,
+  syncSystemInboxMemo,
 } from '../../../engine/inbox/inboxEngine';
+import {
+  MATCH_RESULT_FOLLOW_UP_ACTION_LABEL,
+  MATCH_RESULT_FOLLOW_UP_BADGE_LABEL,
+  MATCH_RESULT_FOLLOW_UP_MEMO_LABEL,
+  MATCH_RESULT_FOLLOW_UP_TITLE,
+} from '../../../engine/news/newsEngine';
+import { getMainLoopRiskItems } from '../../../engine/manager/systemDepthEngine';
 import type { InboxMessage, InboxCategory } from '../../../types/inbox';
 import { INBOX_CATEGORY_LABELS } from '../../../types/inbox';
 import { generateFanLetter, type FanLetter } from '../../../ai/advancedAiService';
 import { getStandings, getMatchesByTeam } from '../../../db/queries';
 import { MainLoopPanel } from '../components/MainLoopPanel';
 import { useToolbarNavigation } from '../hooks/useToolbarNavigation';
+import type { TeamLoopRiskItem } from '../../../types/systemDepth';
+import { getLoopRiskRoute } from '../utils/loopRiskRouting';
 
 const CATEGORIES: Array<InboxCategory | 'all' | 'fan'> = [
   'all',
@@ -66,6 +78,7 @@ function getInboxPresentation(message: InboxMessage): 'alert' | 'briefing' | 'ta
 }
 
 function getInboxPresentationLabel(message: InboxMessage): string {
+  if (isMatchResultInboxMessage(message)) return MATCH_RESULT_FOLLOW_UP_BADGE_LABEL;
   const presentation = getInboxPresentation(message);
   if (presentation === 'alert') return '조치 필요';
   if (presentation === 'briefing') return '참고';
@@ -73,10 +86,67 @@ function getInboxPresentationLabel(message: InboxMessage): string {
 }
 
 function getInboxPresentationColor(message: InboxMessage): string {
+  if (isMatchResultInboxMessage(message)) return '#c89b3c';
   const presentation = getInboxPresentation(message);
   if (presentation === 'alert') return '#ef4444';
   if (presentation === 'briefing') return '#34d399';
   return '#60a5fa';
+}
+
+function getLoopRiskActionRoute(riskItem: TeamLoopRiskItem | null): string {
+  if (!riskItem) return '/manager/inbox';
+  return getLoopRiskRoute(riskItem.title, riskItem.summary);
+}
+
+function getSpotlightInboxRead(params: {
+  featuredMatchResult: InboxMessage | null;
+  newestBriefing: InboxMessage | null;
+  fallbackLoopRisk: TeamLoopRiskItem | null;
+}): { title: string; summary: string; route: string; cta: string } {
+  const { featuredMatchResult, newestBriefing, fallbackLoopRisk } = params;
+
+  if (featuredMatchResult) {
+    return {
+      title: '방금 경기 이야기 더 따라가기',
+      summary: '결과 메모를 읽었다면 이제 기사와 팬 반응까지 이어서 보며 이번 경기의 감정선을 더 선명하게 잡아보세요.',
+      route: '/manager/news',
+      cta: '뉴스로 이어 보기',
+    };
+  }
+
+  if (newestBriefing?.actionRoute) {
+    return {
+      title: '지금 가장 읽어볼 브리핑',
+      summary: newestBriefing.title,
+      route: newestBriefing.actionRoute,
+      cta: '브리핑 바로 열기',
+    };
+  }
+
+  if (newestBriefing) {
+    return {
+      title: '오늘 인박스에서 더 읽어볼 것',
+      summary: newestBriefing.title,
+      route: '/manager/news',
+      cta: '관련 화면 보기',
+    };
+  }
+
+  if (fallbackLoopRisk) {
+    return {
+      title: '시스템 메모부터 훑어보기',
+      summary: `${fallbackLoopRisk.title}: ${fallbackLoopRisk.summary}`,
+      route: getLoopRiskActionRoute(fallbackLoopRisk),
+      cta: '리스크 확인하기',
+    };
+  }
+
+    return {
+      title: '오늘 팀 분위기 둘러보기',
+      summary: '처리할 메일이 비어 있으면 뉴스와 브리핑부터 보며 다음 움직임을 잡는 편이 좋습니다.',
+      route: '/manager/news',
+      cta: '뉴스 보러 가기',
+  };
 }
 
 export function InboxView() {
@@ -91,6 +161,7 @@ export function InboxView() {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [showUnreadOnly, setShowUnreadOnly] = useState(false);
+  const [loopRisks, setLoopRisks] = useState<TeamLoopRiskItem[]>([]);
 
   const [fanLetters, setFanLetters] = useState<FanLetter[]>([]);
   const [fanLetterReply, setFanLetterReply] = useState<Record<number, string>>({});
@@ -124,6 +195,34 @@ export function InboxView() {
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    if (!save || !season) return;
+    let cancelled = false;
+
+    const loadLoopRisks = async () => {
+      try {
+        const items = await getMainLoopRiskItems(userTeamId, season.id, season.currentDate, save.id);
+        const changed = await syncSystemInboxMemo(
+          userTeamId,
+          season.currentDate,
+          items[0] ?? null,
+          getLoopRiskActionRoute(items[0] ?? null),
+        ).catch(() => false);
+        if (!cancelled) setLoopRisks(items);
+        if (!cancelled && changed) {
+          await loadData();
+        }
+      } catch {
+        if (!cancelled) setLoopRisks([]);
+      }
+    };
+
+    void loadLoopRisks();
+    return () => {
+      cancelled = true;
+    };
+  }, [loadData, save, season, userTeamId]);
 
   useEffect(() => {
     if (filter !== 'fan' || !season || !userTeamId) return;
@@ -213,10 +312,16 @@ export function InboxView() {
     return messages.filter((message) => message.category === filter);
   }, [filter, messages]);
 
-  const actionMessages = filtered.filter((message) => getInboxPresentation(message) === 'alert');
+  const featuredMatchResult = getLatestMatchResultInboxMessage(filtered);
+  const actionMessages = filtered.filter((message) => getInboxPresentation(message) === 'alert' && !isMatchResultInboxMessage(message));
   const briefingMessages = filtered.filter((message) => getInboxPresentation(message) !== 'alert');
-  const inboxRisk = actionMessages[0] ?? messages.find((message) => getInboxPresentation(message) === 'alert') ?? null;
+  const inboxRisk = featuredMatchResult ?? actionMessages[0] ?? messages.find((message) => getInboxPresentation(message) === 'alert') ?? null;
   const newestBriefing = briefingMessages[0] ?? messages.find((message) => getInboxPresentation(message) !== 'alert') ?? null;
+  const fallbackLoopRisk = loopRisks[0] ?? null;
+  const spotlightRead = useMemo(
+    () => getSpotlightInboxRead({ featuredMatchResult, newestBriefing, fallbackLoopRisk }),
+    [fallbackLoopRisk, featuredMatchResult, newestBriefing],
+  );
 
   if (!save) return <p className="fm-text-muted">데이터를 불러오는 중입니다...</p>;
   if (isLoading) return <p className="fm-text-muted">받은편지를 불러오는 중입니다...</p>;
@@ -245,9 +350,9 @@ export function InboxView() {
           },
           {
             label: '가장 큰 리스크',
-            value: inboxRisk ? getInboxPresentationLabel(inboxRisk) : '안정',
-            detail: inboxRisk?.title ?? '즉시 확인이 필요한 운영 메시지가 없습니다.',
-            tone: inboxRisk ? 'danger' : 'success',
+            value: inboxRisk ? getInboxPresentationLabel(inboxRisk) : fallbackLoopRisk ? '시스템 메모' : '안정',
+            detail: inboxRisk?.title ?? fallbackLoopRisk?.title ?? '즉시 확인이 필요한 운영 메시지가 없습니다.',
+            tone: inboxRisk ? 'danger' : fallbackLoopRisk?.tone === 'risk' ? 'danger' : fallbackLoopRisk?.tone === 'positive' ? 'success' : 'accent',
           },
           {
             label: '읽는 정보',
@@ -263,6 +368,23 @@ export function InboxView() {
         ]}
         note="기사형 정보는 뉴스 화면에서 읽고, 받은편지에서는 실제로 처리해야 하는 운영 메시지를 우선 확인합니다."
       />
+
+      <div className="fm-panel fm-mb-md" data-testid="inbox-spotlight-panel">
+        <div className="fm-panel__header">
+          <span className="fm-panel__title">오늘 가장 재밌는 선택</span>
+        </div>
+        <div className="fm-panel__body">
+          <div className="fm-flex fm-items-center fm-justify-between fm-gap-md fm-flex-wrap">
+            <div>
+              <div className="fm-text-primary fm-font-semibold fm-mb-xs">{spotlightRead.title}</div>
+              <div className="fm-text-sm fm-text-secondary">{spotlightRead.summary}</div>
+            </div>
+            <button className="fm-btn fm-btn--info" onClick={() => navigate(spotlightRead.route)}>
+              {spotlightRead.cta}
+            </button>
+          </div>
+        </div>
+      </div>
 
       <div className="fm-tabs" role="tablist" aria-label="받은편지 필터" aria-orientation="horizontal">
         {CATEGORIES.map((category) => (
@@ -374,9 +496,68 @@ export function InboxView() {
               <p className="fm-empty-state__copy">
                 {showUnreadOnly ? '전체 보기로 전환하면 이미 확인한 메시지까지 함께 볼 수 있습니다.' : '새 메시지가 도착하면 이곳에서 바로 확인할 수 있습니다.'}
               </p>
+              {fallbackLoopRisk ? (
+                <div className="fm-alert fm-alert--info fm-mt-sm" style={{ textAlign: 'left' }}>
+                  <span className="fm-alert__text">{`${fallbackLoopRisk.title}: ${fallbackLoopRisk.summary}`}</span>
+                </div>
+              ) : null}
             </div>
           ) : (
             <>
+              {featuredMatchResult && (
+                <div className="fm-panel">
+                  <div className="fm-panel__header">
+                    <span className="fm-panel__title">{MATCH_RESULT_FOLLOW_UP_TITLE}</span>
+                  </div>
+                  <div className="fm-panel__body fm-flex-col fm-gap-xs">
+                    <div
+                      className={`fm-card ${!featuredMatchResult.isRead ? 'fm-card--highlight' : ''}`}
+                      style={{ borderLeft: '3px solid #c89b3c' }}
+                    >
+                      <button
+                        type="button"
+                        className="fm-btn fm-btn--ghost"
+                        style={{ width: '100%', justifyContent: 'flex-start', padding: 0, textAlign: 'left', border: 'none', minHeight: 0 }}
+                        onClick={() => void handleExpand(featuredMatchResult)}
+                        aria-expanded={expandedId === featuredMatchResult.id}
+                        aria-controls={`inbox-message-${featuredMatchResult.id}`}
+                      >
+                        <div className="fm-flex fm-items-center fm-gap-sm" style={{ width: '100%' }}>
+                          <span className="fm-text-xs fm-text-muted">{MATCH_RESULT_FOLLOW_UP_MEMO_LABEL}</span>
+                          <span className="fm-badge" style={{ background: '#c89b3c30', color: '#c89b3c' }}>
+                            {MATCH_RESULT_FOLLOW_UP_BADGE_LABEL}
+                          </span>
+                          <span
+                            className="fm-badge"
+                            aria-label={`message type: ${getInboxPresentationLabel(featuredMatchResult)}`}
+                            style={{ background: `${getInboxPresentationColor(featuredMatchResult)}22`, color: getInboxPresentationColor(featuredMatchResult) }}
+                          >
+                            {getInboxPresentationLabel(featuredMatchResult)}
+                          </span>
+                          <span className={`fm-flex-1 fm-text-md ${featuredMatchResult.isRead ? 'fm-text-muted' : 'fm-font-semibold fm-text-primary'}`}>
+                            {featuredMatchResult.title}
+                          </span>
+                          {!featuredMatchResult.isRead && (
+                            <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} aria-hidden="true" />
+                          )}
+                          <span className="fm-text-sm fm-text-muted">{featuredMatchResult.createdDate}</span>
+                        </div>
+                      </button>
+                      {expandedId === featuredMatchResult.id && (
+                        <div id={`inbox-message-${featuredMatchResult.id}`} className="fm-mt-sm" style={{ paddingTop: '10px', borderTop: '1px solid var(--border-subtle)' }}>
+                              <p className="fm-text-md fm-text-secondary" style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{featuredMatchResult.content}</p>
+                              {featuredMatchResult.actionRoute && (
+                                <button className="fm-btn fm-btn--primary fm-btn--sm fm-mt-sm" onClick={(e) => { e.stopPropagation(); if (featuredMatchResult.actionRoute) void navigate(featuredMatchResult.actionRoute); }}>
+                                  {MATCH_RESULT_FOLLOW_UP_ACTION_LABEL}
+                                </button>
+                              )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {actionMessages.length > 0 && (
                 <div className="fm-panel">
                   <div className="fm-panel__header">

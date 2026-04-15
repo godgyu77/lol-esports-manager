@@ -15,11 +15,18 @@ export interface MatchInsightReason {
   nextAction: MatchInsightAction;
 }
 
+export interface MatchInsightFollowUp {
+  action: MatchInsightAction;
+  priority: MatchInsightImpact;
+  summary: string;
+}
+
 export interface PostMatchInsightReport {
   headline: string;
   outcomeLabel: string;
   reasons: MatchInsightReason[];
   recommendedActions: MatchInsightAction[];
+  followUps: MatchInsightFollowUp[];
 }
 
 function sumTeamKda(stats: PlayerGameStatLine[]) {
@@ -43,6 +50,51 @@ function impactFromValue(value: number): MatchInsightImpact {
 
 function dedupeActions(reasons: MatchInsightReason[]): MatchInsightAction[] {
   return Array.from(new Set(reasons.map((reason) => reason.nextAction))).slice(0, 3);
+}
+
+function buildFollowUpSummary(action: MatchInsightAction, reasons: MatchInsightReason[]): string {
+  const topReasons = reasons.slice(0, 2).map((reason) => reason.title).join(', ');
+
+  switch (action) {
+    case '전술 재검토':
+      return `${topReasons} 이슈를 기준으로 운영 우선순위와 한타 진입 타이밍을 다시 맞추세요.`;
+    case '훈련 조정':
+      return `${topReasons} 문제를 반복 훈련 주제로 묶어 다음 경기 전 루틴에 반영하세요.`;
+    case '선수 컨디션 관리':
+      return `${topReasons} 부담이 컸던 포지션의 멘탈과 체력 상태를 먼저 점검하세요.`;
+    case '드래프트 우선순위 재점검':
+      return `${topReasons} 흐름을 반영해 밴픽 우선순위와 오브젝트 조합을 다시 정리하세요.`;
+    case '로스터 변경 검토':
+      return `${topReasons} 약점이 반복되면 주전 구성이나 역할 분담 변경까지 검토해야 합니다.`;
+    default:
+      return `${topReasons} 이슈를 다음 경기 준비 메모로 바로 넘겨 점검하세요.`;
+  }
+}
+
+function buildFollowUps(reasons: MatchInsightReason[]): MatchInsightFollowUp[] {
+  const grouped = new Map<MatchInsightAction, MatchInsightReason[]>();
+  reasons.forEach((reason) => {
+    const list = grouped.get(reason.nextAction) ?? [];
+    list.push(reason);
+    grouped.set(reason.nextAction, list);
+  });
+
+  const order = { high: 3, medium: 2, low: 1 };
+
+  return Array.from(grouped.entries())
+    .map(([action, groupedReasons]) => {
+      const priority = groupedReasons
+        .map((reason) => reason.impact)
+        .sort((left, right) => order[right] - order[left])[0] ?? 'low';
+
+      return {
+        action,
+        priority,
+        summary: buildFollowUpSummary(action, groupedReasons),
+      };
+    })
+    .sort((left, right) => order[right.priority] - order[left.priority])
+    .slice(0, 3);
 }
 
 export function buildPostMatchInsightReport(
@@ -160,5 +212,6 @@ export function buildPostMatchInsightReport(
     outcomeLabel: isPerspectiveWin ? '잘 된 부분' : '아쉬운 부분',
     reasons: trimmedReasons,
     recommendedActions: dedupeActions(trimmedReasons),
+    followUps: buildFollowUps(trimmedReasons),
   };
 }

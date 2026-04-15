@@ -79,6 +79,29 @@ function getPressureBandLabel(band?: BudgetPressureSnapshot['pressureBand'] | nu
   return '여유 구간';
 }
 
+function getFinancePriorityLabel(snapshot?: BudgetPressureSnapshot | null): string {
+  if (!snapshot) return '요약 준비 중';
+  if (snapshot.topDrivers[0]) return snapshot.topDrivers[0];
+  if (snapshot.pressureLevel === 'critical') return '지출 구조를 바로 손봐야 합니다.';
+  if (snapshot.pressureLevel === 'watch') return '지출 속도를 점검할 시점입니다.';
+  return '큰 재정 경고는 아직 없습니다.';
+}
+
+function getFinancePressureSummary(snapshot?: BudgetPressureSnapshot | null): string {
+  if (!snapshot) return '활주로와 연봉 상한을 계산 중입니다.';
+  if (snapshot.runwayWeeks < 6) return `활주로 ${snapshot.runwayWeeks.toFixed(1)}주, 주간 소모 ${formatAmount(snapshot.weeklyRecurringExpenses)}`;
+  if (snapshot.capRoom < 0) return `상한 초과 ${formatAmount(Math.abs(snapshot.capRoom))}, 사치세 ${formatAmount(snapshot.luxuryTax)}`;
+  return `주간 소모 ${formatAmount(snapshot.weeklyRecurringExpenses)}, 상한 여유 ${formatAmount(snapshot.capRoom)}`;
+}
+
+function getFinanceRecommendedAction(snapshot?: BudgetPressureSnapshot | null): string {
+  if (!snapshot) return '스폰서와 지출 구조를 함께 확인하세요.';
+  if (snapshot.runwayWeeks < 6) return '스폰서 확보와 지출 축소를 먼저 진행하세요.';
+  if (snapshot.capRoom < 0) return '로스터/스태프 비용부터 정리하고 추가 영입은 보류하세요.';
+  if (snapshot.failedNegotiations > 0) return '확실한 계약부터 닫아 협상 낭비를 줄이세요.';
+  return '현 상태를 유지하되 다음 스폰서 타이밍을 준비하세요.';
+}
+
 export function FinanceView() {
   const season = useGameStore((s) => s.season);
   const save = useGameStore((s) => s.save);
@@ -222,6 +245,39 @@ export function FinanceView() {
     return `기본 명성 ${reputation}${bonusLabel}. 스폰서 제안 등급과 조건은 이 수치를 기준으로 계산됩니다.`;
   }, [reputation, sponsorBonus]);
 
+  const financePriorityCards = useMemo(() => [
+    {
+      label: '가장 큰 경고',
+      value: pressureSnapshot ? getPressureLabel(pressureSnapshot.pressureLevel) : '확인 중',
+      detail: getFinancePriorityLabel(pressureSnapshot),
+      tone:
+        pressureSnapshot?.pressureLevel === 'critical'
+          ? 'danger'
+          : pressureSnapshot?.pressureLevel === 'watch'
+            ? 'warning'
+            : 'success',
+    },
+    {
+      label: '지출 압박',
+      value: pressureSnapshot ? getPressureBandLabel(pressureSnapshot.pressureBand) : '확인 중',
+      detail: getFinancePressureSummary(pressureSnapshot),
+      tone:
+        pressureSnapshot?.pressureBand === 'hard_stop'
+          ? 'danger'
+          : pressureSnapshot?.pressureBand === 'warning'
+            ? 'warning'
+            : pressureSnapshot?.pressureBand === 'taxed'
+              ? 'accent'
+              : 'success',
+    },
+    {
+      label: '다음 행동',
+      value: pressureSnapshot?.runwayWeeks ? `${pressureSnapshot.runwayWeeks.toFixed(1)}주 기준` : '운영 점검',
+      detail: getFinanceRecommendedAction(pressureSnapshot),
+      tone: pressureSnapshot && pressureSnapshot.runwayWeeks < 6 ? 'danger' : 'accent',
+    },
+  ], [pressureSnapshot]);
+
   if (!season || !save) {
     return <p className="fm-text-muted">재정 데이터를 준비 중입니다...</p>;
   }
@@ -282,6 +338,30 @@ export function FinanceView() {
         ]}
         note="금액 표기는 전부 억 기준으로 통일했고, 주간/월간 소모 문구도 같은 기준으로 읽히게 맞췄습니다."
       />
+
+      <div className="fm-grid fm-grid--3 fm-mb-lg" data-testid="finance-priority-strip">
+        {financePriorityCards.map((card) => (
+          <div key={card.label} className="fm-card">
+            <div className="fm-text-sm fm-text-muted fm-mb-xs">{card.label}</div>
+            <div
+              className={`fm-text-lg fm-font-semibold fm-mb-sm ${
+                card.tone === 'danger'
+                  ? 'fm-text-danger'
+                  : card.tone === 'warning'
+                    ? 'fm-text-warning'
+                    : card.tone === 'success'
+                      ? 'fm-text-success'
+                      : 'fm-text-accent'
+              }`}
+            >
+              {card.value}
+            </div>
+            <p className="fm-text-secondary" style={{ margin: 0 }}>
+              {card.detail}
+            </p>
+          </div>
+        ))}
+      </div>
 
       <div className="fm-grid fm-grid--4 fm-mb-lg">
         <div className="fm-card">

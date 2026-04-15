@@ -15,7 +15,15 @@ import { generatePostMatchComment } from '../../ai/gameAiService';
 import { generateLiveChatMessages, type LiveChatMessage } from '../../ai/advancedAiService';
 import { accumulateFearlessChampions } from '../../engine/draft/draftEngine';
 import type { GameResult, MatchResult } from '../../engine/match/matchSimulator';
-import { generateFanReactionNews, generateInterviewNews, generateMatchResultNews, generateSocialMediaReaction } from '../../engine/news/newsEngine';
+import {
+  buildMatchResultInboxMemoParagraph,
+  generateFanReactionNews,
+  generateInterviewNews,
+  generateMatchResultNews,
+  generateSocialMediaReaction,
+} from '../../engine/news/newsEngine';
+import { getInboxMessages, syncMatchResultInboxMemo } from '../../engine/inbox/inboxEngine';
+import { buildPostMatchInsightReport } from '../../engine/analysis/postMatchInsightEngine';
 import { selectBroadcastCrew } from '../../engine/match/broadcastLineupEngine';
 import {
   buildBroadcastHighlight,
@@ -32,6 +40,7 @@ import { DecisionPopup } from './DecisionPopup';
 import { SeriesResult } from './SeriesResult';
 import { TacticsPanel } from './TacticsPanel';
 import { BroadcastHud } from './BroadcastHud';
+import { buildFollowUpNewsParagraph, getFollowUpRoute, getPrimaryFollowUp } from './postMatchFollowUp';
 import './match.css';
 
 const SPEED_PRESETS: Array<{ key: MatchSpeedPreset; label: string }> = [
@@ -117,6 +126,16 @@ function toneClass(tone: BroadcastHighlight['tone']) {
 
 function lineToneClass(tone: BroadcastLine['tone']) {
   return `match-broadcast-line--${tone}`;
+}
+
+interface MatchFollowUpSummary {
+  title: string;
+  summary: string;
+  actionRoute: string | null;
+}
+
+function isMatchResultInboxMessage(message: { relatedId: string | null; title: string }): boolean {
+  return message.relatedId?.startsWith('match_result:') || message.title.startsWith('[경기 결과]');
 }
 
 function TeamSideBoard({
@@ -212,6 +231,7 @@ export function LiveMatchView() {
   const [studioPackage, setStudioPackage] = useState<PostMatchInterviewPackage | null>(null);
   const [selectedCoachTone, setSelectedCoachTone] = useState<CoachInterviewTone>('calm');
   const [postMatchPublished, setPostMatchPublished] = useState(false);
+  const [featuredMatchFollowUp, setFeaturedMatchFollowUp] = useState<MatchFollowUpSummary | null>(null);
 
   const commentaryRef = useRef<HTMLDivElement>(null);
   const lastEventCount = useRef(0);
@@ -240,6 +260,36 @@ export function LiveMatchView() {
     setMatchActive(true);
     return () => setMatchActive(false);
   }, [setMatchActive]);
+
+  useEffect(() => {
+    if (!save?.userTeamId) return;
+
+    let cancelled = false;
+    const loadLatestMatchFollowUp = async () => {
+      try {
+        const inboxMessages = await getInboxMessages(save.userTeamId, 12, false).catch(() => []);
+        if (cancelled) return;
+
+        const latestMatchFollowUp = inboxMessages.find(isMatchResultInboxMessage) ?? null;
+        setFeaturedMatchFollowUp(
+          latestMatchFollowUp
+            ? {
+                title: latestMatchFollowUp.title,
+                summary: latestMatchFollowUp.content,
+                actionRoute: latestMatchFollowUp.actionRoute,
+              }
+            : null,
+        );
+      } catch {
+        if (!cancelled) setFeaturedMatchFollowUp(null);
+      }
+    };
+
+    void loadLatestMatchFollowUp();
+    return () => {
+      cancelled = true;
+    };
+  }, [save?.userTeamId]);
 
   useEffect(() => {
     if (userScrolled.current) return;
@@ -388,6 +438,13 @@ export function LiveMatchView() {
 
       const didUserWin = seriesScore[userSide] > seriesScore[userSide === 'home' ? 'away' : 'home'];
       const pomTopic = studioPackage.pomReason.split('.').shift() ?? studioPackage.pomReason;
+      const latestGameResult = gameResults[gameResults.length - 1];
+      const primaryFollowUp = latestGameResult
+        ? getPrimaryFollowUp(buildPostMatchInsightReport(latestGameResult, userSide).followUps)
+        : null;
+      const followUpContextNote = primaryFollowUp
+        ? buildFollowUpNewsParagraph(primaryFollowUp.action, primaryFollowUp.summary)
+        : null;
 
       await generateMatchResultNews(
         pendingMatch.seasonId,
@@ -400,6 +457,8 @@ export function LiveMatchView() {
           homeTeamId: homeTeam.id,
           awayTeamId: awayTeam.id,
           matchType: pendingMatch.matchType,
+          followUpAction: primaryFollowUp?.action,
+          followUpSummary: primaryFollowUp?.summary,
         },
       ).catch(() => {});
 
@@ -437,8 +496,31 @@ export function LiveMatchView() {
         didUserWin ? 'win_streak' : 'lose_streak',
         didUserWin ? 'positive' : 'negative',
         save?.userTeamId ?? null,
-        studioPackage.fanReaction,
+        [studioPackage.fanReaction, followUpContextNote].filter(Boolean).join('\n\n'),
       ).catch(() => {});
+
+      if (save?.userTeamId) {
+        const opponentName = userSide === 'home' ? awayTeam.name : homeTeam.name;
+        const userScore = seriesScore[userSide];
+        const opponentScore = seriesScore[userSide === 'home' ? 'away' : 'home'];
+        const inboxTitle = `[경기 결과] ${opponentName}전 ${userScore}:${opponentScore} ${didUserWin ? '승리' : '패배'}`;
+        const inboxContent = [
+          `${opponentName}전 시리즈가 ${userScore}:${opponentScore}로 마무리됐습니다.`,
+          buildMatchResultInboxMemoParagraph({
+            followUpAction: primaryFollowUp?.action,
+            followUpSummary: primaryFollowUp?.summary,
+          }),
+        ].filter(Boolean).join('\n\n');
+
+        await syncMatchResultInboxMemo(
+          save.userTeamId,
+          currentDate,
+          pendingMatch.id,
+          inboxTitle,
+          inboxContent,
+          primaryFollowUp ? getFollowUpRoute(primaryFollowUp.action) : '/manager/inbox',
+        ).catch(() => {});
+      }
 
       setPostMatchPublished(true);
     },
@@ -451,6 +533,7 @@ export function LiveMatchView() {
       save?.managerName,
       save?.userTeamId,
       seriesScore,
+      gameResults,
       studioPackage,
       userSide,
     ],
@@ -725,6 +808,27 @@ export function LiveMatchView() {
         phaseLabels={PHASE_LABELS}
       />
 
+      {featuredMatchFollowUp ? (
+        <div className="fm-card fm-mt-md" data-testid="live-match-followup-panel">
+          <div className="fm-flex fm-items-center fm-justify-between fm-gap-md" style={{ flexWrap: 'wrap' }}>
+            <div className="fm-flex-col fm-gap-xs">
+              <span className="fm-text-sm fm-text-muted">직전 경기 후속</span>
+              <strong className="fm-text-primary">{featuredMatchFollowUp.title}</strong>
+              <p className="fm-text-sm fm-text-secondary" style={{ margin: 0 }}>
+                {featuredMatchFollowUp.summary}
+              </p>
+            </div>
+            <button
+              type="button"
+              className="fm-btn fm-btn--info"
+              onClick={() => navigate(featuredMatchFollowUp.actionRoute ?? `${basePath}/inbox`)}
+            >
+              직전 경기 정리하러 가기
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       <div className="match-broadcast-layout fm-mt-md">
         <TeamSideBoard
           teamName={homeTeam?.name ?? '홈 팀'}
@@ -853,6 +957,7 @@ export function LiveMatchView() {
           seriesScore={seriesScore}
           studioPackage={studioPackage}
           gameResults={gameResults}
+          perspectiveSide={pendingMatch.teamHomeId === save?.userTeamId ? 'home' : 'away'}
           onSelectCoachTone={setSelectedCoachTone}
           onReturn={() => void handleReturn()}
         />

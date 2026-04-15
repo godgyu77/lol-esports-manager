@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { getPlayersByTeamId, getStandings } from '../../../db/queries';
 import { generateOpponentReport } from '../../../engine/analysis/matchAnalysisEngine';
 import { buildCompetitiveOperationBrief, type CompetitiveOperationBrief } from '../../../engine/manager/competitiveIdentityEngine';
+import { getInboxMessages } from '../../../engine/inbox/inboxEngine';
 import { getManagerIdentity, getManagerIdentitySummaryLine } from '../../../engine/manager/managerIdentityEngine';
 import { getActiveInterventionEffects } from '../../../engine/manager/managerInterventionEngine';
 import { getBudgetPressureSnapshot, getPrepRecommendationRecords } from '../../../engine/manager/systemDepthEngine';
@@ -40,6 +41,25 @@ interface FocusCard {
   detail: string;
   route: string;
   cta: string;
+}
+
+interface PrepStep {
+  title: string;
+  detail: string;
+  route: string;
+  cta: string;
+  status: 'ready' | 'attention' | 'next';
+}
+
+interface MatchFollowUpSummary {
+  title: string;
+  summary: string;
+  actionRoute: string | null;
+}
+
+interface MatchStakesSummary {
+  title: string;
+  summary: string;
 }
 
 function calculateOverall(player: Player): number {
@@ -100,6 +120,53 @@ function buildOpponentReportSummary(opponentReport: Awaited<ReturnType<typeof ge
   return `상대 흐름 분석 정확도는 ${opponentReport.accuracy}입니다. 추천 밴은 ${recommendedBans || '없음'}입니다.`;
 }
 
+function isMatchResultInboxMessage(message: { relatedId: string | null; title: string }): boolean {
+  return message.relatedId?.startsWith('match_result:') || message.title.startsWith('[경기 결과]');
+}
+
+function buildMatchStakesSummary(input: {
+  opponentName?: string;
+  opponentStanding: { wins: number; losses: number; rank: number } | null;
+  internationalSnapshot: InternationalExpectationSnapshot | null;
+  featuredMatchFollowUp: MatchFollowUpSummary | null;
+  matchType: string;
+}): MatchStakesSummary {
+  const opponentName = input.opponentName ?? '상대 팀';
+
+  if (input.featuredMatchFollowUp) {
+    return {
+      title: '직전 경기 후속이 걸린 매치',
+      summary: `지난 경기의 후속 정리가 아직 남아 있습니다. ${opponentName}전은 그 판단을 바로 시험하는 무대가 됩니다.`,
+    };
+  }
+
+  if (input.internationalSnapshot?.level === 'must_deliver') {
+    return {
+      title: '국제전 기대가 걸린 검증전',
+      summary: input.internationalSnapshot.summary,
+    };
+  }
+
+  if (input.matchType !== 'regular') {
+    return {
+      title: '시즌 흐름을 바꾸는 경기',
+      summary: `${opponentName}전 결과가 이번 시리즈 전체 분위기를 좌우할 수 있습니다. 준비 우선순위를 분명히 잡는 편이 좋습니다.`,
+    };
+  }
+
+  if (input.opponentStanding && input.opponentStanding.rank <= 3) {
+    return {
+      title: '상위권 상대로 치르는 시험대',
+      summary: `${opponentName}는 현재 상위권입니다. 오늘 경기 결과가 팀 기대치와 보드 시선을 바로 바꿀 수 있습니다.`,
+    };
+  }
+
+  return {
+    title: '오늘 경기 리듬을 잡아야 하는 날',
+    summary: `${opponentName}전은 다음 일정 흐름을 여는 경기입니다. 준비를 매끄럽게 마치고 드래프트까지 템포를 이어가는 편이 좋습니다.`,
+  };
+}
+
 export function PreMatchView() {
   const navigate = useNavigate();
   const pendingMatch = useGameStore((s) => s.pendingUserMatch);
@@ -117,6 +184,7 @@ export function PreMatchView() {
   const [opponentReportSummary, setOpponentReportSummary] = useState<string | null>(null);
   const [operationBrief, setOperationBrief] = useState<CompetitiveOperationBrief | null>(null);
   const [internationalSnapshot, setInternationalSnapshot] = useState<InternationalExpectationSnapshot | null>(null);
+  const [featuredMatchFollowUp, setFeaturedMatchFollowUp] = useState<MatchFollowUpSummary | null>(null);
   const [loading, setLoading] = useState(true);
 
   const userTeamId = save?.userTeamId ?? '';
@@ -147,6 +215,7 @@ export function PreMatchView() {
           recentPrep,
           opponentReport,
           intlSnapshot,
+          inboxMessages,
         ] = await Promise.all([
           getPlayersByTeamId(opponentTeamId),
           getPlayersByTeamId(userTeamId),
@@ -160,6 +229,7 @@ export function PreMatchView() {
           getInternationalExpectationSnapshot(userTeam.id, season.id, pendingMatch?.matchType ?? null, save?.id).catch(
             () => null,
           ),
+          getInboxMessages(userTeam.id, 12, false).catch(() => []),
         ]);
 
         if (cancelled) return;
@@ -170,6 +240,16 @@ export function PreMatchView() {
         setPrepRecords(recentPrep);
         setOpponentReportSummary(sanitizeCopy(buildOpponentReportSummary(opponentReport)));
         setInternationalSnapshot(intlSnapshot);
+        const latestMatchFollowUp = inboxMessages.find(isMatchResultInboxMessage) ?? null;
+        setFeaturedMatchFollowUp(
+          latestMatchFollowUp
+            ? {
+                title: latestMatchFollowUp.title,
+                summary: latestMatchFollowUp.content,
+                actionRoute: latestMatchFollowUp.actionRoute,
+              }
+            : null,
+        );
 
         const sorted = [...standings].sort((a, b) => {
           if (b.wins !== a.wins) return b.wins - a.wins;
@@ -298,6 +378,46 @@ export function PreMatchView() {
 
   const pressureTag = opponentStanding && opponentStanding.rank <= 3 ? '강한 상대' : '관리 가능한 상대';
   const latestPrepRecord = prepRecords[0] ?? null;
+  const bansReady = recommendedBans.length > 0;
+  const rosterEdge = userAverageOverall - opponentAverageOverall;
+  const prepHeadline = operationBrief?.deskHeadline ?? `${userTeam?.shortName ?? userTeamId} vs ${opponentTeam?.shortName ?? opponentTeamId}`;
+  const prepSummary = opponentReportSummary
+    ?? latestPrepRecord?.impactSummary
+    ?? latestPrepRecord?.summary
+    ?? '훈련, 전술, 주전 상태를 순서대로 확인한 뒤 드래프트로 넘어가면 됩니다.';
+  const matchStakes = buildMatchStakesSummary({
+    opponentName: opponentTeam?.name,
+    opponentStanding,
+    internationalSnapshot,
+    featuredMatchFollowUp,
+    matchType: pendingMatch.matchType,
+  });
+  const nextActionLabel = bansReady ? '드래프트 이동' : '전술 확인';
+  const nextActionRoute = bansReady ? '/manager/draft' : '/manager/tactics';
+
+  const prepSteps: PrepStep[] = [
+    {
+      title: '1. 훈련 확인',
+      detail: rosterEdge >= 0 ? '주전 컨디션이 크게 흔들리지 않았습니다. 마지막 점검만 하면 됩니다.' : '기본기 보완이 필요한 매치업입니다. 훈련 마무리를 먼저 보는 편이 안전합니다.',
+      route: '/manager/training',
+      cta: '훈련 보기',
+      status: rosterEdge >= 0 ? 'ready' : 'attention',
+    },
+    {
+      title: '2. 전술 정리',
+      detail: bansReady ? '추천 밴과 핵심 카드가 이미 정리돼 있어 운영만 다시 맞추면 됩니다.' : '추천 밴이 비어 있어 전술 화면에서 우선순위를 먼저 정리해야 합니다.',
+      route: '/manager/tactics',
+      cta: '전술 보기',
+      status: bansReady ? 'ready' : 'attention',
+    },
+    {
+      title: '3. 드래프트 진입',
+      detail: bansReady ? '핵심 준비가 끝났으니 바로 드래프트로 넘어가도 됩니다.' : '전술 확인 후 드래프트로 넘어가면 준비 흐름이 자연스럽습니다.',
+      route: '/manager/draft',
+      cta: '드래프트 이동',
+      status: bansReady ? 'next' : 'attention',
+    },
+  ];
 
   const focusCards: FocusCard[] = [
     {
@@ -350,6 +470,28 @@ export function PreMatchView() {
         <p className="fm-page-subtitle">밴픽 전 마지막으로 주전, 운영 포인트, 위험 요소를 한 번에 확인합니다.</p>
       </div>
 
+      {featuredMatchFollowUp ? (
+        <div className="fm-panel fm-mb-md" data-testid="prematch-followup-panel">
+          <div className="fm-panel__body">
+            <div className="fm-flex fm-items-center fm-justify-between fm-gap-md" style={{ flexWrap: 'wrap' }}>
+              <div className="fm-flex-col fm-gap-xs">
+                <span className="fm-text-sm fm-text-muted">직전 경기 후속</span>
+                <strong className="fm-text-primary">{featuredMatchFollowUp.title}</strong>
+                <p className="fm-text-sm fm-text-secondary" style={{ margin: 0 }}>
+                  {featuredMatchFollowUp.summary}
+                </p>
+              </div>
+              <button
+                className="fm-btn fm-btn--info"
+                onClick={() => navigate(featuredMatchFollowUp.actionRoute ?? '/manager/inbox')}
+              >
+                직전 경기 정리하러 가기
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <div
         className="fm-panel fm-card--highlight fm-mb-md"
         style={{ background: 'linear-gradient(135deg, var(--bg-card) 0%, rgba(200,155,60,0.08) 100%)' }}
@@ -374,6 +516,61 @@ export function PreMatchView() {
                 <span className="fm-text-xs fm-text-muted">상대 전적 집계 중</span>
               )}
             </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="fm-panel fm-mb-md" data-testid="prematch-stakes-panel">
+        <div className="fm-panel__body">
+          <div className="fm-flex fm-items-center fm-justify-between fm-gap-md" style={{ flexWrap: 'wrap' }}>
+            <div className="fm-flex-col fm-gap-xs">
+              <span className="fm-text-sm fm-text-muted">왜 중요한 경기인가</span>
+              <strong className="fm-text-primary">{matchStakes.title}</strong>
+              <p className="fm-text-sm fm-text-secondary" style={{ margin: 0 }}>
+                {matchStakes.summary}
+              </p>
+            </div>
+            <span className="fm-badge fm-badge--warning">집중 매치</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="fm-panel fm-mb-md">
+        <div className="fm-panel__body">
+          <div className="fm-flex fm-justify-between fm-items-center fm-gap-md" style={{ flexWrap: 'wrap', marginBottom: 12 }}>
+            <div className="fm-flex-col fm-gap-xs">
+              <span className="fm-text-sm fm-text-muted">지금 해야 할 다음 단계</span>
+              <strong className="fm-text-xl fm-text-primary">{prepHeadline}</strong>
+              <p className="fm-text-sm fm-text-secondary" style={{ margin: 0 }}>{prepSummary}</p>
+            </div>
+            <button className="fm-btn fm-btn--primary" onClick={() => navigate(nextActionRoute)}>
+              {nextActionLabel}
+            </button>
+          </div>
+
+          <div className="fm-grid fm-grid--3" style={{ gap: '12px' }}>
+            {prepSteps.map((step) => (
+              <div key={step.title} className="fm-card fm-flex-col fm-gap-sm">
+                <div className="fm-flex fm-items-center fm-justify-between fm-gap-sm">
+                  <span className="fm-text-sm fm-text-muted">{step.title}</span>
+                  <span
+                    className={`fm-badge ${
+                      step.status === 'ready'
+                        ? 'fm-badge--success'
+                        : step.status === 'attention'
+                          ? 'fm-badge--warning'
+                          : 'fm-badge--info'
+                    }`}
+                  >
+                    {step.status === 'ready' ? '준비됨' : step.status === 'attention' ? '점검 필요' : '다음 단계'}
+                  </span>
+                </div>
+                <p className="fm-text-sm fm-text-secondary" style={{ margin: 0 }}>{step.detail}</p>
+                <button className={`fm-btn ${step.status === 'next' ? 'fm-btn--primary' : 'fm-btn--sm'}`} onClick={() => navigate(step.route)}>
+                  {step.cta}
+                </button>
+              </div>
+            ))}
           </div>
         </div>
       </div>

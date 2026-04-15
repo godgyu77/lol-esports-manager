@@ -1,7 +1,9 @@
 import { renderWithProviders, screen, resetStores } from '../../../test/testUtils';
 import { ManagerHome } from './ManagerHome';
+import type { Team } from '../../../types/team';
 
 const {
+  mockNavigate,
   mockGetMatchesByTeam,
   mockGetTeamConditions,
   mockGetRecentDailyEvents,
@@ -16,7 +18,9 @@ const {
   mockGetPrepRecommendationRecords,
   mockGetMainLoopRiskItems,
   mockGetBoardExpectations,
+  mockGetInboxMessages,
 } = vi.hoisted(() => ({
+  mockNavigate: vi.fn(),
   mockGetMatchesByTeam: vi.fn(),
   mockGetTeamConditions: vi.fn(),
   mockGetRecentDailyEvents: vi.fn(),
@@ -31,7 +35,16 @@ const {
   mockGetPrepRecommendationRecords: vi.fn(),
   mockGetMainLoopRiskItems: vi.fn(),
   mockGetBoardExpectations: vi.fn(),
+  mockGetInboxMessages: vi.fn(),
 }));
+
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
+  };
+});
 
 vi.mock('../../../hooks/useBgm', () => ({ useBgm: vi.fn() }));
 vi.mock('../../tutorial/TutorialOverlay', () => ({ TutorialOverlay: () => null }));
@@ -44,11 +57,17 @@ vi.mock('../../../db/queries', () => ({
 }));
 vi.mock('../../../engine/board/boardEngine', () => ({ getBoardExpectations: mockGetBoardExpectations }));
 vi.mock('../../../engine/complaint/complaintEngine', () => ({ getActiveComplaints: vi.fn().mockResolvedValue([]) }));
+vi.mock('../../../engine/inbox/inboxEngine', () => ({ getInboxMessages: mockGetInboxMessages }));
 vi.mock('../../../engine/news/newsEngine', () => ({ getUnreadCount: mockGetUnreadCount }));
 vi.mock('../../../engine/manager/managerIdentityEngine', () => ({
   getManagerIdentity: vi.fn().mockResolvedValue(null),
   getManagerIdentitySummaryLine: vi.fn().mockReturnValue('identity summary'),
-  MANAGER_PHILOSOPHY_LABELS: { discipline: '규율', playerCare: '케어', analytics: '분석', aggression: '공격성' },
+  MANAGER_PHILOSOPHY_LABELS: {
+    discipline: '규율',
+    playerCare: '케어',
+    analytics: '분석',
+    aggression: '공격성',
+  },
 }));
 vi.mock('../../../engine/satisfaction/playerSatisfactionEngine', () => ({
   getPlayerManagementInsights: mockGetPlayerManagementInsights,
@@ -75,6 +94,11 @@ vi.mock('../../../engine/season/offseasonEngine', () => ({
   },
 }));
 
+const teams: Team[] = [
+  { id: 'lck_T1', name: 'T1', shortName: 'T1', region: 'LCK', budget: 500000, salaryCap: 400000, reputation: 85, roster: [], playStyle: 'controlled' },
+  { id: 'lck_GEN', name: 'Gen.G', shortName: 'GEN', region: 'LCK', budget: 450000, salaryCap: 400000, reputation: 84, roster: [], playStyle: 'controlled' },
+];
+
 const baseProps = {
   gameState: {
     save: {
@@ -100,10 +124,7 @@ const baseProps = {
       endDate: '2026-06-01',
       isActive: true,
     },
-    teams: [
-      { id: 'lck_T1', name: 'T1', shortName: 'T1', region: 'LCK', budget: 500000, salaryCap: 400000, reputation: 85, roster: [], playStyle: 'controlled' },
-      { id: 'lck_GEN', name: 'Gen.G', shortName: 'GEN', region: 'LCK', budget: 450000, salaryCap: 400000, reputation: 84, roster: [], playStyle: 'controlled' },
-    ],
+    teams,
   },
   settingsState: { tutorialComplete: true },
 };
@@ -140,6 +161,7 @@ describe('ManagerHome', () => {
       advice: ['훈련 방향과 다음 일정을 먼저 확인해 주세요.'],
     });
     mockGetBoardExpectations.mockResolvedValue({ satisfaction: 60 });
+    mockGetInboxMessages.mockResolvedValue([]);
     mockGetBudgetPressureSnapshot.mockResolvedValue({
       totalPayroll: 0,
       salaryCap: 0,
@@ -148,28 +170,83 @@ describe('ManagerHome', () => {
     });
     mockGetActiveConsequences.mockResolvedValue([]);
     mockGetPrepRecommendationRecords.mockResolvedValue([]);
-    mockGetMainLoopRiskItems.mockResolvedValue([{ title: '재정 압박', summary: '최근 지출 흐름을 다시 점검해야 합니다.' }]);
+    mockGetMainLoopRiskItems.mockResolvedValue([
+      { title: '재정 압박', summary: '최근 지출 흐름을 다시 점검해야 합니다.', tone: 'risk' },
+    ]);
   });
 
-  it('메인 루프 요약과 주요 액션을 보여준다', async () => {
+  it('renders the main loop summary cards and spotlight panel', async () => {
     renderWithProviders(<ManagerHome />, baseProps);
 
-    expect(await screen.findByText('매니저 루프')).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: '시즌 진행' }).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole('button', { name: '훈련 보기' }).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole('button', { name: '전술 보기' }).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole('button', { name: '읽지 않은 뉴스 2건이 있습니다.' }).length).toBeGreaterThan(0);
-    expect(screen.getByText('60/100')).toBeInTheDocument();
-    expect(screen.getAllByText(/Payroll 0\.00억 \/ cap 0\.00억/).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText('상세 운영 메모 보기')).toBeInTheDocument();
+    expect(await screen.findByText('60/100')).toBeInTheDocument();
+    expect(screen.getAllByText(/Payroll 0\.00/).length).toBeGreaterThan(0);
+    expect(screen.getByTestId('managerhome-priority-strip')).toBeInTheDocument();
+    expect(screen.getByText(/吏湲/)).toBeInTheDocument();
+    expect(screen.getByTestId('managerhome-spotlight-panel')).toBeInTheDocument();
   });
 
-  it('board 값이 null 이어도 크래시 없이 렌더된다', async () => {
+  it('still renders safely when board satisfaction is missing', async () => {
     mockGetBoardExpectations.mockResolvedValue(null);
 
     renderWithProviders(<ManagerHome />, baseProps);
 
-    expect(await screen.findByText('매니저 루프')).toBeInTheDocument();
+    expect(await screen.findByTestId('managerhome-spotlight-panel')).toBeInTheDocument();
     expect(screen.getAllByText('-').length).toBeGreaterThan(0);
+  });
+
+  it('prioritizes the latest match follow-up on the home loop when inbox has a result memo', async () => {
+    mockGetInboxMessages.mockResolvedValue([
+      {
+        id: 21,
+        teamId: 'lck_T1',
+        category: 'general',
+        title: '[경기 결과] GEN전 0:2 패배',
+        content: '다음 권장 행동은 전술 재검토입니다.',
+        isRead: false,
+        actionRequired: true,
+        actionRoute: '/manager/tactics',
+        relatedId: 'match_result:match-1',
+        createdDate: '2026-03-02',
+        dismissOnRead: false,
+        sticky: true,
+      },
+    ]);
+
+    renderWithProviders(<ManagerHome />, baseProps);
+
+    expect(await screen.findAllByRole('button', { name: /경기 후속 정리/ })).not.toHaveLength(0);
+    expect(screen.getAllByText(/직전 경기 후속/)).not.toHaveLength(0);
+  });
+
+  it('shows a spotlight choice that nudges exploration beyond the urgent loop', async () => {
+    renderWithProviders(<ManagerHome />, baseProps);
+
+    expect(await screen.findByTestId('managerhome-spotlight-panel')).toBeInTheDocument();
+    expect(screen.getByText(/오늘 가장 재밌는 선택/)).toBeInTheDocument();
+  });
+
+  it('shows a first-season retention panel with a season-story nudge', async () => {
+    renderWithProviders(<ManagerHome />, baseProps);
+
+    expect(await screen.findByTestId('managerhome-retention-panel')).toBeInTheDocument();
+    expect(screen.getByText('첫 시즌 몰입 포인트')).toBeInTheDocument();
+    expect(screen.getAllByText(/첫 인상 만들기|첫 시즌 흐름 만들기/).length).toBeGreaterThan(0);
+  });
+
+  it('routes top board pressure notes to finance from the home loop', async () => {
+    mockGetMainLoopRiskItems.mockResolvedValue([
+      {
+        title: '보드 신뢰 경고',
+        summary: '보드가 최근 운영 선택을 재정 압박과 함께 보고 있어 지금 바로 점검이 필요합니다.',
+        tone: 'risk',
+      },
+    ]);
+
+    renderWithProviders(<ManagerHome />, baseProps);
+
+    const boardNote = await screen.findAllByRole('button', { name: /보드 신뢰 경고/ });
+    boardNote[0].click();
+
+    expect(mockNavigate).toHaveBeenCalledWith('/manager/finance');
   });
 });

@@ -46,6 +46,40 @@ function getPrepOutcomeTone(record: PrepRecommendationRecord | null): 'success' 
   return 'info';
 }
 
+function getTacticsSeasonDirection(prepRecords: PrepRecommendationRecord[]): {
+  label: string;
+  detail: string;
+  tone: 'accent' | 'success' | 'danger';
+} {
+  const positiveCount = prepRecords.filter((record) => record.observedOutcome === 'positive').length;
+  const negativeCount = prepRecords.filter((record) => record.observedOutcome === 'negative').length;
+  const pendingCount = prepRecords.filter((record) => record.status === 'applied').length;
+
+  if (negativeCount > positiveCount) {
+    return {
+      label: '재정렬 필요',
+      detail: `최근 전술 검증 실패 ${negativeCount}회가 누적돼 시즌 운영 방향을 다시 점검해야 합니다.`,
+      tone: 'danger',
+    };
+  }
+
+  if (positiveCount > 0) {
+    return {
+      label: '검증된 방향',
+      detail: `긍정 검증 ${positiveCount}회로 현재 전술 축이 시즌 운영에 안정적으로 쌓이고 있습니다.`,
+      tone: 'success',
+    };
+  }
+
+  return {
+    label: pendingCount > 0 ? '검증 진행 중' : '축적 중',
+    detail: pendingCount > 0
+      ? `아직 ${pendingCount}개의 전술 조정이 다음 경기 결과를 기다리고 있습니다.`
+      : '시즌 누적 전술 데이터가 아직 충분히 쌓이지 않았습니다.',
+    tone: 'accent',
+  };
+}
+
 export function TacticsView() {
   const save = useGameStore((s) => s.save);
   const season = useGameStore((s) => s.season);
@@ -149,6 +183,10 @@ export function TacticsView() {
     ))?.name ?? '상대 팀 미정'
     : null;
   const latestPrepRecord = prepRecords[0] ?? null;
+  const tacticsSeasonDirection = getTacticsSeasonDirection(prepRecords);
+  const observedPrepCount = prepRecords.filter((record) => record.status === 'observed').length;
+  const primaryLoopRoute = pendingMatch ? '/manager/pre-match' : '/manager/day';
+  const primaryLoopLabel = pendingMatch ? '경기 준비로 복귀' : 'DayView로 돌아가기';
 
   return (
     <div>
@@ -346,12 +384,51 @@ export function TacticsView() {
           },
         ]}
         actions={[
-          { label: 'DayView로 돌아가기', onClick: () => navigate('/manager/day'), variant: 'primary' },
+          { label: primaryLoopLabel, onClick: () => navigate(primaryLoopRoute), variant: 'primary' },
           { label: '훈련 조정', onClick: () => navigate('/manager/training') },
           { label: 'AI 코치 다시 받기', onClick: () => void handleAiCoach(), variant: 'info', disabled: aiSuggestionLoading },
         ]}
         note={`현재 전술 보정치는 공격 ${bonus.offense}, 수비 ${bonus.defense}, 운영 ${bonus.objective}입니다.`}
       />
+
+      <div className="fm-grid fm-grid--3 fm-mb-md" data-testid="tactics-season-strip">
+        <div className="fm-card">
+          <div className="fm-stat">
+            <span className="fm-stat__label">시즌 전술 방향</span>
+            <span className={`fm-stat__value ${
+              tacticsSeasonDirection.tone === 'danger'
+                ? 'fm-text-danger'
+                : tacticsSeasonDirection.tone === 'success'
+                  ? 'fm-text-success'
+                  : 'fm-text-accent'
+            }`}
+            >
+              {tacticsSeasonDirection.label}
+            </span>
+          </div>
+          <p className="fm-text-xs fm-text-secondary fm-mt-xs" style={{ marginBottom: 0 }}>
+            {tacticsSeasonDirection.detail}
+          </p>
+        </div>
+        <div className="fm-card">
+          <div className="fm-stat">
+            <span className="fm-stat__label">누적 준비 검증</span>
+            <span className="fm-stat__value">{observedPrepCount > 0 ? `${observedPrepCount}회` : '대기'}</span>
+          </div>
+          <p className="fm-text-xs fm-text-secondary fm-mt-xs" style={{ marginBottom: 0 }}>
+            전술 조정이 실제 경기 흐름과 얼마나 맞았는지 시즌 단위로 추적합니다.
+          </p>
+        </div>
+        <div className="fm-card">
+          <div className="fm-stat">
+            <span className="fm-stat__label">현재 운영 보정</span>
+            <span className="fm-stat__value fm-text-accent">{`공 ${bonus.offense} / 수 ${bonus.defense} / 운영 ${bonus.objective}`}</span>
+          </div>
+          <p className="fm-text-xs fm-text-secondary fm-mt-xs" style={{ marginBottom: 0 }}>
+            지금 선택한 전략이 시즌 누적 방향과 어긋나지 않는지 함께 확인합니다.
+          </p>
+        </div>
+      </div>
 
       <div className="fm-panel fm-mb-lg">
         <div className="fm-panel__header">

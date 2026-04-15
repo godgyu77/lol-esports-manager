@@ -21,10 +21,11 @@ describe('ModeSelect', () => {
     const { user } = renderWithProviders(<ModeSelect />);
 
     expect(screen.getByText('선수 모드')).toBeInTheDocument();
+    expect(screen.getByText('빠른 시작')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /선수 모드/i }));
 
-    expect(screen.getByText(/선수 모드 신규 시작은 아직 준비 중입니다/)).toBeInTheDocument();
+    expect(screen.getByText(/선수 모드는 아직 준비 중입니다/)).toBeInTheDocument();
     expect(mockNavigate).not.toHaveBeenCalled();
     expect(useGameStore.getState().mode).toBeNull();
   });

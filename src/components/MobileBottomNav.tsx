@@ -6,6 +6,7 @@ interface MobileBottomNavItem {
   icon: string;
   end?: boolean;
   onClick?: () => void;
+  badgeCount?: number;
 }
 
 export function MobileBottomNav({ items }: { items: MobileBottomNavItem[] }) {
@@ -21,6 +22,11 @@ export function MobileBottomNav({ items }: { items: MobileBottomNavItem[] }) {
           >
             <span className="fm-mobile-nav__icon">{item.icon}</span>
             <span className="fm-mobile-nav__label">{item.label}</span>
+            {(item.badgeCount ?? 0) > 0 ? (
+              <span className="fm-nav-item__badge">
+                {(item.badgeCount ?? 0) > 9 ? '9+' : item.badgeCount}
+              </span>
+            ) : null}
           </NavLink>
         ) : (
           <button
@@ -31,6 +37,11 @@ export function MobileBottomNav({ items }: { items: MobileBottomNavItem[] }) {
           >
             <span className="fm-mobile-nav__icon">{item.icon}</span>
             <span className="fm-mobile-nav__label">{item.label}</span>
+            {(item.badgeCount ?? 0) > 0 ? (
+              <span className="fm-nav-item__badge">
+                {(item.badgeCount ?? 0) > 9 ? '9+' : item.badgeCount}
+              </span>
+            ) : null}
           </button>
         ),
       )}

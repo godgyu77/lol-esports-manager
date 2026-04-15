@@ -7,6 +7,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { getInboxMessages } from '../../../engine/inbox/inboxEngine';
 import { useGameStore } from '../../../stores/gameStore';
 import { useBgm } from '../../../hooks/useBgm';
 import {
@@ -19,6 +20,15 @@ import { loadGameIntoStore } from '../../../db/initGame';
 import { getMatchById } from '../../../db/queries';
 import { generateSeasonSummary, type SeasonSummary } from '../../../ai/advancedAiService';
 import type { Region } from '../../../types/game';
+
+interface MatchFollowUpSummary {
+  title: string;
+  summary: string;
+  actionRoute: string | null;
+}
+
+const MATCH_FOLLOW_UP_SECTION_LABEL = '직전 경기 후속';
+const MATCH_FOLLOW_UP_LABEL = '경기 후속 정리';
 
 export function SeasonEndView() {
   useBgm('season_end');
@@ -34,8 +44,38 @@ export function SeasonEndView() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [seasonSummary, setSeasonSummary] = useState<SeasonSummary | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
+  const [featuredMatchFollowUp, setFeaturedMatchFollowUp] = useState<MatchFollowUpSummary | null>(null);
 
   const userTeam = teams.find(t => t.id === save?.userTeamId);
+
+  useEffect(() => {
+    if (!save?.userTeamId) return;
+
+    let cancelled = false;
+    const loadLatestMatchFollowUp = async () => {
+      try {
+        const inboxMessages = await getInboxMessages(save.userTeamId, 12, false).catch(() => []);
+        if (cancelled) return;
+
+        const latestMatchFollowUp =
+          inboxMessages.find((message) => message.relatedId?.startsWith('match_result:') || message.title.startsWith('[경기 결과]')) ?? null;
+        setFeaturedMatchFollowUp(
+          latestMatchFollowUp
+            ? {
+                title: latestMatchFollowUp.title,
+                summary: latestMatchFollowUp.content,
+                actionRoute: latestMatchFollowUp.actionRoute,
+              }
+            : null,
+        );
+      } catch {
+        if (!cancelled) setFeaturedMatchFollowUp(null);
+      }
+    };
+
+    void loadLatestMatchFollowUp();
+    return () => { cancelled = true; };
+  }, [save?.userTeamId]);
 
   // Step 1: 정규시즌 종료 + 플레이오프 생성
   const handleRegularEnd = useCallback(async () => {
@@ -265,6 +305,26 @@ export function SeasonEndView() {
             )}
           </div>
         </div>
+
+        {featuredMatchFollowUp ? (
+          <div className="fm-panel fm-mb-md" data-testid="season-end-followup-panel">
+            <div className="fm-panel__header">
+              <span className="fm-panel__title">{MATCH_FOLLOW_UP_SECTION_LABEL}</span>
+            </div>
+            <div className="fm-panel__body fm-flex fm-items-center fm-justify-between fm-gap-md fm-flex-wrap">
+              <div className="fm-flex-col fm-gap-xs">
+                <span className="fm-text-primary fm-font-semibold">{featuredMatchFollowUp.title}</span>
+                <span className="fm-text-secondary">{featuredMatchFollowUp.summary}</span>
+              </div>
+              <button
+                className="fm-btn fm-btn--info"
+                onClick={() => navigate(featuredMatchFollowUp.actionRoute ?? '/manager/inbox')}
+              >
+                {MATCH_FOLLOW_UP_LABEL}
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         <div className="fm-panel fm-mb-md">
           <div className="fm-panel__body">

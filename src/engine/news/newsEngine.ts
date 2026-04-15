@@ -19,6 +19,24 @@ interface NewsArticleRow {
   narrative_tags_json?: string | null;
 }
 
+export const MATCH_RESULT_FOLLOW_UP_BADGE_LABEL = '경기 결과 후속';
+export const MATCH_RESULT_FOLLOW_UP_TITLE = '방금 경기 정리';
+export const MATCH_RESULT_FOLLOW_UP_ACTION_LABEL = '바로 정리하러 가기';
+export const MATCH_RESULT_FOLLOW_UP_STORY_TAG = '팬이 기억할 한 문장';
+export const MATCH_RESULT_FOLLOW_UP_MEMO_LABEL = '관리 메모';
+
+export interface MatchResultFollowUpOptions {
+  followUpAction?: string;
+  followUpSummary?: string;
+}
+
+export interface MatchResultEmotionOptions {
+  winner: string;
+  loser: string;
+  winScore: number;
+  loseScore: number;
+}
+
 function toJson(value: string[]): string {
   return JSON.stringify(value);
 }
@@ -163,6 +181,40 @@ function buildAiFallbackArticle(
     buildNarrativeAftermath(reactionOptions),
     buildNarrativeAftermath(outlookOptions),
   );
+}
+
+export function buildMatchResultFollowUpParagraph(options?: MatchResultFollowUpOptions): string | null {
+  if (!options?.followUpAction || !options.followUpSummary) return null;
+  return `다음 권장 행동은 ${options.followUpAction}입니다. ${options.followUpSummary}`;
+}
+
+export function buildMatchResultInboxMemoParagraph(options?: MatchResultFollowUpOptions): string | null {
+  if (!options?.followUpAction && !options?.followUpSummary) return null;
+  if (!options?.followUpAction) return `${MATCH_RESULT_FOLLOW_UP_MEMO_LABEL}: ${options.followUpSummary}`;
+  if (!options?.followUpSummary) return `${MATCH_RESULT_FOLLOW_UP_MEMO_LABEL}: 다음 권장 행동은 ${options.followUpAction}입니다.`;
+  return `${MATCH_RESULT_FOLLOW_UP_MEMO_LABEL}: 다음 권장 행동은 ${options.followUpAction}입니다. ${options.followUpSummary}`;
+}
+
+export function buildMatchResultFollowUpHeadline(options?: Pick<MatchResultFollowUpOptions, 'followUpAction' | 'followUpSummary'>): string | null {
+  if (!options?.followUpSummary) return null;
+  const normalizedSummary = options.followUpSummary.replace(/\s+/g, ' ').trim();
+  const headline = normalizedSummary.length > 48 ? `${normalizedSummary.slice(0, 48).trimEnd()}…` : normalizedSummary;
+  return `${MATCH_RESULT_FOLLOW_UP_STORY_TAG}: ${headline}`;
+}
+
+export function buildMatchResultEmotionParagraph(options: MatchResultEmotionOptions): string {
+  const { winner, loser, winScore, loseScore } = options;
+  const gap = winScore - loseScore;
+
+  if (gap >= 2) {
+    return `${MATCH_RESULT_FOLLOW_UP_STORY_TAG}: ${winner}은 시리즈 전체를 장악했다는 인상을 남겼고, ${loser}은 흐름을 끝내 되찾지 못했다는 아쉬움이 더 크게 남았습니다.`;
+  }
+
+  if (gap === 1) {
+    return `${MATCH_RESULT_FOLLOW_UP_STORY_TAG}: ${winner}은 마지막 한 끗 집중력으로 웃었고, ${loser}은 거의 손에 닿았던 흐름을 놓친 아쉬움을 남겼습니다. 결과보다 체감이 더 팽팽하게 기억될 경기였습니다.`;
+  }
+
+  return `${MATCH_RESULT_FOLLOW_UP_STORY_TAG}: ${winner}과 ${loser} 모두 분명한 흔적을 남겼고, 마지막 순간 더 선명한 선택을 한 쪽이 결국 승부를 가져갔습니다.`;
 }
 
 function inferLegacyLabel(playerName: string | null | undefined): string {
@@ -346,6 +398,8 @@ export async function generateMatchResultNews(
     awayTeamId?: string | null;
     matchType?: string;
     legacyPlayerName?: string | null;
+    followUpAction?: string;
+    followUpSummary?: string;
   },
 ): Promise<void> {
   const winner = scoreHome > scoreAway ? homeTeam : awayTeam;
@@ -372,6 +426,9 @@ export async function generateMatchResultNews(
       `순위 경쟁이 치열한 시점인 만큼 이 경기의 여파는 당분간 이어질 가능성이 크다. ${winner}는 흐름 유지, ${loser}는 반전 마련이라는 분명한 숙제를 안고 다음 일정을 맞는다.`,
     ],
   );
+  const followUpParagraph = buildMatchResultFollowUpParagraph(options);
+  const emotionParagraph = buildMatchResultEmotionParagraph({ winner, loser, winScore, loseScore });
+  const resolvedFallback = buildNewsParagraphs(fallback, emotionParagraph, followUpParagraph);
 
   try {
     const aiNews = await generateNewsArticle({
@@ -380,7 +437,14 @@ export async function generateMatchResultNews(
       teamNames: [homeTeam, awayTeam],
       playerNames: [],
     });
-    await insertNews(seasonId, date, 'match_result', aiNews.title, enrichNewsContent(aiNews.content, fallback), importance);
+    await insertNews(
+      seasonId,
+      date,
+      'match_result',
+      aiNews.title,
+      enrichNewsContent(aiNews.content, resolvedFallback),
+      importance,
+    );
     await generateMatchNarrativeChainNews({
       seasonId,
       date,
@@ -405,7 +469,7 @@ export async function generateMatchResultNews(
     `${loser} 울린 ${winner}, ${winScore}:${loseScore}로 경기 마감`,
     `${winner}, 접전 끝 ${loser} 꺾고 기세 유지`,
   ]);
-  await insertNews(seasonId, date, 'match_result', title, fallback, importance);
+  await insertNews(seasonId, date, 'match_result', title, resolvedFallback, importance);
   await generateMatchNarrativeChainNews({
     seasonId,
     date,

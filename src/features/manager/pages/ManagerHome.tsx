@@ -4,6 +4,7 @@ import { generateDailyBriefing, type DailyBriefing } from '../../../ai/advancedA
 import { getExpiringContracts, getMatchesByTeam, getRecentDailyEvents, getTeamConditions } from '../../../db/queries';
 import { getBoardExpectations } from '../../../engine/board/boardEngine';
 import { getActiveComplaints } from '../../../engine/complaint/complaintEngine';
+import { getInboxMessages } from '../../../engine/inbox/inboxEngine';
 import { getUnreadCount } from '../../../engine/news/newsEngine';
 import { NEWS_BADGES_INVALIDATED_EVENT } from '../../../engine/news/newsEvents';
 import {
@@ -31,12 +32,14 @@ import {
 import { getCurrentOffseasonState, OFFSEASON_PHASE_LABELS, type OffseasonState } from '../../../engine/season/offseasonEngine';
 import { useBgm } from '../../../hooks/useBgm';
 import { useGameStore } from '../../../stores/gameStore';
+import { useMatchStore } from '../../../stores/matchStore';
 import { useSettingsStore } from '../../../stores/settingsStore';
 import { STAFF_ROLE_LABELS } from '../../../types/staff';
 import type { BudgetPressureSnapshot } from '../../../types/systemDepth';
 import { formatAmount } from '../../../utils/formatUtils';
 import { TutorialOverlay } from '../../tutorial/TutorialOverlay';
 import { MainLoopPanel } from '../components/MainLoopPanel';
+import { getLoopRiskRoute } from '../utils/loopRiskRouting';
 import './ManagerHome.css';
 
 const POSITION_LABELS: Record<string, string> = {
@@ -56,7 +59,38 @@ type StaffFitItem = Awaited<ReturnType<typeof getStaffFitSummary>>[number];
 interface DisplayRiskItem {
   title: string;
   summary: string;
+  route: string;
 }
+
+interface FeaturedInboxFollowUp {
+  title: string;
+  summary: string;
+  actionRoute: string | null;
+}
+
+interface HomeLoopAction {
+  label: string;
+  onClick: () => void;
+  variant?: 'primary' | 'info';
+  detail?: string;
+}
+
+interface SpotlightChoice {
+  title: string;
+  summary: string;
+  route: string;
+  cta: string;
+}
+
+interface RetentionStoryChoice {
+  title: string;
+  summary: string;
+  route: string;
+  cta: string;
+}
+
+const MATCH_FOLLOW_UP_LABEL = '경기 후속 정리';
+const MATCH_FOLLOW_UP_SECTION_LABEL = '직전 경기 후속';
 
 function localizeLoopRiskText(text: string): string {
   return text
@@ -90,9 +124,80 @@ function normalizeRiskItem(item: unknown): DisplayRiskItem | null {
   const maybeTitle = 'title' in item && typeof item.title === 'string' ? item.title : null;
   const maybeSummary = 'summary' in item && typeof item.summary === 'string' ? item.summary : null;
   if (!maybeTitle && !maybeSummary) return null;
+  const title = maybeTitle ?? '운영 메모';
+  const summary = maybeSummary ?? maybeTitle ?? '상세 내용을 확인해 주세요.';
   return {
-    title: maybeTitle ?? '운영 메모',
-    summary: maybeSummary ?? maybeTitle ?? '상세 내용을 확인해 주세요.',
+    title,
+    summary,
+    route: getLoopRiskRoute(title, summary),
+  };
+}
+
+function isMatchResultInboxMessage(message: { relatedId: string | null; title: string }): boolean {
+  return message.relatedId?.startsWith('match_result:') || message.title.startsWith('[경기 결과]');
+}
+
+function getFirstSeasonRetentionChoice(params: {
+  currentWeek: number;
+  wins: number;
+  losses: number;
+  nextOpponentName?: string;
+  topLoopRisk?: DisplayRiskItem | null;
+  featuredInboxFollowUp?: FeaturedInboxFollowUp | null;
+  playerInsight?: PlayerManagementInsight | null;
+}): RetentionStoryChoice {
+  const { currentWeek, wins, losses, nextOpponentName, topLoopRisk, featuredInboxFollowUp, playerInsight } = params;
+
+  if (featuredInboxFollowUp) {
+    return {
+      title: '직전 경기에서 시즌 서사 꺼내기',
+      summary: '방금 끝난 경기의 여파를 바로 정리하면 이번 시즌의 첫 갈림길이 단순 결과가 아니라 팀 이야기로 남습니다.',
+      route: featuredInboxFollowUp.actionRoute ?? '/manager/inbox',
+      cta: '직전 경기 후속 이어가기',
+    };
+  }
+
+  if (losses >= 2 && losses > wins) {
+    return {
+      title: '초반 반등 포인트 만들기',
+      summary: '시즌 초반 연패 구간은 오래 남습니다. 다음 경기나 전술 조정에서 반등 포인트를 잡아야 이번 시즌의 톤이 바뀝니다.',
+      route: '/manager/tactics',
+      cta: '반등 플랜 잡기',
+    };
+  }
+
+  if (playerInsight && playerInsight.overallSatisfaction <= 60) {
+    return {
+      title: '주전 분위기 먼저 지키기',
+      summary: '첫 시즌에는 에이스나 핵심 주전의 분위기가 시즌 기억을 만듭니다. 지금 케어하면 성장 서사를 만들 여지가 큽니다.',
+      route: '/manager/complaints',
+      cta: '선수 상태 챙기기',
+    };
+  }
+
+  if (topLoopRisk && (topLoopRisk.title.includes('보드') || topLoopRisk.title.includes('국제전'))) {
+    return {
+      title: '초반 기대치를 시즌 드라마로 바꾸기',
+      summary: '보드와 외부 기대치가 높을수록 초반 선택 하나가 시즌 전체 평가로 이어집니다. 이번 흐름을 먼저 다듬어 두는 편이 좋습니다.',
+      route: topLoopRisk.route,
+      cta: '핵심 압박 먼저 정리하기',
+    };
+  }
+
+  if (currentWeek <= 4) {
+    return {
+      title: `${nextOpponentName ?? '다음 상대'}전으로 첫 인상 만들기`,
+      summary: '시즌 초반 4주는 팀 색을 각인시키는 구간입니다. 다음 상대전의 준비와 이야기만 잘 잡아도 첫 시즌 몰입감이 크게 올라갑니다.',
+      route: nextOpponentName ? '/manager/pre-match' : '/manager/day',
+      cta: '첫 시즌 흐름 만들기',
+    };
+  }
+
+  return {
+    title: '이번 시즌 대표 서사 키우기',
+    summary: '지금은 체크리스트보다 시즌을 대표할 이야기를 하나 잡을 타이밍입니다. 라이벌전, 반등, 스타 성장 중 하나를 밀어주는 편이 좋습니다.',
+    route: '/manager/news',
+    cta: '이번 시즌 이야기 보기',
   };
 }
 
@@ -104,7 +209,14 @@ export function ManagerHome() {
   const season = useGameStore((s) => s.season);
   const teams = useGameStore((s) => s.teams);
   const dayType = useGameStore((s) => s.dayType);
+  const setDayPhase = useGameStore((s) => s.setDayPhase);
+  const setPendingUserMatch = useGameStore((s) => s.setPendingUserMatch);
   const tutorialComplete = useSettingsStore((s) => s.tutorialComplete);
+  const resetSeries = useMatchStore((s) => s.resetSeries);
+  const setBoFormat = useMatchStore((s) => s.setBoFormat);
+  const setHardFearlessSeries = useMatchStore((s) => s.setHardFearlessSeries);
+  const setCurrentGameDraftRequired = useMatchStore((s) => s.setCurrentGameDraftRequired);
+  const setSeriesFearlessPool = useMatchStore((s) => s.setSeriesFearlessPool);
   const userTeam = teams.find((team) => team.id === save?.userTeamId);
 
   const [loading, setLoading] = useState(true);
@@ -122,6 +234,7 @@ export function ManagerHome() {
   const [loopRisks, setLoopRisks] = useState<DisplayRiskItem[]>([]);
   const [managerIdentity, setManagerIdentity] = useState<ManagerIdentityProfile | null>(null);
   const [staffFitSummary, setStaffFitSummary] = useState<StaffFitItem[]>([]);
+  const [featuredInboxFollowUp, setFeaturedInboxFollowUp] = useState<FeaturedInboxFollowUp | null>(null);
 
   useEffect(() => {
     if (!season || !userTeam) return;
@@ -147,6 +260,7 @@ export function ManagerHome() {
           identity,
           fit,
           offseason,
+          inboxMessages,
         ] = await Promise.all([
           getMatchesByTeam(season.id, userTeam.id),
           getTeamConditions(userTeam.id, season.currentDate),
@@ -164,6 +278,7 @@ export function ManagerHome() {
           save ? getManagerIdentity(save.id).catch(() => null) : Promise.resolve(null),
           getStaffFitSummary(userTeam.id, save?.id).catch(() => []),
           save ? getCurrentOffseasonState(save.id).catch(() => null) : Promise.resolve(null),
+          getInboxMessages(userTeam.id, 12, false).catch(() => []),
         ]);
 
         if (cancelled) return;
@@ -183,11 +298,22 @@ export function ManagerHome() {
             .map((item) => ({
               title: localizeLoopRiskText(item.title),
               summary: localizeLoopRiskText(item.summary),
+              route: item.route,
             }))
             .slice(0, 4),
         );
         setManagerIdentity(identity);
         setStaffFitSummary(fit);
+        const latestMatchFollowUp = inboxMessages.find(isMatchResultInboxMessage) ?? null;
+        setFeaturedInboxFollowUp(
+          latestMatchFollowUp
+            ? {
+                title: latestMatchFollowUp.title,
+                summary: latestMatchFollowUp.content,
+                actionRoute: latestMatchFollowUp.actionRoute,
+              }
+            : null,
+        );
 
         const nextAlerts: string[] = [];
         if (unreadCount > 0) nextAlerts.push(`읽지 않은 뉴스 ${unreadCount}건이 있습니다.`);
@@ -272,6 +398,23 @@ export function ManagerHome() {
   const nextOpponentName = nextMatch
     ? teams.find((team) => team.id === (nextMatch.teamHomeId === userTeam?.id ? nextMatch.teamAwayId : nextMatch.teamHomeId))?.name
     : undefined;
+  const isMatchPrepPriority = Boolean(nextMatch && (dayType === 'match_day' || nextMatch.matchDate === season?.currentDate));
+
+  const openMatchPrep = (match: TeamMatch | undefined) => {
+    if (!match) {
+      navigate('/manager/day');
+      return;
+    }
+
+    setPendingUserMatch(match);
+    setDayPhase('banpick');
+    resetSeries();
+    setBoFormat(match.boFormat);
+    setHardFearlessSeries(Boolean(match.hardFearlessSeries));
+    setCurrentGameDraftRequired(true);
+    setSeriesFearlessPool({ blue: [], red: [] });
+    navigate('/manager/pre-match');
+  };
 
   const playerRows = (userTeam?.roster ?? []).slice(0, 5).map((player) => ({
     id: player.id,
@@ -303,7 +446,7 @@ export function ManagerHome() {
     return 'red';
   }
 
-  const dynamicCta: Array<{ label: string; route: string; variant?: 'primary' | 'info' }> = dayType === 'match_day'
+  const legacyDynamicCta: Array<{ label: string; route: string; variant?: 'primary' | 'info' }> = dayType === 'match_day'
     ? [
         { label: '경기 준비 확인', route: '/manager/pre-match', variant: 'primary' },
         { label: '전술 확인', route: '/manager/tactics', variant: 'info' },
@@ -327,6 +470,125 @@ export function ManagerHome() {
 
   const unreadNewsLabel = alerts.find((item) => item.startsWith('읽지 않은 뉴스')) ?? '읽지 않은 뉴스 없음';
   const coreNotes = (alerts.length > 0 ? alerts : ['지금은 긴급 경고보다 다음 경기와 팀 상태를 먼저 확인할 타이밍입니다.']).slice(0, 3);
+  void legacyDynamicCta;
+
+  const loopActions: HomeLoopAction[] = isMatchPrepPriority
+    ? [
+        {
+          label: '경기 준비 열기',
+          onClick: () => openMatchPrep(nextMatch),
+          variant: 'primary',
+          detail: nextMatch ? `${nextOpponentName ?? '다음 상대'}전 준비 화면으로 바로 이어집니다.` : '현재 대기 중인 경기를 바로 준비합니다.',
+        },
+        {
+          label: '전술 확인',
+          onClick: () => navigate('/manager/tactics'),
+          variant: 'info',
+          detail: '밴픽 전에 운영 방향과 우선순위를 다시 맞춥니다.',
+        },
+        {
+          label: '드래프트 보기',
+          onClick: () => navigate('/manager/draft'),
+          variant: 'info',
+          detail: '추천 밴과 핵심 카드부터 먼저 확인합니다.',
+        },
+      ]
+    : dayType === 'rest'
+      ? [
+          {
+            label: '선수 상태 확인',
+            onClick: () => navigate('/manager/roster'),
+            variant: 'primary',
+            detail: '휴식일에는 체력과 사기부터 확인하는 편이 안전합니다.',
+          },
+          {
+            label: '이적 시장 확인',
+            onClick: () => navigate('/manager/transfer'),
+            variant: 'info',
+            detail: '당장 급하지 않은 운영 이슈를 미리 정리합니다.',
+          },
+          {
+            label: '뉴스 확인',
+            onClick: () => navigate('/manager/news'),
+            detail: '외부 반응과 구단 이슈를 빠르게 훑습니다.',
+          },
+        ]
+      : [
+          {
+            label: '시즌 진행',
+            onClick: () => navigate('/manager/day'),
+            variant: 'primary',
+            detail: '오늘 일정과 다음 경기 준비 흐름으로 이어집니다.',
+          },
+          {
+            label: '경기 준비 확인',
+            onClick: () => openMatchPrep(nextMatch),
+            variant: 'info',
+            detail: nextMatch ? `${nextOpponentName ?? '다음 상대'}전 준비 상황을 미리 점검합니다.` : '확정된 다음 경기 준비 화면으로 이어집니다.',
+          },
+          {
+            label: '전술 보기',
+            onClick: () => navigate('/manager/tactics'),
+            variant: 'info',
+            detail: '경기 전에 수정할 전술 메모를 먼저 확인합니다.',
+          },
+        ];
+
+  const prioritizedLoopActions: HomeLoopAction[] = featuredInboxFollowUp
+    ? [
+        {
+          label: MATCH_FOLLOW_UP_LABEL,
+          onClick: () => navigate(featuredInboxFollowUp.actionRoute ?? '/manager/inbox'),
+          variant: 'primary',
+          detail: featuredInboxFollowUp.summary,
+        },
+        ...loopActions.slice(0, 2),
+      ]
+    : loopActions;
+
+  const prioritizedCoreNotes = (
+    featuredInboxFollowUp
+      ? [{ title: MATCH_FOLLOW_UP_SECTION_LABEL, summary: featuredInboxFollowUp.summary, route: featuredInboxFollowUp.actionRoute ?? '/manager/inbox' }]
+      : loopRisks[0]
+        ? [{ title: loopRisks[0].title, summary: loopRisks[0].summary, route: loopRisks[0].route }]
+        : []
+  ).concat(
+    coreNotes.map((alert, index) => ({
+      title: index === 0 && loopRisks[0] ? loopRisks[0].title : index === 0 ? '우선 확인' : '운영 메모',
+      summary: alert,
+      route: index === 0 && loopRisks[0] ? loopRisks[0].route : alert.includes('뉴스') ? '/manager/news' : '/manager/day',
+    })),
+  ).slice(0, 3);
+
+  const spotlightChoice: SpotlightChoice = featuredInboxFollowUp
+    ? {
+        title: '방금 경기 여론 따라가기',
+        summary: '급한 후속 정리와 별개로 기사와 반응을 먼저 보면 이번 경기의 여운과 다음 드라마가 더 선명해집니다.',
+        route: '/manager/news',
+        cta: '기사와 반응 보기',
+      }
+    : nextMatch
+      ? {
+          title: `${nextOpponentName ?? '다음 상대'}전 미리보기`,
+          summary: '효율적으로는 시즌 진행이 먼저지만, 상대 이야기를 먼저 보면 다음 경기 몰입감이 훨씬 좋아집니다.',
+          route: '/manager/pre-match',
+          cta: '경기 이야기 보기',
+        }
+      : {
+          title: '오늘 팀 분위기 둘러보기',
+          summary: '급한 일이 적은 날에는 뉴스와 메모를 훑으면서 지금 팀이 어떤 시즌 드라마를 만들고 있는지 보는 편이 더 재미있습니다.',
+          route: '/manager/news',
+          cta: '오늘 이야기 보기',
+        };
+  const retentionStoryChoice = getFirstSeasonRetentionChoice({
+    currentWeek: season.currentWeek,
+    wins,
+    losses,
+    nextOpponentName,
+    topLoopRisk: loopRisks[0] ?? null,
+    featuredInboxFollowUp,
+    playerInsight: playerInsights[0] ?? null,
+  });
 
   return (
     <div className="fm-animate-in">
@@ -337,16 +599,36 @@ export function ManagerHome() {
         <p className="fm-page-subtitle">오늘 처리할 운영 판단과 다음 이동만 한눈에 보이도록 정리했습니다.</p>
       </div>
 
+      <div className="fm-grid fm-grid--3 fm-mb-lg" data-testid="managerhome-priority-strip">
+        <button type="button" className="fm-card fm-text-left" onClick={featuredInboxFollowUp ? () => navigate(featuredInboxFollowUp.actionRoute ?? '/manager/inbox') : isMatchPrepPriority ? () => openMatchPrep(nextMatch) : () => navigate('/manager/day')}>
+          <div className="fm-text-xs fm-text-muted fm-mb-xs">吏湲?????좎젅</div>
+          <div className="fm-text-primary fm-font-semibold fm-mb-xs">{featuredInboxFollowUp ? MATCH_FOLLOW_UP_LABEL : isMatchPrepPriority ? '寃쎄린 以鍮??닿린' : '?쒖쫵 吏꾪뻾'}</div>
+          <div className="fm-text-secondary">{featuredInboxFollowUp ? featuredInboxFollowUp.summary : nextMatch ? `${nextOpponentName ?? '?ㅼ쓬 ?곷?'} / ${nextMatch.matchDate}` : coreNotes[0]}</div>
+        </button>
+        <button type="button" className="fm-card fm-text-left" onClick={nextMatch ? () => openMatchPrep(nextMatch) : () => navigate('/manager/day')}>
+          <div className="fm-text-xs fm-text-muted fm-mb-xs">?ㅼ쓬 寃쎄린</div>
+          <div className="fm-text-primary fm-font-semibold fm-mb-xs">{nextOpponentName ?? '?쇱젙 ?놁쓬'}</div>
+          <div className="fm-text-secondary">{nextMatch ? `${nextMatch.matchDate} / ${nextMatch.boFormat}` : '?뺤젙???ㅼ쓬 ?쇱젙???꾩쭅 ?놁뒿?덈떎.'}</div>
+        </button>
+        <button type="button" className="fm-card fm-text-left" onClick={() => navigate(loopRisks[0]?.route ?? '/manager/day')}>
+          <div className="fm-text-xs fm-text-muted fm-mb-xs">媛???ы겕</div>
+          <div className="fm-text-primary fm-font-semibold fm-mb-xs">{loopRisks[0]?.title ?? '?ъ젙 ?곹깭'}</div>
+          <div className="fm-text-secondary">{loopRisks[0]?.summary ?? `Payroll ${formatAmount(budgetPressure?.totalPayroll ?? 0)} / cap ${formatAmount(budgetPressure?.salaryCap ?? 0)}`}</div>
+        </button>
+      </div>
+
       <MainLoopPanel
         eyebrow="매니저 루프"
         title="오늘 확인해야 할 일과 다음 경기 준비 흐름"
         subtitle={alerts[0] ?? '급한 경고가 없으면 다음 경기와 팀 컨디션을 먼저 확인하면 됩니다.'}
         insights={[
           {
-            label: '다음 경기',
-            value: nextOpponentName ?? '일정 없음',
-            detail: nextMatch ? `${nextMatch.matchDate} / ${nextMatch.boFormat}` : '확정된 다음 일정이 아직 없습니다.',
-            tone: nextMatch ? 'accent' : 'neutral',
+            label: featuredInboxFollowUp ? MATCH_FOLLOW_UP_SECTION_LABEL : '다음 경기',
+            value: featuredInboxFollowUp ? MATCH_FOLLOW_UP_LABEL : nextOpponentName ?? '일정 없음',
+            detail: featuredInboxFollowUp
+              ? featuredInboxFollowUp.title
+              : nextMatch ? `${nextMatch.matchDate} / ${nextMatch.boFormat}` : '확정된 다음 일정이 아직 없습니다.',
+            tone: featuredInboxFollowUp ? 'danger' : nextMatch ? 'accent' : 'neutral',
           },
           {
             label: '재정 상태',
@@ -368,7 +650,9 @@ export function ManagerHome() {
           },
         ]}
         actions={[
-          { label: '시즌 진행', onClick: () => navigate('/manager/day'), variant: 'primary' },
+          ...(featuredInboxFollowUp
+            ? [{ label: MATCH_FOLLOW_UP_LABEL, onClick: () => navigate(featuredInboxFollowUp.actionRoute ?? '/manager/inbox'), variant: 'primary' as const }]
+            : [{ label: '시즌 진행', onClick: () => navigate('/manager/day'), variant: 'primary' as const }]),
           { label: '훈련 보기', onClick: () => navigate('/manager/training'), variant: 'info' },
           { label: '전술 보기', onClick: () => navigate('/manager/tactics'), variant: 'info' },
           { label: unreadNewsLabel, onClick: () => navigate('/manager/news') },
@@ -442,7 +726,7 @@ export function ManagerHome() {
         </div>
       </div>
 
-      <div className="fm-grid fm-grid--3 fm-mb-lg">
+      <div className="fm-grid fm-grid--4 fm-mb-lg">
         <div className="fm-panel">
           <div className="fm-panel__header"><span className="fm-panel__title">오늘 브리핑</span></div>
           <div className="fm-panel__body fm-flex-col fm-gap-sm">
@@ -462,10 +746,10 @@ export function ManagerHome() {
         <div className="fm-panel">
           <div className="fm-panel__header"><span className="fm-panel__title">지금 바로 볼 것</span></div>
           <div className="fm-panel__body fm-flex-col fm-gap-sm">
-            {coreNotes.map((alert, index) => (
-              <button key={index} type="button" className="fm-card fm-text-left" onClick={() => navigate(alert.includes('뉴스') ? '/manager/news' : '/manager/day')}>
-                <div className="fm-text-primary fm-font-semibold fm-mb-xs">{index === 0 ? '우선 확인' : '운영 메모'}</div>
-                <div className="fm-text-secondary">{alert}</div>
+            {prioritizedCoreNotes.map((item) => (
+              <button key={`${item.title}-${item.summary}`} type="button" className="fm-card fm-text-left" onClick={() => navigate(item.route)}>
+                <div className="fm-text-primary fm-font-semibold fm-mb-xs">{item.title}</div>
+                <div className="fm-text-secondary">{item.summary}</div>
               </button>
             ))}
           </div>
@@ -474,12 +758,34 @@ export function ManagerHome() {
         <div className="fm-panel">
           <div className="fm-panel__header"><span className="fm-panel__title">지금 할 수 있는 액션</span></div>
           <div className="fm-panel__body fm-flex-col fm-gap-sm">
-            {dynamicCta.map((cta) => (
-              <button key={cta.route} type="button" className="fm-card fm-text-left" onClick={() => navigate(cta.route)}>
+            {prioritizedLoopActions.map((cta) => (
+              <button key={cta.label} type="button" className="fm-card fm-text-left" onClick={cta.onClick}>
                 <div className={`fm-text-primary fm-font-semibold fm-mb-xs${cta.variant === 'primary' ? ' fm-text-accent' : ''}`}>{cta.label}</div>
+                {cta.detail ? <div className="fm-text-secondary">{cta.detail}</div> : null}
               </button>
             ))}
           </div>
+        </div>
+        <div className="fm-panel" data-testid="managerhome-spotlight-panel">
+          <div className="fm-panel__header"><span className="fm-panel__title">오늘 가장 재밌는 선택</span></div>
+          <div className="fm-panel__body">
+            <button type="button" className="fm-card fm-text-left" onClick={() => navigate(spotlightChoice.route)}>
+              <div className="fm-text-primary fm-font-semibold fm-mb-xs">{spotlightChoice.title}</div>
+              <div className="fm-text-secondary fm-mb-sm">{spotlightChoice.summary}</div>
+              <div className="fm-text-xs fm-text-accent">{spotlightChoice.cta}</div>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="fm-panel fm-mb-lg" data-testid="managerhome-retention-panel">
+        <div className="fm-panel__header"><span className="fm-panel__title">첫 시즌 몰입 포인트</span></div>
+        <div className="fm-panel__body">
+          <button type="button" className="fm-card fm-text-left" onClick={() => navigate(retentionStoryChoice.route)}>
+            <div className="fm-text-primary fm-font-semibold fm-mb-xs">{retentionStoryChoice.title}</div>
+            <div className="fm-text-secondary fm-mb-sm">{retentionStoryChoice.summary}</div>
+            <div className="fm-text-xs fm-text-accent">{retentionStoryChoice.cta}</div>
+          </button>
         </div>
       </div>
 
@@ -517,10 +823,10 @@ export function ManagerHome() {
               <div className="fm-panel__header"><span className="fm-panel__title">재정과 장기 리스크</span></div>
               <div className="fm-panel__body fm-flex-col fm-gap-sm">
                 {loopRisks.slice(0, 3).map((risk, index) => (
-                  <div key={index} className="fm-card">
+                  <button key={index} type="button" className="fm-card fm-text-left" onClick={() => navigate(risk.route)}>
                     <strong className="fm-text-primary">{risk.title}</strong>
                     <p className="fm-text-secondary fm-mt-sm" style={{ marginBottom: 0 }}>{risk.summary}</p>
-                  </div>
+                  </button>
                 ))}
                 {staffFitSummary[0] ? (
                   <div className="fm-card">

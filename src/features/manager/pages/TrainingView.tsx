@@ -82,6 +82,38 @@ function getPrepOutcomeTone(record: PrepRecommendationRecord | null): 'success' 
   return 'info';
 }
 
+function getTrainingSeasonDirection(logs: Array<{ statDelta: number }>, prepRecords: PrepRecommendationRecord[]): {
+  label: string;
+  detail: string;
+  tone: 'accent' | 'success' | 'danger';
+} {
+  const totalDelta = logs.reduce((sum, log) => sum + log.statDelta, 0);
+  const observedSuccess = prepRecords.filter((record) => record.observedOutcome === 'positive').length;
+  const observedFailure = prepRecords.filter((record) => record.observedOutcome === 'negative').length;
+
+  if (observedFailure > observedSuccess) {
+    return {
+      label: '검증 재정렬 필요',
+      detail: `최근 준비 검증에서 실패 ${observedFailure}회가 누적돼 훈련 방향을 다시 다듬어야 합니다.`,
+      tone: 'danger',
+    };
+  }
+
+  if (totalDelta > 0 || observedSuccess > 0) {
+    return {
+      label: '상승 흐름',
+      detail: `최근 누적 변화량 ${totalDelta.toFixed(2)} / 긍정 검증 ${observedSuccess}회로 시즌 훈련 방향이 안정적으로 쌓이고 있습니다.`,
+      tone: 'success',
+    };
+  }
+
+  return {
+    label: '축적 중',
+    detail: '아직 검증 로그가 많지 않아 시즌 누적 효과는 더 지켜봐야 합니다.',
+    tone: 'accent',
+  };
+}
+
 export function TrainingView() {
   const save = useGameStore((s) => s.save);
   const teams = useGameStore((s) => s.teams);
@@ -211,6 +243,10 @@ export function TrainingView() {
     : null;
   const currentScheduleSummary = schedule.find((entry) => entry.activityType !== 'rest') ?? schedule[1] ?? null;
   const latestPrepRecord = prepRecords[0] ?? null;
+  const trainingSeasonDirection = getTrainingSeasonDirection(logs, prepRecords);
+  const observedPrepCount = prepRecords.filter((record) => record.status === 'observed').length;
+  const returnLabel = pendingMatch ? '경기 준비로 돌아가기' : '시즌 진행으로 돌아가기';
+  const returnRoute = pendingMatch ? '/manager/pre-match' : '/manager/day';
 
   return (
     <div>
@@ -260,9 +296,50 @@ export function TrainingView() {
         </div>
       </div>
 
+      <div className="fm-grid fm-grid--3 fm-mb-md" data-testid="training-season-strip">
+        <div className="fm-card">
+          <div className="fm-stat">
+            <span className="fm-stat__label">시즌 훈련 방향</span>
+            <span className={`fm-stat__value ${
+              trainingSeasonDirection.tone === 'danger'
+                ? 'fm-text-danger'
+                : trainingSeasonDirection.tone === 'success'
+                  ? 'fm-text-success'
+                  : 'fm-text-accent'
+            }`}
+            >
+              {trainingSeasonDirection.label}
+            </span>
+          </div>
+          <p className="fm-text-xs fm-text-secondary fm-mt-xs" style={{ marginBottom: 0 }}>
+            {trainingSeasonDirection.detail}
+          </p>
+        </div>
+        <div className="fm-card">
+          <div className="fm-stat">
+            <span className="fm-stat__label">최근 누적 변화량</span>
+            <span className={`fm-stat__value ${logs.reduce((sum, log) => sum + log.statDelta, 0) >= 0 ? 'fm-text-success' : 'fm-text-danger'}`}>
+              {logs.length > 0 ? `${logs.reduce((sum, log) => sum + log.statDelta, 0).toFixed(2)}` : '기록 대기'}
+            </span>
+          </div>
+          <p className="fm-text-xs fm-text-secondary fm-mt-xs" style={{ marginBottom: 0 }}>
+            최근 훈련 로그 {logs.length}건 기준으로 시즌 누적 방향을 추적합니다.
+          </p>
+        </div>
+        <div className="fm-card">
+          <div className="fm-stat">
+            <span className="fm-stat__label">준비 검증 상태</span>
+            <span className="fm-stat__value">{observedPrepCount > 0 ? `${observedPrepCount}회 검증` : '검증 대기'}</span>
+          </div>
+          <p className="fm-text-xs fm-text-secondary fm-mt-xs" style={{ marginBottom: 0 }}>
+            훈련 조정이 실제 경기 준비 결과로 얼마나 이어졌는지 함께 관리합니다.
+          </p>
+        </div>
+      </div>
+
       <div className="fm-flex fm-gap-sm fm-flex-wrap fm-mb-md">
-        <button className="fm-btn fm-btn--primary" onClick={() => navigate('/manager/day')}>
-          시즌 진행으로 돌아가기
+        <button className="fm-btn fm-btn--primary" onClick={() => navigate(returnRoute)}>
+          {returnLabel}
         </button>
         <button className="fm-btn" onClick={() => navigate('/manager/tactics')}>
           전술 정리

@@ -1,5 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { getInboxMessages } from '../engine/inbox/inboxEngine';
+import { getMainLoopRiskItems } from '../engine/manager/systemDepthEngine';
+import { getLoopRiskActionLabel, getLoopRiskRoute } from '../features/manager/utils/loopRiskRouting';
+import { useGameStore } from '../stores/gameStore';
 
 interface CommandItem {
   to: string;
@@ -52,15 +56,65 @@ interface CommandPaletteProps {
 
 export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
   const navigate = useNavigate();
+  const save = useGameStore((s) => s.save);
+  const season = useGameStore((s) => s.season);
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [featuredCommand, setFeaturedCommand] = useState<CommandItem | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    if (!save?.userTeamId) return;
+
+    let cancelled = false;
+    const loadFeaturedCommand = async () => {
+      try {
+        const [inboxMessages, loopRisks] = await Promise.all([
+          getInboxMessages(save.userTeamId, 12, false).catch(() => []),
+          save.currentSeasonId && season?.currentDate
+            ? getMainLoopRiskItems(save.userTeamId, save.currentSeasonId, season.currentDate, save.id).catch(() => [])
+            : Promise.resolve([]),
+        ]);
+        if (cancelled) return;
+
+        const latestMatchFollowUp =
+          inboxMessages.find((message) => message.relatedId?.startsWith('match_result:') || message.title.startsWith('[경기 결과]')) ?? null;
+        const topLoopRisk = loopRisks[0] ?? null;
+        setFeaturedCommand(
+          latestMatchFollowUp
+            ? {
+                to: latestMatchFollowUp.actionRoute ?? '/manager/inbox',
+                label: '방금 경기 정리',
+                group: '즉시 행동',
+                icon: 'PM',
+              }
+            : topLoopRisk
+              ? {
+                  to: getLoopRiskRoute(topLoopRisk.title, topLoopRisk.summary),
+                  label: getLoopRiskActionLabel(topLoopRisk.title),
+                  group: '즉시 행동',
+                  icon: topLoopRisk.title.includes('보드') ? '₩' : 'PM',
+                }
+            : null,
+        );
+      } catch {
+        if (!cancelled) setFeaturedCommand(null);
+      }
+    };
+
+    void loadFeaturedCommand();
+    return () => {
+      cancelled = true;
+    };
+  }, [save?.currentSeasonId, save?.id, save?.userTeamId, season?.currentDate]);
+
+  const availableItems = featuredCommand ? [featuredCommand, ...COMMAND_ITEMS] : COMMAND_ITEMS;
+
   const filtered = query.trim()
-    ? COMMAND_ITEMS.filter((item) =>
+    ? availableItems.filter((item) =>
         item.label.toLowerCase().includes(query.toLowerCase()) ||
         item.group.toLowerCase().includes(query.toLowerCase()))
-    : COMMAND_ITEMS;
+    : availableItems;
 
   useEffect(() => {
     if (isOpen) {

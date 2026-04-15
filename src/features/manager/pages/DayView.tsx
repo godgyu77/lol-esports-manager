@@ -2,8 +2,7 @@
 import { useNavigate } from 'react-router-dom';
 import { advanceDay, skipToNextMatchDay, type DayResult } from '../../../engine/season/dayAdvancer';
 import type { DayType } from '../../../engine/season/calendar';
-import { getActiveSeason } from '../../../db/queries';
-import { getDatabase } from '../../../db/database';
+import { getActiveSeason, getMatchesByTeam } from '../../../db/queries';
 import { getManagerIdentity, getManagerIdentitySummaryLine } from '../../../engine/manager/managerIdentityEngine';
 import { getActiveInterventionEffects } from '../../../engine/manager/managerInterventionEngine';
 import {
@@ -16,8 +15,10 @@ import {
 import {
   getActiveConsequences,
   getBudgetPressureSnapshot,
+  getMainLoopRiskItems,
   getPrepRecommendationRecords,
 } from '../../../engine/manager/systemDepthEngine';
+import { getInboxMessages } from '../../../engine/inbox/inboxEngine';
 import { getCareerArcEvents } from '../../../engine/manager/releaseDepthEngine';
 import { generateStaffRecommendations } from '../../../engine/staff/staffEngine';
 import { getTrainingSchedule } from '../../../engine/training/trainingEngine';
@@ -27,9 +28,11 @@ import { useMatchStore } from '../../../stores/matchStore';
 import { usePlayerStore } from '../../../stores/playerStore';
 import { useSettingsStore } from '../../../stores/settingsStore';
 import { useTeamStore } from '../../../stores/teamStore';
+import type { Match } from '../../../types';
 import type { CoachSetupRecommendation, ManagerSetupStatus } from '../../../types/managerSetup';
 import type { BudgetPressureSnapshot, CareerArcEvent, OngoingConsequence, PrepRecommendationRecord } from '../../../types/systemDepth';
 import { TRAINING_ACTIVITY_LABELS, TRAINING_TYPE_LABELS, type TrainingScheduleEntry } from '../../../types/training';
+import { getLoopRiskActionLabel, getLoopRiskRoute } from '../utils/loopRiskRouting';
 import './DayView.css';
 
 type ImpactTone = 'positive' | 'risk' | 'neutral';
@@ -44,6 +47,7 @@ interface NextMatchSummary {
   date: string;
   daysUntil: number;
   opponentName: string;
+  match: Match;
 }
 
 interface LoopPriorityAction {
@@ -52,6 +56,26 @@ interface LoopPriorityAction {
   tone: 'accent' | 'danger' | 'success';
   onClick: () => void;
   testId: string;
+}
+
+interface MatchFollowUpSummary {
+  title: string;
+  summary: string;
+  actionRoute: string | null;
+}
+
+interface LoopRiskSummary {
+  title: string;
+  summary: string;
+  tone: 'risk' | 'neutral' | 'positive';
+  route: string;
+}
+
+interface SpotlightAction {
+  title: string;
+  summary: string;
+  route: string;
+  cta: string;
 }
 
 const DAY_NAMES = ['일', '월', '화', '수', '목', '금', '토'];
@@ -105,6 +129,10 @@ function diffDays(fromDate: string, toDate: string): number {
   return Math.max(0, Math.round((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24)));
 }
 
+function isMatchResultInboxMessage(message: { relatedId: string | null; title: string }): boolean {
+  return message.relatedId?.startsWith('match_result:') || message.title.startsWith('[경기 결과]');
+}
+
 export function DayView() {
   const navigate = useNavigate();
   const save = useGameStore((s) => s.save);
@@ -119,6 +147,7 @@ export function DayView() {
   const setHardFearlessSeries = useMatchStore((s) => s.setHardFearlessSeries);
   const setCurrentGameDraftRequired = useMatchStore((s) => s.setCurrentGameDraftRequired);
   const setSeriesFearlessPool = useMatchStore((s) => s.setSeriesFearlessPool);
+  const setBoFormat = useMatchStore((s) => s.setBoFormat);
   const resetSeries = useMatchStore((s) => s.resetSeries);
 
   const [dayResult, setDayResult] = useState<DayResult | null>(null);
@@ -130,10 +159,12 @@ export function DayView() {
   const [budgetPressure, setBudgetPressure] = useState<BudgetPressureSnapshot | null>(null);
   const [consequences, setConsequences] = useState<OngoingConsequence[]>([]);
   const [prepRecords, setPrepRecords] = useState<PrepRecommendationRecord[]>([]);
+  const [loopRisks, setLoopRisks] = useState<LoopRiskSummary[]>([]);
   const [recentCareerArc, setRecentCareerArc] = useState<CareerArcEvent | null>(null);
   const [setupStatus, setSetupStatus] = useState<ManagerSetupStatus | null>(null);
   const [setupRecommendations, setSetupRecommendations] = useState<CoachSetupRecommendation[]>([]);
   const [setupMessage, setSetupMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const [featuredMatchFollowUp, setFeaturedMatchFollowUp] = useState<MatchFollowUpSummary | null>(null);
 
   const userTeamId = save?.userTeamId ?? '';
   const userTeam = teams.find((team) => team.id === userTeamId);
@@ -141,6 +172,31 @@ export function DayView() {
   const dateObj = currentDate ? new Date(currentDate.replace(/-/g, '/')) : new Date();
   const dayOfWeek = dateObj.getDay();
   const autoActivity = getAutoActivity(todayTraining);
+
+  const openMatchPrep = useCallback((match: Match) => {
+    setPendingUserMatch(match);
+    setCurrentDate(match.matchDate ?? currentDate);
+    setDayType('match_day');
+    setDayPhase('banpick');
+    resetSeries();
+    setBoFormat(match.boFormat);
+    setHardFearlessSeries(Boolean(match.hardFearlessSeries));
+    setCurrentGameDraftRequired(true);
+    setSeriesFearlessPool({ blue: [], red: [] });
+    navigate('/manager/pre-match');
+  }, [
+    currentDate,
+    navigate,
+    resetSeries,
+    setBoFormat,
+    setCurrentDate,
+    setCurrentGameDraftRequired,
+    setDayPhase,
+    setDayType,
+    setHardFearlessSeries,
+    setPendingUserMatch,
+    setSeriesFearlessPool,
+  ]);
 
   useEffect(() => {
     if (!save || !userTeamId) return;
@@ -190,43 +246,25 @@ export function DayView() {
     let cancelled = false;
     const loadNextMatch = async () => {
       try {
-        const db = await getDatabase();
-        const rows = await db.select<Array<{
-          match_date: string;
-          team_home_id: string;
-          team_away_id: string;
-          home_name: string;
-          away_name: string;
-        }>>(
-          `SELECT
-             m.match_date,
-             m.team_home_id,
-             m.team_away_id,
-             th.short_name as home_name,
-             ta.short_name as away_name
-           FROM matches m
-           JOIN teams th ON th.id = m.team_home_id
-           JOIN teams ta ON ta.id = m.team_away_id
-           WHERE m.season_id = $1
-             AND m.is_played = 0
-             AND m.match_date >= $2
-             AND (m.team_home_id = $3 OR m.team_away_id = $3)
-           ORDER BY m.match_date ASC
-           LIMIT 1`,
-          [season.id, season.currentDate, userTeamId],
-        );
+        const upcomingMatches = await getMatchesByTeam(season.id, userTeamId);
         if (cancelled) return;
-        const row = rows[0];
-        if (!row) {
+        const match = upcomingMatches
+          .filter((item) => !item.isPlayed && (item.matchDate ?? season.currentDate) >= season.currentDate)
+          .sort((left, right) => (left.matchDate ?? '').localeCompare(right.matchDate ?? ''))[0];
+        if (!match) {
           setNextMatch(null);
           return;
         }
 
-        const opponentName = row.team_home_id === userTeamId ? row.away_name : row.home_name;
+        const opponentId = match.teamHomeId === userTeamId ? match.teamAwayId : match.teamHomeId;
+        const opponentName = teams.find((team) => team.id === opponentId)?.shortName
+          ?? teams.find((team) => team.id === opponentId)?.name
+          ?? '상대 미정';
         setNextMatch({
-          date: row.match_date,
+          date: match.matchDate ?? season.currentDate,
           opponentName,
-          daysUntil: diffDays(season.currentDate, row.match_date),
+          daysUntil: diffDays(season.currentDate, match.matchDate ?? season.currentDate),
+          match,
         });
       } catch (error) {
         console.warn('[DayView] failed to load next match summary:', error);
@@ -238,7 +276,38 @@ export function DayView() {
     return () => {
       cancelled = true;
     };
-  }, [season, userTeamId]);
+  }, [season, teams, userTeamId]);
+
+  useEffect(() => {
+    if (!userTeamId) return;
+
+    let cancelled = false;
+    const loadLatestMatchFollowUp = async () => {
+      try {
+        const inboxMessages = await getInboxMessages(userTeamId, 12, false).catch(() => []);
+        if (cancelled) return;
+
+        const latestMatchFollowUp = inboxMessages.find(isMatchResultInboxMessage) ?? null;
+        setFeaturedMatchFollowUp(
+          latestMatchFollowUp
+            ? {
+                title: latestMatchFollowUp.title,
+                summary: latestMatchFollowUp.content,
+                actionRoute: latestMatchFollowUp.actionRoute,
+              }
+            : null,
+        );
+      } catch (error) {
+        console.warn('[DayView] failed to load latest match follow-up:', error);
+        if (!cancelled) setFeaturedMatchFollowUp(null);
+      }
+    };
+
+    void loadLatestMatchFollowUp();
+    return () => {
+      cancelled = true;
+    };
+  }, [userTeamId]);
 
   useEffect(() => {
     if (!season || !save || !userTeam) return;
@@ -246,13 +315,14 @@ export function DayView() {
     let cancelled = false;
     const loadImpactSummary = async () => {
       try {
-        const [identity, interventions, recommendations, pressure, activeConsequences, recentPrep, careerArcs] = await Promise.all([
+        const [identity, interventions, recommendations, pressure, activeConsequences, recentPrep, recentLoopRisks, careerArcs] = await Promise.all([
           getManagerIdentity(save.id).catch(() => null),
           getActiveInterventionEffects(season.currentDate).catch(() => new Map()),
           generateStaffRecommendations(userTeam.id, season.id).catch(() => []),
           getBudgetPressureSnapshot(userTeam.id, season.id).catch(() => null),
           getActiveConsequences(userTeam.id, season.id, season.currentDate).catch(() => []),
           getPrepRecommendationRecords(userTeam.id, season.id, 2).catch(() => []),
+          getMainLoopRiskItems(userTeam.id, season.id, season.currentDate, save?.id).catch(() => []),
           getCareerArcEvents(Number(save.id), userTeam.id, 1).catch(() => []),
         ]);
 
@@ -261,6 +331,14 @@ export function DayView() {
         setBudgetPressure(pressure);
         setConsequences(activeConsequences);
         setPrepRecords(recentPrep);
+        setLoopRisks(
+          recentLoopRisks.map((item) => ({
+            title: item.title,
+            summary: item.summary,
+            tone: item.tone,
+            route: getLoopRiskRoute(item.title, item.summary),
+          })),
+        );
         setRecentCareerArc(careerArcs[0] ?? null);
 
         const items: ImpactSummaryItem[] = [];
@@ -313,6 +391,7 @@ export function DayView() {
           setBudgetPressure(null);
           setConsequences([]);
           setPrepRecords([]);
+          setLoopRisks([]);
           setRecentCareerArc(null);
         }
       }
@@ -547,9 +626,21 @@ export function DayView() {
   const coachAdvice = trainingRecommendation ?? tacticsRecommendation ?? null;
   const topConsequence = consequences[0] ?? null;
   const latestPrepRecord = prepRecords[0] ?? null;
+  const topLoopRisk = loopRisks[0] ?? null;
   const budgetIsUrgent = budgetPressure?.pressureLevel === 'critical' || budgetPressure?.pressureLevel === 'watch';
+  const isMatchPrepReady = Boolean(nextMatch && nextMatch.daysUntil === 0);
 
   const primaryLoopAction = useMemo<LoopPriorityAction>(() => {
+    if (featuredMatchFollowUp) {
+      return {
+        label: '방금 경기 정리',
+        detail: featuredMatchFollowUp.summary,
+        tone: 'accent',
+        onClick: () => navigate(featuredMatchFollowUp.actionRoute ?? '/manager/inbox'),
+        testId: 'dayview-primary-followup',
+      };
+    }
+
     if (!isSetupReady) {
       if (!setupStatus?.isTrainingConfigured) {
         return {
@@ -569,6 +660,16 @@ export function DayView() {
           testId: 'dayview-primary-setup-tactics',
         };
       }
+    }
+
+    if (topLoopRisk && (topLoopRisk.title.includes('보드') || topLoopRisk.title.includes('국제전'))) {
+      return {
+        label: getLoopRiskActionLabel(topLoopRisk.title),
+        detail: topLoopRisk.summary,
+        tone: topLoopRisk.tone === 'risk' ? 'danger' : 'accent',
+        onClick: () => navigate(topLoopRisk.route),
+        testId: 'dayview-primary-loop-risk',
+      };
     }
 
     if (budgetPressure && budgetIsUrgent) {
@@ -591,6 +692,16 @@ export function DayView() {
       };
     }
 
+    if (isMatchPrepReady && nextMatch) {
+      return {
+        label: '경기 준비 열기',
+        detail: `${nextMatch.opponentName}전이 오늘 바로 열립니다. 프리매치 화면으로 넘어가 마지막 준비를 마무리하세요.`,
+        tone: 'accent',
+        onClick: () => openMatchPrep(nextMatch.match),
+        testId: 'dayview-primary-match-prep',
+      };
+    }
+
     if (latestPrepRecord && nextMatch) {
       return {
         label: latestPrepRecord.focusArea === 'tactics' ? '다음 경기 전술 점검' : '다음 경기 준비 점검',
@@ -608,11 +719,17 @@ export function DayView() {
       onClick: () => void handleAdvance(),
       testId: 'dayview-primary-advance',
     };
-  }, [budgetIsUrgent, budgetPressure, handleAdvance, isSetupReady, latestPrepRecord, navigate, nextMatch, setupStatus, topConsequence]);
+  }, [budgetIsUrgent, budgetPressure, featuredMatchFollowUp, handleAdvance, isMatchPrepReady, isSetupReady, latestPrepRecord, navigate, nextMatch, openMatchPrep, setupStatus, topConsequence, topLoopRisk]);
 
   const loopWarning = useMemo(() => {
     if (!isSetupReady) {
       return '세팅이 비어 있는 상태에서 하루를 넘기면 준비 완성도가 크게 떨어집니다.';
+    }
+    if (featuredMatchFollowUp) {
+      return featuredMatchFollowUp.summary;
+    }
+    if (topLoopRisk) {
+      return `${topLoopRisk.title}: ${topLoopRisk.summary}`;
     }
     if (budgetPressure?.pressureLevel === 'critical') {
       return `지금은 예산 활주로가 ${budgetPressure.runwayWeeks.toFixed(1)}주 수준이라 추가 지출이 바로 시즌 운영 압박으로 이어집니다.`;
@@ -627,7 +744,43 @@ export function DayView() {
       return latestPrepRecord.impactSummary ?? latestPrepRecord.summary;
     }
     return '큰 경고는 없지만, 지금 내린 작은 결정들이 다음 경기와 시즌 흐름을 바꿀 수 있습니다.';
-  }, [budgetPressure, isSetupReady, latestPrepRecord, topConsequence]);
+  }, [budgetPressure, featuredMatchFollowUp, isSetupReady, latestPrepRecord, topConsequence, topLoopRisk]);
+
+  const spotlightAction = useMemo<SpotlightAction>(() => {
+    if (featuredMatchFollowUp) {
+      return {
+        title: '방금 경기 여론 따라가기',
+        summary: '후속 조치만 끝내지 말고 기사와 반응까지 보면 이번 경기의 여운과 다음 서사가 더 선명해집니다.',
+        route: '/manager/news',
+        cta: '방금 경기 여론 따라가기',
+      };
+    }
+
+    if (nextMatch) {
+      return {
+        title: `${nextMatch.opponentName}전 흐름 미리 보기`,
+        summary: '바로 준비로 들어가기 전에 상대와 분위기를 한 번 훑어보면 경기일 판단이 훨씬 또렷해집니다.',
+        route: '/manager/pre-match',
+        cta: '프리매치 다시 보기',
+      };
+    }
+
+    if (recentCareerArc) {
+      return {
+        title: '이번 시즌 서사 따라가기',
+        summary: '지금 팀 분위기와 시즌 아크를 읽어두면 다음 선택이 단순 관리가 아니라 이야기로 이어집니다.',
+        route: '/manager/news',
+        cta: '팀 분위기 보기',
+      };
+    }
+
+    return {
+      title: '오늘 팀 분위기 둘러보기',
+      summary: '당장 급한 일만 처리하지 말고 뉴스와 브리핑부터 훑어보면 오늘의 톤을 더 빨리 잡을 수 있습니다.',
+      route: '/manager/news',
+      cta: '브리핑 보러 가기',
+    };
+  }, [featuredMatchFollowUp, nextMatch, recentCareerArc]);
 
   if (!season || !save || !userTeam) {
     return <p className="fm-text-muted fm-text-md">시즌 데이터를 불러오는 중입니다...</p>;
@@ -683,12 +836,16 @@ export function DayView() {
         <div className="fm-card">
           <div className="fm-stat">
             <span className="fm-stat__label">주요 리스크</span>
-            <span className={`fm-stat__value ${budgetIsUrgent || topConsequence?.severity === 'high' ? 'fm-text-danger' : 'fm-text-success'}`}>
-              {budgetIsUrgent ? '재정 압박' : topConsequence?.title ?? '안정'}
+            <span className={`fm-stat__value ${featuredMatchFollowUp || topLoopRisk?.tone === 'risk' || budgetIsUrgent || topConsequence?.severity === 'high' ? 'fm-text-danger' : 'fm-text-success'}`}>
+              {featuredMatchFollowUp ? '경기 후속' : topLoopRisk?.title ?? (budgetIsUrgent ? '재정 압박' : topConsequence?.title ?? '안정')}
             </span>
           </div>
           <p className="fm-text-xs fm-text-secondary fm-mt-xs" style={{ marginBottom: 0 }}>
-            {budgetIsUrgent
+            {featuredMatchFollowUp
+              ? featuredMatchFollowUp.title
+              : topLoopRisk
+              ? topLoopRisk.summary
+              : budgetIsUrgent
               ? `${budgetPressure?.topDrivers[0] ?? ''} ${budgetPressure?.boardPressureNote ?? ''}`.trim()
               : topConsequence?.summary ?? '즉시 개입이 필요한 리스크는 보이지 않습니다.'}
           </p>
@@ -714,8 +871,13 @@ export function DayView() {
           다음 경기까지 자동 진행
         </button>
         <button className="fm-btn" onClick={() => navigate('/manager/training')} disabled={isProcessing}>
-          주간 훈련 수정
+          {isMatchPrepReady && nextMatch ? '훈련 마무리 확인' : '주간 훈련 수정'}
         </button>
+        {nextMatch ? (
+          <button className="fm-btn fm-btn--info" onClick={() => openMatchPrep(nextMatch.match)} disabled={isProcessing}>
+            경기 준비 화면
+          </button>
+        ) : null}
       </div>
 
       {setupStatus && (
@@ -803,11 +965,15 @@ export function DayView() {
               </div>
               <div className="dv-focus-card">
                 <span className="dv-focus-card__title">가장 큰 리스크</span>
-                <span className={`dv-focus-card__value ${budgetIsUrgent || topConsequence?.severity === 'high' ? 'fm-text-danger' : 'fm-text-accent'}`}>
-                  {budgetIsUrgent ? '재정 압박' : topConsequence?.title ?? '안정'}
+                <span className={`dv-focus-card__value ${featuredMatchFollowUp || topLoopRisk?.tone === 'risk' || budgetIsUrgent || topConsequence?.severity === 'high' ? 'fm-text-danger' : 'fm-text-accent'}`}>
+                  {featuredMatchFollowUp ? '경기 후속' : topLoopRisk?.title ?? (budgetIsUrgent ? '재정 압박' : topConsequence?.title ?? '안정')}
                 </span>
                 <p className="dv-focus-card__detail">
-                  {budgetIsUrgent ? `${budgetPressure?.topDrivers[0] ?? ''} ${budgetPressure?.boardPressureNote ?? ''}`.trim() : topConsequence?.summary ?? (primaryRisk?.detail ?? '즉시 개입이 필요한 리스크는 아직 보이지 않습니다.')}
+                  {featuredMatchFollowUp
+                    ? featuredMatchFollowUp.title
+                    : topLoopRisk
+                    ? topLoopRisk.summary
+                    : budgetIsUrgent ? `${budgetPressure?.topDrivers[0] ?? ''} ${budgetPressure?.boardPressureNote ?? ''}`.trim() : topConsequence?.summary ?? (primaryRisk?.detail ?? '즉시 개입이 필요한 리스크는 아직 보이지 않습니다.')}
                 </p>
               </div>
               <div className="dv-focus-card">
@@ -845,6 +1011,23 @@ export function DayView() {
                 ))}
               </div>
             )}
+          </div>
+        </div>
+      </div>
+
+      <div className="fm-panel fm-mb-lg" data-testid="dayview-spotlight-panel">
+        <div className="fm-panel__header">
+          <span className="fm-panel__title">오늘 가장 재밌는 선택</span>
+        </div>
+        <div className="fm-panel__body">
+          <div className="fm-flex fm-items-center fm-justify-between fm-gap-md fm-flex-wrap">
+            <div>
+              <div className="fm-text-primary fm-font-semibold fm-mb-xs">{spotlightAction.title}</div>
+              <div className="fm-text-sm fm-text-secondary">{spotlightAction.summary}</div>
+            </div>
+            <button className="fm-btn fm-btn--info" onClick={() => navigate(spotlightAction.route)}>
+              {spotlightAction.cta}
+            </button>
           </div>
         </div>
       </div>

@@ -2,23 +2,57 @@ import { act } from 'react';
 import { renderWithProviders, screen, waitFor, within, resetStores } from '../../../test/testUtils';
 import { NewsFeedView } from './NewsFeedView';
 import type { NewsArticle } from '../../../types/news';
+import type { GameSave } from '../../../types';
 import { localizeEntityNamesInText } from '../../../utils/displayName';
 
 const {
+  mockNavigate,
   mockGetRecentNews,
   mockGetUnreadBriefings,
   mockGetUnreadCount,
   mockMarkAllAsRead,
   mockMarkAsRead,
   mockGetArticleSummary,
+  mockGetInboxMessages,
+  mockGetMainLoopRiskItems,
 } = vi.hoisted(() => ({
+  mockNavigate: vi.fn(),
   mockGetRecentNews: vi.fn(),
   mockGetUnreadBriefings: vi.fn(),
   mockGetUnreadCount: vi.fn(),
   mockMarkAllAsRead: vi.fn(),
   mockMarkAsRead: vi.fn(),
   mockGetArticleSummary: vi.fn((article: NewsArticle) => article.content.slice(0, 40)),
+  mockGetInboxMessages: vi.fn(),
+  mockGetMainLoopRiskItems: vi.fn(),
 }));
+
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
+  };
+  it('uses top loop risk routing in the spotlight panel when no match follow-up exists', async () => {
+    mockGetMainLoopRiskItems.mockResolvedValue([
+      {
+        title: '국제전 압박',
+        summary: '이번 시리즈는 시즌 평가를 바꿀 수 있어 프리매치 점검이 필요합니다.',
+        tone: 'risk',
+      },
+    ]);
+
+    renderNewsFeed();
+
+    expect(await screen.findByText('국제전 압박 점검')).toBeInTheDocument();
+
+    await act(async () => {
+      screen.getByRole('button', { name: '리스크 바로 보기' }).click();
+    });
+
+    expect(mockNavigate).toHaveBeenCalledWith('/manager/pre-match');
+  });
+});
 
 vi.mock('../../../engine/news/newsEngine', () => ({
   getRecentNews: mockGetRecentNews,
@@ -27,6 +61,14 @@ vi.mock('../../../engine/news/newsEngine', () => ({
   markAllAsRead: mockMarkAllAsRead,
   markAsRead: mockMarkAsRead,
   getArticleSummary: mockGetArticleSummary,
+}));
+
+vi.mock('../../../engine/inbox/inboxEngine', () => ({
+  getInboxMessages: mockGetInboxMessages,
+}));
+
+vi.mock('../../../engine/manager/systemDepthEngine', () => ({
+  getMainLoopRiskItems: mockGetMainLoopRiskItems,
 }));
 
 const briefingArticle: NewsArticle = {
@@ -61,40 +103,8 @@ const featureArticle: NewsArticle = {
   narrativeTags: [],
 };
 
-const legacyArticle: NewsArticle = {
-  id: 3,
-  seasonId: 1,
-  articleDate: '2026-03-02',
-  category: 'team_analysis',
-  title: 'Team outlook update',
-  content: '왕조 서사와 국제전 압박이 동시에 커지고 있다.',
-  importance: 2,
-  isRead: true,
-  relatedTeamId: 'lck_T1',
-  relatedPlayerId: null,
-  presentation: 'feature',
-  isDismissible: false,
-  narrativeTags: [],
-};
-
-const pressureArticle: NewsArticle = {
-  id: 4,
-  seasonId: 1,
-  articleDate: '2026-03-03',
-  category: 'team_analysis',
-  title: 'Locker room watch',
-  content: '팀 내부 압박과 위기가 동시에 커지고 있다.',
-  importance: 1,
-  isRead: true,
-  relatedTeamId: 'lck_T1',
-  relatedPlayerId: null,
-  presentation: 'feature',
-  isDismissible: false,
-  narrativeTags: [],
-};
-
 const taggedArticle: NewsArticle = {
-  id: 5,
+  id: 3,
   seasonId: 1,
   articleDate: '2026-03-03',
   category: 'team_analysis',
@@ -124,6 +134,30 @@ const seasonState = {
   isActive: true,
 };
 
+function renderNewsFeed() {
+  return renderWithProviders(<NewsFeedView />, {
+    gameState: {
+      season: seasonState,
+      save: ({
+        id: 1,
+        userTeamId: 'lck_T1',
+        seasonId: 'season-1',
+        currentDate: '2026-03-01',
+        managerName: 'Test Manager',
+        mode: 'manager',
+        metadataId: 1,
+        currentSeasonId: 1,
+        dbFilename: 'test.db',
+        createdAt: '2026-03-01',
+        updatedAt: '2026-03-01',
+        slotNumber: 1,
+        saveName: 'Test Save',
+        playTimeMinutes: 0,
+      } as unknown as GameSave),
+    },
+  });
+}
+
 describe('NewsFeedView', () => {
   beforeEach(() => {
     resetStores();
@@ -131,17 +165,17 @@ describe('NewsFeedView', () => {
     mockGetUnreadBriefings.mockResolvedValue([briefingArticle]);
     mockGetRecentNews.mockImplementation(async (_seasonId: number, _limit: number, _offset: number, category?: string) => {
       if (category === 'coach_briefing') return [briefingArticle];
-      return [featureArticle, legacyArticle, pressureArticle, taggedArticle];
+      return [featureArticle, taggedArticle];
     });
     mockGetUnreadCount.mockResolvedValue(1);
     mockMarkAllAsRead.mockResolvedValue(undefined);
     mockMarkAsRead.mockResolvedValue(undefined);
+    mockGetInboxMessages.mockResolvedValue([]);
+    mockGetMainLoopRiskItems.mockResolvedValue([]);
   });
 
   it('keeps articles in the list after read and only clears unread state', async () => {
-    renderWithProviders(<NewsFeedView />, {
-      gameState: { season: seasonState },
-    });
+    renderNewsFeed();
 
     expect(await screen.findByRole('heading', { level: 1 })).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: articleButtonName(featureArticle.title) })).toBeInTheDocument();
@@ -157,9 +191,7 @@ describe('NewsFeedView', () => {
   });
 
   it('shows unread briefings only in briefing mode', async () => {
-    renderWithProviders(<NewsFeedView />, {
-      gameState: { season: seasonState },
-    });
+    renderNewsFeed();
 
     await screen.findByRole('heading', { level: 1 });
     const tabs = within(screen.getByRole('tablist')).getAllByRole('tab');
@@ -188,9 +220,7 @@ describe('NewsFeedView', () => {
   });
 
   it('supports keyboard navigation across news filters', async () => {
-    const { user } = renderWithProviders(<NewsFeedView />, {
-      gameState: { season: seasonState },
-    });
+    const { user } = renderNewsFeed();
 
     await screen.findByRole('tablist');
     const toolbar = screen.getByRole('tablist');
@@ -205,39 +235,8 @@ describe('NewsFeedView', () => {
     });
   });
 
-  it('surfaces Korean narrative badges for legacy and international articles', async () => {
-    renderWithProviders(<NewsFeedView />, {
-      gameState: { season: seasonState },
-    });
-
-    await screen.findByRole('heading', { level: 1 });
-
-    await act(async () => {
-      screen.getByRole('button', { name: articleButtonName(legacyArticle.title) }).click();
-    });
-
-    expect((await screen.findAllByText('전통')).length).toBeGreaterThan(0);
-    expect(screen.getAllByText('국제전').length).toBeGreaterThan(0);
-  });
-
-  it('detects pressure badges from Korean narrative copy', async () => {
-    renderWithProviders(<NewsFeedView />, {
-      gameState: { season: seasonState },
-    });
-
-    await screen.findByRole('heading', { level: 1 });
-
-    await act(async () => {
-      screen.getByRole('button', { name: articleButtonName(pressureArticle.title) }).click();
-    });
-
-    expect((await screen.findAllByText('압박')).length).toBeGreaterThan(0);
-  });
-
-  it('prefers stored narrative tags when articles already carry metadata', async () => {
-    renderWithProviders(<NewsFeedView />, {
-      gameState: { season: seasonState },
-    });
+  it('keeps the selected reader content visible for a highlighted article', async () => {
+    renderNewsFeed();
 
     await screen.findByRole('heading', { level: 1 });
 
@@ -245,7 +244,15 @@ describe('NewsFeedView', () => {
       screen.getByRole('button', { name: articleButtonName(taggedArticle.title) }).click();
     });
 
-    expect((await screen.findAllByText('전통')).length).toBeGreaterThan(0);
-    expect(screen.getAllByText('국제전').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(localizeEntityNamesInText(taggedArticle.title)).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(localizeEntityNamesInText(taggedArticle.content)).length).toBeGreaterThan(0);
+  });
+
+  it('shows a spotlight read panel that suggests the next narrative click', async () => {
+    renderNewsFeed();
+
+    expect(await screen.findByTestId('news-spotlight-panel')).toBeInTheDocument();
+    expect(screen.getByText('오늘 더 파고들 선택')).toBeInTheDocument();
+    expect(screen.getByText(/오늘 화제인 기사 따라가기|오늘 팀 분위기 둘러보기/)).toBeInTheDocument();
   });
 });

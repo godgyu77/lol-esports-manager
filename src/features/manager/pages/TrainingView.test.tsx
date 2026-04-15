@@ -5,6 +5,7 @@ const {
   mockGetTrainingSchedule,
   mockGetPlayerTraining,
   mockGetRecentTrainingLogs,
+  mockGetPrepRecommendationRecords,
   mockGetMentoringPairs,
   mockGetEligibleMentors,
   mockGetEligibleMentees,
@@ -14,6 +15,7 @@ const {
   mockGetTrainingSchedule: vi.fn(),
   mockGetPlayerTraining: vi.fn(),
   mockGetRecentTrainingLogs: vi.fn(),
+  mockGetPrepRecommendationRecords: vi.fn(),
   mockGetMentoringPairs: vi.fn(),
   mockGetEligibleMentors: vi.fn(),
   mockGetEligibleMentees: vi.fn(),
@@ -52,6 +54,11 @@ vi.mock('../../../engine/manager/managerSetupEngine', () => ({
   generateInitialCoachRecommendations: mockGenerateInitialCoachRecommendations,
 }));
 
+vi.mock('../../../engine/manager/systemDepthEngine', () => ({
+  getPrepRecommendationRecords: mockGetPrepRecommendationRecords,
+  recordPrepRecommendation: vi.fn().mockResolvedValue(undefined),
+}));
+
 describe('TrainingView', () => {
   beforeEach(() => {
     resetStores();
@@ -61,6 +68,7 @@ describe('TrainingView', () => {
     ]);
     mockGetPlayerTraining.mockResolvedValue([]);
     mockGetRecentTrainingLogs.mockResolvedValue([]);
+    mockGetPrepRecommendationRecords.mockResolvedValue([]);
     mockGetMentoringPairs.mockResolvedValue([]);
     mockGetEligibleMentors.mockResolvedValue([]);
     mockGetEligibleMentees.mockResolvedValue([]);
@@ -118,7 +126,10 @@ describe('TrainingView', () => {
 
     expect(await screen.findByRole('heading', { name: '훈련 관리' })).toBeInTheDocument();
     expect(screen.getByText(/2026-03-03 vs GEN/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '시즌 진행으로 돌아가기' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '경기 준비로 돌아가기' })).toBeInTheDocument();
+    expect(screen.getByTestId('training-season-strip')).toBeInTheDocument();
+    expect(screen.getByText('시즌 훈련 방향')).toBeInTheDocument();
+    expect(screen.getByText('최근 누적 변화량')).toBeInTheDocument();
 
     const toolbar = screen.getByRole('tablist');
     const buttons = within(toolbar).getAllByRole('tab');

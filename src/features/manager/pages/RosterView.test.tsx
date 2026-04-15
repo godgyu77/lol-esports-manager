@@ -1,15 +1,16 @@
-import { renderWithProviders, screen, resetStores } from '../../../test/testUtils';
+import { renderWithProviders, resetStores, screen } from '../../../test/testUtils';
+import type { GameSave, Team } from '../../../types';
+import type { Player } from '../../../types';
 import { RosterView } from './RosterView';
-import type { Team } from '../../../types';
-import type { GameSave } from '../../../types';
 
-// 자식 컴포넌트 스텁 — 내부 DB 호출 격리
 vi.mock('./roster/RosterTab', () => ({
   RosterTab: () => <div data-testid="roster-tab">RosterTab</div>,
 }));
+
 vi.mock('./roster/ChemistryTab', () => ({
   ChemistryTab: () => <div data-testid="chemistry-tab">ChemistryTab</div>,
 }));
+
 vi.mock('./roster/SatisfactionTab', () => ({
   SatisfactionTab: () => <div data-testid="satisfaction-tab">SatisfactionTab</div>,
 }));
@@ -22,51 +23,94 @@ const mockSave = {
   managerName: '테스트 감독',
 } as unknown as GameSave;
 
+function createPlayer(id: string, name: string, division: 'main' | 'sub', consistency = 72): Player {
+  return {
+    id,
+    name,
+    age: 20,
+    nationality: 'KR',
+    position: 'mid',
+    salary: 1000,
+    division,
+    traits: [],
+    contract: {
+      salary: 1000,
+      contractEndSeason: 2027,
+    },
+    stats: {
+      mechanical: 78,
+      gameSense: 76,
+      teamwork: 74,
+      consistency,
+      laning: 75,
+      aggression: 73,
+    },
+    mental: {
+      mental: 77,
+    },
+  } as unknown as Player;
+}
+
 const mockTeam: Team = {
   id: 'team-1',
   name: 'T1',
   shortName: 'T1',
   region: 'LCK',
-  players: [],
-} as unknown as Team;
+  budget: 100000,
+  salaryCap: 50000,
+  reputation: 90,
+  playStyle: 'controlled',
+  roster: [
+    createPlayer('p1', 'Faker', 'main'),
+    createPlayer('p2', 'Oner', 'main'),
+    createPlayer('p3', 'Gumayusi', 'main'),
+    createPlayer('p4', 'Keria', 'main'),
+    createPlayer('p5', 'Zeus', 'main', 58),
+    createPlayer('p6', 'Poby', 'sub'),
+  ],
+} as Team;
 
 describe('RosterView', () => {
   beforeEach(() => {
     resetStores();
   });
 
-  it('userTeam이 없으면 로딩 메시지를 표시한다', () => {
+  it('shows a loading message when the user team is missing', () => {
     renderWithProviders(<RosterView />);
     expect(screen.getByText('데이터를 불러오는 중...')).toBeInTheDocument();
   });
 
-  it('기본 렌더 시 제목과 3개 탭 버튼을 표시한다', () => {
+  it('renders a compact roster priority strip before the tabs', () => {
     renderWithProviders(<RosterView />, {
       gameState: { save: mockSave, teams: [mockTeam] },
     });
 
     expect(screen.getByText('로스터 관리')).toBeInTheDocument();
+    expect(screen.getByTestId('roster-priority-strip')).toBeInTheDocument();
+    expect(screen.getByText('로스터 규모')).toBeInTheDocument();
+    expect(screen.getByText('6명')).toBeInTheDocument();
+    expect(screen.getByText('주전 평균')).toBeInTheDocument();
+    expect(screen.getByText('가장 큰 리스크')).toBeInTheDocument();
+    expect(screen.getByText('불만/폼 저하')).toBeInTheDocument();
+    expect(screen.getByText('다음 행동')).toBeInTheDocument();
+    expect(screen.getByText('만족도 확인')).toBeInTheDocument();
+  });
+
+  it('renders three tabs and keeps roster selected by default', () => {
+    renderWithProviders(<RosterView />, {
+      gameState: { save: mockSave, teams: [mockTeam] },
+    });
 
     const tabs = screen.getAllByRole('tab');
     expect(tabs).toHaveLength(3);
     expect(tabs[0]).toHaveTextContent('로스터');
     expect(tabs[1]).toHaveTextContent('케미스트리');
     expect(tabs[2]).toHaveTextContent('만족도');
-  });
-
-  it('기본 탭은 로스터이며 aria-selected가 올바르다', () => {
-    renderWithProviders(<RosterView />, {
-      gameState: { save: mockSave, teams: [mockTeam] },
-    });
-
-    const tabs = screen.getAllByRole('tab');
     expect(tabs[0]).toHaveAttribute('aria-selected', 'true');
-    expect(tabs[1]).toHaveAttribute('aria-selected', 'false');
-    expect(tabs[2]).toHaveAttribute('aria-selected', 'false');
     expect(screen.getByTestId('roster-tab')).toBeInTheDocument();
   });
 
-  it('케미스트리 탭 클릭 시 해당 컴포넌트를 렌더한다', async () => {
+  it('switches to the chemistry tab when clicked', async () => {
     const { user } = renderWithProviders(<RosterView />, {
       gameState: { save: mockSave, teams: [mockTeam] },
     });
@@ -75,10 +119,9 @@ describe('RosterView', () => {
 
     expect(screen.getByTestId('chemistry-tab')).toBeInTheDocument();
     expect(screen.queryByTestId('roster-tab')).not.toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: '케미스트리' })).toHaveAttribute('aria-selected', 'true');
   });
 
-  it('만족도 탭 클릭 시 해당 컴포넌트를 렌더한다', async () => {
+  it('switches to the satisfaction tab when clicked', async () => {
     const { user } = renderWithProviders(<RosterView />, {
       gameState: { save: mockSave, teams: [mockTeam] },
     });

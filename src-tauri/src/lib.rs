@@ -234,13 +234,19 @@ pub fn run() {
         })
         .manage(RagState::default())
         .setup(|app| {
-            let salt_path = app
-                .path()
-                .app_local_data_dir()
-                .expect("app local data dir not found")
-                .join("salt.txt");
-            app.handle()
-                .plugin(tauri_plugin_stronghold::Builder::with_argon2(&salt_path).build())?;
+            #[cfg(target_os = "android")]
+            let _ = app;
+
+            #[cfg(not(target_os = "android"))]
+            {
+                let salt_path = app
+                    .path()
+                    .app_local_data_dir()
+                    .expect("app local data dir not found")
+                    .join("salt.txt");
+                app.handle()
+                    .plugin(tauri_plugin_stronghold::Builder::with_argon2(&salt_path).build())?;
+            }
 
             Ok(())
         })

@@ -2,6 +2,19 @@ import { renderWithProviders, resetStores, screen } from '../../test/testUtils';
 import { DraftView } from './DraftView';
 import type { GameSave, Match, Team } from '../../types';
 
+const { mockNavigate, mockGetInboxMessages } = vi.hoisted(() => ({
+  mockNavigate: vi.fn(),
+  mockGetInboxMessages: vi.fn(),
+}));
+
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
+  };
+});
+
 vi.mock('../../hooks/useBgm', () => ({
   useBgm: vi.fn(),
 }));
@@ -16,6 +29,10 @@ vi.mock('../../ai/advancedAiService', () => ({
 
 vi.mock('../../db/queries', () => ({
   getPlayersByTeamId: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock('../../engine/inbox/inboxEngine', () => ({
+  getInboxMessages: mockGetInboxMessages,
 }));
 
 vi.mock('../../engine/draft/draftEngine', () => ({
@@ -92,6 +109,7 @@ describe('DraftView', () => {
   beforeEach(() => {
     resetStores();
     vi.clearAllMocks();
+    mockGetInboxMessages.mockResolvedValue([]);
   });
 
   it('shows a loading message when there is no pending match', () => {
@@ -146,5 +164,35 @@ describe('DraftView', () => {
 
     expect(await screen.findByTestId('ban-section')).toBeInTheDocument();
     expect(screen.getByTestId('draft-center-panel')).toBeInTheDocument();
+  });
+
+  it('shows the latest match follow-up panel in the draft room', async () => {
+    mockGetInboxMessages.mockResolvedValue([
+      {
+        id: 1,
+        teamId: 'team-home',
+        type: 'general',
+        title: '[경기 결과] T1 vs GEN',
+        content: '다음 권장 행동은 전술 재검토입니다.',
+        isRead: false,
+        createdAt: '2025-01-15T10:00:00.000Z',
+        actionRoute: '/manager/tactics',
+        relatedId: 'match_result:match-1',
+      },
+    ]);
+
+    renderWithProviders(<DraftView />, {
+      gameState: {
+        save: mockSave,
+        teams: mockTeams,
+        pendingUserMatch: mockPendingMatch,
+        mode: 'manager',
+        fearlessPool: { blue: [], red: [] },
+      },
+    });
+
+    expect(await screen.findByTestId('draft-followup-panel')).toBeInTheDocument();
+    screen.getByRole('button', { name: '직전 경기 정리하러 가기' }).click();
+    expect(mockNavigate).toHaveBeenCalledWith('/manager/tactics');
   });
 });

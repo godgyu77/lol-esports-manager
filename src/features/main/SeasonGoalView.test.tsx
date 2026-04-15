@@ -1,4 +1,4 @@
-﻿import { renderWithProviders, screen, resetStores, waitFor } from '../../test/testUtils';
+import { renderWithProviders, screen, resetStores, waitFor } from '../../test/testUtils';
 import { SeasonGoalView } from './SeasonGoalView';
 import { initializeNewGame } from '../../db/initGame';
 
@@ -38,16 +38,17 @@ describe('SeasonGoalView', () => {
     },
   };
 
-  it('shows season goal summary and keeps detailed roster behind disclosure', async () => {
+  it('shows compact start guidance before detailed season briefing', async () => {
     renderWithProviders(<SeasonGoalView />, {
       gameState: managerState,
     });
 
-    expect(screen.getByText('부임 브리핑')).toBeInTheDocument();
-    expect(screen.getByText('핵심 시즌 목표')).toBeInTheDocument();
+    expect(await screen.findByText('빠른 시작')).toBeInTheDocument();
+    expect(screen.getByText('시즌 목표를 확인하고 바로 시작하세요')).toBeInTheDocument();
+    expect(screen.getByText('빠른 시작 체크')).toBeInTheDocument();
     expect(screen.getByText('상세 브리핑 보기')).toBeInTheDocument();
-    expect(screen.queryByRole('columnheader', { name: '포지션' })).not.toBeInTheDocument();
-    expect(await screen.findByRole('button', { name: '시즌 목표 수락' })).toBeInTheDocument();
+    expect(screen.getByTestId('seasongoal-first-session-route')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: '이 목표로 시작' })).toBeInTheDocument();
   });
 
   it('shows a friendly lock message when new game initialization hits a DB lock', async () => {
@@ -59,8 +60,8 @@ describe('SeasonGoalView', () => {
       gameState: managerState,
     });
 
-    await waitFor(() => expect(screen.getByRole('button', { name: '시즌 목표 수락' })).toBeInTheDocument());
-    await user.click(screen.getByRole('button', { name: '시즌 목표 수락' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: '이 목표로 시작' })).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: '이 목표로 시작' }));
 
     expect(await screen.findByText('세이브 슬롯을 준비하는 중 잠금 충돌이 발생했습니다. 잠시 후 다시 시도해 주세요.')).toBeInTheDocument();
   });

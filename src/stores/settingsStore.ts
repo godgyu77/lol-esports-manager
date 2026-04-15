@@ -95,7 +95,7 @@ async function getStrongholdClient(): Promise<StrongholdClientLike> {
   const { appDataDir } = await import('@tauri-apps/api/path');
   const { Stronghold } = await import('@tauri-apps/plugin-stronghold');
   const vaultPath = `${await appDataDir()}/vault.hold`;
-  strongholdInstance = (await Stronghold.load(vaultPath, VAULT_PASSWORD)) as StrongholdInstanceLike;
+  strongholdInstance = await Stronghold.load(vaultPath, VAULT_PASSWORD) as unknown as StrongholdInstanceLike;
 
   try {
     strongholdClient = await strongholdInstance.loadClient(CLIENT_NAME);
@@ -111,11 +111,17 @@ function resolveApiKeyRecord(provider: AiProvider): string | null {
   return API_KEY_RECORDS[provider];
 }
 
+function isCloudAiProvider(provider: AiProvider): provider is CloudAiProvider {
+  return provider !== 'ollama' && provider !== 'template';
+}
+
 async function storeApiKeyToVault(provider: AiProvider, key: string): Promise<void> {
   const record = resolveApiKeyRecord(provider);
   if (!record) return;
   if (!isTauriRuntime() || isMobileRuntime()) {
-    setApiKeyToLocalStorage(provider, key);
+    if (isCloudAiProvider(provider)) {
+      setApiKeyToLocalStorage(provider, key);
+    }
     return;
   }
   const client = await getStrongholdClient();
@@ -131,7 +137,7 @@ async function getApiKeyFromVault(provider: AiProvider): Promise<string> {
   const record = resolveApiKeyRecord(provider);
   if (!record) return '';
   if (!isTauriRuntime() || isMobileRuntime()) {
-    return getApiKeyFromLocalStorage(provider);
+    return isCloudAiProvider(provider) ? getApiKeyFromLocalStorage(provider) : '';
   }
   try {
     const client = await getStrongholdClient();
@@ -148,7 +154,9 @@ async function deleteApiKeyFromVault(provider: AiProvider): Promise<void> {
   const record = resolveApiKeyRecord(provider);
   if (!record) return;
   if (!isTauriRuntime() || isMobileRuntime()) {
-    removeApiKeyFromLocalStorage(provider);
+    if (isCloudAiProvider(provider)) {
+      removeApiKeyFromLocalStorage(provider);
+    }
     return;
   }
   try {

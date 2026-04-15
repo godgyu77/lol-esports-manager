@@ -50,6 +50,151 @@ function pressureLevel(score: number): BudgetPressureSnapshot['pressureLevel'] {
   return 'stable';
 }
 
+function summarizePrepChain(records: PrepRecommendationRecord[]): TeamLoopRiskItem | null {
+  if (records.length === 0) return null;
+
+  const trainingRecord = records.find((record) => record.focusArea === 'training');
+  const tacticsRecord = records.find((record) => record.focusArea === 'tactics');
+  const latest = trainingRecord ?? tacticsRecord ?? records[0];
+  if (!latest) return null;
+
+  const chainNotes = [
+    trainingRecord
+      ? `훈련 ${trainingRecord.status === 'observed' ? '검증 완료' : '적용 중'}`
+      : null,
+    tacticsRecord
+      ? `전술 ${tacticsRecord.status === 'observed' ? '검증 완료' : '적용 중'}`
+      : null,
+  ].filter((note): note is string => note !== null);
+
+  const negativeObserved = records.find((record) => record.observedOutcome === 'negative');
+  const positiveObserved = records.find((record) => record.observedOutcome === 'positive');
+  const pendingRecords = records.filter((record) => record.status === 'applied').length;
+
+  if (negativeObserved) {
+    return {
+      title: '준비 체인 점검',
+      summary: `${chainNotes.join(' / ') || '최근 준비 변경'} 흐름에서 균열이 보였습니다. ${negativeObserved.impactSummary ?? negativeObserved.summary}`,
+      tone: 'risk',
+    };
+  }
+
+  if (pendingRecords >= 2) {
+    return {
+      title: '준비 체인 진행 중',
+      summary: `${chainNotes.join(' / ') || '훈련과 전술 조정'}이 아직 경기 결과로 검증되기 전입니다. 다음 경기에서 실제 효과를 확인해야 합니다.`,
+      tone: 'neutral',
+    };
+  }
+
+  if (positiveObserved) {
+    return {
+      title: '준비 체인 안정',
+      summary: `${chainNotes.join(' / ') || '최근 준비 변경'}이 경기 흐름과 자연스럽게 이어졌습니다. ${positiveObserved.impactSummary ?? positiveObserved.summary}`,
+      tone: 'positive',
+    };
+  }
+
+  return {
+    title: latest.title,
+    summary: latest.impactSummary ?? latest.summary,
+    tone: latest.status === 'observed' ? 'risk' : 'neutral',
+  };
+}
+
+function summarizeComplaintPressure(
+  complaints: Array<{ severity: number; message: string }>,
+): TeamLoopRiskItem | null {
+  if (complaints.length === 0) return null;
+  const highestSeverity = Math.max(...complaints.map((complaint) => complaint.severity));
+  const topComplaint = complaints.sort((left, right) => right.severity - left.severity)[0];
+  return {
+    title: '선수 불만 관리',
+    summary:
+      complaints.length > 1
+        ? `${complaints.length}건의 불만이 남아 있습니다. 가장 급한 이슈: ${topComplaint?.message ?? '팀 분위기 점검 필요'}`
+        : topComplaint?.message ?? '선수단 분위기 점검이 필요합니다.',
+    tone: highestSeverity >= 3 ? 'risk' : 'neutral',
+  };
+}
+
+function summarizeBoardPressure(pressure: BudgetPressureSnapshot): TeamLoopRiskItem | null {
+  if (pressure.boardSatisfaction == null || pressure.boardSatisfaction > 45) return null;
+  return {
+    title: '보드 신뢰 경고',
+    summary: pressure.boardPressureNote,
+    tone: pressure.boardSatisfaction <= 40 || pressure.pressureLevel === 'critical' ? 'risk' : 'neutral',
+  };
+}
+
+function summarizeRelationshipPressure(snapshot: Awaited<ReturnType<typeof getRelationshipInfluenceSnapshot>>): TeamLoopRiskItem {
+  const hasRiskPairs = snapshot.riskPairs.length > 0;
+  const lowTrust = snapshot.staffTrust <= 48;
+  return {
+    title: hasRiskPairs || lowTrust ? '팀 케미스트리 점검' : '팀 케미스트리',
+    summary: snapshot.summary,
+    tone: hasRiskPairs || lowTrust ? 'risk' : snapshot.strongPairs.length > 0 ? 'positive' : 'neutral',
+  };
+}
+
+function summarizeInternationalPressure(snapshot: Awaited<ReturnType<typeof getInternationalExpectationSnapshot>>): TeamLoopRiskItem {
+  return {
+    title: snapshot.level === 'must_deliver' ? '국제전 압박' : snapshot.label,
+    summary: snapshot.summary,
+    tone: snapshot.level === 'must_deliver' ? 'risk' : snapshot.level === 'contender' ? 'neutral' : 'positive',
+  };
+}
+
+function summarizeConsequenceCarryover(consequences: OngoingConsequence[]): TeamLoopRiskItem | null {
+  if (consequences.length === 0) return null;
+
+  const highSeverity = consequences.filter((consequence) => consequence.severity === 'high');
+  const mediumOrHigher = consequences.filter((consequence) => consequence.severity !== 'low');
+  const latest = consequences[0];
+  if (!latest) return null;
+
+  if (highSeverity.length >= 2) {
+    return {
+      title: '누적 운영 후폭풍',
+      summary: `${highSeverity.length}개의 강한 후속 리스크가 다음 일정까지 이어지고 있습니다. 가장 큰 파장은 ${latest.title}에서 시작됐습니다.`,
+      tone: 'risk',
+    };
+  }
+
+  if (mediumOrHigher.length >= 2) {
+    return {
+      title: '누적 운영 후폭풍',
+      summary: `${mediumOrHigher.length}개의 운영 후속 이슈가 아직 정리되지 않았습니다. ${latest.title} 이슈까지 겹쳐 다음 주 운영 난도가 올라갑니다.`,
+      tone: 'risk',
+    };
+  }
+
+  if (latest.severity === 'high') {
+    return {
+      title: '장기 여파 경계',
+      summary: `${latest.title} 이슈가 아직 해소되지 않아 다음 일정 판단에도 계속 영향을 줍니다.`,
+      tone: 'risk',
+    };
+  }
+
+  return null;
+}
+
+function scoreLoopRiskItem(item: TeamLoopRiskItem): number {
+  const toneScore = item.tone === 'risk' ? 300 : item.tone === 'neutral' ? 200 : 100;
+  let priorityBonus = 0;
+
+  if (item.title.includes('보드')) priorityBonus += 90;
+  if (item.title.includes('국제전')) priorityBonus += 80;
+  if (item.title.includes('준비 체인')) priorityBonus += 70;
+  if (item.title.includes('선수 불만')) priorityBonus += 65;
+  if (item.title.includes('케미스트리')) priorityBonus += 55;
+  if (item.title.includes('재정 압박')) priorityBonus += 50;
+  if (item.title.includes('흔들림') || item.summary.includes('약점')) priorityBonus += 20;
+
+  return toneScore + priorityBonus;
+}
+
 export function getRecurringExpenseSnapshot(playerSalaryTotal: number, staffSalaryTotal: number): RecurringExpense[] {
   return [
     {
@@ -565,15 +710,26 @@ export async function processSystemDepthDailyState(
   currentDate: string,
   saveId?: number,
 ): Promise<string[]> {
-  const [pressure, complaints, activeConsequences, relationshipSnapshot] = await Promise.all([
+  const [pressure, complaints, activeConsequences, relationshipSnapshot, prepRecords] = await Promise.all([
     getBudgetPressureSnapshot(teamId, seasonId),
     getActiveComplaints(teamId).catch(() => []),
     getActiveConsequences(teamId, seasonId, currentDate),
     getRelationshipInfluenceSnapshot(teamId, saveId).catch(() => null),
+    getPrepRecommendationRecords(teamId, seasonId, 4).catch(() => []),
   ]);
 
   const created: string[] = [];
+  const existingBudgetConsequences = activeConsequences.filter((consequence) => consequence.consequenceType === 'budget').length;
+  const existingMoraleConsequences = activeConsequences.filter((consequence) => consequence.consequenceType === 'morale').length;
+  const existingStaffConsequences = activeConsequences.filter((consequence) => consequence.consequenceType === 'staff').length;
+  const existingPrepConsequences = activeConsequences.filter((consequence) => consequence.consequenceType === 'training').length;
   if (pressure.pressureLevel === 'critical') {
+    const budgetDays =
+      pressure.failedNegotiations >= 2 ||
+      (pressure.boardSatisfaction != null && pressure.boardSatisfaction <= 40) ||
+      existingBudgetConsequences > 0
+        ? 14
+        : 10;
     await createOngoingConsequence({
       teamId,
       seasonId,
@@ -583,7 +739,7 @@ export async function processSystemDepthDailyState(
       summary: '고정 지출이 활주로를 갉아먹고 있어, 새로운 협상 하나하나가 실제 보드 압박으로 이어지고 있습니다.',
       severity: 'high',
       startedDate: currentDate,
-      expiresDate: addDaysIso(currentDate, 10),
+      expiresDate: addDaysIso(currentDate, budgetDays),
       statKey: 'budget_pressure',
       statDelta: 8,
     });
@@ -591,6 +747,7 @@ export async function processSystemDepthDailyState(
   }
 
   if (complaints.some((complaint) => complaint.severity >= 3)) {
+    const moraleDays = complaints.length >= 2 || existingMoraleConsequences > 0 ? 10 : 7;
     await createOngoingConsequence({
       teamId,
       seasonId,
@@ -600,7 +757,7 @@ export async function processSystemDepthDailyState(
       summary: '해결되지 않은 불만이 팀 분위기를 떨어뜨리기 시작했고, 준비 완성도에도 영향을 줄 수 있습니다.',
       severity: 'medium',
       startedDate: currentDate,
-      expiresDate: addDaysIso(currentDate, 7),
+      expiresDate: addDaysIso(currentDate, moraleDays),
       statKey: 'morale',
       statDelta: -3,
     });
@@ -608,6 +765,7 @@ export async function processSystemDepthDailyState(
   }
 
   if (relationshipSnapshot && (relationshipSnapshot.riskPairs.length > 0 || relationshipSnapshot.staffTrust <= 48)) {
+    const staffDays = relationshipSnapshot.riskPairs.length > 0 || existingStaffConsequences > 0 ? 12 : 8;
     await createOngoingConsequence({
       teamId,
       seasonId,
@@ -617,11 +775,39 @@ export async function processSystemDepthDailyState(
       summary: relationshipSnapshot.summary,
       severity: relationshipSnapshot.riskPairs.length > 0 ? 'medium' : 'low',
       startedDate: currentDate,
-      expiresDate: addDaysIso(currentDate, 8),
+      expiresDate: addDaysIso(currentDate, staffDays),
       statKey: 'morale',
       statDelta: relationshipSnapshot.riskPairs.length > 0 ? -2 : -1,
     });
     created.push('관계 긴장이 이제 실제 운영 이슈로 번지고 있습니다.');
+  }
+
+  const negativePrepRecord = prepRecords.find((record) => record.observedOutcome === 'negative');
+  const stackedPrepChanges =
+    prepRecords.filter((record) => record.status === 'applied' && (record.focusArea === 'training' || record.focusArea === 'tactics')).length >= 2;
+
+  if (negativePrepRecord || stackedPrepChanges) {
+    const prepDays = negativePrepRecord || existingPrepConsequences > 0 ? 9 : 4;
+    await createOngoingConsequence({
+      teamId,
+      seasonId,
+      consequenceType: 'training',
+      source: 'prep_chain',
+      title: negativePrepRecord ? '준비 체인 흔들림' : '준비 검증 대기',
+      summary: negativePrepRecord
+        ? negativePrepRecord.impactSummary ?? negativePrepRecord.summary
+        : '훈련과 전술 조정이 겹쳐 있어 다음 경기 결과로 준비 방향을 빠르게 검증해야 합니다.',
+      severity: negativePrepRecord ? 'medium' : 'low',
+      startedDate: currentDate,
+      expiresDate: addDaysIso(currentDate, prepDays),
+      statKey: 'prep_chain',
+      statDelta: negativePrepRecord ? -3 : -1,
+    });
+    created.push(
+      negativePrepRecord
+        ? '최근 준비 실패가 다음 경기 준비 메모와 팀 컨디션 리스크로 이어지고 있습니다.'
+        : '훈련과 전술 조정이 겹쳐 있어 다음 경기에서 준비 방향 검증이 필요합니다.',
+    );
   }
 
   if (activeConsequences.length === 0 && pressure.pressureLevel === 'stable' && complaints.length === 0) {
@@ -637,10 +823,11 @@ export async function getMainLoopRiskItems(
   currentDate: string,
   saveId?: number,
 ): Promise<TeamLoopRiskItem[]> {
-  const [pressure, consequences, prepRecords, relationshipSnapshot, internationalSnapshot, careerArcs] = await Promise.all([
+  const [pressure, consequences, prepRecords, complaints, relationshipSnapshot, internationalSnapshot, careerArcs] = await Promise.all([
     getBudgetPressureSnapshot(teamId, seasonId),
     getActiveConsequences(teamId, seasonId, currentDate),
     getPrepRecommendationRecords(teamId, seasonId, 3),
+    getActiveComplaints(teamId).catch(() => []),
     getRelationshipInfluenceSnapshot(teamId, saveId).catch(() => null),
     getInternationalExpectationSnapshot(teamId, seasonId, null, saveId).catch(() => null),
     saveId != null ? getCareerArcEvents(saveId, teamId, 3).catch(() => []) : Promise.resolve([]),
@@ -659,6 +846,16 @@ export async function getMainLoopRiskItems(
     },
   ];
 
+  const boardPressureItem = summarizeBoardPressure(pressure);
+  if (boardPressureItem) {
+    items.push(boardPressureItem);
+  }
+
+  const consequenceCarryoverItem = summarizeConsequenceCarryover(consequences);
+  if (consequenceCarryoverItem) {
+    items.push(consequenceCarryoverItem);
+  }
+
   if (consequences[0]) {
     items.push({
       title: consequences[0].title,
@@ -667,28 +864,22 @@ export async function getMainLoopRiskItems(
     });
   }
 
-  if (prepRecords[0]) {
-    items.push({
-      title: prepRecords[0].title,
-      summary: prepRecords[0].impactSummary ?? prepRecords[0].summary,
-      tone: prepRecords[0].observedOutcome === 'positive' ? 'positive' : prepRecords[0].status === 'observed' ? 'risk' : 'neutral',
-    });
+  const prepChainItem = summarizePrepChain(prepRecords);
+  if (prepChainItem) {
+    items.push(prepChainItem);
+  }
+
+  const complaintItem = summarizeComplaintPressure(complaints);
+  if (complaintItem) {
+    items.push(complaintItem);
   }
 
   if (relationshipSnapshot) {
-    items.push({
-      title: '팀 케미스트리',
-      summary: relationshipSnapshot.summary,
-      tone: relationshipSnapshot.riskPairs.length > 0 ? 'risk' : relationshipSnapshot.strongPairs.length > 0 ? 'positive' : 'neutral',
-    });
+    items.push(summarizeRelationshipPressure(relationshipSnapshot));
   }
 
   if (internationalSnapshot) {
-    items.push({
-      title: internationalSnapshot.label,
-      summary: internationalSnapshot.summary,
-      tone: internationalSnapshot.level === 'must_deliver' ? 'risk' : internationalSnapshot.level === 'contender' ? 'neutral' : 'positive',
-    });
+    items.push(summarizeInternationalPressure(internationalSnapshot));
   }
 
   if (careerArcs[0]) {
@@ -699,7 +890,7 @@ export async function getMainLoopRiskItems(
     });
   }
 
-  return items.slice(0, 3);
+  return items.sort((left, right) => scoreLoopRiskItem(right) - scoreLoopRiskItem(left)).slice(0, 3);
 }
 
 export async function processReleaseDepthWeeklyState(

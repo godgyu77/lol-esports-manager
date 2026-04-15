@@ -243,7 +243,6 @@ function analystMessage(
 
 function guestMessage(
   speaker: BroadcastTalent,
-  eventKind: BroadcastEventKind,
   localized: string,
   entry: Commentary,
   context: BroadcastMatchContext,
@@ -649,7 +648,7 @@ export function buildBroadcastLines(
         roleLabel: toRoleLabel(crew.guestAnalyst),
         tone: 'studio',
         tickLabel: formatTickLabel(entry.tick),
-        message: guestMessage(crew.guestAnalyst, eventKind, localized, entry, context, gameState, options?.homeTeamName, options?.awayTeamName),
+        message: guestMessage(crew.guestAnalyst, localized, entry, context, gameState, options?.homeTeamName, options?.awayTeamName),
         highlight: true,
       });
     }

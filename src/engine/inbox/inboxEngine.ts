@@ -5,10 +5,23 @@
 
 import { getDatabase } from '../../db/database';
 import type { InboxMessage, InboxCategory } from '../../types/inbox';
+import type { TeamLoopRiskItem } from '../../types/systemDepth';
 import { invalidateNotifications } from '../news/newsEvents';
+
+const SYSTEM_LOOP_RISK_RELATED_ID = 'system_loop_risk';
+const MATCH_RESULT_RELATED_PREFIX = 'match_result:';
+const MATCH_RESULT_TITLE_PREFIX = '[경기 결과]';
 
 function isStickyInboxCategory(category: InboxCategory): boolean {
   return ['complaint', 'injury', 'promise', 'board', 'contract'].includes(category);
+}
+
+export function isMatchResultInboxMessage(message: Pick<InboxMessage, 'relatedId' | 'title'>): boolean {
+  return Boolean(message.relatedId?.startsWith(MATCH_RESULT_RELATED_PREFIX) || message.title.startsWith(MATCH_RESULT_TITLE_PREFIX));
+}
+
+export function getLatestMatchResultInboxMessage(messages: InboxMessage[]): InboxMessage | null {
+  return messages.find(isMatchResultInboxMessage) ?? null;
 }
 
 export async function addInboxMessage(
@@ -85,4 +98,127 @@ export async function markAllInboxRead(teamId: string): Promise<void> {
   const db = await getDatabase();
   await db.execute('UPDATE inbox_messages SET is_read = 1 WHERE team_id = $1', [teamId]);
   invalidateNotifications();
+}
+
+export async function syncSystemInboxMemo(
+  teamId: string,
+  date: string,
+  riskItem: TeamLoopRiskItem | null,
+  actionRoute = '/manager/inbox',
+): Promise<boolean> {
+  if (!riskItem) return false;
+
+  const db = await getDatabase();
+  const title = `[시스템] ${riskItem.title}`;
+  const actionRequired = riskItem.tone === 'risk' ? 1 : 0;
+  const rows = await db.select<
+    Array<{
+      id: number;
+      title: string;
+      content: string;
+      action_required: number;
+    }>
+  >(
+    `SELECT id, title, content, action_required
+     FROM inbox_messages
+     WHERE team_id = $1
+       AND category = 'general'
+       AND related_id = $2
+       AND created_date = $3
+     ORDER BY id DESC
+     LIMIT 1`,
+    [teamId, SYSTEM_LOOP_RISK_RELATED_ID, date],
+  );
+
+  const existing = rows[0];
+  if (!existing) {
+    await db.execute(
+      `INSERT INTO inbox_messages (
+        team_id, category, title, content, action_required, action_route, related_id, created_date
+      ) VALUES ($1, 'general', $2, $3, $4, $5, $6, $7)`,
+      [teamId, title, riskItem.summary, actionRequired, actionRoute, SYSTEM_LOOP_RISK_RELATED_ID, date],
+    );
+    invalidateNotifications();
+    return true;
+  }
+
+  if (
+    existing.title === title &&
+    existing.content === riskItem.summary &&
+    existing.action_required === actionRequired
+  ) {
+    return false;
+  }
+
+  await db.execute(
+    `UPDATE inbox_messages
+     SET title = $2,
+         content = $3,
+         action_required = $4,
+         action_route = $5,
+         is_read = 0
+     WHERE id = $1`,
+    [existing.id, title, riskItem.summary, actionRequired, actionRoute],
+  );
+  invalidateNotifications();
+  return true;
+}
+
+export async function syncMatchResultInboxMemo(
+  teamId: string,
+  date: string,
+  matchId: string,
+  title: string,
+  content: string,
+  actionRoute = '/manager/inbox',
+): Promise<boolean> {
+  const db = await getDatabase();
+  const relatedId = `${MATCH_RESULT_RELATED_PREFIX}${matchId}`;
+  const rows = await db.select<
+    Array<{
+      id: number;
+      title: string;
+      content: string;
+      action_route: string | null;
+    }>
+  >(
+    `SELECT id, title, content, action_route
+     FROM inbox_messages
+     WHERE team_id = $1
+       AND category = 'general'
+       AND related_id = $2
+     ORDER BY id DESC
+     LIMIT 1`,
+    [teamId, relatedId],
+  );
+
+  const existing = rows[0];
+  if (!existing) {
+    await db.execute(
+      `INSERT INTO inbox_messages (
+        team_id, category, title, content, action_required, action_route, related_id, created_date
+      ) VALUES ($1, 'general', $2, $3, 1, $4, $5, $6)`,
+      [teamId, title, content, actionRoute, relatedId, date],
+    );
+    invalidateNotifications();
+    return true;
+  }
+
+  if (existing.title === title && existing.content === content && existing.action_route === actionRoute) {
+    return false;
+  }
+
+  await db.execute(
+    `UPDATE inbox_messages
+     SET title = $2,
+         content = $3,
+         action_required = 1,
+         action_route = $4,
+         is_read = 0,
+         created_date = $5
+     WHERE id = $1`,
+    [existing.id, title, content, actionRoute, date],
+  );
+  invalidateNotifications();
+  return true;
 }

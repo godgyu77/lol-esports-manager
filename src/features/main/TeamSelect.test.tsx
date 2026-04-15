@@ -1,4 +1,5 @@
-﻿import { renderWithProviders, screen, resetStores } from '../../test/testUtils';
+import { renderWithProviders, screen, resetStores } from '../../test/testUtils';
+import { useGameStore } from '../../stores/gameStore';
 import { TeamSelect } from './TeamSelect';
 
 const { mockNavigate } = vi.hoisted(() => ({ mockNavigate: vi.fn() }));
@@ -14,13 +15,24 @@ describe('TeamSelect', () => {
     vi.clearAllMocks();
   });
 
-  it('shows compact team summary after choosing a team', async () => {
+  it('adds the team briefing panel after selecting a team', async () => {
     const { user } = renderWithProviders(<TeamSelect />, { gameState: { mode: 'manager' } });
+    const initialButtonCount = screen.getAllByRole('button').length;
+
     await user.click(screen.getByRole('button', { name: /T1/i }));
-    expect(screen.getByText('팀 입단 브리핑')).toBeInTheDocument();
-    expect(screen.getByText(/왜 이 팀인가/)).toBeInTheDocument();
-    expect(screen.getByText(/추천 유저/)).toBeInTheDocument();
-    expect(screen.getByText('상세 브리핑 보기')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '이 팀으로 부임 준비' })).toBeInTheDocument();
+
+    expect(screen.getAllByRole('button').length).toBeGreaterThan(initialButtonCount);
+    expect(screen.getByRole('button', { name: /Bilibili Gaming/ })).toBeInTheDocument();
+    expect(screen.getByTestId('teamselect-first-session-route')).toBeInTheDocument();
+  });
+
+  it('starts the onboarding flow from a featured starter path', async () => {
+    const { user } = renderWithProviders(<TeamSelect />, { gameState: { mode: 'manager' } });
+
+    await user.click(screen.getByRole('button', { name: /Bilibili Gaming/ }));
+    await user.click(screen.getByRole('button', { name: '이 팀으로 빠르게 시작' }));
+
+    expect(useGameStore.getState().pendingTeamId).toBeTruthy();
+    expect(mockNavigate).toHaveBeenCalledWith('/season-goal');
   });
 });

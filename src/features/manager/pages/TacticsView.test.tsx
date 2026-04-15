@@ -4,9 +4,11 @@ import { TacticsView } from './TacticsView';
 const {
   mockGetTeamTactics,
   mockGenerateInitialCoachRecommendations,
+  mockGetPrepRecommendationRecords,
 } = vi.hoisted(() => ({
   mockGetTeamTactics: vi.fn(),
   mockGenerateInitialCoachRecommendations: vi.fn(),
+  mockGetPrepRecommendationRecords: vi.fn(),
 }));
 
 vi.mock('../../../engine/tactics/tacticsEngine', () => ({
@@ -42,6 +44,11 @@ vi.mock('../../../engine/manager/managerSetupEngine', () => ({
   generateInitialCoachRecommendations: mockGenerateInitialCoachRecommendations,
 }));
 
+vi.mock('../../../engine/manager/systemDepthEngine', () => ({
+  getPrepRecommendationRecords: mockGetPrepRecommendationRecords,
+  recordPrepRecommendation: vi.fn().mockResolvedValue(undefined),
+}));
+
 describe('TacticsView', () => {
   beforeEach(() => {
     resetStores();
@@ -57,9 +64,10 @@ describe('TacticsView', () => {
       aggressionLevel: 5,
     });
     mockGenerateInitialCoachRecommendations.mockResolvedValue([]);
+    mockGetPrepRecommendationRecords.mockResolvedValue([]);
   });
 
-  it('renders the main loop summary with next match context', async () => {
+  it('renders the main loop summary and season tactics strip with next match context', async () => {
     renderWithProviders(<TacticsView />, {
       gameState: {
         save: {
@@ -100,5 +108,9 @@ describe('TacticsView', () => {
     expect(await screen.findByRole('heading', { name: '전술 관리' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'AI 코치' })).toBeInTheDocument();
     expect(screen.getByText(/2026-03-03 vs Gen\.G/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '경기 준비로 복귀' })).toBeInTheDocument();
+    expect(screen.getByTestId('tactics-season-strip')).toBeInTheDocument();
+    expect(screen.getByText('시즌 전술 방향')).toBeInTheDocument();
+    expect(screen.getByText('누적 준비 검증')).toBeInTheDocument();
   });
 });

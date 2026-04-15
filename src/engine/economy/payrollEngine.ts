@@ -3,6 +3,8 @@ import type { TeamPayrollSnapshot } from '../../types/systemDepth';
 
 const MIN_SALARY_CAP = 22000;
 const MAX_SALARY_CAP = 60000;
+const PAYROLL_CAP_BUFFER_RATIO = 0.12;
+const MIN_PAYROLL_CAP_BUFFER = 2500;
 const REGION_CAP_MULTIPLIER = {
   LCK: 0.97,
   LPL: 1.08,
@@ -62,6 +64,18 @@ function getStaffPayrollWeight(role?: string | null): number {
   return STAFF_PAYROLL_WEIGHT[role as keyof typeof STAFF_PAYROLL_WEIGHT] ?? 0.65;
 }
 
+function getEffectiveStaffPayroll(rows: Array<{ role: string | null; salary: number }>): number {
+  return Math.round(
+    rows.reduce((sum, row) => sum + row.salary * getStaffPayrollWeight(row.role), 0),
+  );
+}
+
+function getPayrollCapFloor(playerSalaryTotal: number, effectiveStaffPayroll: number): number {
+  const totalPayroll = playerSalaryTotal + effectiveStaffPayroll;
+  const buffer = Math.max(MIN_PAYROLL_CAP_BUFFER, Math.round(totalPayroll * PAYROLL_CAP_BUFFER_RATIO));
+  return totalPayroll + buffer;
+}
+
 export function calculateDynamicSalaryCap(budget: number, reputation: number, region?: string | null): number {
   const projectedCap = Math.round(
     (14500 + budget * 0.028 + reputation * 210) *
@@ -119,14 +133,23 @@ export function evaluatePayrollImpact(params: {
 
 export async function getTeamSalaryCap(teamId: string): Promise<number> {
   const db = await getDatabase();
-  const rows = await db.select<Array<{ budget: number; reputation: number; salary_cap: number; region: string | null }>>(
-    'SELECT budget, reputation, salary_cap, region FROM teams WHERE id = $1 LIMIT 1',
-    [teamId],
-  );
-  const team = rows[0];
+  const [teamRows, playerRows, staffRows] = await Promise.all([
+    db.select<Array<{ budget: number; reputation: number; salary_cap: number; region: string | null }>>(
+      'SELECT budget, reputation, salary_cap, region FROM teams WHERE id = $1 LIMIT 1',
+      [teamId],
+    ),
+    db.select<Array<{ total: number | null }>>('SELECT SUM(salary) as total FROM players WHERE team_id = $1', [teamId]),
+    db.select<Array<{ role: string | null; salary: number }>>('SELECT role, salary FROM staff WHERE team_id = $1', [teamId]),
+  ]);
+  const team = teamRows[0];
   if (!team) return MIN_SALARY_CAP;
 
-  const computedCap = calculateDynamicSalaryCap(team.budget, team.reputation, team.region);
+  const playerSalaryTotal = playerRows[0]?.total ?? 0;
+  const effectiveStaffPayroll = getEffectiveStaffPayroll(staffRows);
+  const computedCap = Math.max(
+    calculateDynamicSalaryCap(team.budget, team.reputation, team.region),
+    getPayrollCapFloor(playerSalaryTotal, effectiveStaffPayroll),
+  );
   if (team.salary_cap !== computedCap) {
     await db.execute('UPDATE teams SET salary_cap = $1 WHERE id = $2', [computedCap, teamId]).catch(() => {});
   }
@@ -146,9 +169,7 @@ export async function getTeamPayrollSnapshot(teamId: string): Promise<TeamPayrol
   const region = teamRows[0]?.region ?? null;
   const playerSalaryTotal = playerRows[0]?.total ?? 0;
   const staffSalaryTotal = staffRows.reduce((sum, row) => sum + row.salary, 0);
-  const effectiveStaffPayroll = Math.round(
-    staffRows.reduce((sum, row) => sum + row.salary * getStaffPayrollWeight(row.role), 0),
-  );
+  const effectiveStaffPayroll = getEffectiveStaffPayroll(staffRows);
   const totalPayroll = playerSalaryTotal + effectiveStaffPayroll;
   const impact = evaluatePayrollImpact({ totalPayroll, salaryCap, region });
 
