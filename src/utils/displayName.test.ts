@@ -31,31 +31,27 @@ function collectStaffNames(): string[] {
 }
 
 describe('displayName', () => {
-  it('maps key player and staff names to Korean labels', () => {
-    expect(getDisplayEntityName('Faker')).toBe('페이커');
-    expect(getDisplayEntityName('Oner')).toBe('오너');
-    expect(getDisplayEntityName('Tom')).toBe('톰');
-    expect(getDisplayEntityName('Homme')).toBe('옴므');
-    expect(getDisplayEntityName('VACANT')).toBe('공석');
+  it('keeps known roster names in their original public form', () => {
+    expect(getDisplayEntityName('Faker')).toBe('Faker');
+    expect(getDisplayEntityName('Oner')).toBe('Oner');
+    expect(getDisplayEntityName('Tom')).toBe('Tom');
+    expect(getDisplayEntityName('Homme')).toBe('Homme');
   });
 
-  it('does not leave latin letters in roster player display names', () => {
+  it('does not distort roster player display names', () => {
     for (const name of collectRosterNames()) {
-      expect(getDisplayEntityName(name)).not.toMatch(/[A-Za-z]/);
+      expect(getDisplayEntityName(name)).toBe(name);
     }
   });
 
-  it('does not leave latin letters in staff display names', () => {
+  it('does not distort staff display names', () => {
     for (const name of collectStaffNames()) {
-      expect(getDisplayEntityName(name)).not.toMatch(/[A-Za-z]/);
+      expect(getDisplayEntityName(name)).toBe(name);
     }
   });
 
-  it('localizes names embedded inside text content', () => {
+  it('only replaces explicitly mapped names inside text content', () => {
     const localized = localizeEntityNamesInText('Faker and Tom discussed a draft plan with Oner.');
-    expect(localized).toContain('페이커');
-    expect(localized).toContain('톰');
-    expect(localized).toContain('오너');
-    expect(localized).not.toMatch(/[A-Za-z]/);
+    expect(localized).toBe('Faker and Tom discussed a draft plan with Oner.');
   });
 });

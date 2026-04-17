@@ -11,7 +11,7 @@ import { useNavBadges } from '../../../hooks/useNavBadges';
 import { useGameStore } from '../../../stores/gameStore';
 import { useMatchStore } from '../../../stores/matchStore';
 import { formatAmount } from '../../../utils/formatUtils';
-import { getLoopRiskActionLabel, getLoopRiskRoute } from '../utils/loopRiskRouting';
+import { getLoopRiskRoute } from '../utils/loopRiskRouting';
 
 interface NavItem {
   to: string;
@@ -37,25 +37,23 @@ interface LoopRiskSummary {
   title: string;
   summary: string;
   route: string;
-  tone?: 'risk' | 'neutral' | 'positive';
 }
 
-interface RetentionBanner {
-  title: string;
-  summary: string;
-  route: string;
-  cta: string;
-}
-
-const MATCH_FOLLOW_UP_LABEL = '경기 후속 정리';
-const MATCH_SPOTLIGHT_LABEL = '방금 경기 여론 따라가기';
-const PREVIEW_SPOTLIGHT_LABEL = '다음 상대전 미리보기';
-const MOOD_SPOTLIGHT_LABEL = '오늘 팀 분위기 둘러보기';
-
-const BASE_NAV_GROUPS: NavGroup[] = [
+const NAV_GROUPS: NavGroup[] = [
+  {
+    id: 'club',
+    title: '클럽',
+    defaultExpanded: true,
+    items: [
+      { to: '/manager', label: '홈', icon: 'H', end: true },
+      { to: '/manager/news', label: '뉴스', icon: 'N' },
+      { to: '/manager/day', label: '진행', icon: 'D' },
+      { to: '/manager/inbox', label: '인박스', icon: 'I' },
+    ],
+  },
   {
     id: 'team',
-    title: '팀 운영',
+    title: '팀 관리',
     defaultExpanded: true,
     items: [
       { to: '/manager/roster', label: '로스터', icon: 'R' },
@@ -66,110 +64,29 @@ const BASE_NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    id: 'season',
+    id: 'competition',
     title: '시즌',
     defaultExpanded: true,
     items: [
       { to: '/manager/schedule', label: '일정', icon: 'S' },
       { to: '/manager/calendar', label: '캘린더', icon: 'C' },
       { to: '/manager/standings', label: '순위', icon: 'L' },
-      { to: '/manager/patch-meta', label: '패치 메타', icon: 'M' },
+      { to: '/manager/draft', label: '드래프트', icon: 'DR' },
+      { to: '/manager/pre-match', label: '경기 준비', icon: 'PM' },
     ],
   },
   {
     id: 'business',
-    title: '구단 운영',
+    title: '운영',
     defaultExpanded: true,
     items: [
-      { to: '/manager/transfer', label: '이적 시장', icon: 'FA' },
+      { to: '/manager/transfer', label: '이적시장', icon: 'FA' },
       { to: '/manager/finance', label: '재정', icon: '$' },
       { to: '/manager/facility', label: '시설', icon: 'F' },
-      { to: '/manager/board', label: '이사회', icon: 'B' },
+      { to: '/manager/board', label: '보드', icon: 'B' },
     ],
   },
 ];
-
-function getPriorityNavGroup(dayType?: string | null): NavGroup {
-  if (dayType === 'match_day') {
-    return {
-      id: 'priority',
-      title: '오늘 우선',
-      defaultExpanded: true,
-      items: [
-        { to: '/manager', label: '대시보드', icon: 'H', end: true },
-        { to: '/manager/pre-match', label: '경기 준비', icon: 'PM' },
-        { to: '/manager/tactics', label: '전술 확인', icon: 'T' },
-        { to: '/manager/draft', label: '드래프트', icon: 'D' },
-      ],
-    };
-  }
-
-  if (dayType === 'rest') {
-    return {
-      id: 'priority',
-      title: '오늘 우선',
-      defaultExpanded: true,
-      items: [
-        { to: '/manager', label: '대시보드', icon: 'H', end: true },
-        { to: '/manager/roster', label: '선수 상태', icon: 'R' },
-        { to: '/manager/transfer', label: '이적 시장', icon: 'FA' },
-        { to: '/manager/news', label: '뉴스', icon: 'N' },
-      ],
-    };
-  }
-
-  return {
-    id: 'priority',
-    title: '오늘 우선',
-    defaultExpanded: true,
-    items: [
-      { to: '/manager', label: '대시보드', icon: 'H', end: true },
-      { to: '/manager/day', label: '시즌 진행', icon: 'D' },
-      { to: '/manager/training', label: '훈련', icon: 'TR' },
-      { to: '/manager/tactics', label: '전술', icon: 'T' },
-    ],
-  };
-}
-
-function getTopbarAction(dayType?: string | null, featuredMatchFollowUp?: MatchFollowUpSummary | null, topLoopRisk?: LoopRiskSummary | null): NavItem {
-  if (featuredMatchFollowUp) {
-    return { to: featuredMatchFollowUp.actionRoute ?? '/manager/inbox', label: MATCH_FOLLOW_UP_LABEL, icon: 'PM' };
-  }
-
-  if (topLoopRisk) {
-    return { to: topLoopRisk.route, label: getLoopRiskActionLabel(topLoopRisk.title), icon: topLoopRisk.route === '/manager/finance' ? '$' : 'PM' };
-  }
-
-  if (dayType === 'match_day') {
-    return { to: '/manager/pre-match', label: '경기 준비', icon: 'PM' };
-  }
-
-  if (dayType === 'rest') {
-    return { to: '/manager/roster', label: '선수 상태', icon: 'R' };
-  }
-
-  return { to: '/manager/day', label: '다음 일정', icon: 'D' };
-}
-
-function getSpotlightAction(dayType?: string | null, featuredMatchFollowUp?: MatchFollowUpSummary | null, topLoopRisk?: LoopRiskSummary | null): NavItem {
-  if (featuredMatchFollowUp) {
-    return { to: '/manager/news', label: MATCH_SPOTLIGHT_LABEL, icon: 'N' };
-  }
-
-  if (topLoopRisk) {
-    return { to: topLoopRisk.route, label: getLoopRiskActionLabel(topLoopRisk.title), icon: topLoopRisk.route === '/manager/finance' ? '$' : 'PM' };
-  }
-
-  if (dayType === 'match_day') {
-    return { to: '/manager/pre-match', label: PREVIEW_SPOTLIGHT_LABEL, icon: 'PM' };
-  }
-
-  if (dayType === 'rest') {
-    return { to: '/manager/news', label: MOOD_SPOTLIGHT_LABEL, icon: 'N' };
-  }
-
-  return { to: '/manager/pre-match', label: PREVIEW_SPOTLIGHT_LABEL, icon: 'PM' };
-}
 
 function getSplitLabel(split?: string) {
   if (split === 'spring') return '스프링';
@@ -177,56 +94,9 @@ function getSplitLabel(split?: string) {
   return '-';
 }
 
-function getRetentionBanner(params: {
-  currentWeek?: number;
-  featuredMatchFollowUp?: MatchFollowUpSummary | null;
-  topLoopRisk?: LoopRiskSummary | null;
-  dayType?: string | null;
-}): RetentionBanner {
-  const { currentWeek = 1, featuredMatchFollowUp, topLoopRisk, dayType } = params;
-
-  if (featuredMatchFollowUp) {
-    return {
-      title: '직전 경기 여파를 다음 시즌 흐름으로 잇기',
-      summary: '방금 경기의 후속 정리를 미루지 않으면 이번 시즌의 첫 서사가 더 또렷하게 남습니다.',
-      route: featuredMatchFollowUp.actionRoute ?? '/manager/inbox',
-      cta: '경기 후속 바로 정리',
-    };
-  }
-
-  if (topLoopRisk && (topLoopRisk.title.includes('보드') || topLoopRisk.title.includes('국제전'))) {
-    return {
-      title: '초반 기대치를 시즌 드라마로 바꾸기',
-      summary: topLoopRisk.summary,
-      route: topLoopRisk.route,
-      cta: getLoopRiskActionLabel(topLoopRisk.title),
-    };
-  }
-
-  if (dayType === 'match_day') {
-    return {
-      title: '다음 경기로 시즌 첫 인상 만들기',
-      summary: '시즌 초반 경기일수록 결과보다도 팀 색과 흐름을 만드는 장면이 오래 남습니다.',
-      route: '/manager/pre-match',
-      cta: '경기 이야기 만들기',
-    };
-  }
-
-  if (currentWeek <= 4) {
-    return {
-      title: '첫 4주 안에 팀 색깔 잡기',
-      summary: '지금은 체크리스트를 넘기는 시기보다 이번 시즌을 대표할 분위기와 선택을 쌓아두는 시기입니다.',
-      route: '/manager/day',
-      cta: '이번 주 흐름 만들기',
-    };
-  }
-
-  return {
-    title: '이번 시즌 대표 서사 키우기',
-    summary: '라이벌전, 반등, 스타 성장 중 하나를 명확하게 밀어주면 시즌 후반 리텐션이 더 강해집니다.',
-    route: '/manager/news',
-    cta: '시즌 이야기 더 보기',
-  };
+function getDefaultNextRoute(dayType?: string | null) {
+  if (dayType === 'match_day') return '/manager/pre-match';
+  return '/manager/day';
 }
 
 export function ManagerDashboard() {
@@ -254,60 +124,50 @@ export function ManagerDashboard() {
     location.pathname.startsWith('/manager/draft');
   const badges = useNavBadges(save?.userTeamId ?? '', season?.id ?? 0);
   const userTeam = teams.find((team) => team.id === save?.userTeamId);
-  const navGroups = useMemo(() => [getPriorityNavGroup(dayType), ...BASE_NAV_GROUPS], [dayType]);
-  const topbarAction = useMemo(() => getTopbarAction(dayType, featuredMatchFollowUp, topLoopRisk), [dayType, featuredMatchFollowUp, topLoopRisk]);
-  const spotlightAction = useMemo(() => getSpotlightAction(dayType, featuredMatchFollowUp, topLoopRisk), [dayType, featuredMatchFollowUp, topLoopRisk]);
-  const dashboardPriorityCards = useMemo(
+  const nextRoute = featuredMatchFollowUp?.actionRoute
+    ?? topLoopRisk?.route
+    ?? getDefaultNextRoute(dayType);
+  const nextReason = featuredMatchFollowUp?.summary
+    ?? topLoopRisk?.summary
+    ?? (dayType === 'match_day'
+      ? '오늘 경기를 준비해야 합니다.'
+      : '다음 일정으로 넘어가기 전에 필수 항목을 확인하세요.');
+  const topbarAction = useMemo(() => ({
+    to: nextRoute,
+    label: '다음 진행',
+  }), [nextRoute]);
+  const priorityCards = useMemo(
     () => [
       {
-        key: 'primary',
-        label: '지금 할 일',
-        value: topbarAction.label,
-        detail: featuredMatchFollowUp?.summary ?? (topLoopRisk?.summary ?? '오늘 허브에서 가장 먼저 처리할 행동입니다.'),
-        to: topbarAction.to,
+        key: 'action',
+        label: '오늘 할 일',
+        value: featuredMatchFollowUp?.title ?? topLoopRisk?.title ?? (dayType === 'match_day' ? '경기 준비' : '시즌 진행'),
+        detail: nextReason,
+        to: nextRoute,
       },
       {
-        key: 'focus',
-        label: '다음 포커스',
-        value: spotlightAction.label,
-        detail: featuredMatchFollowUp ? '경기 직후 흐름을 바로 이어갑니다.' : topLoopRisk ? '현재 가장 큰 압박이나 후속 흐름을 확인합니다.' : '핵심 화면으로 빠르게 이어집니다.',
-        to: spotlightAction.to,
+        key: 'news',
+        label: '뉴스룸',
+        value: featuredMatchFollowUp ? '후속 기사 확인' : '상황 브리핑 읽기',
+        detail: featuredMatchFollowUp
+          ? '방금 경기 후속 조치가 뉴스와 인박스에 정리되어 있습니다.'
+          : '오늘 해야 할 일과 일반 뉴스를 한 화면에서 확인할 수 있습니다.',
+        to: '/manager/news',
       },
       {
-        key: 'risk',
-        label: '가장 큰 리스크',
-        value: topLoopRisk?.title ?? '현재 안정',
-        detail: topLoopRisk?.summary ?? `${userTeam ? `${userTeam.name} 예산 ${formatAmount(userTeam.budget)}` : '팀 상태를 다시 확인해 주세요.'}`,
-        to: topLoopRisk?.route ?? '/manager',
+        key: 'status',
+        label: '클럽 상태',
+        value: userTeam ? formatAmount(userTeam.budget) : '팀 대기 중',
+        detail: userTeam
+          ? `${userTeam.name} 명성 ${userTeam.reputation}`
+          : '예산과 팀 상태를 불러오는 중입니다.',
+        to: topLoopRisk?.route ?? '/manager/finance',
       },
     ],
-    [featuredMatchFollowUp, spotlightAction, topLoopRisk, topbarAction, userTeam],
-  );
-  const retentionBanner = useMemo(
-    () =>
-      getRetentionBanner({
-        currentWeek: season?.currentWeek,
-        featuredMatchFollowUp,
-        topLoopRisk,
-        dayType,
-      }),
-    [dayType, featuredMatchFollowUp, season?.currentWeek, topLoopRisk],
-  );
-  const mobilePrimaryItem = useMemo(
-    () =>
-      featuredMatchFollowUp
-        ? { to: featuredMatchFollowUp.actionRoute ?? '/manager/inbox', label: MATCH_FOLLOW_UP_LABEL, icon: 'PM' }
-        : topLoopRisk
-          ? { to: topLoopRisk.route, label: getLoopRiskActionLabel(topLoopRisk.title), icon: topLoopRisk.route === '/manager/finance' ? '$' : 'PM' }
-        : dayType === 'match_day'
-        ? { to: '/manager/pre-match', label: '준비', icon: 'PM' }
-        : dayType === 'rest'
-          ? { to: '/manager/roster', label: '상태', icon: 'R' }
-          : { to: '/manager/day', label: '일정', icon: 'D' },
-    [dayType, featuredMatchFollowUp, topLoopRisk],
+    [dayType, featuredMatchFollowUp, nextReason, nextRoute, topLoopRisk, userTeam],
   );
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(navGroups.map((group) => [group.id, group.defaultExpanded])),
+    Object.fromEntries(NAV_GROUPS.map((group) => [group.id, group.defaultExpanded])),
   );
 
   useEffect(() => {
@@ -364,7 +224,6 @@ export function ManagerDashboard() {
                 title: first.title,
                 summary: first.summary,
                 route: getLoopRiskRoute(first.title, first.summary),
-                tone: first.tone,
               }
             : null,
         );
@@ -397,13 +256,6 @@ export function ManagerDashboard() {
     setExpandedGroups((prev) => ({ ...prev, [groupId]: !prev[groupId] }));
   }, []);
 
-  useEffect(() => {
-    setExpandedGroups((prev) => {
-      const nextEntries = navGroups.map((group) => [group.id, prev[group.id] ?? group.defaultExpanded]);
-      return Object.fromEntries(nextEntries);
-    });
-  }, [navGroups]);
-
   if (isImmersiveRoute) {
     return (
       <div className="fm-layout fm-layout--match-focus">
@@ -422,12 +274,12 @@ export function ManagerDashboard() {
     <div className="fm-layout">
       {sidebarOpen && <div className="fm-sidebar-backdrop" onClick={() => setSidebarOpen(false)} />}
 
-      <nav className={`fm-sidebar${sidebarOpen ? ' fm-sidebar--open' : ''}`} aria-label="매니저 내비게이션">
+      <nav className={`fm-sidebar${sidebarOpen ? ' fm-sidebar--open' : ''}`} aria-label="매니저 탐색">
         <div className="fm-sidebar__header">
           <div className="fm-sidebar__team-logo">{userTeam?.shortName?.slice(0, 2) ?? 'LM'}</div>
           <div className="fm-sidebar__header-copy">
-            <div className="fm-sidebar__team-name">{userTeam?.name ?? '내 팀'}</div>
-            <div className="fm-sidebar__team-sub">감독 커리어</div>
+            <div className="fm-sidebar__team-name">{userTeam?.name ?? '팀 대기 중'}</div>
+            <div className="fm-sidebar__team-sub">매니저 허브</div>
             <div className="fm-sidebar__team-chip">
               {season ? `${season.year} ${getSplitLabel(season.split)} W${season.currentWeek}` : '시즌 대기'}
             </div>
@@ -435,7 +287,7 @@ export function ManagerDashboard() {
         </div>
 
         <div className="fm-sidebar__nav">
-          {navGroups.map((group) => (
+          {NAV_GROUPS.map((group) => (
             <div key={group.id} className="fm-nav-group">
               <button
                 type="button"
@@ -473,12 +325,6 @@ export function ManagerDashboard() {
         </div>
 
         <div className="fm-sidebar__footer">
-          <button className="fm-sidebar__footer-btn fm-sidebar__footer-btn--accent" onClick={() => navigate(topbarAction.to)}>
-            {topbarAction.label}
-          </button>
-          <button className="fm-sidebar__footer-btn" onClick={() => navigate(spotlightAction.to)}>
-            {spotlightAction.label}
-          </button>
           <button className="fm-sidebar__footer-btn" onClick={() => navigate('/save-load')}>
             저장 / 불러오기
           </button>
@@ -531,23 +377,13 @@ export function ManagerDashboard() {
 
         <div className="fm-content">
           <div className="fm-grid fm-grid--3 fm-mb-lg" data-testid="managerdashboard-priority-strip">
-            {dashboardPriorityCards.map((card) => (
+            {priorityCards.map((card) => (
               <button key={card.key} type="button" className="fm-card fm-text-left" onClick={() => navigate(card.to)}>
                 <div className="fm-text-xs fm-text-muted fm-mb-xs">{card.label}</div>
                 <div className="fm-text-primary fm-font-semibold fm-mb-xs">{card.value}</div>
                 <div className="fm-text-secondary">{card.detail}</div>
               </button>
             ))}
-          </div>
-          <div className="fm-panel fm-mb-lg" data-testid="managerdashboard-retention-panel">
-            <div className="fm-panel__header"><span className="fm-panel__title">첫 시즌 몰입 포인트</span></div>
-            <div className="fm-panel__body">
-              <button type="button" className="fm-card fm-text-left" onClick={() => navigate(retentionBanner.route)}>
-                <div className="fm-text-primary fm-font-semibold fm-mb-xs">{retentionBanner.title}</div>
-                <div className="fm-text-secondary fm-mb-sm">{retentionBanner.summary}</div>
-                <div className="fm-text-xs fm-text-accent">{retentionBanner.cta}</div>
-              </button>
-            </div>
           </div>
           <ErrorBoundary>
             <Outlet />
@@ -557,10 +393,9 @@ export function ManagerDashboard() {
         <MobileBottomNav
           items={[
             { to: '/manager', label: '홈', icon: 'H', end: true, badgeCount: badges['/manager'] ?? 0 },
-            { ...mobilePrimaryItem, badgeCount: mobilePrimaryItem.to ? badges[mobilePrimaryItem.to] ?? 0 : 0 },
-            { to: '/manager/roster', label: '팀', icon: 'R', badgeCount: badges['/manager/roster'] ?? 0 },
-            { to: '/manager/tactics', label: '전술', icon: 'T', badgeCount: badges['/manager/tactics'] ?? 0 },
-            { to: '/manager/transfer', label: '이적', icon: '$', badgeCount: badges['/manager/transfer'] ?? 0 },
+            { to: '/manager/news', label: '뉴스', icon: 'N', badgeCount: badges['/manager/news'] ?? 0 },
+            { to: nextRoute, label: 'Next', icon: '>' },
+            { to: '/manager/roster', label: '로스터', icon: 'R', badgeCount: badges['/manager/roster'] ?? 0 },
             { label: '더보기', icon: '+', onClick: () => setSidebarOpen(true) },
           ]}
         />

@@ -32,7 +32,7 @@ function BanRow({ label, bans, color, championDb }: BanRowProps) {
         const champ = championDb.find((c) => c.id === id);
         return (
           <div key={index} className="draft-ban-slot" style={{ borderColor: `${color}55` }}>
-            <span className="draft-ban-champ-name">{champ?.nameKo ?? id}</span>
+            <span className="draft-ban-champ-name">{champ?.nameKo ?? champ?.name ?? id}</span>
           </div>
         );
       })}

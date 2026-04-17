@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGameStore } from '../../stores/gameStore';
 import { useMatchStore, type MatchSpeedPreset } from '../../stores/matchStore';
@@ -44,25 +44,22 @@ import { buildFollowUpNewsParagraph, getFollowUpRoute, getPrimaryFollowUp } from
 import './match.css';
 
 const SPEED_PRESETS: Array<{ key: MatchSpeedPreset; label: string }> = [
-  { key: 'focus', label: '집중' },
-  { key: 'standard', label: '기본' },
-  { key: 'fast', label: '고속' },
+  { key: 'focus', label: '\uC9D1\uC911' },
+  { key: 'standard', label: '\uAE30\uBCF8' },
+  { key: 'fast', label: '\uACE0\uC18D' },
 ];
-
 const PHASE_LABELS: Record<string, string> = {
-  loading: '로딩',
-  laning: '라인전',
-  mid_game: '중반',
-  late_game: '후반',
-  finished: '종료',
+  loading: '\uB85C\uB529',
+  laning: '\uB77C\uC778\uC804',
+  mid_game: '\uC911\uBC18',
+  late_game: '\uD6C4\uBC18',
+  finished: '\uC885\uB8CC',
 };
-
 const COACH_INTERVIEW_TOPICS: Record<CoachInterviewTone, string> = {
-  calm: '준비한 운영이 잘 나왔다',
-  confident: '준비의 결과를 증명했다',
-  reflective: '보완점과 수확을 함께 봤다',
+  calm: '\uC900\uBE44\uD55C \uC6B4\uC601\uC774 \uCC28\uBD84\uD558\uAC8C \uD1B5\uD588\uB2E4',
+  confident: '\uC900\uBE44\uD55C \uD50C\uB79C\uC744 \uACBD\uAE30\uC5D0\uC11C \uC99D\uBA85\uD588\uB2E4',
+  reflective: '\uC88B\uC558\uC9C0\uB9CC \uB2E4\uC74C \uACBD\uAE30\uB97C \uC704\uD574 \uBCF4\uC644\uB3C4 \uD544\uC694\uD558\uB2E4',
 };
-
 function getTickInterval(speed: number) {
   return Math.max(360, 1800 / Math.max(speed, 0.5));
 }
@@ -107,12 +104,11 @@ function toGameResult(state: LiveGameState): GameResult {
 }
 
 function statusLabel(player: LivePlayerStat) {
-  if (player.deaths >= 4 && player.kills === 0) return '집중 필요';
-  if (player.kills + player.assists >= 10) return '활약 중';
-  if (player.comfortPick) return '주력 카드';
-  return '안정적';
+  if (player.deaths >= 4 && player.kills === 0) return '\uC9D1\uC911 \uD544\uC694';
+  if (player.kills + player.assists >= 10) return '\uD575\uC2EC \uD65C\uC57D';
+  if (player.comfortPick) return '\uC8FC\uB825 \uCE74\uB4DC';
+  return '\uC548\uC815\uC801';
 }
-
 function toneClass(tone: BroadcastHighlight['tone']) {
   switch (tone) {
     case 'good':
@@ -135,9 +131,24 @@ interface MatchFollowUpSummary {
 }
 
 function isMatchResultInboxMessage(message: { relatedId: string | null; title: string }): boolean {
-  return message.relatedId?.startsWith('match_result:') || message.title.startsWith('[경기 결과]');
+  return message.relatedId?.startsWith('match_result:') || message.title.startsWith('[\uACBD\uAE30 \uACB0\uACFC]');
 }
-
+function getPositionLabel(position: LivePlayerStat['position']) {
+  switch (position) {
+    case 'top':
+      return '\uD0D1';
+    case 'jungle':
+      return '\uC815\uAE00';
+    case 'mid':
+      return '\uBBF8\uB4DC';
+    case 'adc':
+      return '\uC6D0\uB51C';
+    case 'support':
+      return '\uC11C\uD3FF';
+    default:
+      return position;
+  }
+}
 function TeamSideBoard({
   teamName,
   teamShortName,
@@ -150,7 +161,6 @@ function TeamSideBoard({
   players: LivePlayerStat[];
 }) {
   const totalDamage = Math.round(players.reduce((sum, player) => sum + player.damageDealt, 0));
-
   return (
     <section className={`match-side-board ${side === 'home' ? 'match-side-board--home' : 'match-side-board--away'}`}>
       <div className="match-side-board__header">
@@ -159,8 +169,8 @@ function TeamSideBoard({
           <p className="match-side-board__sub">{teamName}</p>
         </div>
         <div className="match-side-board__teamline">
-          <span>{side === 'home' ? '우리 팀' : '상대 팀'}</span>
-          <span>누적 피해 {totalDamage.toLocaleString()}</span>
+          <span>{side === 'home' ? '\uC6B0\uB9AC \uD300' : '\uC0C1\uB300 \uD300'}</span>
+          <span>\uB204\uC801 \uD53C\uD574 {totalDamage.toLocaleString()}</span>
         </div>
       </div>
       <div className="match-side-board__players">
@@ -170,7 +180,7 @@ function TeamSideBoard({
               <div>
                 <strong className="match-side-player__name">{getDisplayEntityName(player.playerName)}</strong>
                 <p className="match-side-player__meta">
-                  {player.position} · {player.championId ?? '챔피언 비공개'}
+                  {getPositionLabel(player.position)} · {player.championId ?? '\uCC54\uD53C\uC5B8 \uBE44\uACF5\uAC1C'}
                 </p>
               </div>
               <span className="match-side-player__state">{statusLabel(player)}</span>
@@ -186,7 +196,6 @@ function TeamSideBoard({
     </section>
   );
 }
-
 export function LiveMatchView() {
   useBgm('match');
   const navigate = useNavigate();
@@ -321,7 +330,7 @@ export function LiveMatchView() {
     const homeLineup = buildLineup(homePlayers);
     const awayLineup = buildLineup(awayPlayers);
     if (!homeLineup || !awayLineup) {
-      setMatchError('라인업을 완성하지 못해 경기를 시작할 수 없습니다.');
+      setMatchError('?쇱씤?낆쓣 ?꾩꽦?섏? 紐삵빐 寃쎄린瑜??쒖옉?????놁뒿?덈떎.');
       return;
     }
 
@@ -475,7 +484,7 @@ export function LiveMatchView() {
       await generateInterviewNews(
         pendingMatch.seasonId,
         currentDate,
-        `${save?.managerName ?? '감독'}`,
+        `${save?.managerName ?? '媛먮룆'}`,
         userSide === 'home' ? homeTeam.name : awayTeam.name,
         COACH_INTERVIEW_TOPICS[tone],
         save?.userTeamId ?? null,
@@ -503,9 +512,9 @@ export function LiveMatchView() {
         const opponentName = userSide === 'home' ? awayTeam.name : homeTeam.name;
         const userScore = seriesScore[userSide];
         const opponentScore = seriesScore[userSide === 'home' ? 'away' : 'home'];
-        const inboxTitle = `[경기 결과] ${opponentName}전 ${userScore}:${opponentScore} ${didUserWin ? '승리' : '패배'}`;
+        const inboxTitle = `[寃쎄린 寃곌낵] ${opponentName}??${userScore}:${opponentScore} ${didUserWin ? '?밸━' : '?⑤같'}`;
         const inboxContent = [
-          `${opponentName}전 시리즈가 ${userScore}:${opponentScore}로 마무리됐습니다.`,
+          `${opponentName}???쒕━利덇? ${userScore}:${opponentScore}濡?留덈Т由щ릱?듬땲??`,
           buildMatchResultInboxMemoParagraph({
             followUpAction: primaryFollowUp?.action,
             followUpSummary: primaryFollowUp?.summary,
@@ -530,8 +539,7 @@ export function LiveMatchView() {
       homeTeam,
       pendingMatch,
       postMatchPublished,
-      save?.managerName,
-      save?.userTeamId,
+      save,
       seriesScore,
       gameResults,
       studioPackage,
@@ -586,7 +594,7 @@ export function LiveMatchView() {
         pendingMatch.seasonId,
         save?.userTeamId,
         typeof save?.id === 'number' ? save.id : undefined,
-      ).catch(() => setMatchError('경기 결과 저장 중 문제가 발생했습니다.'));
+      ).catch(() => setMatchError('寃쎄린 寃곌낵 ???以?臾몄젣媛 諛쒖깮?덉뒿?덈떎.'));
 
       const winnerTeamId = matchResult.winner === 'home' ? pendingMatch.teamHomeId : pendingMatch.teamAwayId;
       if (pendingMatch.matchType.startsWith('playoff_')) {
@@ -602,10 +610,10 @@ export function LiveMatchView() {
         await processTournamentMatchResult(pendingMatch.seasonId, pendingMatch.id, winnerTeamId).catch(() => {});
       }
 
-      const pom = determinePom(gameState, homeTeam?.name ?? '홈 팀', awayTeam?.name ?? '원정 팀');
+      const pom = determinePom(gameState, homeTeam?.name ?? '???', awayTeam?.name ?? '?먯젙 ?');
       const generatedComment = await generatePostMatchComment({
-        teamName: userSide === 'home' ? homeTeam?.name ?? '우리 팀' : awayTeam?.name ?? '우리 팀',
-        opponentName: userSide === 'home' ? awayTeam?.name ?? '상대 팀' : homeTeam?.name ?? '상대 팀',
+        teamName: userSide === 'home' ? homeTeam?.name ?? '?곕━ ?' : awayTeam?.name ?? '?곕━ ?',
+        opponentName: userSide === 'home' ? awayTeam?.name ?? '?곷? ?' : homeTeam?.name ?? '?곷? ?',
         isWin: result.winnerSide === userSide,
         scoreHome: nextScore.home,
         scoreAway: nextScore.away,
@@ -619,10 +627,10 @@ export function LiveMatchView() {
           gameState,
           homeTeamId: homeTeam?.id,
           awayTeamId: awayTeam?.id,
-          homeTeamName: homeTeam?.name ?? '홈 팀',
-          awayTeamName: awayTeam?.name ?? '원정 팀',
-          userTeamName: userSide === 'home' ? homeTeam?.name ?? '우리 팀' : awayTeam?.name ?? '우리 팀',
-          opponentTeamName: userSide === 'home' ? awayTeam?.name ?? '상대 팀' : homeTeam?.name ?? '상대 팀',
+          homeTeamName: homeTeam?.name ?? '???',
+          awayTeamName: awayTeam?.name ?? '?먯젙 ?',
+          userTeamName: userSide === 'home' ? homeTeam?.name ?? '?곕━ ?' : awayTeam?.name ?? '?곕━ ?',
+          opponentTeamName: userSide === 'home' ? awayTeam?.name ?? '?곷? ?' : homeTeam?.name ?? '?곷? ?',
           postMatchComment: generatedComment,
           matchType: pendingMatch?.matchType,
         }),
@@ -728,12 +736,53 @@ export function LiveMatchView() {
     [awayTeam?.id, awayTeam?.name, broadcastCrew, currentGameNum, draftResult, gameState, homeTeam?.id, homeTeam?.name, pendingMatch?.matchType],
   );
   const highlight = useMemo(
-    () => (gameState ? buildBroadcastHighlight(gameState) : { title: '중계 대기', detail: '경기 정보를 불러오는 중입니다.', tone: 'neutral' as const }),
+    () =>
+      gameState
+        ? buildBroadcastHighlight(gameState)
+        : { title: '중계 대기', detail: '경기 정보를 불러오고 있습니다.', tone: 'neutral' as const },
     [gameState],
   );
 
   if (!pendingMatch) {
     return <p className="fm-text-muted fm-text-md">진행 중인 경기가 없습니다.</p>;
+  }
+
+  if (betweenGames && currentGameDraftRequired && !draftResult) {
+    return (
+      <div className="match-container fm-animate-in">
+        <div className="fm-overlay" role="dialog" aria-modal="true" aria-label="세트 종료">
+          <div className="animate-scaleIn match-result-box">
+            <h2 className="match-result-title">{currentGameNum}세트 종료</h2>
+            <div className="match-result-score">
+              <span className="match-result-team">{homeTeam?.shortName ?? 'HOME'}</span>
+              <span className="match-result-final">{seriesScore.home} : {seriesScore.away}</span>
+              <span className="match-result-team">{awayTeam?.shortName ?? 'AWAY'}</span>
+            </div>
+            {lastGameStats ? (
+              <div className="match-between-result" style={{ marginTop: 12 }}>
+                <div style={{ fontSize: 13 }}>
+                  {lastGameStats.homeKda.k}/{lastGameStats.homeKda.d}/{lastGameStats.homeKda.a}
+                  <span style={{ color: 'var(--text-muted)', margin: '0 6px' }}>KDA</span>
+                  {lastGameStats.awayKda.k}/{lastGameStats.awayKda.d}/{lastGameStats.awayKda.a}
+                </div>
+                <div style={{ color: 'var(--text-muted)', fontSize: 12, marginTop: 4 }}>
+                  골드 차이 {lastGameStats.goldDiff > 0 ? '+' : ''}
+                  {(Math.round(lastGameStats.goldDiff / 100) / 10).toFixed(1)}k
+                  <span style={{ margin: '0 8px' }}>쨌</span>
+                  타워 {lastGameStats.towersHome} vs {lastGameStats.towersAway}
+                </div>
+              </div>
+            ) : null}
+            <p className="fm-text-secondary" style={{ marginTop: 10 }}>
+              세트 피드백을 확인했고, 이제 다음 드래프트로 넘어갑니다.
+            </p>
+            <button type="button" className="fm-btn fm-btn--primary fm-mt-md" onClick={() => navigate(`${basePath}/draft`)}>
+              다음 세트 드래프트
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (currentGameDraftRequired && !draftResult) {
@@ -742,7 +791,7 @@ export function LiveMatchView() {
         <div className="fm-panel">
           <div className="fm-panel__body">
             <h1 className="fm-page-title">드래프트가 먼저 필요합니다.</h1>
-            <p className="fm-text-secondary fm-mt-sm">다음 세트는 밴픽을 완료한 뒤에만 시작됩니다.</p>
+            <p className="fm-text-secondary fm-mt-sm">다음 세트 밴픽을 마쳐야 경기를 시작할 수 있습니다.</p>
             <button type="button" className="fm-btn fm-btn--primary fm-mt-md" onClick={() => navigate(`${basePath}/draft`)}>
               밴픽 화면으로 이동
             </button>
@@ -769,7 +818,7 @@ export function LiveMatchView() {
   }
 
   if (!gameState || !engine) {
-    return <p className="fm-text-muted fm-text-md">실시간 경기를 불러오는 중입니다...</p>;
+    return <p className="fm-text-muted fm-text-md">실시간 경기를 불러오고 있습니다...</p>;
   }
 
   return (
@@ -831,7 +880,7 @@ export function LiveMatchView() {
 
       <div className="match-broadcast-layout fm-mt-md">
         <TeamSideBoard
-          teamName={homeTeam?.name ?? '홈 팀'}
+          teamName={homeTeam?.name ?? '???'}
           teamShortName={homeTeam?.shortName ?? 'HOME'}
           side="home"
           players={gameState.playerStatsHome}
@@ -871,8 +920,8 @@ export function LiveMatchView() {
 
             <div className="fm-card" style={{ marginTop: 14 }}>
               <strong className="fm-text-primary">
-                오늘 중계진: {broadcastCrew.caster.name} · {broadcastCrew.analystPrimary.name} · {broadcastCrew.analystSecondary.name}
-                {broadcastCrew.guestAnalyst ? ` · 특별 해설 ${broadcastCrew.guestAnalyst.name}` : ''}
+                오늘 중계진 {broadcastCrew.caster.name} · {broadcastCrew.analystPrimary.name} · {broadcastCrew.analystSecondary.name}
+                {broadcastCrew.guestAnalyst ? ` · 객원 해설 ${broadcastCrew.guestAnalyst.name}` : ''}
               </strong>
               <div className="fm-text-secondary" style={{ marginTop: 6 }}>
                 진행 {broadcastCrew.announcer.name} 아나운서
@@ -887,9 +936,9 @@ export function LiveMatchView() {
               </div>
               <div className="fm-panel__body fm-flex-col fm-gap-sm">
                 {liveChatMessages.length === 0 ? (
-                  <p className="fm-text-muted">큰 장면이 나오면 팬 반응이 여기에 바로 올라옵니다.</p>
+                  <p className="fm-text-muted">큰 장면이 나오면 반응이 바로 올라옵니다.</p>
                 ) : (
-                  liveChatMessages.map((message, index) => (
+                  [...liveChatMessages].reverse().map((message, index) => (
                     <div key={`${message.message}-${index}`} className="fm-card">
                       <strong className="fm-text-primary">{message.username}</strong>
                       <div className="fm-text-secondary">{message.message}</div>
@@ -904,7 +953,7 @@ export function LiveMatchView() {
         </div>
 
         <TeamSideBoard
-          teamName={awayTeam?.name ?? '원정 팀'}
+          teamName={awayTeam?.name ?? '?먯젙 ?'}
           teamShortName={awayTeam?.shortName ?? 'AWAY'}
           side="away"
           players={gameState.playerStatsAway}
@@ -918,9 +967,9 @@ export function LiveMatchView() {
           <div className="animate-scaleIn match-result-box">
             <h2 className="match-result-title">{currentGameNum}세트 종료</h2>
             <div className="match-result-score">
-              <span className="match-result-team">{homeTeam?.shortName ?? '홈'}</span>
+              <span className="match-result-team">{homeTeam?.shortName ?? 'HOME'}</span>
               <span className="match-result-final">{seriesScore.home} : {seriesScore.away}</span>
-              <span className="match-result-team">{awayTeam?.shortName ?? '원정'}</span>
+              <span className="match-result-team">{awayTeam?.shortName ?? 'AWAY'}</span>
             </div>
             {seriesScore.home === seriesScore.away ? (
               <p style={{ color: 'var(--warning)', fontWeight: 700, textAlign: 'center', margin: '4px 0 0' }}>결정전 구도입니다.</p>
@@ -935,7 +984,7 @@ export function LiveMatchView() {
                 <div style={{ color: 'var(--text-muted)', fontSize: 12, marginTop: 4 }}>
                   골드 차이 {lastGameStats.goldDiff > 0 ? '+' : ''}
                   {(Math.round(lastGameStats.goldDiff / 100) / 10).toFixed(1)}k
-                  <span style={{ margin: '0 8px' }}>·</span>
+                  <span style={{ margin: '0 8px' }}>쨌</span>
                   타워 {lastGameStats.towersHome} vs {lastGameStats.towersAway}
                 </div>
               </div>
@@ -965,3 +1014,4 @@ export function LiveMatchView() {
     </div>
   );
 }
+

@@ -34,7 +34,7 @@ export interface NewsArticle {
 export const NEWS_CATEGORY_LABELS: Record<NewsCategory, string> = {
   match_result: '경기 결과',
   transfer_rumor: '이적 루머',
-  player_complaint: '선수 이슈',
+  player_complaint: '선수 불만',
   team_analysis: '팀 분석',
   interview: '인터뷰',
   social_media: 'SNS',

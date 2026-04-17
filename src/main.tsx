@@ -5,6 +5,11 @@ import './styles/fm-theme.css'
 import './styles/animations.css'
 import './styles/responsive.css'
 import App from './App.tsx'
+import { initializeI18n } from './i18n'
+import { initializeMonitoring } from './monitoring'
+
+initializeI18n()
+initializeMonitoring()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

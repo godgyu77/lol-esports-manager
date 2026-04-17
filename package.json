@@ -10,6 +10,9 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "notion:sync": "node scripts/notion-sync.mjs",
+    "playwright:install": "playwright install",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --config vitest.run.mjs",
     "android:apk:home": "powershell -ExecutionPolicy Bypass -File scripts/android-home-build.ps1",
@@ -21,6 +24,8 @@
     "prepare": "husky"
   },
   "dependencies": {
+    "@sentry/browser": "^10.48.0",
+    "@sentry/react": "^10.48.0",
     "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/plugin-fs": "^2.4.5",
     "@tauri-apps/plugin-process": "^2.3.1",
@@ -40,6 +45,7 @@
     "@commitlint/cli": "^20.5.0",
     "@commitlint/config-conventional": "^20.5.0",
     "@eslint/js": "^9.39.4",
+    "@playwright/test": "^1.59.1",
     "@tauri-apps/cli": "^2.10.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",

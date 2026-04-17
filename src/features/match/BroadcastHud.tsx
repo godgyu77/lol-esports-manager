@@ -56,6 +56,8 @@ export function BroadcastHud({
   const winratePct = Math.round(gameState.currentWinRate * 100);
   const activeFightCount = gameState.playerMapStates.filter((player) => player.activity === 'teamfight').length;
   const resetCount = gameState.playerMapStates.filter((player) => player.activity === 'reset').length;
+  const leadingTeam = goldDiff >= 0 ? homeTeamShortName : awayTeamShortName;
+  const pulseLabel = activeFightCount >= 4 ? '교전 폭발 직전' : '운영 재정비';
 
   return (
     <section className="broadcast-hud">
@@ -73,7 +75,7 @@ export function BroadcastHud({
         </div>
         <div className="broadcast-hud__buffs">
           {gameState.baronHome ? <span className="broadcast-hud__buff">바론</span> : null}
-          {gameState.dragonSoul.soulTeam === 'home' ? <span className="broadcast-hud__buff">영혼</span> : null}
+          {gameState.dragonSoul.soulTeam === 'home' ? <span className="broadcast-hud__buff">용영혼</span> : null}
           {gameState.grubsHome > 0 ? <span className="broadcast-hud__buff">유충 {gameState.grubsHome}</span> : null}
         </div>
         <DragonPips
@@ -85,17 +87,19 @@ export function BroadcastHud({
       <div className="broadcast-hud__center">
         <div className="broadcast-hud__series-strip">
           <span>{currentGameNum}세트</span>
-          <span>{phaseLabels[gameState.phase]}</span>
+          <span>{phaseLabels[gameState.phase] ?? gameState.phase}</span>
           <span>{gameState.currentTick}:00</span>
           {replayMode ? <span className="broadcast-hud__replay-badge">리플레이 모드</span> : null}
         </div>
         <div className="broadcast-hud__scoreline">
           <span className="broadcast-hud__kills">{gameState.killsHome}</span>
-          <span className="broadcast-hud__sep">대</span>
+          <span className="broadcast-hud__sep">:</span>
           <span className="broadcast-hud__kills">{gameState.killsAway}</span>
         </div>
         <div className="broadcast-hud__meta">
-          <span>{goldDiff >= 0 ? homeTeamShortName : awayTeamShortName} +{Math.abs(Math.round(goldDiff / 100)) / 10}k</span>
+          <span>
+            {leadingTeam} +{Math.abs(Math.round(goldDiff / 100)) / 10}k
+          </span>
           <span>드래곤 {objectiveTimer(dragonObjective?.nextSpawnTick)}</span>
           <span>전령 {objectiveTimer(heraldObjective?.nextSpawnTick)}</span>
           <span>바론 {objectiveTimer(baronObjective?.nextSpawnTick)}</span>
@@ -105,19 +109,23 @@ export function BroadcastHud({
             <div className="broadcast-hud__winrate-fill" style={{ width: `${winratePct}%` }} />
           </div>
           <div className="broadcast-hud__winrate-copy">
-            <span>{homeTeamShortName} {winratePct}%</span>
-            <span>{awayTeamShortName} {100 - winratePct}%</span>
+            <span>
+              {homeTeamShortName} {winratePct}%
+            </span>
+            <span>
+              {awayTeamShortName} {100 - winratePct}%
+            </span>
           </div>
         </div>
         <div className="broadcast-hud__pulse">
-          <span>{activeFightCount >= 4 ? '실시간 교전' : '맵 재정비'}</span>
+          <span>{pulseLabel}</span>
           <span>{activeFightCount}명 교전 중</span>
           <span>{resetCount}명 귀환 중</span>
         </div>
         <div className="broadcast-hud__focus">
           {gameState.focusEvent
             ? `${gameState.focusEvent.label}: ${gameState.focusEvent.detail}`
-            : '카메라가 다음 결정 장면을 찾고 있습니다.'}
+            : '카메라가 다음 핵심 장면을 추적하고 있습니다.'}
         </div>
       </div>
 
@@ -135,7 +143,7 @@ export function BroadcastHud({
         </div>
         <div className="broadcast-hud__buffs">
           {gameState.baronAway ? <span className="broadcast-hud__buff">바론</span> : null}
-          {gameState.dragonSoul.soulTeam === 'away' ? <span className="broadcast-hud__buff">영혼</span> : null}
+          {gameState.dragonSoul.soulTeam === 'away' ? <span className="broadcast-hud__buff">용영혼</span> : null}
           {gameState.grubsAway > 0 ? <span className="broadcast-hud__buff">유충 {gameState.grubsAway}</span> : null}
         </div>
         <DragonPips

@@ -30,3 +30,9 @@ Thumbs.db
 # Rust build artifacts
 src-tauri/target/
 
+# Local tool caches
+.android-sdk/
+.gradle-android-cache/
+test-results/
+playwright-report/
+

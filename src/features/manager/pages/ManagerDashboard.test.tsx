@@ -87,11 +87,11 @@ describe('ManagerDashboard', () => {
     expect(screen.getAllByText('T1').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('2025-01-15')).toBeInTheDocument();
     expect(screen.getByText('W3')).toBeInTheDocument();
-    expect(screen.getByText('₩5,000,000')).toBeInTheDocument();
-    expect(screen.getByText('85')).toBeInTheDocument();
+    expect(screen.getAllByText('₩5,000,000').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByRole('button', { name: '다음 진행' })).toBeInTheDocument();
   });
 
-  it('renders a three-card priority strip on match days', () => {
+  it('renders a three-card priority strip', () => {
     renderWithProviders(<ManagerDashboard />, {
       gameState: { save: mockSave, season: mockSeason, teams: [mockTeam], dayType: 'match_day' },
       routerProps: { initialEntries: ['/manager'] },
@@ -108,8 +108,8 @@ describe('ManagerDashboard', () => {
         id: 1,
         teamId: 'team-1',
         type: 'general',
-        title: 'Latest match follow-up',
-        content: 'Review the draft plan before the rematch.',
+        title: '[경기 결과] T1 vs GEN',
+        content: '리매치 전에 드래프트를 다시 점검해야 합니다.',
         isRead: false,
         createdAt: '2025-01-15T10:00:00.000Z',
         actionRoute: '/manager/tactics',
@@ -122,14 +122,14 @@ describe('ManagerDashboard', () => {
       routerProps: { initialEntries: ['/manager'] },
     });
 
-    expect(await screen.findByText('Review the draft plan before the rematch.')).toBeInTheDocument();
+    expect(await screen.findByText('리매치 전에 드래프트를 다시 점검해야 합니다.')).toBeInTheDocument();
   });
 
   it('falls back to the top loop risk when there is no match follow-up', async () => {
     mockGetMainLoopRiskItems.mockResolvedValue([
       {
-        title: 'Board confidence warning',
-        summary: 'The board is watching recent budget calls very closely.',
+        title: '보드 신뢰 경고',
+        summary: '최근 예산 집행을 보드가 예의주시하고 있습니다.',
         tone: 'risk',
       },
     ]);
@@ -139,43 +139,17 @@ describe('ManagerDashboard', () => {
       routerProps: { initialEntries: ['/manager'] },
     });
 
-    expect((await screen.findAllByText('Board confidence warning')).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText('The board is watching recent budget calls very closely.').length).toBeGreaterThanOrEqual(1);
+    expect((await screen.findAllByText('보드 신뢰 경고')).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('최근 예산 집행을 보드가 예의주시하고 있습니다.').length).toBeGreaterThanOrEqual(1);
   });
 
-  it('keeps the compact priority strip visible alongside async dashboard data', async () => {
-    mockGetInboxMessages.mockResolvedValue([
-      {
-        id: 2,
-        teamId: 'team-1',
-        type: 'general',
-        title: 'Immediate follow-up',
-        content: 'Stabilize the roster before the next stage match.',
-        isRead: false,
-        createdAt: '2025-01-15T12:00:00.000Z',
-        actionRoute: '/manager/roster',
-        relatedId: 'match_result:match-2',
-      },
-    ]);
-
+  it('keeps only save/load and main menu buttons in the sidebar footer', () => {
     renderWithProviders(<ManagerDashboard />, {
       gameState: { save: mockSave, season: mockSeason, teams: [mockTeam] },
       routerProps: { initialEntries: ['/manager'] },
     });
 
-    const strip = await screen.findByTestId('managerdashboard-priority-strip');
-    expect(strip).toBeInTheDocument();
-    expect(within(strip).getAllByRole('button')).toHaveLength(3);
-    expect(await screen.findByText('Stabilize the roster before the next stage match.')).toBeInTheDocument();
-  });
-
-  it('shows a first-season retention banner on the dashboard shell', async () => {
-    renderWithProviders(<ManagerDashboard />, {
-      gameState: { save: mockSave, season: mockSeason, teams: [mockTeam] },
-      routerProps: { initialEntries: ['/manager'] },
-    });
-
-    expect(await screen.findByTestId('managerdashboard-retention-panel')).toBeInTheDocument();
-    expect(screen.getByText('첫 시즌 몰입 포인트')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '저장 / 불러오기' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '메인 메뉴' })).toBeInTheDocument();
   });
 });

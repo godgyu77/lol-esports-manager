@@ -792,8 +792,9 @@ export function DayView() {
         <div className="fm-overlay" style={{ zIndex: 50 }}>
           <div className="fm-modal" style={{ width: 360 }}>
             <div className="fm-modal__body fm-text-center">
-              <h2 className="fm-text-xl fm-mb-sm">일정을 처리하는 중입니다</h2>
-              <p className="fm-text-muted">하루 일정과 경기 결과를 반영하고 있습니다. 잠시만 기다려 주세요.</p>
+              <h2 className="fm-text-xl fm-mb-sm">다음 날짜로 진행 중</h2>
+              <p className="fm-text-muted fm-mb-sm">{currentDate} → 다음 일정</p>
+              <p className="fm-text-muted">하루 일정, 뉴스, 경기 결과를 순서대로 반영하고 있습니다.</p>
             </div>
           </div>
         </div>

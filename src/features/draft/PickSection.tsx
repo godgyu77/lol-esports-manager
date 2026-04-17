@@ -14,7 +14,7 @@ interface PickSectionProps {
 
 function getMoraleStatus(morale: number | undefined): { label: string; tone: 'good' | 'warning' | 'danger' | 'neutral' } {
   if (typeof morale !== 'number') return { label: '정보 없음', tone: 'neutral' };
-  if (morale >= 75) return { label: '상승세', tone: 'good' };
+  if (morale >= 75) return { label: '최상', tone: 'good' };
   if (morale >= 55) return { label: '안정적', tone: 'neutral' };
   if (morale >= 40) return { label: '주의', tone: 'warning' };
   return { label: '흔들림', tone: 'danger' };
@@ -65,7 +65,7 @@ export function PickSection({ sideLabel, picks, color, championDb, rosterPlayers
               accentColor={color}
               subtitle={champ?.nameKo ?? champ?.name ?? pick.championId}
               tags={buildPlayerTags(player, pick.championId, championDb)}
-              meta="픽 단계에서는 자유 선택, 마지막 스왑에서 자리 확정"
+              meta="픽 단계에서는 자유 선택, 마지막 스왑 단계에서 최종 배치를 조정합니다."
               statusLabel={morale.label}
               statusTone={morale.tone}
               compact

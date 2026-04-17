@@ -1,5 +1,7 @@
 import { Component } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
+import { t } from '../i18n';
+import { captureException } from '../monitoring';
 
 interface Props {
   children: ReactNode;
@@ -25,6 +27,10 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('[ErrorBoundary]', error, errorInfo);
+    captureException(error, {
+      boundary: this.props.inline ? 'inline' : 'fullscreen',
+      componentStack: errorInfo.componentStack ? 'present' : 'missing',
+    });
   }
 
   handleRetry = () => {
@@ -51,18 +57,18 @@ export class ErrorBoundary extends Component<Props, State> {
           <div className="fm-panel" style={{ maxWidth: 480, textAlign: 'center' }}>
             <div className="fm-panel__body" style={{ padding: 40 }}>
               <h2 className="fm-text-xl fm-font-bold fm-text-accent fm-mb-md">
-                {inline ? '이 화면에서 오류가 발생했습니다' : '오류가 발생했습니다'}
+                {inline ? t('errorBoundary.title.inline') : t('errorBoundary.title.fullscreen')}
               </h2>
               <p className="fm-text-md fm-text-secondary fm-mb-lg" style={{ lineHeight: 1.5, wordBreak: 'break-word' }}>
-                {this.state.error?.message ?? '알 수 없는 오류입니다.'}
+                {this.state.error?.message ?? t('errorBoundary.defaultMessage')}
               </p>
               <div className="fm-flex fm-justify-center fm-gap-md fm-flex-wrap">
                 <button className="fm-btn fm-btn--primary" onClick={this.handleRetry}>
-                  다시 시도
+                  {t('errorBoundary.retry')}
                 </button>
                 {navigateTo && (
                   <button className="fm-btn" onClick={this.handleNavigate}>
-                    {navigateLabel ?? '메인 화면으로 이동'}
+                    {navigateLabel ?? t('errorBoundary.defaultNavigate')}
                   </button>
                 )}
               </div>

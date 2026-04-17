@@ -227,7 +227,7 @@ export function FinanceView() {
           status: 'active',
         },
       ]);
-      setOffers((prev) => prev.filter((existing) => existing.name !== offer.name));
+      setOffers([]);
       syncStoreTeam(optimisticBudget);
       await loadData();
     } catch (err) {
@@ -311,8 +311,8 @@ export function FinanceView() {
 
       <MainLoopPanel
         eyebrow="재정 운용"
-        title="예산, 소모 속도, 활주로를 첫 화면에서 바로 읽을 수 있게 정리했습니다."
-        subtitle="재정 화면은 장기 숫자를 보는 곳이 아니라, 지금 위험한 지점과 바로 취할 수 있는 방향을 빠르게 확인하는 화면으로 구성합니다."
+        title="예산, 소모 속도, 활주로를 한눈에 읽을 수 있게 정리했습니다."
+        subtitle="지금 위험한 지점과 바로 취할 행동만 먼저 보여줍니다."
         insights={[
           {
             label: '현재 예산',
@@ -336,7 +336,6 @@ export function FinanceView() {
         actions={[
           { label: '스폰서 제안 보기', onClick: handleGenerateOffers, variant: 'primary', disabled: rerollsRemaining <= 0 || isMaxSponsors },
         ]}
-        note="금액 표기는 전부 억 기준으로 통일했고, 주간/월간 소모 문구도 같은 기준으로 읽히게 맞췄습니다."
       />
 
       <div className="fm-grid fm-grid--3 fm-mb-lg" data-testid="finance-priority-strip">

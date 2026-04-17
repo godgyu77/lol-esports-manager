@@ -1,4 +1,4 @@
-import { renderWithProviders, resetStores, screen } from '../../test/testUtils';
+﻿import { renderWithProviders, resetStores, screen } from '../../test/testUtils';
 import { DraftView } from './DraftView';
 import type { GameSave, Match, Team } from '../../types';
 
@@ -117,7 +117,7 @@ describe('DraftView', () => {
       gameState: { save: mockSave, teams: mockTeams, mode: 'manager' },
     });
 
-    expect(screen.getByText('밴픽 화면을 준비하는 중입니다...')).toBeInTheDocument();
+    expect(screen.getByText('드래프트 화면을 준비하고 있습니다...')).toBeInTheDocument();
   });
 
   it('renders the full draft room shell when a pending match exists', async () => {
@@ -172,8 +172,8 @@ describe('DraftView', () => {
         id: 1,
         teamId: 'team-home',
         type: 'general',
-        title: '[경기 결과] T1 vs GEN',
-        content: '다음 권장 행동은 전술 재검토입니다.',
+        title: '[寃쎄린 寃곌낵] T1 vs GEN',
+        content: '?ㅼ쓬 沅뚯옣 ?됰룞? ?꾩닠 ?ш??좎엯?덈떎.',
         isRead: false,
         createdAt: '2025-01-15T10:00:00.000Z',
         actionRoute: '/manager/tactics',
@@ -196,3 +196,6 @@ describe('DraftView', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/manager/tactics');
   });
 });
+
+
+

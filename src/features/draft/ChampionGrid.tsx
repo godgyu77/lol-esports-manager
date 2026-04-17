@@ -31,7 +31,7 @@ export function ChampionGrid({
       <div className="draft-champ-grid-header">
         <div>
           <span className="draft-grid-kicker">챔피언 풀</span>
-          <h3 className="draft-grid-title">선픽 후보</h3>
+          <h3 className="draft-grid-title">선택 후보</h3>
         </div>
         <span className="draft-grid-count">{filteredChampions.length}명 선택 가능</span>
       </div>
@@ -55,7 +55,7 @@ export function ChampionGrid({
       </div>
 
       <div className="draft-grid-note">
-        픽 단계에서는 포지션 상관없이 먼저 챔피언을 확보하고, 마지막 스왑에서 선수 자리에 재배치할 수 있습니다.
+        픽 단계에서는 선수 포지션과 무관하게 먼저 챔피언을 확정하고, 마지막 스왑 단계에서 최종 배치를 조정할 수 있습니다.
       </div>
 
       <div className="draft-champ-list">
@@ -66,7 +66,9 @@ export function ChampionGrid({
             'draft-champ-item',
             isFearlessBlocked ? 'draft-champ-item--fearless' : '',
             !isFearlessBlocked && isSelected ? 'draft-champ-item--selected' : '',
-          ].filter(Boolean).join(' ');
+          ]
+            .filter(Boolean)
+            .join(' ');
 
           return (
             <button

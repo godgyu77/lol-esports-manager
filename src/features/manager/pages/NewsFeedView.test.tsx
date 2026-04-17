@@ -33,25 +33,6 @@ vi.mock('react-router-dom', async () => {
     ...actual,
     useNavigate: () => mockNavigate,
   };
-  it('uses top loop risk routing in the spotlight panel when no match follow-up exists', async () => {
-    mockGetMainLoopRiskItems.mockResolvedValue([
-      {
-        title: '국제전 압박',
-        summary: '이번 시리즈는 시즌 평가를 바꿀 수 있어 프리매치 점검이 필요합니다.',
-        tone: 'risk',
-      },
-    ]);
-
-    renderNewsFeed();
-
-    expect(await screen.findByText('국제전 압박 점검')).toBeInTheDocument();
-
-    await act(async () => {
-      screen.getByRole('button', { name: '리스크 바로 보기' }).click();
-    });
-
-    expect(mockNavigate).toHaveBeenCalledWith('/manager/pre-match');
-  });
 });
 
 vi.mock('../../../engine/news/newsEngine', () => ({
@@ -61,10 +42,16 @@ vi.mock('../../../engine/news/newsEngine', () => ({
   markAllAsRead: mockMarkAllAsRead,
   markAsRead: mockMarkAsRead,
   getArticleSummary: mockGetArticleSummary,
+  MATCH_RESULT_FOLLOW_UP_ACTION_LABEL: '후속 조치 보기',
+  MATCH_RESULT_FOLLOW_UP_BADGE_LABEL: '매치 후속',
+  buildMatchResultFollowUpHeadline: vi.fn().mockReturnValue('다음 단계 안내'),
+  MATCH_RESULT_FOLLOW_UP_TITLE: '경기 후속 정리',
+  MATCH_RESULT_FOLLOW_UP_STORY_TAG: '후속 스토리',
 }));
 
 vi.mock('../../../engine/inbox/inboxEngine', () => ({
   getInboxMessages: mockGetInboxMessages,
+  getLatestMatchResultInboxMessage: (messages: Array<Record<string, unknown>>) => messages[0] ?? null,
 }));
 
 vi.mock('../../../engine/manager/systemDepthEngine', () => ({
@@ -216,7 +203,7 @@ describe('NewsFeedView', () => {
       tabs[1].click();
     });
 
-    expect(await screen.findByText('읽지 않은 브리핑이 없습니다.')).toBeInTheDocument();
+    expect(await screen.findByText('미확인 브리핑이 없습니다.')).toBeInTheDocument();
   });
 
   it('supports keyboard navigation across news filters', async () => {
@@ -248,11 +235,24 @@ describe('NewsFeedView', () => {
     expect(screen.getAllByText(localizeEntityNamesInText(taggedArticle.content)).length).toBeGreaterThan(0);
   });
 
-  it('shows a spotlight read panel that suggests the next narrative click', async () => {
+  it('shows an actionable panel at the top of the newsroom', async () => {
     renderNewsFeed();
 
     expect(await screen.findByTestId('news-spotlight-panel')).toBeInTheDocument();
-    expect(screen.getByText('오늘 더 파고들 선택')).toBeInTheDocument();
-    expect(screen.getByText(/오늘 화제인 기사 따라가기|오늘 팀 분위기 둘러보기/)).toBeInTheDocument();
+    expect(screen.getByText('오늘 읽을 기사')).toBeInTheDocument();
+  });
+
+  it('uses top loop risk routing when there is no match follow-up', async () => {
+    mockGetMainLoopRiskItems.mockResolvedValue([
+      {
+        title: '국제전 압박',
+        summary: '이번 시리즈는 프리매치 준비 체인을 다시 점검해야 합니다.',
+        tone: 'risk',
+      },
+    ]);
+
+    renderNewsFeed();
+
+    expect(await screen.findByText('국제전 압박 점검')).toBeInTheDocument();
   });
 });
